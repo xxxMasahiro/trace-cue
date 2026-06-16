@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0.0",
+  "name": "browser-debug-cli",
+  "components": [
+    {
+      "id": "issue-summary",
+      "tokens": ["foreground", "warning", "danger"],
+      "contract": ["Show severity, evidence, and next action without decorative layout."]
+    },
+    {
+      "id": "artifact-list",
+      "tokens": ["foreground", "accent"],
+      "contract": ["List local artifacts with clear type and path."]
+    }
+  ]
+}

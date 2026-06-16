@@ -1,0 +1,4 @@
+# security_id	required_mode	contexts	policy_source	evidence_source	dashboard_group	description
+local-first	optional	all	docs/workflow/SECURITY.md	product.security.local_first	security	Browser automation and artifacts remain local by default.
+secret-scan	optional	all	docs/workflow/SECURITY.md	product.security.secrets	security	Repository must not contain committed secret-like data.
+profile-isolation	optional	all	docs/workflow/SECURITY.md	product.security.browser_profile	security	Runtime must not reuse existing browser profiles without approval.

@@ -1,0 +1,4 @@
+# surface_id	required_mode	contexts	source_id	label_key	dashboard_group	description
+overview	required	all	product.overview	overview	overview	Browser Debug CLI overview.
+workflow	required	all	product.workflow	workflow	workflow	Phase plan and workflow state.
+security	required	all	product.security	security	security	Local security and artifact policy.

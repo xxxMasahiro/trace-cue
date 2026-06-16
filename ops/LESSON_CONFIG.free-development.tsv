@@ -1,0 +1,11 @@
+# key	value
+lesson_repo_name	ai-driven-development-lesson
+product_repo_name	browser-debug-cli
+project_root	$HOME/projects/agent-toolbox
+flow_file	lesson/LESSON_FLOW.tsv
+state_file	learning/LESSON_STATE.tsv
+learning_tracker_file	learning/LEARNING_TASK_TRACKER.md
+learning_handoff_file	learning/LEARNING_HANDOFF.md
+learning_mode_file	learning/LESSON_MODE.tsv
+workflow_language_file	learning/WORKFLOW_DISPLAY_LANGUAGE.tsv
+product_language_file	learning/PRODUCT_DEVELOPMENT_LANGUAGE.tsv

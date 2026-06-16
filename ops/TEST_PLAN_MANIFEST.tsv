@@ -1,0 +1,6 @@
+# test_id	required_mode	contexts	product_types	command_id	evidence_source	dashboard_group	description
+structure	optional	all	all	check_product_structure	product.gates.structure	workflow	Validate standard repository scaffold and required files.
+docs	optional	all	all	check_product_docs	product.docs.sync	workflow	Validate canonical product documents and workflow pair.
+security	optional	all	all	check_product_security	product.security.secrets	security	Validate local security policy and secret-like data guard.
+design	optional	all	all	check_product_design_system	product.design_system.sources	workflow	Validate product-local design-system placeholder files.
+aggregate	optional	all	all	test_product_repository	product.gates.tests	workflow	Run product-local aggregate checks.

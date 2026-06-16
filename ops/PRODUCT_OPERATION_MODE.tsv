@@ -1,0 +1,9 @@
+# key	value
+workflow_mode	parent_managed
+managed_by_parent	true
+parent_repository	lesson_repository
+parent_rules_ref	AGENTS.MD
+last_parent_sync	2026-06-17T00:00:00Z
+active_parent_run	none
+local_agents_version	1
+routing_table_version	1

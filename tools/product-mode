@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/lib/product_common.sh
+source "$SCRIPT_DIR/lib/product_common.sh"
+
+ROOT="$(product_repo_root)"
+MODE_FILE="$ROOT/ops/PRODUCT_OPERATION_MODE.tsv"
+COMMAND="${1:-status}"
+
+value_for() {
+  local key="$1"
+  awk -F '\t' -v key="$key" '$1 !~ /^#/ && $1 == key { print $2; found=1; exit } END { exit found ? 0 : 1 }' "$MODE_FILE"
+}
+
+check_mode() {
+  local failed=0
+  product_require_nonempty_file "$ROOT" ops/PRODUCT_OPERATION_MODE.tsv || failed=1
+  for key in workflow_mode managed_by_parent parent_repository parent_rules_ref last_parent_sync active_parent_run local_agents_version routing_table_version; do
+    value_for "$key" >/dev/null || {
+      printf 'missing product operation mode key: %s\n' "$key" >&2
+      failed=1
+    }
+  done
+  mode="$(value_for workflow_mode 2>/dev/null || printf '')"
+  case "$mode" in
+    parent_managed|standalone|reconnecting|repair_required) ;;
+    *)
+      printf 'invalid workflow_mode: %s\n' "$mode" >&2
+      failed=1
+      ;;
+  esac
+  [[ "$failed" -eq 0 ]]
+}
+
+case "$COMMAND" in
+  status)
+    product_require_nonempty_file "$ROOT" ops/PRODUCT_OPERATION_MODE.tsv
+    printf 'Product operation mode: %s\n' "$(value_for workflow_mode)"
+    printf 'Managed by parent: %s\n' "$(value_for managed_by_parent)"
+    ;;
+  check|gate)
+    check_mode
+    printf 'Product operation mode check passed.\n'
+    ;;
+  *)
+    printf 'Usage: tools/product-mode [status|check]\n' >&2
+    exit 1
+    ;;
+esac

@@ -1,0 +1,7 @@
+# stage_id	required_mode	contexts	product_types	dashboard_group	description
+phase0	required	all	all	workflow	Scaffold and document sync.
+phase1	required	all	all	workflow	Local Git setup after approval.
+phase2	required	all	all	workflow	GitHub public repository setup after approval.
+phase3	required	all	all	workflow	CI setup after approval.
+phase4	required	all	all	workflow	npm package design after approval.
+phase5	required	all	all	workflow	MVP runtime implementation after approval.

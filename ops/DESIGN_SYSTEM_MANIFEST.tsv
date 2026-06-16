@@ -1,0 +1,2 @@
+# design_id	required_mode	contexts	source_path	generated_path	check_command	description
+product-design-system	required	all	docs/design-system/DESIGN_SYSTEM.md	none	tools/check_product_design_system.sh	Product-local design-system source and check.

@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "root_name": "browser-debug-cli",
+  "source": "external_product_repository",
+  "default_expand_depth": 1,
+  "excludes": [
+    { "pattern": "node_modules/", "reason": "dependency cache" },
+    { "pattern": ".browser-debug/", "reason": "local debug artifacts" },
+    { "pattern": ".env*", "reason": "secret-bearing configuration" }
+  ],
+  "roles": {
+    "agent_entry": {
+      "label": "Agent entry",
+      "description": "Repository-local operating rules"
+    },
+    "product_doc": {
+      "label": "Product document",
+      "description": "Canonical planning and behavior document"
+    },
+    "workflow_doc": {
+      "label": "Workflow document",
+      "description": "Task state, handoff, security, or verification document"
+    },
+    "manifest": {
+      "label": "Manifest",
+      "description": "Machine-readable product authority file"
+    }
+  },
+  "files": [
+    { "path": "AGENTS.MD", "role": "agent_entry" },
+    { "path": "docs/product/REQUIREMENTS.md", "role": "product_doc" },
+    { "path": "docs/product/SPECIFICATION.md", "role": "product_doc" },
+    { "path": "docs/product/IMPLEMENTATION_PLAN.md", "role": "product_doc" },
+    { "path": "docs/workflow/TASK_TRACKER.md", "role": "workflow_doc" },
+    { "path": "docs/workflow/HANDOFF.md", "role": "workflow_doc" },
+    { "path": "ops/PRODUCT_MANIFEST.tsv", "role": "manifest" }
+  ]
+}

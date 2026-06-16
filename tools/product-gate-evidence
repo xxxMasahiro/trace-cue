@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/lib/product_gate_evidence.sh
+source "$ROOT/tools/lib/product_gate_evidence.sh"
+
+COMMAND="${1:-status}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  tools/product-gate-evidence status
+  tools/product-gate-evidence record <source-id> <context> <status> <source-artifacts> <next-command> [max-age-seconds]
+  tools/product-gate-evidence run <source-id> <context> <source-artifacts> <next-command> [max-age-seconds] -- <command> [args...]
+  tools/product-gate-evidence git-status <context> [max-age-seconds]
+
+Records Dashboard-readable product gate evidence in:
+  .git/product-gate-evidence/index.tsv
+USAGE
+}
+
+case "$COMMAND" in
+  status)
+    product_gate_evidence_status
+    ;;
+  record)
+    if [[ "$#" -lt 5 ]]; then
+      usage >&2
+      exit 1
+    fi
+    product_gate_evidence_record "$1" "$2" "$3" "true" "authoritative" "${6:-3600}" "$4" "" "$5"
+    ;;
+  run)
+    if [[ "$#" -lt 6 ]]; then
+      usage >&2
+      exit 1
+    fi
+    source_id="$1"
+    context="$2"
+    source_artifacts="$3"
+    next_command="$4"
+    max_age_seconds="$5"
+    shift 5
+    product_gate_evidence_run "$source_id" "$context" "$source_artifacts" "$next_command" "$max_age_seconds" "$@"
+    ;;
+  git-status)
+    product_gate_evidence_git_status "${1:-free-development}" "${2:-300}"
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    printf 'unknown command: %s\n' "$COMMAND" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

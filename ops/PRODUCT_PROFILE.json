@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0.0",
+  "profile_kind": "product_display_profile",
+  "menu_id": "free-development",
+  "profile_scope": "product",
+  "display_name": {
+    "ja": "Browser Debug CLI",
+    "en": "Browser Debug CLI"
+  },
+  "description": {
+    "ja": "Agent-independent Playwright browser debugging CLI.",
+    "en": "Agent-independent Playwright browser debugging CLI."
+  },
+  "source": "learner_confirmed",
+  "confirmed_at": "2026-06-17T00:00:00Z",
+  "source_documents": [
+    "docs/product/REQUIREMENTS.md",
+    "docs/product/SPECIFICATION.md",
+    "docs/product/IMPLEMENTATION_PLAN.md"
+  ]
+}
