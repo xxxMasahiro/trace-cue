@@ -12,11 +12,13 @@ Use this skill when a user wants local browser observation, route coverage, UI r
 1. Keep the target application local or explicitly approved by the user.
 2. Create a manifest when the app has more than one route:
    `browser-debug target init --url <url> --json`
-3. Run a single-page review for focused checks:
+3. Add known routes to `expectedRoutes` when important pages are not discoverable from links or navigation candidates.
+4. Run a single-page review for focused checks:
    `browser-debug review --url <url> --screenshot --report --json`
-4. Run a site review for route and viewport coverage:
+5. Run a site review for route and viewport coverage:
    `browser-debug review --target <manifest> --report --json`
-5. Use the returned `action_plan`, `review_advisory`, `quality_signals`, findings, and artifact paths for developer handoff.
+6. Use `quality_signals.route_coverage` to decide whether to raise route budgets, split manifests, or add missing expected routes.
+7. Use the returned `action_plan`, `review_advisory`, `quality_signals`, findings, and artifact paths for developer handoff.
 
 ## Boundaries
 

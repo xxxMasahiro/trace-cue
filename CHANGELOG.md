@@ -36,6 +36,9 @@ All notable local development changes are tracked here before public release.
 - Added review `quality_signals` for visual hierarchy, responsive layout, interaction affordance, accessibility structure, evidence completeness, developer handoff, local release readiness, route coverage, and disabled model-review boundaries.
 - Expanded local review heuristics for headings, landmarks, image alt text, low contrast text, visible overlap, and mobile touch-target sizing.
 - Added Quality Signals sections to Markdown review reports and browser smoke coverage for the new local review-quality signals.
+- Added explicit target review execution for manifest `expectedRoutes`.
+- Added target coverage output for expected routes and route-budget-exceeded skips.
+- Added browser smoke coverage for unlinked expected routes and route budget skip accounting.
 
 ## Release Status
 

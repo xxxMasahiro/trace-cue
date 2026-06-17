@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Phase 5 local MVP runtime implementation is complete after Phase 1 and Phase 2a. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally. Phase 7 local review-platform implementation is complete for deterministic review, target manifests, route/viewport coverage, risk classification, conservative mock metrics, local stdio MCP adapter, schema registry, and package API/file-set readiness. Phase 8 local dogfood/plugin-readiness work is complete for target manifest generation, developer action plans, local heuristic review advisory data, target Markdown reports, plugin metadata, MCP target tools, reusable manifest template, and package file-set readiness without publication. Phase 9 local review-quality work is complete for quality signals, expanded local heuristics, developer handoff, local release decision support, and explicit model-review boundaries.
+Phase 5 local MVP runtime implementation is complete after Phase 1 and Phase 2a. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally. Phase 7 local review-platform implementation is complete for deterministic review, target manifests, route/viewport coverage, risk classification, conservative mock metrics, local stdio MCP adapter, schema registry, and package API/file-set readiness. Phase 8 local dogfood/plugin-readiness work is complete for target manifest generation, developer action plans, local heuristic review advisory data, target Markdown reports, plugin metadata, MCP target tools, reusable manifest template, and package file-set readiness without publication. Phase 9 local review-quality work is complete for quality signals, expanded local heuristics, developer handoff, local release decision support, and explicit model-review boundaries. Phase 10 local dogfood route-readiness work is complete for expected-route execution, expected-route coverage artifacts, route-budget skip accounting, and fixture-backed validation without target-specific runtime branches.
 
 This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and HANDOFF workflow-state pair synchronized whenever task state changes.
 
@@ -85,10 +85,15 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 - [x] Expanded local review evidence and findings for headings, landmarks, image alt text, contrast, visible overlaps, and mobile touch-target sizing.
 - [x] Added Quality Signals sections to Markdown review reports.
 - [x] Strengthened browser smoke coverage for quality signals, alt text, contrast, overlap, target route coverage summaries, local release readiness, and disabled model-review boundaries.
+- [x] Target review now enqueues manifest `expectedRoutes` as explicit review targets.
+- [x] Coverage artifacts now include `coverage.routes.expected`.
+- [x] Target review records `route_budget_exceeded` skipped routes when `budgets.maxRoutes` prevents full coverage.
+- [x] Target quality signals report expected manifest route counts and route-budget-exceeded counts.
+- [x] Browser smoke coverage verifies unlinked expected routes and route-budget skip accounting.
 
 ## Remaining Work
 
-No remaining local Phase 9 implementation work is currently planned.
+No remaining local Phase 10 implementation work is currently planned.
 
 ## Future Approval-Bound Work
 

@@ -73,7 +73,7 @@ Implemented behavior:
 - `report --session <id>` writes a Markdown report.
 - `spec export --session <id>` writes a JSON action/spec export.
 - `review --url <url>` runs a single-URL deterministic local review, captures observation and layout evidence, optionally captures screenshots and mock metrics, writes review artifacts, and returns evidence-backed findings.
-- `review --target <manifest>` runs a manifest-driven site review with generic route discovery, viewport matrix execution, coverage artifacts, and aggregated findings.
+- `review --target <manifest>` runs a manifest-driven site review with generic route discovery, explicit expected-route execution, viewport matrix execution, coverage artifacts, and aggregated findings.
 - `target init --url <url>` writes a reusable local target manifest artifact under `.browser-debug/targets/` with same-origin scope, seed route, viewport matrix, route budget, screenshot defaults, and safe local review boundaries.
 - Review results include `action_plan`, `review_advisory`, and `quality_signals` objects. `action_plan` prioritizes findings, groups developer next actions, and reports a local release gate. `review_advisory` is a local heuristic signal that summarizes browser health, layout, accessibility, interaction, mock, and coverage concerns without claiming human or model aesthetic approval. `quality_signals` gives structured developer handoff data for visual hierarchy, responsive layout, interaction affordance, accessibility structure, evidence completeness, local release readiness, route coverage, and the disabled model-review boundary.
 - `schema list` and `schema get --name <schema>` expose machine-readable JSON contracts for envelopes, artifacts, findings, target manifests, review results, and MCP tool metadata.
@@ -165,9 +165,9 @@ appHints
 
 The runtime must not contain product-specific branches for Dashboard Control Center, FrameCue Control Center, localhost ports, route names, menu labels, or page IDs. Those targets can be represented as examples or local manifests outside the generic review runtime.
 
-Route discovery is generic and uses same-origin anchors and navigation action candidates in the current implementation. Coverage output reports discovered, visited, skipped, failed, and expected-missing routes. Later enhancements may add history navigation, DOM metadata, redirects, and app-provided manifest hints without changing the core contract.
+Route discovery is generic and uses same-origin anchors and navigation action candidates in the current implementation. Manifest `expectedRoutes` are also enqueued as explicit review targets, so owners can cover known routes that are not discoverable from the initial crawl. Coverage output reports expected, discovered, visited, skipped, failed, and expected-missing routes. Queued routes that cannot be reviewed because `budgets.maxRoutes` is exhausted are recorded as skipped with `reason=route_budget_exceeded`. Later enhancements may add history navigation, DOM metadata, redirects, and app-provided manifest hints without changing the core contract.
 
-`target init` exists so a developer or agent can create a starting manifest before reviewing a whole application. The generated manifest is intentionally generic: it does not include application-specific route names or control labels, and it expects owners to add known `expectedRoutes`, route budgets, viewport matrices, masks, or regions as needed.
+`target init` exists so a developer or agent can create a starting manifest before reviewing a whole application. The generated manifest is intentionally generic: it does not include application-specific route names or control labels, and it expects owners to add known `expectedRoutes`, route budgets, viewport matrices, masks, or regions as needed. After editing, `expectedRoutes` are review inputs, not just passive coverage expectations.
 
 Action exploration should be risk-gated. The default policy may execute navigation and read-only state-revealing actions. Input-required, mutating, destructive, and external actions require explicit manifest allowlists and must remain local-first.
 
@@ -201,6 +201,8 @@ model_review_boundary
 ```
 
 The `model_review_boundary` signal must remain `not_enabled` with `external_evidence_transfer=false` until a separately approved model or vision review layer exists. Local release readiness is a review gate over the current evidence only; it does not authorize package publication, license changes, marketplace registration, npm publication, or evidence upload.
+
+For target reviews, `quality_signals.route_coverage` includes expected manifest route counts, visited route-viewport counts, skipped route counts, and route-budget-exceeded counts so agents can decide whether to raise the route budget, split a manifest, or rerun the review.
 
 ## MCP Adapter Contract
 

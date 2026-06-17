@@ -30,6 +30,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Prepare a CLI-first review platform that can later expose the same review core through an MCP stdio adapter without making MCP the required runtime.
 - Support evidence-backed UI review findings for browser health, layout integrity, interaction quality, accessibility basics, and mock fidelity.
 - Support generic target manifests so site review can cover local applications such as Control Centers without hard-coded product-specific branches.
+- Treat manifest `expectedRoutes` as reviewable local targets so known app routes can be covered even when route discovery cannot find them from anchors or navigation candidates.
 - Keep review findings developer-facing, reproducible, and tied to selectors, rectangles, routes, viewports, artifacts, confidence, severity, and reproduction steps.
 - Generate reusable target manifests so whole-application review can start from a URL without hand-writing the full manifest.
 - Provide action plans, implementation-focused fix candidates, and local heuristic advisory signals that help developers decide what to fix first.
@@ -99,6 +100,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Completed: `browser-debug review --url <url> --json` provides a single-URL review MVP with deterministic findings for browser health, horizontal overflow, clipped content, missing accessible names, empty renders, and local evidence completeness.
 - Completed: `browser-debug review --target <manifest> --json` extends review to a generic target manifest with `baseUrl`, seed routes, scope rules, viewport matrix, action policy, artifact settings, and execution budgets.
 - Completed: site review discovers routes from same-origin links and action candidates, then reports discovered, visited, skipped, failed, and expected-missing routes.
+- Completed: site review visits manifest `expectedRoutes` as explicit review targets and records route-budget skips when `budgets.maxRoutes` prevents full coverage.
 - Completed: review runs a viewport matrix and records route, viewport, and action coverage without depending on a specific application stack.
 - Completed: findings include `category`, `severity`, `confidence`, `selector`, `rect`, `evidence`, `artifacts`, and `repro` data.
 - Completed: findings include developer-facing enrichment fields such as `priority`, `impact`, `recommendation`, `fix_candidates`, and `implementation_notes`.
@@ -111,6 +113,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 ## Plugin and Dogfood Readiness Criteria
 
 - Completed: `target init` creates a manifest artifact that can be edited for applications with multiple routes.
+- Completed: edited manifests can add unlinked `expectedRoutes`, and target review will visit them within scope and budget.
 - Completed: target review can emit a Markdown report with action plan and local advisory sections.
 - Completed: Markdown reports include quality signal summaries so developers can triage local review output without reading raw JSON first.
 - Completed: MCP tool allowlists include target manifest initialization and target review without adding shell, cleanup, HTTP/socket, external upload, or profile-reuse tools.

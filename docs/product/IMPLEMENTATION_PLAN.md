@@ -239,6 +239,47 @@ Phase 9 completes the local implementation path for the five-step next-work plan
 - Completed: model/vision review remains a later approval-bound layer and is not part of deterministic gates.
 - Completed: no screenshots, DOM, console logs, network evidence, traces, reports, or source text leave the local process.
 
+### Phase 10: Manifest-Driven Dogfood Route Review
+
+Phase 10 completes the seven-step local dogfood readiness plan for real applications without adding target-specific runtime branches. It makes target manifests authoritative enough to review known application routes even when those routes are not discoverable from same-origin links during the first crawl. It remains local-first and does not add external upload, model/API calls, authentication automation, existing-profile reuse, HTTP/socket MCP transport, marketplace mutation, license changes, or npm publication.
+
+#### Phase 10a: Target URL Availability Boundary
+
+- Completed as workflow boundary: application URLs remain user-provided runtime inputs or local manifest data, not compiled runtime defaults.
+- Completed as workflow boundary: when no target URL is provided or listening, fixture-based browser smoke tests verify the generic route-review behavior.
+
+#### Phase 10b: Manifest Generation and Route Editing
+
+- Completed: `target init` remains the starting point for local manifests.
+- Completed: owners can add known routes to `expectedRoutes` after manifest generation.
+- Completed as boundary: expected route names, labels, and localhost ports stay in local manifests or ignored artifacts.
+
+#### Phase 10c: Expected Route Execution
+
+- Completed: target review now enqueues `expectedRoutes` as reviewable routes with source `expected_route`.
+- Completed: unlinked expected routes can be visited through the same viewport matrix as discovered routes.
+- Completed: out-of-scope or invalid expected routes still remain subject to manifest scope and URL validation.
+
+#### Phase 10d: Coverage and Budget Accounting
+
+- Completed: coverage output now includes `coverage.routes.expected`.
+- Completed: queued routes that cannot be visited because `budgets.maxRoutes` is exhausted are recorded in `coverage.routes.skipped` with `reason=route_budget_exceeded`.
+- Completed: target quality signals report expected manifest route counts and route-budget-exceeded counts.
+
+#### Phase 10e: Developer Triage
+
+- Completed: target reports and quality signals show when route budget prevents full review.
+- Completed: developers can raise route budgets or split manifests, then rerun the same target review command.
+
+#### Phase 10f: Re-Review Stability
+
+- Completed: fixture tests cover unlinked expected routes and route-budget skip behavior, allowing the same manifest workflow to be rerun after fixes.
+
+#### Phase 10g: Detection Gap Loop
+
+- Completed as workflow boundary: findings from real dogfood runs should be classified as target-app issues or generic CLI detection gaps.
+- Completed as boundary: new detection rules must remain generic and evidence-derived before being added to the runtime.
+
 ## Verification Method
 
 - `./tools/product-gate`
@@ -258,6 +299,7 @@ Phase 9 completes the local implementation path for the five-step next-work plan
 - Phase 7 MCP adapter checks should prove stdio/local-only behavior, tool allowlists, no shell tools, no cleanup tools, no HTTP/socket listener, schema-compatible responses, and no external upload by default.
 - Phase 8 checks cover target manifest generation, MCP target tools, plugin metadata validation, action plans, local review advisory, target Markdown reports, package dry-run file-set readiness, and local security boundaries.
 - Phase 9 checks cover local quality signals, heading hierarchy evidence, image alt findings, contrast findings, overlap findings, mobile target sizing, developer handoff, local release readiness, report summaries, and disabled model-review boundaries.
+- Phase 10 checks cover unlinked expected route execution, expected route coverage artifacts, route budget skip accounting, and target quality signal route-budget warnings.
 - Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, external listener creation, arbitrary shell execution, unapproved upload paths, and destructive cleanup commands.
 
 ## Recovery Path
