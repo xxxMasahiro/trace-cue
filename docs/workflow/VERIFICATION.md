@@ -31,7 +31,7 @@ From `/home/masahiro/projects/ai-driven-development-lesson`:
 
 ## Current Runtime Checks
 
-The current implementation includes command parser tests, deterministic JSON error tests, `doctor` tests, session/report/spec tests, redaction tests, and Playwright smoke tests for local file observation, screenshot/trace artifacts, and click actions. Manual local checks can use:
+The current implementation includes command parser tests, deterministic JSON error tests, `doctor` tests, session/report/spec tests, redaction tests, and Playwright smoke tests for local file observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, reports, and spec export. Manual local checks can use:
 
 ```bash
 node ./bin/browser-debug.js observe --url http://127.0.0.1:5173/ --screenshot --trace --timeout 15000 --json

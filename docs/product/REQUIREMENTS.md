@@ -62,7 +62,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - `observe --trace` writes a local Playwright trace artifact and warns that traces can contain page content.
 - `session start`, `act`, `report`, and `spec export` operate on local `.browser-debug/` session metadata.
 - Page text, console messages, URLs, action data, and generated reports are treated as untrusted data and pass through basic secret redaction.
-- Browser smoke tests verify local file observation and a click action without using external services.
+- Browser smoke tests verify local file observation, click actions, form controls, keyboard input, deterministic scroll, screenshots, reports, and spec export without using external services.
 
 ## Open Decisions
 

@@ -69,7 +69,7 @@
 - Implement one-shot `observe`. Completed with Playwright-backed ephemeral Chromium contexts.
 - Implement session start and simple actions. Completed for file-backed local session metadata and ephemeral action execution.
 - Implement artifact directory handling. Completed for sessions, observations, screenshots, traces, reports, and spec exports under `.browser-debug/`.
-- Add focused tests for command parsing, observation output, and safety boundaries. Completed with `npm test` and `npm run test:browser`.
+- Add focused tests for command parsing, observation output, action coverage, and safety boundaries. Completed with `npm test` and `npm run test:browser`.
 - Keep long-running browser supervision, authentication automation, and external upload for later approved phases.
 
 ### Phase 6: Release
@@ -86,7 +86,7 @@
 - lesson-side `product-scaffold-check` with this repository path.
 - lesson-side `product-repository-authority status` with this repository path.
 - `check_workflow_pair_sync.sh --repo <this-repo>`.
-- Current local runtime checks include command parser tests, JSON error tests, `doctor` tests, session/report/spec tests, redaction tests, Playwright browser smoke tests with screenshots and traces, Control Center observation, and aggregate product-gate execution.
+- Current local runtime checks include command parser tests, JSON error tests, `doctor` tests, session/report/spec tests, redaction tests, Playwright browser smoke tests with screenshots, traces, click/form/keyboard/scroll/wait actions, Control Center observation, and aggregate product-gate execution.
 - Later release work should add CI coverage, headed-mode regression checks, and release packaging checks.
 
 ## Recovery Path

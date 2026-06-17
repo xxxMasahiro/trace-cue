@@ -286,7 +286,13 @@ async function performPageAction(page, action, timeout) {
       await page.locator(required(action.selector, 'selector')).first().press(String(required(action.key, 'key')), { timeout });
       break;
     case 'scroll':
-      await page.mouse.wheel(Number(action.deltaX ?? 0), Number(action.deltaY ?? 600));
+      await page.evaluate(
+        ({ deltaX, deltaY }) => window.scrollBy(deltaX, deltaY),
+        {
+          deltaX: Number(action.deltaX ?? 0),
+          deltaY: Number(action.deltaY ?? 600)
+        }
+      );
       break;
     case 'wait':
       await page.waitForTimeout(Math.min(Number(action.ms ?? 1000), 10000));

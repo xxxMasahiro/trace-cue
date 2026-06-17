@@ -39,6 +39,7 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 - [x] Implemented `observe --trace` with local Playwright trace zip artifacts and trace-content warnings.
 - [x] Implemented `session start`, `session close`, simple `act`, `report`, and `spec export`.
 - [x] Added browser smoke tests for local file observation and click actions.
+- [x] Strengthened browser smoke coverage for form controls, keyboard input, deterministic scroll, wait actions, screenshots, reports, and spec export.
 - [x] Verified the running Dashboard Control Center at `http://127.0.0.1:5173/` with screenshot and trace capture.
 - [x] Confirmed `http://127.0.0.1:5174/` was not listening during verification.
 - [x] Re-ran product-local `./tools/product-gate`, `npm test`, `npm run test:browser`, and `git diff --check`.

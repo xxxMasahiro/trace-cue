@@ -50,10 +50,10 @@ Implemented behavior:
 - `observe --screenshot` writes a local screenshot artifact.
 - `observe --trace` writes a local Playwright trace zip and emits a warning because traces can contain page content.
 - `session start --url <url>` creates local session metadata and can attach the first observation.
-- `act --session <id> --action <json>` supports simple local actions such as `navigate`, `observe`, `screenshot`, `click`, `fill`, `select`, `press`, `scroll`, and `wait` using an ephemeral page visit.
+- `act --session <id> --action <json>` supports simple local actions such as `navigate`, `observe`, `screenshot`, `click`, `fill`, `select`, `press`, `scroll`, and `wait` using an ephemeral page visit. Scroll actions use deterministic page scrolling from the requested deltas.
 - `report --session <id>` writes a Markdown report.
 - `spec export --session <id>` writes a JSON action/spec export.
-- `npm test` runs deterministic no-browser tests, and `npm run test:browser` runs Playwright smoke tests.
+- `npm test` runs deterministic no-browser tests, and `npm run test:browser` runs Playwright smoke tests for observation, screenshots/traces, click actions, form controls, keyboard input, scroll, wait, reports, and spec export.
 
 The package is marked `private` and `UNLICENSED` until public release naming, licensing, CI, and npm publication are approved.
 

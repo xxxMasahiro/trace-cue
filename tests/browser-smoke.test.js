@@ -106,3 +106,97 @@ test('session action can click and observe the changed page', { skip: !runBrowse
   const observed = JSON.parse(await readFile(path.join(cwd, observation.path), 'utf8'));
   assert.match(observed.page.visible_text, /Clicked/);
 });
+
+test('session actions cover form controls and exported evidence', { skip: !runBrowserSmoke }, async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-actions-smoke-'));
+  await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
+  const fixture = path.join(cwd, 'fixture.html');
+  await writeFile(fixture, [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head><title>Browser Debug Action Smoke</title></head>',
+    '<body style="min-height: 2200px">',
+    '<h1>Action Smoke Page</h1>',
+    '<label>Name <input id="name" oninput="document.getElementById(\'name-result\').textContent = `Filled ${this.value}`"></label>',
+    '<p id="name-result">Name pending</p>',
+    '<label>Mode <select id="mode" onchange="document.getElementById(\'mode-result\').textContent = `Mode ${this.value}`"><option value="alpha">Alpha</option><option value="beta">Beta</option></select></label>',
+    '<p id="mode-result">Mode pending</p>',
+    '<label>Shortcut <input id="shortcut" onkeydown="document.getElementById(\'key-result\').textContent = `Key ${event.key}`"></label>',
+    '<p id="key-result">Key pending</p>',
+    '<p id="scroll-result">Scroll pending</p>',
+    '<script>window.addEventListener("scroll", () => { document.getElementById("scroll-result").textContent = `Scrolled ${window.scrollY > 0}`; });</script>',
+    '</body>',
+    '</html>'
+  ].join('\n'), 'utf8');
+
+  const started = await executeCli([
+    'session',
+    'start',
+    '--url',
+    `file://${fixture}`,
+    '--json'
+  ], { cwd });
+  assert.equal(started.exitCode, 0);
+  const sessionId = JSON.parse(started.stdout).data.session.id;
+
+  const filled = await runAction(cwd, sessionId, { type: 'fill', selector: '#name', value: 'Ada' });
+  assert.match(await observationText(cwd, filled), /Filled Ada/);
+
+  const selected = await runAction(cwd, sessionId, { type: 'select', selector: '#mode', value: 'beta' });
+  assert.match(await observationText(cwd, selected), /Mode beta/);
+
+  const pressed = await runAction(cwd, sessionId, { type: 'press', selector: '#shortcut', key: 'Enter' });
+  assert.match(await observationText(cwd, pressed), /Key Enter/);
+
+  const scrolled = await runAction(cwd, sessionId, { type: 'scroll', deltaY: 900 });
+  assert.match(await observationText(cwd, scrolled), /Scrolled true/);
+
+  const waited = await runAction(cwd, sessionId, { type: 'wait', ms: 25 });
+  assert.equal(JSON.parse(waited.stdout).data.action_result.type, 'wait');
+
+  const screenshot = await runAction(cwd, sessionId, { type: 'screenshot' });
+  const screenshotBody = JSON.parse(screenshot.stdout);
+  const screenshotArtifact = screenshotBody.artifacts.find((artifact) => artifact.type === 'screenshot');
+  assert.ok(screenshotArtifact);
+  await access(path.join(cwd, screenshotArtifact.path));
+
+  const reported = await executeCli(['report', '--session', sessionId, '--json'], { cwd });
+  assert.equal(reported.exitCode, 0);
+  const reportArtifact = JSON.parse(reported.stdout).artifacts.find((artifact) => artifact.type === 'report');
+  assert.ok(reportArtifact);
+  const report = await readFile(path.join(cwd, reportArtifact.path), 'utf8');
+  assert.match(report, /"type":"fill"/);
+  assert.match(report, /"type":"screenshot"/);
+
+  const exported = await executeCli(['spec', 'export', '--session', sessionId, '--json'], { cwd });
+  assert.equal(exported.exitCode, 0);
+  const specBody = JSON.parse(exported.stdout);
+  assert.deepEqual(
+    specBody.data.spec.steps.map((step) => step.action.type),
+    ['fill', 'select', 'press', 'scroll', 'wait', 'screenshot']
+  );
+  const specArtifact = specBody.artifacts.find((artifact) => artifact.type === 'spec');
+  assert.ok(specArtifact);
+  await access(path.join(cwd, specArtifact.path));
+});
+
+async function runAction(cwd, sessionId, action) {
+  const result = await executeCli([
+    'act',
+    '--session',
+    sessionId,
+    '--action',
+    JSON.stringify(action),
+    '--json'
+  ], { cwd });
+  assert.equal(result.exitCode, 0);
+  return result;
+}
+
+async function observationText(cwd, result) {
+  const body = JSON.parse(result.stdout);
+  const observation = body.artifacts.find((artifact) => artifact.type === 'observation');
+  assert.ok(observation);
+  const observed = JSON.parse(await readFile(path.join(cwd, observation.path), 'utf8'));
+  return observed.page.visible_text;
+}

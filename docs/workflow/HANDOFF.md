@@ -36,6 +36,7 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 - Playwright is installed as a runtime dependency.
 - `session start`, `session close`, simple `act`, `report`, and `spec export` are implemented with local file-backed session metadata.
 - `npm run test:browser` passed for local file observation and click action smoke coverage.
+- `npm run test:browser` now covers local file observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, reports, and spec export.
 - `observe --trace` is implemented and writes local Playwright trace zip artifacts with a page-content warning.
 - Dashboard Control Center `http://127.0.0.1:5173/` was observed successfully with screenshot and trace artifacts.
 - FrameCue Control Center `http://127.0.0.1:5174/` was not listening during verification.
@@ -43,7 +44,7 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 
 ## Next Step
 
-Ask for explicit approval before long-running browser supervision, authentication automation, external upload, existing-browser-profile reuse, credential storage, GitHub repository creation, remote setup, push, CI, or npm publication. If local runtime work continues, the next useful slice is headed/devtools regression coverage plus stronger action/spec coverage.
+Ask for explicit approval before long-running browser supervision, authentication automation, external upload, existing-browser-profile reuse, credential storage, GitHub repository creation, remote setup, push, CI, or npm publication. If local runtime work continues, the next useful slice is headed/devtools regression coverage.
 
 ## Restart Notes
 

@@ -14,7 +14,7 @@ The goal is to provide an agent-independent Playwright interface that can observ
 
 ## Current Status
 
-This repository has completed the Free Development scaffold, local Git initialization, Phase 2a package/runtime design, and the local MVP runtime slice. The current CLI supports `doctor`, deterministic JSON errors, Playwright-backed one-shot `observe`, local artifacts, session metadata, simple actions, reports, and spec export.
+This repository has completed the Free Development scaffold, local Git initialization, Phase 2a package/runtime design, and the local MVP runtime slice. The current CLI supports `doctor`, deterministic JSON errors, Playwright-backed one-shot `observe`, local artifacts, session metadata, simple actions, screenshots/traces, reports, and spec export.
 
 ## Local CLI
 
