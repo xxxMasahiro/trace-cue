@@ -33,6 +33,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Keep review findings developer-facing, reproducible, and tied to selectors, rectangles, routes, viewports, artifacts, confidence, severity, and reproduction steps.
 - Generate reusable target manifests so whole-application review can start from a URL without hand-writing the full manifest.
 - Provide action plans, implementation-focused fix candidates, and local heuristic advisory signals that help developers decide what to fix first.
+- Provide structured local quality signals for visual hierarchy, responsive layout, interaction affordance, accessibility structure, evidence completeness, local release readiness, and model-review boundaries.
 - Provide local plugin metadata so Codex can discover the CLI/MCP review workflow without making remote services mandatory.
 
 ## Non-Goals
@@ -89,7 +90,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - No-browser tests cover schema commands, review parsing, target manifest normalization, action risk classification, shell-safe action input, and MCP allowlisted tools.
 - Browser smoke tests cover deterministic review findings, mock metrics, target manifest review, route discovery, viewport execution, and coverage artifacts.
 - `target init --url <url> --json` writes a reusable local target manifest artifact for route and viewport review.
-- Review outputs include `action_plan` and `review_advisory` objects for developer handoff while keeping subjective or model-like judgment out of deterministic gates.
+- Review outputs include `action_plan`, `review_advisory`, and `quality_signals` objects for developer handoff while keeping subjective or model-like judgment out of deterministic gates.
 - The repository includes local plugin metadata, local MCP configuration, and a plugin-facing skill without adding marketplace registration, npm publication, external upload, credential handling, or HTTP/socket MCP transport.
 
 ## Review Platform Criteria
@@ -102,6 +103,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Completed: findings include `category`, `severity`, `confidence`, `selector`, `rect`, `evidence`, `artifacts`, and `repro` data.
 - Completed: findings include developer-facing enrichment fields such as `priority`, `impact`, `recommendation`, `fix_candidates`, and `implementation_notes`.
 - Completed: review results include `action_plan` and `review_advisory` to prioritize remediation and summarize local heuristic visual review signals.
+- Completed: review results include `quality_signals` for heading hierarchy, landmarks, image alt text, contrast, overlap, mobile target sizing, route coverage, evidence completeness, release readiness, developer handoff, and the disabled model-review boundary.
 - Completed: mock comparison is optional and conservative; dimension mismatches, missing baselines, or unsupported images produce `inconclusive` review metrics rather than false pass/fail certainty.
 - Completed: MCP support is implemented as a thin local stdio adapter over the same core, not as a separate product runtime, network service, or default dependency.
 - Completed: model or vision review remains outside deterministic local review checks and has not been implemented.
@@ -110,6 +112,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 
 - Completed: `target init` creates a manifest artifact that can be edited for applications with multiple routes.
 - Completed: target review can emit a Markdown report with action plan and local advisory sections.
+- Completed: Markdown reports include quality signal summaries so developers can triage local review output without reading raw JSON first.
 - Completed: MCP tool allowlists include target manifest initialization and target review without adding shell, cleanup, HTTP/socket, external upload, or profile-reuse tools.
 - Completed: `.codex-plugin/plugin.json`, `.mcp.json`, and `skills/browser-debug-review/SKILL.md` define a local plugin bundle over the existing CLI/MCP surface.
 - Completed: `templates/review-target-manifest.json` provides a reusable manifest starting point for local route and viewport review.

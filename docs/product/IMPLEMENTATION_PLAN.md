@@ -206,6 +206,39 @@ Phase 8 turns the Phase 7 review core into a more complete local workflow for wh
 - Completed: product structure, security, manifest, schema, test, README, and workflow docs are synchronized with Phase 8.
 - Completed as boundary: public package name, license, npm token handling, marketplace publication, and npm publication remain approval-bound.
 
+### Phase 9: Local Review Quality Signals and Dogfood Readiness
+
+Phase 9 completes the local implementation path for the five-step next-work plan: Control-surface dogfood workflow readiness, detection quality strengthening, developer improvement handoff, local release decision support, and model/vision review boundary preparation. It remains local-first and generic. It does not add target-specific Control Center runtime branches, external upload, model/API calls, OAuth, existing-profile reuse, HTTP/socket MCP transport, marketplace mutation, license changes, or npm publication.
+
+#### Phase 9a: Control-Surface Dogfood Workflow Readiness
+
+- Completed: target-manifest review output now includes `quality_signals` for route and viewport coverage.
+- Completed: target Markdown reports include quality signal summaries for developer triage.
+- Completed as boundary: specific Control Center URLs, labels, routes, and acceptance notes remain in manifests or local evidence, not runtime code.
+
+#### Phase 9b: Detection Quality Strengthening
+
+- Completed: layout evidence now captures headings, landmarks, images, visible overlap candidates, richer computed style data, and contrast inputs.
+- Completed: review findings now cover heading hierarchy, missing main landmarks, missing image alt text, low text contrast, overlapping visible elements, and mobile touch-target sizing using existing generic categories.
+- Completed: browser smoke coverage verifies alt text, contrast, overlap, quality signals, report summaries, and model-boundary metadata.
+
+#### Phase 9c: Developer Improvement Handoff
+
+- Completed: `quality_signals.developer_handoff` groups implementation focus, fix queue entries, implementation notes, and rerun guidance.
+- Completed: Markdown reports include a dedicated Quality Signals section.
+- Completed: existing action plans remain compatible and continue to carry prioritized findings and reproduction data.
+
+#### Phase 9d: Local Release Decision Support
+
+- Completed: `quality_signals.release_readiness` records the local evidence gate, blocker counts, owner-review need, and approval-bound release blockers.
+- Completed as boundary: local release readiness does not authorize package naming, license changes, npm publication, marketplace registration, or external evidence transfer.
+
+#### Phase 9e: Model/Vision Review Boundary Preparation
+
+- Completed: `quality_signals.model_review_boundary` explicitly reports model review as disabled, with `external_evidence_transfer=false`.
+- Completed: model/vision review remains a later approval-bound layer and is not part of deterministic gates.
+- Completed: no screenshots, DOM, console logs, network evidence, traces, reports, or source text leave the local process.
+
 ## Verification Method
 
 - `./tools/product-gate`
@@ -224,6 +257,7 @@ Phase 8 turns the Phase 7 review core into a more complete local workflow for wh
 - Phase 7 mock-comparison checks should prove exact fixture matches are within thresholds, shifted UI produces diff artifacts and metrics, masks suppress volatile regions, dimension mismatches are `inconclusive`, and stable fixtures produce stable findings across repeated runs.
 - Phase 7 MCP adapter checks should prove stdio/local-only behavior, tool allowlists, no shell tools, no cleanup tools, no HTTP/socket listener, schema-compatible responses, and no external upload by default.
 - Phase 8 checks cover target manifest generation, MCP target tools, plugin metadata validation, action plans, local review advisory, target Markdown reports, package dry-run file-set readiness, and local security boundaries.
+- Phase 9 checks cover local quality signals, heading hierarchy evidence, image alt findings, contrast findings, overlap findings, mobile target sizing, developer handoff, local release readiness, report summaries, and disabled model-review boundaries.
 - Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, external listener creation, arbitrary shell execution, unapproved upload paths, and destructive cleanup commands.
 
 ## Recovery Path

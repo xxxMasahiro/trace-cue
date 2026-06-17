@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Phase 5 local MVP runtime implementation is complete after Phase 1 and Phase 2a. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally. Phase 7 local review-platform implementation is complete for deterministic review, target manifests, route/viewport coverage, risk classification, conservative mock metrics, local stdio MCP adapter, schema registry, and package API/file-set readiness. Phase 8 local dogfood/plugin-readiness work is complete for target manifest generation, developer action plans, local heuristic review advisory data, target Markdown reports, plugin metadata, MCP target tools, reusable manifest template, and package file-set readiness without publication.
+Phase 5 local MVP runtime implementation is complete after Phase 1 and Phase 2a. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally. Phase 7 local review-platform implementation is complete for deterministic review, target manifests, route/viewport coverage, risk classification, conservative mock metrics, local stdio MCP adapter, schema registry, and package API/file-set readiness. Phase 8 local dogfood/plugin-readiness work is complete for target manifest generation, developer action plans, local heuristic review advisory data, target Markdown reports, plugin metadata, MCP target tools, reusable manifest template, and package file-set readiness without publication. Phase 9 local review-quality work is complete for quality signals, expanded local heuristics, developer handoff, local release decision support, and explicit model-review boundaries.
 
 This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and HANDOFF workflow-state pair synchronized whenever task state changes.
 
@@ -80,10 +80,15 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 - [x] Added local Codex plugin metadata, local MCP configuration, and plugin-facing review skill.
 - [x] Added reusable `templates/review-target-manifest.json`.
 - [x] Included plugin metadata, plugin skill, and target template in the local package dry-run file set without publishing.
+- [x] Added `quality_signals` to single-URL and target review output.
+- [x] Added generic quality signals for visual hierarchy, responsive layout, interaction affordance, accessibility structure, evidence completeness, developer handoff, release readiness, and model-review boundary state.
+- [x] Expanded local review evidence and findings for headings, landmarks, image alt text, contrast, visible overlaps, and mobile touch-target sizing.
+- [x] Added Quality Signals sections to Markdown review reports.
+- [x] Strengthened browser smoke coverage for quality signals, alt text, contrast, overlap, target route coverage summaries, local release readiness, and disabled model-review boundaries.
 
 ## Remaining Work
 
-No remaining local Phase 8 implementation work is currently planned.
+No remaining local Phase 9 implementation work is currently planned.
 
 ## Future Approval-Bound Work
 

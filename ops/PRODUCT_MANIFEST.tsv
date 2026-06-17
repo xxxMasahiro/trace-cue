@@ -17,7 +17,7 @@ product.daemon_worker	optional	all	all	src/daemon-worker.js	source	file_nonempty
 product.mcp_adapter	optional	all	all	src/mcp.js	source	file_nonempty	workflow	Local stdio MCP adapter over the CLI/core contract.
 product.page_evidence	optional	all	all	src/page-evidence.js	source	file_nonempty	workflow	Reusable page observation and event evidence helpers.
 product.observe	optional	all	all	src/observe.js	source	file_nonempty	workflow	Playwright-backed one-shot observation runtime.
-product.review	optional	all	all	src/review.js	source	file_nonempty	workflow	Playwright-backed deterministic review, target manifest, coverage, and mock metrics runtime.
+product.review	optional	all	all	src/review.js	source	file_nonempty	workflow	Playwright-backed deterministic review, quality signals, target manifest, coverage, and mock metrics runtime.
 product.schema_registry	optional	all	all	src/schema-registry.js	source	file_nonempty	workflow	Machine-readable schema registry for CLI and adapter contracts.
 product.sessions	optional	all	all	src/sessions.js	source	file_nonempty	workflow	Local session, action, report, and spec runtime.
 product.supervisor	optional	all	all	src/supervisor.js	source	file_nonempty	workflow	Process-scoped supervised ephemeral browser runtime.

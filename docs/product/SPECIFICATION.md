@@ -15,6 +15,7 @@ The Phase 2a design baseline uses Node.js 20 or newer, ESM modules, and a local 
 - Action layer: performs explicit actions such as click, fill, select, press, scroll, wait, navigate, screenshot, and trace capture.
 - Report layer: converts session evidence into issue reports and handoff notes.
 - Review core: converts normalized browser evidence into deterministic UI review findings.
+- Quality signal layer: summarizes local review evidence into visual hierarchy, responsive layout, interaction, accessibility, evidence completeness, release-readiness, and model-boundary signals.
 - Site review layer: discovers routes, runs viewport matrices, applies action risk policy, and emits coverage.
 - Schema layer: defines stable JSON contracts for envelopes, artifacts, target manifests, findings, reports, and adapter I/O.
 - Adapter layer: keeps CLI as the source of truth and later exposes the same core through an MCP stdio adapter.
@@ -74,7 +75,7 @@ Implemented behavior:
 - `review --url <url>` runs a single-URL deterministic local review, captures observation and layout evidence, optionally captures screenshots and mock metrics, writes review artifacts, and returns evidence-backed findings.
 - `review --target <manifest>` runs a manifest-driven site review with generic route discovery, viewport matrix execution, coverage artifacts, and aggregated findings.
 - `target init --url <url>` writes a reusable local target manifest artifact under `.browser-debug/targets/` with same-origin scope, seed route, viewport matrix, route budget, screenshot defaults, and safe local review boundaries.
-- Review results include `action_plan` and `review_advisory` objects. `action_plan` prioritizes findings, groups developer next actions, and reports a local release gate. `review_advisory` is a local heuristic signal that summarizes browser health, layout, accessibility, interaction, mock, and coverage concerns without claiming human or model aesthetic approval.
+- Review results include `action_plan`, `review_advisory`, and `quality_signals` objects. `action_plan` prioritizes findings, groups developer next actions, and reports a local release gate. `review_advisory` is a local heuristic signal that summarizes browser health, layout, accessibility, interaction, mock, and coverage concerns without claiming human or model aesthetic approval. `quality_signals` gives structured developer handoff data for visual hierarchy, responsive layout, interaction affordance, accessibility structure, evidence completeness, local release readiness, route coverage, and the disabled model-review boundary.
 - `schema list` and `schema get --name <schema>` expose machine-readable JSON contracts for envelopes, artifacts, findings, target manifests, review results, and MCP tool metadata.
 - `browser-debug-mcp` provides a local stdio MCP adapter with an allowlisted tool surface over the same CLI/core contracts, including target manifest initialization and target review.
 - `act --input -`, `supervise --input -`, `--action @file`, and `--actions @file` support shell-safe structured input while preserving inline JSON compatibility.
@@ -94,7 +95,7 @@ Implemented review components:
 
 - `playwright-runtime`: shared browser, context, page, action, screenshot, and trace execution.
 - `evidence-model`: normalized DOM, accessibility, bounding box, computed style, console, network, viewport, and artifact evidence.
-- `review-engine`: deterministic rules for browser health, layout integrity, interaction quality, accessibility basics, mock fidelity, and evidence quality.
+- `review-engine`: deterministic and bounded heuristic rules for browser health, layout integrity, interaction quality, accessibility basics, mock fidelity, evidence quality, heading hierarchy, landmarks, image alt text, contrast, overlap, and mobile target sizing.
 - `site-review`: target manifest loading, route discovery, viewport matrix execution, action risk policy, budgets, and coverage reporting.
 - `reporter`: JSON and Markdown issue reports with artifact references, reproduction steps, prioritized action plans, local heuristic advisory data, and implementation-focused fix candidates.
 - `schema`: machine-readable contracts for envelopes, findings, artifacts, target manifests, reports, and MCP tool I/O.
@@ -107,7 +108,7 @@ The review MVP supports:
 browser-debug review --url <url> --viewport <name-or-size> --screenshot --json
 ```
 
-It should produce the standard JSON envelope with `data.review`, `data.findings`, `data.metrics`, and `data.environment`, plus artifact descriptors. Findings should include:
+It should produce the standard JSON envelope with `data.review`, `data.findings`, `data.metrics`, `data.action_plan`, `data.review_advisory`, `data.quality_signals`, and `data.environment`, plus artifact descriptors. Findings should include:
 
 ```text
 id
@@ -134,9 +135,9 @@ owner_decision_required
 The initial deterministic categories are:
 
 - `browser_health`: console errors, page errors, failed requests, navigation failures, and timeout warnings.
-- `layout_integrity`: empty render, horizontal overflow, clipped text, overlapping visible controls, zero-size important elements, and off-viewport primary controls.
-- `interaction_quality`: actionability, focus visibility, hover/focus evidence, target size, disabled state, and basic keyboard path signals.
-- `accessibility_basics`: missing accessible names, unlabeled form controls, duplicate IDs, and basic ARIA/name issues.
+- `layout_integrity`: empty render, horizontal overflow, clipped text, overlapping visible elements, zero-size important elements, and off-viewport primary controls.
+- `interaction_quality`: actionability, focus visibility, hover/focus evidence, target size, mobile touch-target sizing, disabled state, and basic keyboard path signals.
+- `accessibility_basics`: missing accessible names, unlabeled form controls, duplicate IDs, heading hierarchy issues, missing main landmarks, missing image alt text, low text contrast, and basic ARIA/name issues.
 - `mock_fidelity`: optional screenshot-to-mock metrics, masked regions, and conservative inconclusive states.
 - `evidence_quality`: missing screenshots, unstable captures, missing environment metadata, and review limitations.
 
@@ -171,6 +172,35 @@ Route discovery is generic and uses same-origin anchors and navigation action ca
 Action exploration should be risk-gated. The default policy may execute navigation and read-only state-revealing actions. Input-required, mutating, destructive, and external actions require explicit manifest allowlists and must remain local-first.
 
 Mock comparison is optional. The current local implementation compares PNG dimensions, hashes, and byte-difference metrics without adding image-processing dependencies. If actual and mock dimensions differ, the result is `inconclusive` rather than a false pass/fail claim. Pixel heatmaps and region crops remain later compatible enhancements.
+
+## Local Quality Signals Contract
+
+`quality_signals` is an additive review output object. It is designed for developer triage and agent handoff, not final product approval. Single-URL review includes:
+
+```text
+visual_hierarchy
+responsive_layout
+interaction_affordance
+accessibility_structure
+evidence_completeness
+developer_handoff
+release_readiness
+model_review_boundary
+```
+
+Target-manifest review includes:
+
+```text
+route_coverage
+viewport_coverage
+finding_summary
+evidence_completeness
+developer_handoff
+release_readiness
+model_review_boundary
+```
+
+The `model_review_boundary` signal must remain `not_enabled` with `external_evidence_transfer=false` until a separately approved model or vision review layer exists. Local release readiness is a review gate over the current evidence only; it does not authorize package publication, license changes, marketplace registration, npm publication, or evidence upload.
 
 ## MCP Adapter Contract
 
