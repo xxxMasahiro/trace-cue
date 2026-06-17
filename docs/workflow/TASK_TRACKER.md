@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Phase 5 local MVP runtime implementation is complete after Phase 1 and Phase 2a. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally.
+Phase 5 local MVP runtime implementation is complete after Phase 1 and Phase 2a. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally. Phase 7 local review-platform implementation is complete for deterministic review, target manifests, route/viewport coverage, risk classification, conservative mock metrics, local stdio MCP adapter, schema registry, and package API/file-set readiness.
 
 This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and HANDOFF workflow-state pair synchronized whenever task state changes.
 
@@ -60,20 +60,34 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 - [x] Confirmed `http://127.0.0.1:5174/` was not listening during verification.
 - [x] Re-ran product-local `./tools/product-gate`, `npm test`, `npm run test:browser`, and `git diff --check`.
 - [x] Re-ran lesson-side product scaffold, product repository authority, and workflow-pair checks successfully.
+- [x] Recorded the pre-implementation review-platform direction in developer memory after xhigh sub-agent review.
+- [x] Defined the Phase 7 implementation plan for review MVP, target manifests, site review, route discovery, viewport matrices, risk-gated actions, mock comparison, local MCP adapter, optional model review, and public API readiness.
+- [x] Implemented machine-readable schemas and `schema list` / `schema get`.
+- [x] Implemented `browser-debug review --url <url> --json` with local observation, layout, screenshot, review, report, and mock-metric artifacts.
+- [x] Implemented `browser-debug review --target <manifest> --json` with target manifest loading, route discovery, viewport execution, and coverage artifacts.
+- [x] Implemented action candidate risk classification for navigation, state-revealing, input-required, mutating, destructive, and external actions.
+- [x] Implemented shell-safe structured input for `--input -`, `--target @file`, `--actions @file`, and `--action @file`.
+- [x] Implemented conservative local mock metrics under `.browser-debug/diffs/`.
+- [x] Implemented local stdio MCP adapter entrypoint `browser-debug-mcp` and `browser-debug mcp serve` metadata.
+- [x] Added public local package API exports and schema package files while keeping the package private and unreleased.
+- [x] Strengthened product structure, security, architecture, CLI, and browser smoke tests for review/MCP boundaries.
+- [x] Synchronized requirements, specification, implementation plan, security, verification, task tracker, handoff, manifests, README, and changelog with the Phase 7 implementation.
 
 ## Remaining Work
 
-No remaining local MVP implementation work is currently planned.
+No remaining local Phase 7 implementation work is currently planned.
 
 ## Future Approval-Bound Work
 
+- [ ] If approved later, integrate model/API review or send any review evidence outside the local process.
+- [ ] If approved later, add HTTP/socket MCP server mode or remote control channels.
 - [ ] If approved later, run real headed visual regression checks in an environment with a display.
 - [ ] If approved later, choose the public package name and license.
 - [ ] If approved later, publish the npm package after release checklist, CI, package name, license, and credential handling are complete.
 
 ## Next Step
 
-Ask for explicit approval before trace capture expansion, authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, public package naming, license changes, or npm publication.
+Ask for explicit approval before model/API review, evidence leaving the local process, HTTP/socket MCP server mode, authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, public package naming, license changes, npm publication, or destructive cleanup.
 
 ## Stop Conditions
 
@@ -82,3 +96,5 @@ Ask for explicit approval before trace capture expansion, authentication automat
 - npm publish is requested before CI and release planning exist.
 - Any secret, cookie, storage state, or credential-like data appears in repository files.
 - A design change would require existing browser profile reuse, credential storage, OAuth, webhooks, external upload, or arbitrary shell execution without a security plan and approval.
+- Review-platform runtime code introduces Dashboard Control Center or FrameCue Control Center-specific branches instead of generic target manifests.
+- MCP adapter work introduces HTTP/socket listeners, arbitrary shell execution, cleanup tools, external upload, or persistent storage without explicit approval and security documentation.

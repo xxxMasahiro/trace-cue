@@ -1,40 +1,120 @@
 # DEVELOPER_MEMORY.md
 
-## Standing Decisions
+## Pre-Implementation Proposal Record
 
-- The parent repository `ai-driven-development-lesson` and its root `AGENTS.MD` are the highest charter for parent-managed work.
-- This repository's `AGENTS.MD` is the product-local charter for `browser-debug-cli`; it cannot weaken or override the parent charter.
-- All future development work in this repository must be conducted in English.
-- `AGENTS.MD` is the canonical agent entry point.
-- Do not create legacy `AGENT.md`.
-- Keep canonical product documents under `docs/product/`.
-- Keep canonical workflow documents under `docs/workflow/`.
-- Keep product memory under `docs/memory/`.
-- npm publication, dependency installation, external communication, and destructive operations require explicit approval. Public GitHub repository creation, remote setup, push, and remote CI were completed after developer approval.
+This work was handled as the `proposal` phase of `repository-development-workflow`.
+The local skill file, the parent `AGENTS.MD`, the product-local `AGENTS.MD`,
+and the product requirements, specification, implementation plan, task tracker,
+and handoff were reviewed. No files were changed during the proposal review.
 
-## Current Development Boundary
+Five xhigh sub-agents were used to review the proposal from separate angles:
+architecture, visual review feasibility, security, full Control Center validation,
+and ecosystem/API design.
 
-Phase 5 local MVP runtime is implemented. Local Git is initialized, the initial scaffold commit exists, package code exists, Playwright-backed observation and local daemon supervision work locally, the public GitHub repository exists at `https://github.com/xxxMasahiro/browser-debug-cli`, local `main` tracks `origin/main`, GitHub Actions `main` CI has passed, and product-gate evidence has been recorded locally. No npm publication, OAuth/login automation, external upload, existing-browser-profile reuse, or credential storage has been created.
+## Coordinated Conclusion
 
-## Phase 2a Package/Runtime Design
+The direction is valid. The correct framing is not to build Playwright itself.
+The correct framing is to build a Playwright-powered review and evidence core
+with a CLI adapter and an MCP adapter on top of the same core.
 
-Phase 2a records the package/runtime design without dependency installation, browser launch, GitHub repository creation, CI, npm publication, or runtime implementation.
+The goal should be defined as follows:
 
-Current design baseline:
+`browser-debug-cli` should become a CLI-first browser validation platform that
+can also expose the same core through MCP. It should crawl all Control Center
+pages, collect DOM, CSS, JavaScript, console, network, screenshot, trace, and
+mock-difference evidence, then report issues and improvement suggestions to
+developers.
 
-- Working CLI binary: `browser-debug`.
-- Runtime platform: Node.js 20 or newer, ESM modules.
-- Default behavior: local-first, headless, artifact-safe, ephemeral browser context.
-- First implementation slice: `doctor`, command parsing, deterministic JSON errors, and focused tests.
-- First Playwright slice: one-shot `observe --url <url> --json`.
-- Artifact root: ignored `.browser-debug/`.
-- Browser supervision: process-scoped and opt-in after one-shot observation is stable.
+The claim that the tool includes MCP with no disadvantages should be softened.
+MCP's value is ecosystem compatibility. The strongest design is to keep the CLI
+as the source of truth and make MCP a thin stdio adapter over the same core.
 
-## Local MVP Runtime
+## Adopted Direction
 
-- Runtime dependency: `playwright`.
-- Implemented commands: `doctor`, `observe`, `supervise`, `daemon start`, `daemon status`, `daemon stop`, `session start`, `session close`, `act`, `report`, and `spec export`.
-- Artifact root: ignored `.browser-debug/`.
-- Default browser behavior: ephemeral Chromium context per observation/action.
-- Verification: `npm test`, `npm run test:browser`, `npm run test:pack`, `./tools/product-gate`, and local Dashboard Control Center observation. Coverage includes headed/devtools launch-mode checks, architecture regressions for generic runtime boundaries, shared helpers, and local daemon boundaries, observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, supervised ordered actions, daemon start/status/stop, reports, spec export, and local package dry-run verification.
-- Release readiness: `CHANGELOG.md`, `.github/workflows/ci.yml`, `ops/CI_MANIFEST.tsv`, and `docs/workflow/RELEASE.md` exist, public GitHub publication and remote `main` CI are complete, and public package naming, license changes, and npm publication remain approval-bound.
+- Build a shared core and keep CLI/MCP as adapters.
+- Start with deterministic evidence collection and rule-based findings, not
+  broad subjective AI judgment.
+- Make `browser-debug review --target <manifest> --json` the central command.
+- Avoid hard-coded branches for ports `5173` and `5174`; use target manifests.
+- Give every finding separate `severity` and `confidence` values.
+- Describe the product as an automated first-pass review partner rather than a
+  full replacement for human product judgment.
+- Keep model or vision review as a later explicit opt-in feature.
+
+## Main Architecture
+
+- `playwright-runtime`: owns browser, page, context, action, screenshot, and
+  trace behavior.
+- `evidence-model`: normalizes DOM, accessibility, bounding box, computed style,
+  console, network, and viewport evidence.
+- `review-engine`: detects overflow, clipping, overlap, missing labels, console
+  errors, failed requests, mock differences, and related issues.
+- `site-review`: owns route discovery, viewport matrix execution, action risk
+  policy, and coverage.
+- `reporter`: emits `issues.json`, `issues.md`, screenshots, diffs, and trace
+  references.
+- `schema`: defines JSON Schema for envelopes, findings, artifacts, target
+  manifests, and MCP tool input/output.
+- `cli-adapter`: exposes `browser-debug review`.
+- `mcp-adapter`: exposes `browser-debug-mcp` or `browser-debug mcp serve`, with
+  the initial adapter limited to stdio/local behavior.
+
+## Implementation Roadmap
+
+1. Specification and document sync.
+   Update requirements, specification, implementation plan, security,
+   verification, task tracker, and handoff to describe the review engine, target
+   manifests, MCP adapter, schemas, and security boundaries.
+
+2. Review MVP.
+   Implement `browser-debug review --url ... --viewport ... --screenshot --json`
+   for one URL. Detect console errors, failed requests, horizontal overflow,
+   clipped text, missing labels, and empty renders as evidence-backed findings.
+
+3. Target Manifest and Site Review.
+   Add a manifest with `baseUrl`, seed routes, scope, viewport matrix, action
+   policy, and budgets. Control Center targets should be example manifests, not
+   runtime-specific code paths.
+
+4. Route Discovery.
+   Build a route graph from anchors, hash routes, history navigation, visible
+   navigation, and optional app manifests. Report visited, skipped, failed, and
+   expected-but-missing routes.
+
+5. Mock Comparison.
+   Add `--mock`, `--mask`, and `--region`. Produce pixel and region diffs.
+   Dimension mismatches and unstable renders should return `inconclusive`.
+
+6. MCP Adapter.
+   Expose the same core through a thin local stdio adapter. Initial tools should
+   focus on observe, review, run, report, and schema.
+
+7. Model or Vision Review.
+   Keep model review fully opt-in. Explicitly disclose which evidence classes
+   would be sent outside the local process. Trace, raw DOM, screenshot, and
+   source sharing remain approval-bound.
+
+## Important Risks
+
+- Model review is a data-exfiltration boundary. Screenshots, DOM, traces,
+  console logs, and network evidence can contain secrets.
+- MCP expands the control surface. HTTP or socket listeners should not be part
+  of the initial adapter.
+- The current `session act` behavior is closer to evidence history than a true
+  persistent browser session; live review sessions need clearer semantics.
+- Before npm publication, the package file set must avoid shipping internal
+  workflow documents or one-off Control Center context.
+- Inline JSON action input is fragile for shell usage. Add `--actions @file`
+  and `--input -`.
+
+## Acceptance Criteria
+
+- CLI and MCP call the same core and return equivalent schemas.
+- `review` findings include `category`, `severity`, `confidence`, `selector`,
+  `rect`, `evidence`, `artifacts`, and `repro` data.
+- Route, viewport, and action coverage are emitted as JSON and Markdown.
+- Evidence remains under ignored `.browser-debug/` paths.
+- Runtime code does not contain target-specific branches for the two Control
+  Centers.
+- Model/API calls, profile reuse, OAuth, external upload, and destructive
+  cleanup remain opt-in or approval-bound.

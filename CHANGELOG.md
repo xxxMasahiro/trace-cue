@@ -21,7 +21,14 @@ All notable local development changes are tracked here before public release.
 - Added explicit JSON schema-versioning and manual artifact-retention policy metadata to `doctor`.
 - Created the public GitHub repository, synchronized `main`, and confirmed remote `main` CI.
 - Updated GitHub Actions checkout and Node setup actions to v5.
+- Added Phase 7 deterministic `review` command for single-URL browser review with local observation, layout, screenshot, report, and mock-metric artifacts.
+- Added target-manifest site review with generic route discovery, viewport execution, coverage artifacts, and bounded findings.
+- Added machine-readable schema files plus `schema list` and `schema get`.
+- Added shell-safe structured input for stdin and `@file` action/target inputs.
+- Added local stdio MCP adapter entrypoint `browser-debug-mcp` with an allowlisted tool surface over the same CLI/core contracts.
+- Added public local package API exports and excluded internal product documents from the package file set while keeping the package private.
+- Strengthened structure, security, architecture, no-browser, and browser smoke checks for review and MCP boundaries.
 
 ## Release Status
 
-No public package has been released. Public GitHub repository creation, remote CI execution, package naming, license selection, npm authentication, and npm publication remain explicit release blockers.
+No public package has been released. Package naming, license selection, npm authentication, npm publication, model/API review, evidence leaving the local process, HTTP/socket MCP server mode, OAuth/login automation, and external upload remain explicit release blockers.

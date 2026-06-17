@@ -2,7 +2,7 @@
 
 ## Current State
 
-Browser Debug CLI has completed Phase 1, Phase 2a package/runtime design verification, and the Phase 5 local MVP runtime slice. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally.
+Browser Debug CLI has completed Phase 1, Phase 2a package/runtime design verification, the Phase 5 local MVP runtime slice, and the Phase 7 local review-platform implementation. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally.
 
 This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and TASK_TRACKER workflow-state pair synchronized whenever task state changes.
 
@@ -58,10 +58,21 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 - Dashboard Control Center `http://127.0.0.1:5173/` was observed successfully with screenshot and trace artifacts.
 - FrameCue Control Center `http://127.0.0.1:5174/` was not listening during verification.
 - Final local verification passed with `npm test`, `npm run test:browser`, `./tools/product-gate`, `git diff --check`, lesson-side product scaffold check, lesson-side product repository authority status, and lesson-side workflow-pair sync check.
+- The pre-implementation review-platform direction was recorded in developer memory after xhigh sub-agent review.
+- The accepted framing is a Playwright-powered review and evidence core with CLI as the source of truth and a future thin local MCP stdio adapter over the same core.
+- The Phase 7 plan covers review schema contracts, single-URL review MVP, target manifests, site review, route discovery, viewport matrices, risk-gated action exploration, optional mock comparison, local MCP adapter, optional model or vision review, and public API/package readiness.
+- Phase 7 local implementation is complete for machine-readable schemas, `schema list`, `schema get`, `review --url`, `review --target`, route discovery, viewport execution, coverage artifacts, action risk classification, shell-safe structured input, conservative mock metrics, local stdio MCP adapter, package API exports, and package file-set readiness.
+- `browser-debug review --url <url>` writes local observation, layout, screenshot, review, report, and optional mock metric artifacts.
+- `browser-debug review --target <manifest>` uses generic target manifests and writes local coverage and aggregate review artifacts.
+- `browser-debug-mcp` is a local stdio adapter with an allowlisted tool surface; it does not add HTTP/socket listeners, arbitrary shell, cleanup tools, external upload, profile reuse, OAuth, or credential handling.
+- The package remains private and `UNLICENSED`; no npm publication or release promotion was performed.
+- Review runtime code must remain generic. Dashboard Control Center and FrameCue Control Center coverage should use manifests, fixtures, or acceptance evidence rather than target-specific runtime branches.
+- Review findings should include category, severity, confidence, selector, rectangle, evidence, artifacts, and reproduction data.
+- Model/API review, evidence leaving the local process, HTTP/socket MCP server mode, persistent browser profile reuse, authentication automation, external upload, arbitrary shell execution, destructive cleanup, npm publication, package naming, and license changes remain approval-bound.
 
 ## Next Step
 
-Ask for explicit approval before authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, license change, public package naming, or npm publication. No remaining local MVP implementation work is currently planned; the next useful non-code check is real headed visual verification in an environment with a display.
+No remaining local Phase 7 implementation work is currently planned. Ask for explicit approval before authentication automation, external daemon control channels, external upload, evidence leaving the local process, model/API review, HTTP/socket MCP server mode, existing-browser-profile reuse, credential storage, license change, public package naming, npm publication, or destructive cleanup.
 
 ## Restart Notes
 
@@ -69,6 +80,10 @@ Ask for explicit approval before authentication automation, external daemon cont
 - Keep `.browser-debug/`, screenshots, traces, storage state, cookies, credentials, and secret-like data out of committed files.
 - Do not reuse existing browser profiles, persist storage state, automate OAuth/login flows, or upload artifacts without a security plan and approval.
 - If product workflow commands need lesson context, use the product path explicitly to avoid mixing this repository with `task-tracker-repository`.
+- Keep Phase 7 review code generic and manifest-driven.
+- Keep MCP as a local stdio adapter until a separate approved design changes the transport.
+- Keep model or vision review out of deterministic local gates.
+- Keep target-specific Control Center details in manifests, fixtures, or acceptance evidence.
 
 ## Stop Conditions
 
@@ -77,3 +92,5 @@ Ask for explicit approval before authentication automation, external daemon cont
 - Any committed secret-like data.
 - External service, OAuth, webhook, browser profile reuse, or artifact upload requested without a security plan and approval.
 - Any design path that requires arbitrary shell execution or persistent credential storage.
+- Review platform code adds app-specific runtime branches for individual Control Centers.
+- MCP adapter code adds HTTP/socket listeners, external upload, arbitrary shell execution, cleanup tools, or persistent storage without explicit approval.

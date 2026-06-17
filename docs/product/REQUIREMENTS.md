@@ -27,6 +27,10 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Keep secrets, cookies, storage state, and existing browser profiles out of committed artifacts.
 - Keep the design agent-independent: Codex, other agents, scripts, or humans should all be able to use the same CLI.
 - Prepare for OSS distribution through local Git, GitHub publication with `gh`, CI, and npm packaging in later phases.
+- Prepare a CLI-first review platform that can later expose the same review core through an MCP stdio adapter without making MCP the required runtime.
+- Support evidence-backed UI review findings for browser health, layout integrity, interaction quality, accessibility basics, and mock fidelity.
+- Support generic target manifests so site review can cover local applications such as Control Centers without hard-coded product-specific branches.
+- Keep review findings developer-facing, reproducible, and tied to selectors, rectangles, routes, viewports, artifacts, confidence, severity, and reproduction steps.
 
 ## Non-Goals
 
@@ -36,6 +40,10 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Do not upload artifacts to external services by default.
 - Do not add runtime features that cross into authentication, profile reuse, external upload, credential handling, or external daemon control channels without explicit implementation approval and security documentation.
 - Do not create public repositories, remotes, remote CI execution, or npm publication paths as part of package/runtime design.
+- Do not reimplement Playwright or clone the full Playwright MCP tool surface.
+- Do not claim subjective visual judgment as deterministic proof; subjective or model-assisted review findings must remain advisory unless backed by deterministic evidence and owner acceptance.
+- Do not hard-code Dashboard Control Center, FrameCue Control Center, localhost ports, route names, or product-specific UI labels into the generic runtime.
+- Do not send screenshots, traces, raw DOM, source text, console logs, network evidence, or reports to a model or external service without explicit opt-in and security documentation.
 
 ## Success Criteria
 
@@ -72,6 +80,22 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Local package dry-run verification confirms the npm package file set without publishing.
 - Local CI manifest checks validate the GitHub Actions workflow definition without remote execution.
 - Release readiness notes and `npm run release:check` track the unreleased status, public-release blockers, and no-publish boundaries.
+- The review platform adds `review`, `schema list`, `schema get`, and local stdio MCP adapter surfaces while keeping existing commands compatible.
+- Review artifacts are written under ignored `.browser-debug/` directories for reviews, layouts, diffs, and coverage.
+- No-browser tests cover schema commands, review parsing, target manifest normalization, action risk classification, shell-safe action input, and MCP allowlisted tools.
+- Browser smoke tests cover deterministic review findings, mock metrics, target manifest review, route discovery, viewport execution, and coverage artifacts.
+
+## Review Platform Criteria
+
+- Completed: the review platform uses the existing Playwright runtime as the browser automation layer and adds a reusable review core above observation, action, artifact, and reporting primitives.
+- Completed: `browser-debug review --url <url> --json` provides a single-URL review MVP with deterministic findings for browser health, horizontal overflow, clipped content, missing accessible names, empty renders, and local evidence completeness.
+- Completed: `browser-debug review --target <manifest> --json` extends review to a generic target manifest with `baseUrl`, seed routes, scope rules, viewport matrix, action policy, artifact settings, and execution budgets.
+- Completed: site review discovers routes from same-origin links and action candidates, then reports discovered, visited, skipped, failed, and expected-missing routes.
+- Completed: review runs a viewport matrix and records route, viewport, and action coverage without depending on a specific application stack.
+- Completed: findings include `category`, `severity`, `confidence`, `selector`, `rect`, `evidence`, `artifacts`, and `repro` data.
+- Completed: mock comparison is optional and conservative; dimension mismatches, missing baselines, or unsupported images produce `inconclusive` review metrics rather than false pass/fail certainty.
+- Completed: MCP support is implemented as a thin local stdio adapter over the same core, not as a separate product runtime, network service, or default dependency.
+- Completed: model or vision review remains outside deterministic local review checks and has not been implemented.
 
 ## Closed Local Decisions
 

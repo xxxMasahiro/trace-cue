@@ -16,6 +16,9 @@ Browser Debug CLI is local-first. It should operate on developer-approved URLs a
 - Keep browser supervision opt-in, process-scoped, and ephemeral.
 - Keep background daemon supervision opt-in, local-only, ephemeral, metadata-backed, and stopped through local process signals.
 - Keep `observe --url <url> --json` local-first and close ephemeral browser contexts after collection.
+- Keep review platform behavior local-first and evidence-path based by default.
+- Keep MCP compatibility as a local stdio adapter over explicit core operations unless a later approved design adds another transport.
+- Keep model or vision review disabled by default and label any future model output as advisory untrusted data.
 
 ## Approval Required
 
@@ -27,9 +30,31 @@ Browser Debug CLI is local-first. It should operate on developer-approved URLs a
 - Network-dependent security audits.
 - Remote deletion or package publication.
 - Browser profile reuse, persistent session storage, arbitrary shell execution, or destructive artifact cleanup.
+- Model or API review integration.
+- Sending screenshots, traces, raw DOM, source text, console logs, network evidence, or reports outside the local process.
+- HTTP or socket MCP server mode.
+- Remote browser control channels.
+- Any action policy that executes input-required, mutating, destructive, or external actions without an explicit target manifest allowlist.
 
 ## Current Runtime Status
 
-The local MVP runtime launches Playwright Chromium only for developer-provided `http`, `https`, or `file` URLs. It uses ephemeral contexts, writes ignored local artifacts, and closes browser contexts after each observation, action, process-scoped supervised run, or stopped daemon run. The local daemon uses a detached worker process, ignored metadata under `.browser-debug/daemons/`, and local process signals only. It does not read an existing browser profile, persist storage state, automate login, upload artifacts, store credentials, expose an HTTP/socket control channel, or contact external services beyond the developer-provided page URL.
+The local runtime launches Playwright Chromium only for developer-provided `http`, `https`, or `file` URLs. It uses ephemeral contexts, writes ignored local artifacts, and closes browser contexts after each observation, action, review, process-scoped supervised run, or stopped daemon run. The local daemon uses a detached worker process, ignored metadata under `.browser-debug/daemons/`, and local process signals only. The review platform writes local review, layout, screenshot, mock metric, coverage, and report artifacts under `.browser-debug/`. The MCP adapter is local stdio-only and exposes an allowlisted tool surface. The runtime does not read an existing browser profile, persist storage state, automate login, upload artifacts, store credentials, expose an HTTP/socket control channel, execute arbitrary shell commands, or contact external services beyond the developer-provided page URL.
 
 Current redaction is a defensive baseline for common secret-like strings and sensitive URL parameters; page content and artifacts remain untrusted data and should not be treated as sanitized proof of secrecy. Trace zip files can contain raw page content and must remain local under ignored `.browser-debug/` paths.
+
+## Review Platform Security Boundaries
+
+The review platform preserves the current local-first security model while expanding evidence collection. Review findings, screenshots, layout snapshots, mock metrics, console data, network summaries, source snippets, model suggestions, and generated reports remain untrusted data.
+
+The review platform must:
+
+- Store review artifacts only under ignored `.browser-debug/` paths by default.
+- Reference screenshots, traces, diffs, and reports by local artifact path instead of inlining large raw payloads into terminal output.
+- Separate deterministic findings from heuristic or model-advisory findings.
+- Report missing baselines, unstable screenshots, and mock dimension mismatches as `inconclusive`.
+- Use target manifest scope, route budgets, and action policy to prevent unintended browsing or destructive interaction.
+- Default to same-origin route discovery for site review.
+- Execute only navigation and read-only state-revealing actions unless the target manifest explicitly allows broader action classes.
+- Keep arbitrary shell execution, external upload, persistent browser profile reuse, persistent storage state, OAuth, webhook handling, and credential storage out of the review MVP.
+
+Security tests block unapproved use of persistent browser profiles, storage-state persistence, HTTP/socket listeners, arbitrary shell execution, external upload paths, and destructive cleanup commands.

@@ -14,6 +14,10 @@ The Phase 2a design baseline uses Node.js 20 or newer, ESM modules, and a local 
 - Observation layer: summarizes URL, title, accessibility tree, visible text, form controls, action candidates, console errors, failed requests, screenshots, and selected metadata.
 - Action layer: performs explicit actions such as click, fill, select, press, scroll, wait, navigate, screenshot, and trace capture.
 - Report layer: converts session evidence into issue reports and handoff notes.
+- Review core: converts normalized browser evidence into deterministic UI review findings.
+- Site review layer: discovers routes, runs viewport matrices, applies action risk policy, and emits coverage.
+- Schema layer: defines stable JSON contracts for envelopes, artifacts, target manifests, findings, reports, and adapter I/O.
+- Adapter layer: keeps CLI as the source of truth and later exposes the same core through an MCP stdio adapter.
 
 ## Planned CLI Surface
 
@@ -31,6 +35,11 @@ browser-debug daemon stop --daemon <id> --json
 browser-debug act --session <id> --action <json>
 browser-debug report --session <id>
 browser-debug spec export --session <id>
+browser-debug review --url <url> --json
+browser-debug review --target <manifest> --json
+browser-debug schema list --json
+browser-debug schema get --name <schema> --json
+browser-debug mcp serve
 ```
 
 The MVP implementation order is:
@@ -61,6 +70,11 @@ Implemented behavior:
 - `act --session <id> --action <json>` supports simple local actions such as `navigate`, `observe`, `screenshot`, `click`, `fill`, `select`, `press`, `scroll`, and `wait` using an ephemeral page visit. Scroll actions use deterministic page scrolling from the requested deltas.
 - `report --session <id>` writes a Markdown report.
 - `spec export --session <id>` writes a JSON action/spec export.
+- `review --url <url>` runs a single-URL deterministic local review, captures observation and layout evidence, optionally captures screenshots and mock metrics, writes review artifacts, and returns evidence-backed findings.
+- `review --target <manifest>` runs a manifest-driven site review with generic route discovery, viewport matrix execution, coverage artifacts, and aggregated findings.
+- `schema list` and `schema get --name <schema>` expose machine-readable JSON contracts for envelopes, artifacts, findings, target manifests, review results, and MCP tool metadata.
+- `browser-debug-mcp` provides a local stdio MCP adapter with an allowlisted tool surface over the same CLI/core contracts.
+- `act --input -`, `supervise --input -`, `--action @file`, and `--actions @file` support shell-safe structured input while preserving inline JSON compatibility.
 - `npm test` runs deterministic no-browser tests, including headed/devtools launch-mode regression through an injected Playwright browser type and architecture regressions for generic runtime boundaries, shared page evidence helpers, local daemon boundaries, and local Node CLI packaging. `npm run test:browser` runs Playwright smoke tests for observation, screenshots/traces, click actions, form controls, keyboard input, scroll, wait, reports, spec export, supervised ordered actions, and local daemon start/status/stop.
 - `npm run test:pack` runs `npm pack --dry-run --json` with an ignored local npm cache to verify the package file set without publishing.
 - `.github/workflows/ci.yml` defines GitHub Actions jobs for Node.js checks, package dry-run verification, explicit Chromium installation, and browser smoke tests. It uses current GitHub action major versions for checkout and Node setup. `ops/CI_MANIFEST.tsv` and `tools/check_product_ci.sh` validate that definition locally.
@@ -68,6 +82,97 @@ Implemented behavior:
 - `CHANGELOG.md` and `docs/workflow/RELEASE.md` track unreleased local changes, release blockers, local readiness checks, and no-publish boundaries.
 
 The package is marked `private` and `UNLICENSED` until public release naming, licensing, and npm publication are approved.
+
+## Implemented Review Platform
+
+The review platform is implemented as a reusable layer above the current Playwright runtime. It does not reimplement Playwright and does not clone the full Playwright MCP tool surface. It collects local browser evidence, normalizes that evidence, and emits developer-facing findings with explicit evidence and confidence.
+
+Implemented review components:
+
+- `playwright-runtime`: shared browser, context, page, action, screenshot, and trace execution.
+- `evidence-model`: normalized DOM, accessibility, bounding box, computed style, console, network, viewport, and artifact evidence.
+- `review-engine`: deterministic rules for browser health, layout integrity, interaction quality, accessibility basics, mock fidelity, and evidence quality.
+- `site-review`: target manifest loading, route discovery, viewport matrix execution, action risk policy, budgets, and coverage reporting.
+- `reporter`: JSON and Markdown issue reports with artifact references and reproduction steps.
+- `schema`: machine-readable contracts for envelopes, findings, artifacts, target manifests, reports, and MCP tool I/O.
+- `cli-adapter`: the primary command surface for review workflows.
+- `mcp-adapter`: a thin local stdio adapter over the same core through `browser-debug-mcp`.
+
+The review MVP supports:
+
+```text
+browser-debug review --url <url> --viewport <name-or-size> --screenshot --json
+```
+
+It should produce the standard JSON envelope with `data.review`, `data.findings`, `data.metrics`, and `data.environment`, plus artifact descriptors. Findings should include:
+
+```text
+id
+category
+severity
+confidence
+source
+selector
+rect
+route
+viewport
+message
+evidence
+artifacts
+repro
+owner_decision_required
+```
+
+The initial deterministic categories are:
+
+- `browser_health`: console errors, page errors, failed requests, navigation failures, and timeout warnings.
+- `layout_integrity`: empty render, horizontal overflow, clipped text, overlapping visible controls, zero-size important elements, and off-viewport primary controls.
+- `interaction_quality`: actionability, focus visibility, hover/focus evidence, target size, disabled state, and basic keyboard path signals.
+- `accessibility_basics`: missing accessible names, unlabeled form controls, duplicate IDs, and basic ARIA/name issues.
+- `mock_fidelity`: optional screenshot-to-mock metrics, masked regions, and conservative inconclusive states.
+- `evidence_quality`: missing screenshots, unstable captures, missing environment metadata, and review limitations.
+
+The site review command supports a generic target manifest:
+
+```text
+browser-debug review --target <manifest> --json
+```
+
+The target manifest should describe:
+
+```text
+baseUrl
+scope
+seeds
+expectedRoutes
+viewportMatrix
+actionPolicy
+budgets
+artifacts
+masks
+regions
+appHints
+```
+
+The runtime must not contain product-specific branches for Dashboard Control Center, FrameCue Control Center, localhost ports, route names, menu labels, or page IDs. Those targets can be represented as examples or local manifests outside the generic review runtime.
+
+Route discovery is generic and uses same-origin anchors and navigation action candidates in the current implementation. Coverage output reports discovered, visited, skipped, failed, and expected-missing routes. Later enhancements may add history navigation, DOM metadata, redirects, and app-provided manifest hints without changing the core contract.
+
+Action exploration should be risk-gated. The default policy may execute navigation and read-only state-revealing actions. Input-required, mutating, destructive, and external actions require explicit manifest allowlists and must remain local-first.
+
+Mock comparison is optional. The current local implementation compares PNG dimensions, hashes, and byte-difference metrics without adding image-processing dependencies. If actual and mock dimensions differ, the result is `inconclusive` rather than a false pass/fail claim. Pixel heatmaps and region crops remain later compatible enhancements.
+
+## MCP Adapter Contract
+
+MCP compatibility is implemented as an adapter, not as the product owner layer. The initial MCP adapter:
+
+- Uses stdio/local process communication only.
+- Calls the same CLI/core contracts used by local commands.
+- Exposes a narrow allowlist: `browser_debug_doctor`, `browser_debug_observe`, `browser_debug_review`, `browser_debug_schema_list`, and `browser_debug_schema_get`.
+- Avoids HTTP listeners, socket listeners, remote control channels, arbitrary shell execution, cleanup commands, profile reuse, storage-state persistence, OAuth, external upload, and credential handling.
+- Returns the same envelope families as the CLI.
+
+Any network MCP server mode, external model integration, external upload, existing-profile reuse, or credential-bearing workflow requires separate approval, security documentation, and tests.
 
 ## Browser Modes
 
@@ -80,6 +185,8 @@ Long-running browser supervision is opt-in. `supervise` is process-scoped, uses 
 ## AI Interaction Contract
 
 The CLI should expose structured observations and action candidates. The AI decides the next action outside the CLI, then sends that action back to the CLI. This keeps the tool agent-independent and avoids binding the product to one model, one chat UI, or one MCP runtime.
+
+Review output should distinguish deterministic findings, heuristic findings, model-advisory findings, and owner-required decisions. "No findings" means no configured rule violation was observed; it must not be presented as proof that the design is good.
 
 ## Artifact Contract
 
@@ -105,6 +212,9 @@ The initial artifact layout is:
   traces/
   reports/
   specs/
+  reviews/
+  layouts/
+  diffs/
 ```
 
 Committed files must not include `.browser-debug/`, screenshots, traces, cookies, storage state, existing browser profiles, credentials, or secret-like values.
@@ -184,3 +294,14 @@ The current repository implements local CI configuration, local CI validation, r
 - Authentication automation, OAuth flows, webhook handling, external upload, and credential storage.
 - Remote trace storage or trace upload.
 - GitHub remote setup, remote CI workflow execution, npm publication, or external upload.
+
+## Out of Scope for the Review Platform MVP
+
+- Full Playwright API parity.
+- Full Playwright MCP tool parity.
+- Human-style subjective design approval as deterministic proof.
+- Model or vision review as a required dependency.
+- External model/API calls without explicit opt-in.
+- Product-specific runtime branches for individual Control Centers.
+- Persistent browser profile reuse, storage state, authentication automation, OAuth, webhooks, or credential storage.
+- HTTP/socket MCP server mode or arbitrary shell execution.
