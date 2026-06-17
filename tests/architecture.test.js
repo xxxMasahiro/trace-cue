@@ -15,6 +15,9 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'src/observe.js',
     'src/page-evidence.js',
     'src/parser.js',
+    'src/review.js',
+    'src/mcp.js',
+    'src/api.js',
     'src/sessions.js',
     'src/supervisor.js',
     '.github/workflows/ci.yml',
@@ -62,6 +65,9 @@ test('package keeps a standard local Node CLI surface', async () => {
   assert.equal(pkg.license, 'UNLICENSED');
   assert.equal(pkg.engines.node, '>=20');
   assert.equal(pkg.bin['browser-debug'], './bin/browser-debug.js');
+  assert.equal(pkg.bin['browser-debug-mcp'], './bin/browser-debug-mcp.js');
+  assert.equal(pkg.exports['.'], './src/api.js');
+  assert.equal(pkg.exports['./schemas/*'], './schemas/*.schema.json');
   assert.ok(pkg.scripts.test);
   assert.ok(pkg.scripts['test:browser']);
   assert.ok(pkg.scripts['test:pack']);
@@ -69,6 +75,21 @@ test('package keeps a standard local Node CLI surface', async () => {
   assert.equal(pkg.scripts.postinstall, undefined);
   assert.equal(pkg.scripts.prepublishOnly, undefined);
   assert.doesNotMatch(JSON.stringify(pkg.scripts), /\b(?:gh|curl|wget|publish)\b/);
+});
+
+test('review platform keeps local-first and manifest-driven boundaries', async () => {
+  const review = await readText('src/review.js');
+  const mcp = await readText('src/mcp.js');
+  const combined = `${review}\n${mcp}`;
+
+  assert.doesNotMatch(combined, /127\.0\.0\.1:517[34]|Control Center|FrameCue|ai-driven-development-lesson/);
+  assert.doesNotMatch(combined, /launchPersistentContext|userDataDir|storageState/);
+  assert.doesNotMatch(combined, /createServer|listen\(|WebSocket|EventSource/);
+  assert.doesNotMatch(combined, /node:child_process|child_process|execFile|spawn\(/);
+  assert.match(review, /normalizeTargetManifest/);
+  assert.match(review, /classifyActionCandidate/);
+  assert.match(mcp, /tools\/list/);
+  assert.match(mcp, /tools\/call/);
 });
 
 test('CI workflow stays generic and release-safe', async () => {

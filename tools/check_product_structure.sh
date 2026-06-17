@@ -27,11 +27,23 @@ for rel in \
   package.json \
   package-lock.json \
   bin/browser-debug.js \
+  bin/browser-debug-mcp.js \
+  schemas/artifact.schema.json \
+  schemas/envelope.schema.json \
+  schemas/finding.schema.json \
+  schemas/mcp-tool.schema.json \
+  schemas/review.schema.json \
+  schemas/target-manifest.schema.json \
+  src/api.js \
+  src/input.js \
   src/cli.js \
   src/daemon.js \
   src/daemon-worker.js \
+  src/mcp.js \
   src/page-evidence.js \
   src/observe.js \
+  src/review.js \
+  src/schema-registry.js \
   src/sessions.js \
   src/supervisor.js \
   tests/architecture.test.js \
@@ -79,7 +91,7 @@ for rel in \
   require_nonempty "$rel"
 done
 
-for rel in .github .github/workflows src tests docs/product docs/workflow docs/design-system docs/memory ops skills tools; do
+for rel in .github .github/workflows bin schemas src tests docs/product docs/workflow docs/design-system docs/memory ops skills tools; do
   require_dir "$rel"
 done
 

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://browser-debug.local/schemas/artifact.schema.json",
+  "title": "Browser Debug CLI Artifact",
+  "type": "object",
+  "required": ["schema_version", "type", "path", "description"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "type": "string" },
+    "path": { "type": "string" },
+    "description": { "type": "string" }
+  },
+  "additionalProperties": true
+}

@@ -29,5 +29,9 @@ export const PLANNED_COMMANDS = Object.freeze([
   'session close',
   'act',
   'report',
-  'spec export'
+  'spec export',
+  'review',
+  'schema list',
+  'schema get',
+  'mcp serve'
 ]);

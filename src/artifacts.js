@@ -3,7 +3,19 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
 
-const ARTIFACT_DIRS = ['sessions', 'observations', 'screenshots', 'traces', 'reports', 'specs', 'daemons'];
+const ARTIFACT_DIRS = [
+  'sessions',
+  'observations',
+  'screenshots',
+  'traces',
+  'reports',
+  'specs',
+  'daemons',
+  'reviews',
+  'layouts',
+  'diffs',
+  'coverage'
+];
 
 export function createArtifactId(now = new Date(), prefix = 'run') {
   const date = now instanceof Date ? now : new Date(now);

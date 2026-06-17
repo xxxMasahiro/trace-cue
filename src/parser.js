@@ -3,14 +3,23 @@ const VALUE_OPTIONS = new Set([
   'actions',
   'artifact-root',
   'daemon',
+  'input',
+  'mask',
+  'mock',
+  'name',
+  'region',
   'session',
+  'target',
+  'threshold',
   'timeout',
-  'url'
+  'url',
+  'viewport'
 ]);
 
 const BOOLEAN_OPTIONS = new Set([
   'devtools',
   'headed',
+  'report',
   'screenshot',
   'trace'
 ]);
@@ -51,11 +60,17 @@ export function parseCliArgs(argv) {
     case 'session':
       return parseSession(args, globals);
     case 'act':
-      return parseRequiredOptions('act', args, globals, ['session', 'action']);
+      return parseAct(args, globals);
     case 'report':
       return parseRequiredOptions('report', args, globals, ['session']);
     case 'spec':
       return parseSpec(args, globals);
+    case 'review':
+      return parseReview(args, globals);
+    case 'schema':
+      return parseSchema(args, globals);
+    case 'mcp':
+      return parseMcp(args, globals);
     case 'help':
       return { ok: true, command: 'help', json: globals.json, options: {} };
     default:
@@ -268,6 +283,77 @@ function parseSpec(args, globals) {
   return parseRequiredOptions('spec export', args.slice(1), globals, ['session']);
 }
 
+function parseReview(args, globals) {
+  if (globals.help) {
+    return { ok: true, command: 'help', json: globals.json, options: { topic: 'review' } };
+  }
+  const parsed = parseOptions('review', args, globals.json);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (parsed.positionals.length > 0) {
+    return parseError('review', globals.json, {
+      code: 'UNEXPECTED_ARGUMENT',
+      message: 'review does not accept positional arguments.',
+      details: { argument: parsed.positionals[0] }
+    });
+  }
+  if (!parsed.options.url && !parsed.options.target && !parsed.options.input) {
+    return parseError('review', globals.json, {
+      code: 'MISSING_REQUIRED_OPTION',
+      message: 'review requires --url <url>, --target <manifest>, or --input -.',
+      details: { options: ['url', 'target', 'input'] }
+    });
+  }
+  if (parsed.options.url) {
+    const urlError = validateUrl(parsed.options.url);
+    if (urlError) {
+      return parseError('review', globals.json, urlError);
+    }
+  }
+  return { ok: true, command: 'review', json: globals.json, options: parsed.options };
+}
+
+function parseSchema(args, globals) {
+  if (globals.help) {
+    return { ok: true, command: 'help', json: globals.json, options: { topic: 'schema' } };
+  }
+  const subcommand = args[0];
+  if (!subcommand) {
+    return parseError('schema', globals.json, {
+      code: 'MISSING_SUBCOMMAND',
+      message: 'schema requires a subcommand.',
+      details: { subcommands: ['list', 'get'] }
+    });
+  }
+  if (subcommand === 'list') {
+    return parseNoArgCommand('schema list', args.slice(1), globals);
+  }
+  if (subcommand === 'get') {
+    return parseRequiredOptions('schema get', args.slice(1), globals, ['name']);
+  }
+  return parseError('schema', globals.json, {
+    code: 'UNKNOWN_SUBCOMMAND',
+    message: `Unknown schema subcommand: ${subcommand}`,
+    details: { subcommands: ['list', 'get'] }
+  });
+}
+
+function parseMcp(args, globals) {
+  if (globals.help) {
+    return { ok: true, command: 'help', json: globals.json, options: { topic: 'mcp' } };
+  }
+  const subcommand = args[0];
+  if (subcommand !== 'serve') {
+    return parseError('mcp', globals.json, {
+      code: subcommand ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: subcommand ? `Unknown mcp subcommand: ${subcommand}` : 'mcp requires a subcommand.',
+      details: { subcommands: ['serve'] }
+    });
+  }
+  return parseNoArgCommand('mcp serve', args.slice(1), globals);
+}
+
 function parseRequiredOptions(command, args, globals, requiredOptions) {
   if (globals.help) {
     return { ok: true, command: 'help', json: globals.json, options: { topic: command } };
@@ -293,6 +379,38 @@ function parseRequiredOptions(command, args, globals, requiredOptions) {
     }
   }
   return { ok: true, command, json: globals.json, options: parsed.options };
+}
+
+function parseAct(args, globals) {
+  if (globals.help) {
+    return { ok: true, command: 'help', json: globals.json, options: { topic: 'act' } };
+  }
+  const parsed = parseOptions('act', args, globals.json);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (parsed.positionals.length > 0) {
+    return parseError('act', globals.json, {
+      code: 'UNEXPECTED_ARGUMENT',
+      message: 'act does not accept positional arguments.',
+      details: { argument: parsed.positionals[0] }
+    });
+  }
+  if (!parsed.options.session) {
+    return parseError('act', globals.json, {
+      code: 'MISSING_REQUIRED_OPTION',
+      message: 'act requires --session <value>.',
+      details: { option: 'session' }
+    });
+  }
+  if (!parsed.options.action && !parsed.options.input) {
+    return parseError('act', globals.json, {
+      code: 'MISSING_REQUIRED_OPTION',
+      message: 'act requires --action <json> or --input -.',
+      details: { options: ['action', 'input'] }
+    });
+  }
+  return { ok: true, command: 'act', json: globals.json, options: parsed.options };
 }
 
 function parseOptionalOptions(command, args, globals) {
@@ -364,7 +482,7 @@ function parseOptions(command, args, json) {
     }
 
     const next = args[index + 1];
-    if (!next || next.startsWith('-')) {
+    if (!next || (next.startsWith('-') && next !== '-')) {
       return parseError(command, json, {
         code: 'MISSING_OPTION_VALUE',
         message: `--${name} requires a value.`,
@@ -425,6 +543,10 @@ function plannedCommands() {
     'session close',
     'act',
     'report',
-    'spec export'
+    'spec export',
+    'review',
+    'schema list',
+    'schema get',
+    'mcp serve'
   ];
 }

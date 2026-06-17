@@ -4,9 +4,11 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { executeCli } from '../src/cli.js';
+import { handleMcpRequest } from '../src/mcp.js';
 import { runObserve } from '../src/observe.js';
 import { parseCliArgs } from '../src/parser.js';
 import { redact, redactUrl } from '../src/redaction.js';
+import { classifyActionCandidate, normalizeTargetManifest } from '../src/review.js';
 
 const fixedNow = '2026-06-17T00:00:00.000Z';
 
@@ -127,6 +129,91 @@ test('supervise parses actions and returns a deterministic JSON envelope', async
   assert.equal(body.data.supervision.action_history[0].type, 'observe');
 });
 
+test('review parses URL targets and returns a deterministic JSON envelope', async () => {
+  const parsed = parseCliArgs(['review', '--url', 'https://example.test/', '--viewport', 'mobile', '--screenshot', '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'review');
+  assert.equal(parsed.options.url, 'https://example.test/');
+  assert.equal(parsed.options.viewport, 'mobile');
+  assert.equal(parsed.options.screenshot, true);
+
+  const result = await executeCli(
+    ['review', '--url', 'https://example.test/', '--json'],
+    {
+      now: fixedNow,
+      reviewRunner: async (options) => ({
+        status: 'ok',
+        data: {
+          review: { id: 'review-fixed', mode: 'single_url', final_url: options.url },
+          findings: [],
+          metrics: { finding_count: 0 },
+          environment: {}
+        },
+        warnings: [],
+        errors: [],
+        artifacts: [{ type: 'review', path: '.browser-debug/reviews/review-fixed.json' }]
+      })
+    }
+  );
+
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'review');
+  assert.equal(body.status, 'ok');
+  assert.equal(body.data.review.id, 'review-fixed');
+});
+
+test('schema commands expose machine-readable contracts', async () => {
+  const listed = await executeCli(['schema', 'list', '--json'], { now: fixedNow });
+  assert.equal(listed.exitCode, 0);
+  const listedBody = JSON.parse(listed.stdout);
+  assert.equal(listedBody.command, 'schema list');
+  assert.ok(listedBody.data.schemas.some((schema) => schema.name === 'review'));
+
+  const fetched = await executeCli(['schema', 'get', '--name', 'finding', '--json'], { now: fixedNow });
+  assert.equal(fetched.exitCode, 0);
+  const fetchedBody = JSON.parse(fetched.stdout);
+  assert.equal(fetchedBody.command, 'schema get');
+  assert.equal(fetchedBody.data.schema.title, 'Browser Debug CLI Review Finding');
+});
+
+test('target manifests and action candidates use generic review abstractions', () => {
+  const normalized = normalizeTargetManifest({
+    baseUrl: 'https://example.test/app',
+    seeds: ['/app#overview'],
+    viewportMatrix: ['desktop', { name: 'phone', width: 390, height: 844 }],
+    budgets: { maxRoutes: 5 }
+  });
+  assert.equal(normalized.ok, true);
+  assert.equal(normalized.target.seeds[0], 'https://example.test/app#overview');
+  assert.equal(normalized.target.viewportMatrix[0].name, 'desktop');
+  assert.equal(normalized.target.viewportMatrix[1].name, 'phone');
+  assert.equal(normalized.target.budgets.maxRoutes, 5);
+
+  assert.equal(classifyActionCandidate({ tag: 'a', href: 'https://example.test/app#next' }, 'https://example.test/app'), 'navigation');
+  assert.equal(classifyActionCandidate({ tag: 'input' }, 'https://example.test/app'), 'input_required');
+  assert.equal(classifyActionCandidate({ tag: 'button', text: 'Delete project' }, 'https://example.test/app'), 'destructive');
+  assert.equal(classifyActionCandidate({ tag: 'button', text: 'Open settings' }, 'https://example.test/app'), 'state_revealing');
+});
+
+test('MCP adapter exposes a local allowlisted tool surface', async () => {
+  const listed = await handleMcpRequest({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_review'), true);
+  assert.equal(listed.result.tools.some((tool) => /shell|cleanup/i.test(tool.name)), false);
+
+  const schema = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 2,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_schema_get',
+      arguments: { name: 'envelope' }
+    }
+  }, { now: fixedNow });
+  assert.equal(schema.result.structuredContent.command, 'schema get');
+  assert.equal(schema.result.structuredContent.status, 'ok');
+});
+
 test('daemon commands parse and return deterministic JSON envelopes', async () => {
   const started = await executeCli(
     ['daemon', 'start', '--url', 'https://example.test/', '--json'],
@@ -226,6 +313,13 @@ test('session start, act, report, and spec export use local artifacts', async ()
   const actedBody = JSON.parse(acted.stdout);
   assert.equal(actedBody.data.action_result.type, 'navigate');
   assert.equal(actedBody.data.session.current_url, 'https://example.test/next');
+
+  const actedFromInput = await executeCli(
+    ['act', '--session', 'session-fixed', '--input', '-', '--json'],
+    { ...context, stdinText: '{"type":"observe"}' }
+  );
+  assert.equal(actedFromInput.exitCode, 0);
+  assert.equal(JSON.parse(actedFromInput.stdout).data.action_result.type, 'observe');
 
   const reported = await executeCli(['report', '--session', 'session-fixed', '--json'], context);
   assert.equal(reported.exitCode, 0);

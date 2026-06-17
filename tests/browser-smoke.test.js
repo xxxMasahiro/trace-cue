@@ -297,6 +297,112 @@ test('daemon start status and stop keep a local ephemeral browser process', { sk
   }
 });
 
+test('review reports deterministic layout and browser-health findings', { skip: !runBrowserSmoke }, async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-review-smoke-'));
+  await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
+  const fixture = path.join(cwd, 'review.html');
+  const mock = path.join(cwd, 'mock.png');
+  await writeFile(mock, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l9V2JwAAAABJRU5ErkJggg==', 'base64'));
+  await writeFile(fixture, [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head><title>Review Smoke</title></head>',
+    '<body>',
+    '<h1>Review Smoke Page</h1>',
+    '<div id="wide" style="width:2000px;height:20px;background:#ccc">Wide content</div>',
+    '<div id="clip" style="width:20px;height:18px;overflow:hidden;white-space:nowrap">Clipped content should be detected</div>',
+    '<button id="nameless" style="width:32px;height:32px"></button>',
+    '<script>console.error("Review smoke console failure")</script>',
+    '</body>',
+    '</html>'
+  ].join('\n'), 'utf8');
+
+  const result = await executeCli([
+    'review',
+    '--url',
+    `file://${fixture}`,
+    '--viewport',
+    '390x844',
+    '--screenshot',
+    '--mock',
+    'mock.png',
+    '--report',
+    '--timeout',
+    '10000',
+    '--json'
+  ], { cwd });
+
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'review');
+  assert.equal(body.status, 'ok');
+  assert.equal(body.data.review.mode, 'single_url');
+  assert.ok(body.data.findings.some((finding) => finding.category === 'browser_health'));
+  assert.ok(body.data.findings.some((finding) => finding.category === 'layout_integrity'));
+  assert.ok(body.data.findings.some((finding) => finding.category === 'accessibility_basics'));
+  assert.ok(body.data.findings.some((finding) => finding.category === 'mock_fidelity'));
+
+  for (const type of ['review', 'layout', 'screenshot', 'report', 'mock_metrics']) {
+    const artifact = body.artifacts.find((candidate) => candidate.type === type);
+    assert.ok(artifact, `missing ${type} artifact`);
+    await access(path.join(cwd, artifact.path));
+  }
+});
+
+test('target review discovers same-origin routes and records coverage', { skip: !runBrowserSmoke }, async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-target-review-smoke-'));
+  await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
+  const first = path.join(cwd, 'first.html');
+  const second = path.join(cwd, 'second.html');
+  const manifest = path.join(cwd, 'target.json');
+  await writeFile(first, [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head><title>First Review Route</title></head>',
+    '<body>',
+    '<h1>First Route</h1>',
+    `<a id="next" href="file://${second}">Second Route</a>`,
+    '</body>',
+    '</html>'
+  ].join('\n'), 'utf8');
+  await writeFile(second, [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head><title>Second Review Route</title></head>',
+    '<body>',
+    '<h1>Second Route</h1>',
+    '</body>',
+    '</html>'
+  ].join('\n'), 'utf8');
+  await writeFile(manifest, JSON.stringify({
+    baseUrl: `file://${first}`,
+    seeds: [`file://${first}`],
+    viewportMatrix: ['mobile'],
+    budgets: { maxRoutes: 2 },
+    artifacts: { screenshots: true }
+  }), 'utf8');
+
+  const result = await executeCli([
+    'review',
+    '--target',
+    '@target.json',
+    '--timeout',
+    '10000',
+    '--json'
+  ], { cwd });
+
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'review');
+  assert.equal(body.status, 'ok');
+  assert.equal(body.data.review.mode, 'target_manifest');
+  assert.ok(body.data.coverage.routes.discovered.length >= 2);
+  assert.ok(body.data.coverage.routes.visited.length >= 2);
+  const coverage = body.artifacts.find((artifact) => artifact.type === 'coverage');
+  assert.ok(coverage);
+  await access(path.join(cwd, coverage.path));
+});
+
 async function runAction(cwd, sessionId, action) {
   const result = await executeCli([
     'act',

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://browser-debug.local/schemas/finding.schema.json",
+  "title": "Browser Debug CLI Review Finding",
+  "type": "object",
+  "required": ["id", "category", "severity", "confidence", "source", "message", "evidence", "artifacts", "repro"],
+  "properties": {
+    "id": { "type": "string" },
+    "category": {
+      "enum": ["browser_health", "layout_integrity", "interaction_quality", "accessibility_basics", "mock_fidelity", "evidence_quality"]
+    },
+    "severity": { "enum": ["info", "low", "medium", "high", "critical"] },
+    "confidence": { "enum": ["low", "medium", "high"] },
+    "source": { "enum": ["deterministic", "heuristic", "model_advisory", "owner_required"] },
+    "selector": { "type": ["string", "null"] },
+    "rect": { "type": ["object", "null"] },
+    "route": { "type": ["string", "null"] },
+    "viewport": { "type": ["object", "null"] },
+    "message": { "type": "string" },
+    "evidence": { "type": "object" },
+    "artifacts": { "type": "array" },
+    "repro": { "type": "array" },
+    "owner_decision_required": { "type": "boolean" }
+  },
+  "additionalProperties": true
+}

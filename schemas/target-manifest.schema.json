@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://browser-debug.local/schemas/target-manifest.schema.json",
+  "title": "Browser Debug CLI Target Manifest",
+  "type": "object",
+  "required": ["baseUrl"],
+  "properties": {
+    "baseUrl": { "type": "string" },
+    "scope": { "type": "object" },
+    "seeds": { "type": "array", "items": { "type": "string" } },
+    "expectedRoutes": { "type": "array", "items": { "type": "string" } },
+    "viewportMatrix": { "type": "array" },
+    "actionPolicy": { "type": "object" },
+    "budgets": { "type": "object" },
+    "artifacts": { "type": "object" },
+    "masks": { "type": "array" },
+    "regions": { "type": "array" },
+    "appHints": { "type": "object" }
+  },
+  "additionalProperties": true
+}

@@ -6,13 +6,20 @@ product.changelog	optional	all	all	CHANGELOG.md	doc	file_nonempty	workflow	Local
 product.ci_workflow	optional	all	all	.github/workflows/ci.yml	ci	file_nonempty	workflow	Local GitHub Actions workflow definition; not executed until a remote exists.
 product.ci_manifest	optional	all	all	ops/CI_MANIFEST.tsv	ops	file_nonempty	workflow	CI authority manifest for product-local workflow checks.
 product.cli_bin	optional	all	all	bin/browser-debug.js	source	file_nonempty	workflow	Local browser-debug executable entrypoint.
+product.mcp_bin	optional	all	all	bin/browser-debug-mcp.js	source	file_nonempty	workflow	Local stdio MCP adapter executable entrypoint.
 product.source	required	all	all	src/cli.js	source	file_nonempty	workflow	CLI runtime entrypoint.
+product.public_api	optional	all	all	src/api.js	source	file_nonempty	workflow	Public local package API exports for reusable core functions.
+product.input	optional	all	all	src/input.js	source	file_nonempty	workflow	Reusable structured input resolution helpers for inline, file, and stdin input.
 product.daemon	optional	all	all	src/daemon.js	source	file_nonempty	workflow	Local background browser daemon controller.
 product.daemon_worker	optional	all	all	src/daemon-worker.js	source	file_nonempty	workflow	Local background browser daemon worker process.
+product.mcp_adapter	optional	all	all	src/mcp.js	source	file_nonempty	workflow	Local stdio MCP adapter over the CLI/core contract.
 product.page_evidence	optional	all	all	src/page-evidence.js	source	file_nonempty	workflow	Reusable page observation and event evidence helpers.
 product.observe	optional	all	all	src/observe.js	source	file_nonempty	workflow	Playwright-backed one-shot observation runtime.
+product.review	optional	all	all	src/review.js	source	file_nonempty	workflow	Playwright-backed deterministic review, target manifest, coverage, and mock metrics runtime.
+product.schema_registry	optional	all	all	src/schema-registry.js	source	file_nonempty	workflow	Machine-readable schema registry for CLI and adapter contracts.
 product.sessions	optional	all	all	src/sessions.js	source	file_nonempty	workflow	Local session, action, report, and spec runtime.
 product.supervisor	optional	all	all	src/supervisor.js	source	file_nonempty	workflow	Process-scoped supervised ephemeral browser runtime.
+product.schemas	optional	all	all	schemas/review.schema.json	doc	file_nonempty	workflow	Public machine-readable schema files for review and adapter contracts.
 product.architecture_test	optional	all	all	tests/architecture.test.js	test	file_nonempty	workflow	Architecture regression tests for reusable and generic runtime boundaries.
 product.test	required	all	all	tests/cli.test.js	test	file_nonempty	workflow	No-browser CLI parser, JSON output, and doctor tests.
 product.browser_smoke	optional	all	all	tests/browser-smoke.test.js	test	file_nonempty	workflow	Optional Playwright browser smoke tests.

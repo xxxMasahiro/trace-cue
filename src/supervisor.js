@@ -18,6 +18,7 @@ import {
   waitForNetworkIdle,
   writePageObservation
 } from './page-evidence.js';
+import { resolveJsonInput } from './input.js';
 import { redact, truncateText } from './redaction.js';
 
 const MAX_SUPERVISED_CONSOLE_MESSAGES = 60;
@@ -44,7 +45,7 @@ export async function runSupervisor(options = {}, context = {}) {
     return failure(urlError);
   }
 
-  const parsedActions = parseActions(options.actions);
+  const parsedActions = await parseActions(options.actions ?? options.input, context);
   if (!parsedActions.ok) {
     return failure(parsedActions.error);
   }
@@ -243,46 +244,38 @@ export async function runSupervisor(options = {}, context = {}) {
   }
 }
 
-function parseActions(value) {
+async function parseActions(value, context) {
   if (value === undefined) {
     return { ok: true, actions: [] };
   }
-  try {
-    const parsed = JSON.parse(value);
-    const actions = Array.isArray(parsed) ? parsed : [parsed];
-    if (!actions.every((action) => action && typeof action === 'object' && !Array.isArray(action))) {
-      return {
-        ok: false,
-        error: {
-          code: 'INVALID_ACTIONS',
-          message: 'Actions must be a JSON object or array of JSON objects.',
-          details: {}
-        }
-      };
-    }
-    for (const action of actions) {
-      if (!action.type || typeof action.type !== 'string') {
-        return {
-          ok: false,
-          error: {
-            code: 'INVALID_ACTION_TYPE',
-            message: 'Each action requires a string type.',
-            details: {}
-          }
-        };
-      }
-    }
-    return { ok: true, actions };
-  } catch {
+  const resolved = await resolveJsonInput(value, context, 'actions');
+  if (!resolved.ok) {
+    return { ok: false, error: resolved.error };
+  }
+  const actions = Array.isArray(resolved.value) ? resolved.value : [resolved.value];
+  if (!actions.every((action) => action && typeof action === 'object' && !Array.isArray(action))) {
     return {
       ok: false,
       error: {
-        code: 'INVALID_ACTIONS_JSON',
-        message: 'The --actions value must be valid JSON.',
+        code: 'INVALID_ACTIONS',
+        message: 'Actions must be a JSON object or array of JSON objects.',
         details: {}
       }
     };
   }
+  for (const action of actions) {
+    if (!action.type || typeof action.type !== 'string') {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ACTION_TYPE',
+          message: 'Each action requires a string type.',
+          details: {}
+        }
+      };
+    }
+  }
+  return { ok: true, actions };
 }
 
 function supervisedBrowserState({ headless, devtools }) {

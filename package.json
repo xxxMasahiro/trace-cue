@@ -5,7 +5,12 @@
   "description": "Local-first Playwright-based browser debugging CLI for humans and AI agents.",
   "type": "module",
   "bin": {
-    "browser-debug": "./bin/browser-debug.js"
+    "browser-debug": "./bin/browser-debug.js",
+    "browser-debug-mcp": "./bin/browser-debug-mcp.js"
+  },
+  "exports": {
+    ".": "./src/api.js",
+    "./schemas/*": "./schemas/*.schema.json"
   },
   "engines": {
     "node": ">=20"
@@ -20,9 +25,9 @@
   "files": [
     "bin/",
     "src/",
+    "schemas/",
     "README.md",
     "CHANGELOG.md",
-    "docs/product/",
     "docs/workflow/SECURITY.md",
     "docs/workflow/RELEASE.md",
     "docs/workflow/VERIFICATION.md"

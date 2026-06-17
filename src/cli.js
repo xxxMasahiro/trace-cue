@@ -4,6 +4,8 @@ import { runDoctor } from './doctor.js';
 import { createEnvelope, createErrorEnvelope, stringifyEnvelope } from './envelope.js';
 import { runObserve } from './observe.js';
 import { parseCliArgs } from './parser.js';
+import { runReview } from './review.js';
+import { schemaListResult, schemaResult } from './schema-registry.js';
 import { runSupervisor } from './supervisor.js';
 import {
   buildReport,
@@ -120,6 +122,22 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'spec export') {
       return runtimeResult(parsed.command, await exportSpec(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'review') {
+      return runtimeResult(parsed.command, await (context.reviewRunner ?? runReview)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'schema list') {
+      return runtimeResult(parsed.command, schemaListResult(), parsed.json, now);
+    }
+
+    if (parsed.command === 'schema get') {
+      return runtimeResult(parsed.command, schemaResult(parsed.options.name), parsed.json, now);
+    }
+
+    if (parsed.command === 'mcp serve') {
+      return runtimeResult(parsed.command, mcpServeInfo(), parsed.json, now);
     }
 
     return notImplemented(parsed.command, parsed.json, now);
@@ -280,6 +298,34 @@ function usageText(topic) {
     return `Usage: ${CLI_NAME} daemon stop --daemon <id> [--json]`;
   }
 
+  if (topic === 'review') {
+    return [
+      `Usage: ${CLI_NAME} review (--url <url> | --target <manifest> | --input -) [--json]`,
+      '',
+      'Options:',
+      '  --url <url>              Absolute http, https, or file URL to review.',
+      '  --target <manifest>      Target manifest path, @file, or inline JSON.',
+      '  --input -                Read a target manifest JSON from stdin when provided by the caller.',
+      '  --viewport <name|WxH>    Viewport profile or explicit size. Default: laptop.',
+      `  --artifact-root <path>   Local artifact root. Default: ${DEFAULT_ARTIFACT_ROOT}`,
+      '  --screenshot             Capture screenshot evidence.',
+      '  --mock <path>            Compare against a workspace-relative PNG mock.',
+      '  --threshold <number>     Mock byte-difference threshold. Default: 0.01.',
+      '  --report                 Write a Markdown review report.'
+    ].join('\n');
+  }
+
+  if (topic === 'schema') {
+    return [
+      `Usage: ${CLI_NAME} schema list [--json]`,
+      `       ${CLI_NAME} schema get --name <schema> [--json]`
+    ].join('\n');
+  }
+
+  if (topic === 'mcp') {
+    return `Usage: ${CLI_NAME} mcp serve [--json]`;
+  }
+
   if (topic === 'session start') {
     return `Usage: ${CLI_NAME} session start [--url <url>] [--json]`;
   }
@@ -299,10 +345,34 @@ function usageText(topic) {
     '  act --session <id> --action <json>',
     '  report --session <id>',
     '  spec export --session <id>',
+    '  review --url <url> --json',
+    '  review --target <manifest> --json',
+    '  schema list --json',
+    '  schema get --name <schema> --json',
+    '  mcp serve --json',
     '',
     'Global options:',
     '  --json',
     '  --help, -h',
     '  --version, -V'
   ].join('\n');
+}
+
+function mcpServeInfo() {
+  return {
+    status: 'ok',
+    data: {
+      adapter: {
+        transport: 'stdio',
+        local_only: true,
+        external_channel: false,
+        shell_tools: false,
+        cleanup_tools: false,
+        executable: 'browser-debug-mcp'
+      }
+    },
+    warnings: [],
+    errors: [],
+    artifacts: []
+  };
 }

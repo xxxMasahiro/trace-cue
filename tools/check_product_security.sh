@@ -31,6 +31,32 @@ while IFS= read -r -d '' file; do
   failed=1
 done < <(find "$ROOT" -type f \( -name '.env' -o -name '.env.*' \) -print0)
 
+scan_runtime_pattern() {
+  local pattern="$1"
+  local label="$2"
+  local ignore_regex="${3:-}"
+  if grep -RInE "$pattern" "$ROOT/src" "$ROOT/bin" >/tmp/browser-debug-security-scan.$$ 2>/dev/null; then
+    if [[ -n "$ignore_regex" ]]; then
+      grep -Ev "$ignore_regex" /tmp/browser-debug-security-scan.$$ >/tmp/browser-debug-security-filtered.$$ || true
+      mv /tmp/browser-debug-security-filtered.$$ /tmp/browser-debug-security-scan.$$
+    fi
+    if [[ ! -s /tmp/browser-debug-security-scan.$$ ]]; then
+      rm -f /tmp/browser-debug-security-scan.$$
+      return
+    fi
+    while IFS= read -r line; do
+      printf 'forbidden runtime pattern for %s: %s\n' "$label" "${line#$ROOT/}" >&2
+    done </tmp/browser-debug-security-scan.$$
+    failed=1
+  fi
+  rm -f /tmp/browser-debug-security-scan.$$
+}
+
+scan_runtime_pattern 'launchPersistentContext|userDataDir|storageState' 'browser profile or persistent storage reuse'
+scan_runtime_pattern 'createServer|listen\(|WebSocket|EventSource' 'external control channel'
+scan_runtime_pattern 'node:child_process|child_process|execFile|spawn\(' 'arbitrary shell execution' 'src/daemon\.js:'
+scan_runtime_pattern 'npm publish|gh repo|curl |wget ' 'publication or external transfer'
+
 [[ "$failed" -eq 0 ]] || {
   printf 'Product security check failed.\n' >&2
   exit 1

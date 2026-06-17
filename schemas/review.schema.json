@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://browser-debug.local/schemas/review.schema.json",
+  "title": "Browser Debug CLI Review Result",
+  "type": "object",
+  "required": ["review", "findings", "metrics", "environment"],
+  "properties": {
+    "review": { "type": "object" },
+    "findings": { "type": "array", "items": { "$ref": "finding.schema.json" } },
+    "metrics": { "type": "object" },
+    "environment": { "type": "object" },
+    "coverage": { "type": "object" }
+  },
+  "additionalProperties": true
+}

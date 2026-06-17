@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://browser-debug.local/schemas/mcp-tool.schema.json",
+  "title": "Browser Debug CLI MCP Tool Contract",
+  "type": "object",
+  "required": ["name", "description", "inputSchema"],
+  "properties": {
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "inputSchema": { "type": "object" }
+  },
+  "additionalProperties": true
+}

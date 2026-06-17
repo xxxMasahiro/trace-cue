@@ -10,6 +10,7 @@ import {
   writeTextArtifact
 } from './artifacts.js';
 import { runObserve, validateUrl } from './observe.js';
+import { resolveJsonInput } from './input.js';
 import { redact, redactUrl, truncateText } from './redaction.js';
 
 export async function startSession(options = {}, context = {}) {
@@ -83,7 +84,7 @@ export async function runSessionAction(options = {}, context = {}) {
     return sessionError('SESSION_CLOSED', 'The session is closed.', { session: session.id });
   }
 
-  const action = parseAction(options.action);
+  const action = await parseAction(options.action ?? options.input, context);
   if (!action.ok) {
     return sessionError(action.code, action.message, action.details);
   }
@@ -213,34 +214,34 @@ export async function exportSpec(options = {}, context = {}) {
   };
 }
 
-function parseAction(value) {
-  try {
-    const action = JSON.parse(value);
-    if (!action || typeof action !== 'object' || Array.isArray(action)) {
-      return {
-        ok: false,
-        code: 'INVALID_ACTION',
-        message: 'Action must be a JSON object.',
-        details: {}
-      };
-    }
-    if (!action.type || typeof action.type !== 'string') {
-      return {
-        ok: false,
-        code: 'INVALID_ACTION_TYPE',
-        message: 'Action requires a string type.',
-        details: {}
-      };
-    }
-    return { ok: true, value: action };
-  } catch {
+async function parseAction(value, context) {
+  const resolved = await resolveJsonInput(value, context, 'action');
+  if (!resolved.ok) {
     return {
       ok: false,
-      code: 'INVALID_ACTION_JSON',
-      message: 'Action must be valid JSON.',
+      code: resolved.error.code,
+      message: resolved.error.message,
+      details: resolved.error.details
+    };
+  }
+  const action = resolved.value;
+  if (!action || typeof action !== 'object' || Array.isArray(action)) {
+    return {
+      ok: false,
+      code: 'INVALID_ACTION',
+      message: 'Action must be a JSON object.',
       details: {}
     };
   }
+  if (!action.type || typeof action.type !== 'string') {
+    return {
+      ok: false,
+      code: 'INVALID_ACTION_TYPE',
+      message: 'Action requires a string type.',
+      details: {}
+    };
+  }
+  return { ok: true, value: action };
 }
 
 function observe(_baseOptions, context, observeOptions) {
