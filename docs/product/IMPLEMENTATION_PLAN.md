@@ -42,17 +42,17 @@
 
 ### Phase 2b: GitHub Public Repository
 
-- Confirm public OSS repository name and owner.
-- Use `gh auth status` and `gh repo create` only after approval.
-- Push the initial branch.
-- Add remote-sync notes to the handoff.
+- Confirm public OSS repository name and owner. Completed with `xxxMasahiro/browser-debug-cli`.
+- Use `gh auth status` and `gh repo create` only after approval. Completed after developer approval.
+- Push the initial branch. Completed by fast-forwarding local `main` and pushing `origin/main`.
+- Add remote-sync notes to the handoff. Completed.
 
 ### Phase 3: CI
 
 - Add `.github/workflows/` and `ops/CI_MANIFEST.tsv`. Completed locally.
 - Add product-local CI manifest validation without remote execution. Completed with `tools/check_product_ci.sh`.
 - Run local checks before push. Completed locally.
-- Confirm GitHub Actions status after a remote repository and push exist.
+- Confirm GitHub Actions status after a remote repository and push exist. Completed for `main` push CI.
 
 ### Phase 4: npm Package Design and Local CLI Scaffold
 
@@ -98,7 +98,7 @@
 - lesson-side `product-repository-authority status` with this repository path.
 - `check_workflow_pair_sync.sh --repo <this-repo>`.
 - Current local runtime checks include command parser tests, JSON error tests, `doctor` schema/retention metadata tests, headed/devtools launch-mode tests, session/report/spec tests, daemon parser tests, redaction tests, architecture regressions for generic runtime boundaries, shared page evidence helpers, and local daemon boundaries, Playwright browser smoke tests with screenshots, traces, click/form/keyboard/scroll/wait actions, supervised ordered actions, daemon start/status/stop, local package dry-run verification, Control Center observation, and aggregate product-gate execution.
-- Later release work should run remote CI after GitHub repository creation and push, add real headed visual checks where a display is available, choose public package naming and license, and publish to npm after approval.
+- Later release work should add real headed visual checks where a display is available, choose public package naming and license, and publish to npm after approval.
 
 ## Recovery Path
 

@@ -52,6 +52,10 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 - [x] Added `tools/check_product_ci.sh` and wired it into product-local aggregate checks.
 - [x] Added `npm run release:check` for local release-readiness verification without publishing.
 - [x] Closed local JSON schema-versioning and artifact-retention decisions with `doctor` metadata, product docs, and deterministic tests.
+- [x] Created the public GitHub repository at `https://github.com/xxxMasahiro/browser-debug-cli`.
+- [x] Fast-forwarded local `main` to the local MVP runtime commit and pushed `main` to `origin/main`.
+- [x] Confirmed GitHub Actions `main` CI passed on push for Node 20, Node 22, and browser smoke jobs.
+- [x] Updated CI action versions to `actions/checkout@v5` and `actions/setup-node@v5` after the first remote run reported Node 20 action-runtime deprecation annotations.
 - [x] Verified the running Dashboard Control Center at `http://127.0.0.1:5173/` with screenshot and trace capture.
 - [x] Confirmed `http://127.0.0.1:5174/` was not listening during verification.
 - [x] Re-ran product-local `./tools/product-gate`, `npm test`, `npm run test:browser`, and `git diff --check`.
@@ -64,14 +68,12 @@ No remaining local MVP implementation work is currently planned.
 ## Future Approval-Bound Work
 
 - [ ] If approved later, run real headed visual regression checks in an environment with a display.
-- [ ] If approved later, create the public GitHub repository with `gh`.
 - [ ] If approved later, choose the public package name and license.
-- [ ] If approved later, create the remote repository, push, and observe remote GitHub Actions execution.
 - [ ] If approved later, publish the npm package after release checklist, CI, package name, license, and credential handling are complete.
 
 ## Next Step
 
-Ask for explicit approval before trace capture expansion, authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, GitHub repository creation, remote setup, push, remote CI execution, public package naming, license changes, or npm publication.
+Ask for explicit approval before trace capture expansion, authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, public package naming, license changes, or npm publication.
 
 ## Stop Conditions
 

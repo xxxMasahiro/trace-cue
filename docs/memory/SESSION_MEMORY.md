@@ -29,7 +29,7 @@ Read AGENTS.MD and docs/workflow/HANDOFF.md, confirm the current state, then res
 - At that point, `observe --url <url> --json` validated the URL and returned an explicit unimplemented error without launching a browser. This was superseded by the later Playwright-backed local MVP.
 - `npm test` is wired into `./tools/product-gate` through `./tools/test_product_repository.sh`.
 - Verification passed with `npm test`, `./tools/product-gate`, `git diff --check`, `doctor --json`, and the no-browser `observe` stub.
-- That approval boundary was later crossed for local Playwright implementation only; public GitHub repository creation remains approval-bound.
+- That approval boundary was later crossed for local Playwright implementation, then for public GitHub repository creation, remote setup, push, and remote `main` CI after developer approval.
 
 ## 2026-06-17 Local MVP Runtime
 
@@ -52,4 +52,6 @@ Read AGENTS.MD and docs/workflow/HANDOFF.md, confirm the current state, then res
 - Verification passed with `npm test`, `npm run test:browser`, `node ./bin/browser-debug.js doctor --json`, Dashboard Control Center observation at `http://127.0.0.1:5173/`, screenshot review, and trace artifact existence checks.
 - `http://127.0.0.1:5174/` was not listening during verification.
 - Final checks also passed with `./tools/product-gate`, `git diff --check`, lesson-side product scaffold check, lesson-side product repository authority status, and lesson-side workflow-pair sync check.
-- Next approval-bound work: GitHub repository creation, remote setup, push, remote CI execution, public package naming, license changes, npm publication, existing-browser-profile reuse, OAuth/login automation, external daemon control channels, external upload, or credential storage.
+- Completed after developer approval: public GitHub repository creation at `https://github.com/xxxMasahiro/browser-debug-cli`, remote `origin` setup, local `main` fast-forward, `origin/main` push, and GitHub Actions `main` CI verification.
+- Updated GitHub Actions checkout and Node setup actions to v5 after the first remote run reported Node 20 action-runtime deprecation annotations.
+- Next approval-bound work: public package naming, license changes, npm publication, existing-browser-profile reuse, OAuth/login automation, external daemon control channels, external upload, or credential storage.

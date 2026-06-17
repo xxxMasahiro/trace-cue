@@ -25,7 +25,7 @@ Browser Debug CLI is local-first. It should operate on developer-approved URLs a
 - Persistent credential storage.
 - Reading existing browser profiles.
 - Network-dependent security audits.
-- Public repository creation, remote deletion, or package publication.
+- Remote deletion or package publication.
 - Browser profile reuse, persistent session storage, arbitrary shell execution, or destructive artifact cleanup.
 
 ## Current Runtime Status

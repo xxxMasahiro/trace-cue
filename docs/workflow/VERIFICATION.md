@@ -48,11 +48,11 @@ For this session, `http://127.0.0.1:5173/` was observed successfully with screen
 
 ## Release Readiness Checks
 
-`CHANGELOG.md`, `.github/workflows/ci.yml`, `ops/CI_MANIFEST.tsv`, and `docs/workflow/RELEASE.md` are local release-readiness files. They do not authorize publish actions. Public GitHub repository creation, remote CI execution, npm credentials, license changes, and `npm publish` remain approval-bound.
+`CHANGELOG.md`, `.github/workflows/ci.yml`, `ops/CI_MANIFEST.tsv`, and `docs/workflow/RELEASE.md` are release-readiness files. They do not authorize publish actions. npm credentials, license changes, and `npm publish` remain approval-bound.
 
 ## Phase 2a Design Checks
 
 - Product documents describe the same CLI binary, package baseline, JSON contract, artifact root, and safety defaults.
 - `TASK_TRACKER.md` and `HANDOFF.md` agree on the current phase and next approval boundary.
-- No GitHub remote, remote CI workflow execution, or npm publication path is added in the local MVP phase.
+- No npm publication path is added in the local MVP phase.
 - Playwright visual checks are required after browser-runtime behavior changes when a suitable local target is available.

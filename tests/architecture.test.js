@@ -73,8 +73,8 @@ test('package keeps a standard local Node CLI surface', async () => {
 
 test('CI workflow stays generic and release-safe', async () => {
   const workflow = await readText('.github/workflows/ci.yml');
-  assert.match(workflow, /actions\/checkout@v4/);
-  assert.match(workflow, /actions\/setup-node@v4/);
+  assert.match(workflow, /actions\/checkout@v5/);
+  assert.match(workflow, /actions\/setup-node@v5/);
   assert.match(workflow, /run: npm ci/);
   assert.match(workflow, /run: npm test/);
   assert.match(workflow, /run: npm run test:pack/);

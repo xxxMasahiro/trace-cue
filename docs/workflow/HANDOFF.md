@@ -48,6 +48,10 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 - Local GitHub Actions CI configuration is present under `.github/workflows/ci.yml`.
 - `ops/CI_MANIFEST.tsv` and `tools/check_product_ci.sh` validate CI configuration without remote execution.
 - `npm run release:check` provides local release-readiness verification without publishing.
+- The public GitHub repository exists at `https://github.com/xxxMasahiro/browser-debug-cli`.
+- Local `main` tracks `origin/main` and has been fast-forwarded to the local MVP runtime commit.
+- GitHub Actions `main` CI has passed on push for Node 20, Node 22, and browser smoke jobs.
+- CI uses `actions/checkout@v5` and `actions/setup-node@v5` to avoid Node 20 action-runtime deprecation annotations from the first remote run.
 - JSON schema versioning is defined for the local MVP as `0.1.0`: additive fields are compatible, while field removal, renaming, type changes, or vocabulary semantic changes require a schema version bump with docs and tests.
 - Artifact retention is manual by default: generated artifacts remain under ignored `.browser-debug/` until the developer removes that local artifact root. The local MVP does not auto-delete artifacts and does not add a destructive cleanup command.
 - `observe --trace` is implemented and writes local Playwright trace zip artifacts with a page-content warning.
@@ -57,11 +61,10 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 
 ## Next Step
 
-Ask for explicit approval before authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, GitHub repository creation, remote setup, push, remote CI execution, license change, public package naming, or npm publication. No remaining local MVP implementation work is currently planned; the next useful non-code check is real headed visual verification in an environment with a display.
+Ask for explicit approval before authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, license change, public package naming, or npm publication. No remaining local MVP implementation work is currently planned; the next useful non-code check is real headed visual verification in an environment with a display.
 
 ## Restart Notes
 
-- Do not create a GitHub repository yet.
 - Do not publish to npm yet.
 - Keep `.browser-debug/`, screenshots, traces, storage state, cookies, credentials, and secret-like data out of committed files.
 - Do not reuse existing browser profiles, persist storage state, automate OAuth/login flows, or upload artifacts without a security plan and approval.

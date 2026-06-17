@@ -19,6 +19,8 @@ All notable local development changes are tracked here before public release.
 - Added local GitHub Actions CI configuration and `ops/CI_MANIFEST.tsv` with a product-local CI validation check.
 - Added `npm run release:check` for local release-readiness verification without publishing.
 - Added explicit JSON schema-versioning and manual artifact-retention policy metadata to `doctor`.
+- Created the public GitHub repository, synchronized `main`, and confirmed remote `main` CI.
+- Updated GitHub Actions checkout and Node setup actions to v5.
 
 ## Release Status
 

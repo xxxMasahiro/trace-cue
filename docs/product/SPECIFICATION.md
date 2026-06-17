@@ -63,11 +63,11 @@ Implemented behavior:
 - `spec export --session <id>` writes a JSON action/spec export.
 - `npm test` runs deterministic no-browser tests, including headed/devtools launch-mode regression through an injected Playwright browser type and architecture regressions for generic runtime boundaries, shared page evidence helpers, local daemon boundaries, and local Node CLI packaging. `npm run test:browser` runs Playwright smoke tests for observation, screenshots/traces, click actions, form controls, keyboard input, scroll, wait, reports, spec export, supervised ordered actions, and local daemon start/status/stop.
 - `npm run test:pack` runs `npm pack --dry-run --json` with an ignored local npm cache to verify the package file set without publishing.
-- `.github/workflows/ci.yml` defines GitHub Actions jobs for Node.js checks, package dry-run verification, explicit Chromium installation, and browser smoke tests. `ops/CI_MANIFEST.tsv` and `tools/check_product_ci.sh` validate that definition locally without contacting GitHub.
+- `.github/workflows/ci.yml` defines GitHub Actions jobs for Node.js checks, package dry-run verification, explicit Chromium installation, and browser smoke tests. It uses current GitHub action major versions for checkout and Node setup. `ops/CI_MANIFEST.tsv` and `tools/check_product_ci.sh` validate that definition locally.
 - `npm run release:check` runs no-browser and package release-readiness checks without publishing. Browser smoke coverage remains a separate explicit local check because it launches Chromium.
 - `CHANGELOG.md` and `docs/workflow/RELEASE.md` track unreleased local changes, release blockers, local readiness checks, and no-publish boundaries.
 
-The package is marked `private` and `UNLICENSED` until public release naming, licensing, remote CI execution, and npm publication are approved.
+The package is marked `private` and `UNLICENSED` until public release naming, licensing, and npm publication are approved.
 
 ## Browser Modes
 
@@ -158,7 +158,7 @@ The repository should move through these phases:
 - Phase 5: MVP Playwright implementation.
 - Phase 6: release and npm publish flow.
 
-The current repository implements local CI configuration, local CI validation, release readiness documentation, and dry-run package verification. It does not create a remote repository, execute GitHub Actions remotely, or execute public release actions.
+The current repository implements local CI configuration, local CI validation, release readiness documentation, dry-run package verification, public GitHub repository creation, `origin/main` synchronization, and remote GitHub Actions `main` CI verification. It does not execute npm publication or other public release actions.
 
 ## Out of Scope for Phase 0
 

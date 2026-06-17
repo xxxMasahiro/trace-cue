@@ -10,11 +10,11 @@
 - Keep canonical product documents under `docs/product/`.
 - Keep canonical workflow documents under `docs/workflow/`.
 - Keep product memory under `docs/memory/`.
-- Push, remote setup, GitHub repository creation, dependency installation, external communication, and destructive operations require explicit approval.
+- npm publication, dependency installation, external communication, and destructive operations require explicit approval. Public GitHub repository creation, remote setup, push, and remote CI were completed after developer approval.
 
 ## Current Development Boundary
 
-Phase 5 local MVP runtime is implemented. Local Git is initialized, the initial scaffold commit exists, package code exists, Playwright-backed observation and local daemon supervision work locally, local GitHub Actions CI configuration is present, and product-gate evidence has been recorded locally. No GitHub repository, remote, push, remote CI workflow execution, npm publication, OAuth/login automation, external upload, existing-browser-profile reuse, or credential storage has been created.
+Phase 5 local MVP runtime is implemented. Local Git is initialized, the initial scaffold commit exists, package code exists, Playwright-backed observation and local daemon supervision work locally, the public GitHub repository exists at `https://github.com/xxxMasahiro/browser-debug-cli`, local `main` tracks `origin/main`, GitHub Actions `main` CI has passed, and product-gate evidence has been recorded locally. No npm publication, OAuth/login automation, external upload, existing-browser-profile reuse, or credential storage has been created.
 
 ## Phase 2a Package/Runtime Design
 
@@ -37,4 +37,4 @@ Current design baseline:
 - Artifact root: ignored `.browser-debug/`.
 - Default browser behavior: ephemeral Chromium context per observation/action.
 - Verification: `npm test`, `npm run test:browser`, `npm run test:pack`, `./tools/product-gate`, and local Dashboard Control Center observation. Coverage includes headed/devtools launch-mode checks, architecture regressions for generic runtime boundaries, shared helpers, and local daemon boundaries, observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, supervised ordered actions, daemon start/status/stop, reports, spec export, and local package dry-run verification.
-- Release readiness: `CHANGELOG.md`, `.github/workflows/ci.yml`, `ops/CI_MANIFEST.tsv`, and `docs/workflow/RELEASE.md` exist, but public package naming, license changes, GitHub publication, remote CI execution, and npm publication remain approval-bound.
+- Release readiness: `CHANGELOG.md`, `.github/workflows/ci.yml`, `ops/CI_MANIFEST.tsv`, and `docs/workflow/RELEASE.md` exist, public GitHub publication and remote `main` CI are complete, and public package naming, license changes, and npm publication remain approval-bound.

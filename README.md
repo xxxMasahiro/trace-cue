@@ -48,5 +48,5 @@ Artifacts are written under ignored `.browser-debug/` directories and are retain
 ./tools/check_product_ci.sh
 ```
 
-GitHub Actions CI is defined locally in `.github/workflows/ci.yml` and validated by `ops/CI_MANIFEST.tsv`; it has not been executed remotely because no public repository or remote has been created.
+GitHub Actions CI is defined in `.github/workflows/ci.yml`, validated by `ops/CI_MANIFEST.tsv`, and passing on `origin/main` at `https://github.com/xxxMasahiro/browser-debug-cli`.
 Release status and publication blockers are tracked in `CHANGELOG.md` and `docs/workflow/RELEASE.md`.
