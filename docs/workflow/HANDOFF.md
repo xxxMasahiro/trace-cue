@@ -2,7 +2,7 @@
 
 ## Current State
 
-Browser Debug CLI has completed Phase 1, Phase 2a package/runtime design verification, the Phase 5 local MVP runtime slice, and the Phase 7 local review-platform implementation. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally.
+Browser Debug CLI has completed Phase 1, Phase 2a package/runtime design verification, the Phase 5 local MVP runtime slice, the Phase 7 local review-platform implementation, and the Phase 8 local dogfood/plugin-readiness implementation. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally.
 
 This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and TASK_TRACKER workflow-state pair synchronized whenever task state changes.
 
@@ -68,11 +68,18 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 - The package remains private and `UNLICENSED`; no npm publication or release promotion was performed.
 - Review runtime code must remain generic. Dashboard Control Center and FrameCue Control Center coverage should use manifests, fixtures, or acceptance evidence rather than target-specific runtime branches.
 - Review findings should include category, severity, confidence, selector, rectangle, evidence, artifacts, and reproduction data.
+- `browser-debug target init --url <url>` creates reusable local target manifests under `.browser-debug/targets/`.
+- Review findings now include priority, impact, recommendations, fix candidates, and implementation notes.
+- Review output now includes `action_plan` and local heuristic `review_advisory` data for developer handoff.
+- Target review supports Markdown reports through `--report`.
+- The local MCP adapter exposes target manifest initialization and target review tools in addition to doctor, observe, single-URL review, and schema tools.
+- Local plugin metadata exists under `.codex-plugin/plugin.json`, `.mcp.json`, and `skills/browser-debug-review/SKILL.md`.
+- `templates/review-target-manifest.json` is the reusable starting point for app route and viewport review.
 - Model/API review, evidence leaving the local process, HTTP/socket MCP server mode, persistent browser profile reuse, authentication automation, external upload, arbitrary shell execution, destructive cleanup, npm publication, package naming, and license changes remain approval-bound.
 
 ## Next Step
 
-No remaining local Phase 7 implementation work is currently planned. Ask for explicit approval before authentication automation, external daemon control channels, external upload, evidence leaving the local process, model/API review, HTTP/socket MCP server mode, existing-browser-profile reuse, credential storage, license change, public package naming, npm publication, or destructive cleanup.
+No remaining local Phase 8 implementation work is currently planned. Ask for explicit approval before authentication automation, external daemon control channels, external upload, evidence leaving the local process, model/API review, HTTP/socket MCP server mode, existing-browser-profile reuse, credential storage, plugin marketplace registration, license change, public package naming, npm publication, or destructive cleanup.
 
 ## Restart Notes
 
@@ -84,6 +91,7 @@ No remaining local Phase 7 implementation work is currently planned. Ask for exp
 - Keep MCP as a local stdio adapter until a separate approved design changes the transport.
 - Keep model or vision review out of deterministic local gates.
 - Keep target-specific Control Center details in manifests, fixtures, or acceptance evidence.
+- Keep plugin marketplace registration out of local implementation unless explicitly approved.
 
 ## Stop Conditions
 
@@ -94,3 +102,4 @@ No remaining local Phase 7 implementation work is currently planned. Ask for exp
 - Any design path that requires arbitrary shell execution or persistent credential storage.
 - Review platform code adds app-specific runtime branches for individual Control Centers.
 - MCP adapter code adds HTTP/socket listeners, external upload, arbitrary shell execution, cleanup tools, or persistent storage without explicit approval.
+- Plugin metadata adds external upload, profile reuse, credential storage, marketplace mutation, or network transport without explicit approval.

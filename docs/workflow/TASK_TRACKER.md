@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Phase 5 local MVP runtime implementation is complete after Phase 1 and Phase 2a. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally. Phase 7 local review-platform implementation is complete for deterministic review, target manifests, route/viewport coverage, risk classification, conservative mock metrics, local stdio MCP adapter, schema registry, and package API/file-set readiness.
+Phase 5 local MVP runtime implementation is complete after Phase 1 and Phase 2a. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally. Phase 7 local review-platform implementation is complete for deterministic review, target manifests, route/viewport coverage, risk classification, conservative mock metrics, local stdio MCP adapter, schema registry, and package API/file-set readiness. Phase 8 local dogfood/plugin-readiness work is complete for target manifest generation, developer action plans, local heuristic review advisory data, target Markdown reports, plugin metadata, MCP target tools, reusable manifest template, and package file-set readiness without publication.
 
 This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and HANDOFF workflow-state pair synchronized whenever task state changes.
 
@@ -72,10 +72,18 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 - [x] Added public local package API exports and schema package files while keeping the package private and unreleased.
 - [x] Strengthened product structure, security, architecture, CLI, and browser smoke tests for review/MCP boundaries.
 - [x] Synchronized requirements, specification, implementation plan, security, verification, task tracker, handoff, manifests, README, and changelog with the Phase 7 implementation.
+- [x] Implemented `target init --url <url> --json` to generate local target manifest artifacts.
+- [x] Added developer-facing finding enrichment with priority, impact, recommendations, fix candidates, and implementation notes.
+- [x] Added `action_plan` and `review_advisory` to review results.
+- [x] Added target review Markdown reports through `review --target <manifest> --report --json`.
+- [x] Added MCP tools for target manifest initialization and target review.
+- [x] Added local Codex plugin metadata, local MCP configuration, and plugin-facing review skill.
+- [x] Added reusable `templates/review-target-manifest.json`.
+- [x] Included plugin metadata, plugin skill, and target template in the local package dry-run file set without publishing.
 
 ## Remaining Work
 
-No remaining local Phase 7 implementation work is currently planned.
+No remaining local Phase 8 implementation work is currently planned.
 
 ## Future Approval-Bound Work
 
@@ -84,10 +92,11 @@ No remaining local Phase 7 implementation work is currently planned.
 - [ ] If approved later, run real headed visual regression checks in an environment with a display.
 - [ ] If approved later, choose the public package name and license.
 - [ ] If approved later, publish the npm package after release checklist, CI, package name, license, and credential handling are complete.
+- [ ] If approved later, register or install the Codex plugin in a marketplace.
 
 ## Next Step
 
-Ask for explicit approval before model/API review, evidence leaving the local process, HTTP/socket MCP server mode, authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, public package naming, license changes, npm publication, or destructive cleanup.
+Ask for explicit approval before model/API review, evidence leaving the local process, HTTP/socket MCP server mode, authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, public package naming, license changes, plugin marketplace registration, npm publication, or destructive cleanup.
 
 ## Stop Conditions
 

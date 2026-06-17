@@ -28,7 +28,12 @@ All notable local development changes are tracked here before public release.
 - Added local stdio MCP adapter entrypoint `browser-debug-mcp` with an allowlisted tool surface over the same CLI/core contracts.
 - Added public local package API exports and excluded internal product documents from the package file set while keeping the package private.
 - Strengthened structure, security, architecture, no-browser, and browser smoke checks for review and MCP boundaries.
+- Added `target init` for reusable local target manifest generation.
+- Added review `action_plan`, local heuristic `review_advisory`, and developer-facing finding enrichment fields.
+- Added target review Markdown reports.
+- Added MCP target tools for target manifest initialization and target review.
+- Added local Codex plugin metadata, plugin MCP configuration, plugin-facing review skill, and a reusable target manifest template.
 
 ## Release Status
 
-No public package has been released. Package naming, license selection, npm authentication, npm publication, model/API review, evidence leaving the local process, HTTP/socket MCP server mode, OAuth/login automation, and external upload remain explicit release blockers.
+No public package has been released. Package naming, license selection, npm authentication, npm publication, plugin marketplace registration, model/API review, evidence leaving the local process, HTTP/socket MCP server mode, OAuth/login automation, and external upload remain explicit release blockers.

@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Browser Debug CLI is not released. The repository has local MVP runtime coverage, Phase 7 review-platform coverage, a public GitHub repository, remote `main` synchronization, passing GitHub Actions `main` CI, CI manifest validation, and local package dry-run verification.
+Browser Debug CLI is not released. The repository has local MVP runtime coverage, Phase 7 review-platform coverage, Phase 8 dogfood/plugin-readiness coverage, a public GitHub repository, remote `main` synchronization, passing GitHub Actions `main` CI, CI manifest validation, and local package dry-run verification.
 
 ## Local Release Readiness Checks
 
@@ -28,6 +28,7 @@ npm pack --dry-run --json --cache .tmp/npm-cache
 - Confirm the public npm package name and optional scope.
 - Choose a release license and replace `UNLICENSED` only after approval.
 - Confirm npm account, token handling, and publication method only after approval.
+- Decide whether and where to register the local Codex plugin bundle.
 - Do not upload traces, screenshots, session files, cookies, storage state, credentials, or `.browser-debug/` artifacts.
 - Keep model/API review, evidence leaving the local process, HTTP/socket MCP server mode, OAuth/login automation, and external upload approval-bound.
 
@@ -37,3 +38,4 @@ npm pack --dry-run --json --cache .tmp/npm-cache
 - No OAuth, login automation, webhook setup, external upload, or credential storage.
 - No model/API review or evidence upload.
 - No HTTP/socket MCP server mode.
+- No plugin marketplace registration or installation-state mutation.

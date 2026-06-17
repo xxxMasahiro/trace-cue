@@ -2,7 +2,7 @@
 
 ## Verification Scope
 
-Current verification checks repository structure, document synchronization, security defaults, review/MCP local boundaries, CI configuration, design-system placeholders, product operation mode, local MVP runtime behavior, review platform behavior, and browser smoke coverage.
+Current verification checks repository structure, document synchronization, security defaults, review/MCP/plugin local boundaries, CI configuration, design-system placeholders, product operation mode, local MVP runtime behavior, review platform behavior, dogfood target workflow behavior, and browser smoke coverage.
 
 ## Product-Local Commands
 
@@ -34,7 +34,7 @@ From `/home/masahiro/projects/ai-driven-development-lesson`:
 
 ## Current Runtime Checks
 
-The current implementation includes command parser tests, deterministic JSON error tests, `doctor` tests for environment, schema-versioning, and artifact-retention metadata, review parser tests, schema command tests, target manifest tests, action risk classification tests, MCP adapter allowlist tests, shell-safe action input tests, headed/devtools launch-mode tests, session/report/spec tests, daemon parser tests, redaction tests, architecture regressions for generic runtime boundaries, shared evidence helpers, local daemon boundaries, review/MCP security boundaries, local package dry-run verification, and Playwright smoke tests for local file observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, reports, spec export, process-scoped supervision, daemon start/status/stop, deterministic review findings, mock metrics, target manifest review, route discovery, viewport execution, and coverage artifacts. Manual local checks can use:
+The current implementation includes command parser tests, deterministic JSON error tests, `doctor` tests for environment, schema-versioning, and artifact-retention metadata, review parser tests, schema command tests, target init tests, target manifest tests, action risk classification tests, MCP adapter allowlist tests, shell-safe action input tests, headed/devtools launch-mode tests, session/report/spec tests, daemon parser tests, redaction tests, architecture regressions for generic runtime boundaries, shared evidence helpers, local daemon boundaries, review/MCP/plugin security boundaries, local package dry-run verification, and Playwright smoke tests for local file observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, reports, spec export, process-scoped supervision, daemon start/status/stop, deterministic review findings, action plans, local review advisory output, mock metrics, target manifest review, target reports, route discovery, viewport execution, and coverage artifacts. Manual local checks can use:
 
 ```bash
 node ./bin/browser-debug.js observe --url http://127.0.0.1:3000/ --screenshot --trace --timeout 15000 --json
@@ -42,13 +42,15 @@ node ./bin/browser-debug.js supervise --url http://127.0.0.1:3000/ --actions '[{
 node ./bin/browser-debug.js daemon start --url http://127.0.0.1:3000/ --timeout 15000 --json
 node ./bin/browser-debug.js daemon status --daemon <id> --json
 node ./bin/browser-debug.js daemon stop --daemon <id> --json
+node ./bin/browser-debug.js target init --url http://127.0.0.1:3000/ --json
 node ./bin/browser-debug.js review --url http://127.0.0.1:3000/ --viewport mobile --screenshot --report --timeout 15000 --json
+node ./bin/browser-debug.js review --target .browser-debug/targets/<id>.json --report --timeout 15000 --json
 node ./bin/browser-debug.js schema list --json
 node ./bin/browser-debug.js schema get --name review --json
 node ./bin/browser-debug.js mcp serve --json
 ```
 
-For this session, `http://127.0.0.1:5173/` was observed successfully with screenshot and trace artifacts, and `http://127.0.0.1:5174/` was not listening.
+Optional acceptance checks against local application control surfaces should run only when their local URLs are provided and listening.
 
 ## Planned Review Platform Checks
 
@@ -63,6 +65,14 @@ Phase 7 review-platform implementation includes focused checks before any releas
 - MCP adapter tests for stdio/local-only behavior, tool allowlist, schema-compatible responses, no shell tool, no cleanup tool, and no external upload by default.
 
 Optional acceptance checks against the Dashboard Control Center and FrameCue Control Center may run only when those local servers are listening. Those checks should use target manifests or fixtures and should not introduce product-specific branches into the runtime.
+
+## Phase 8 Dogfood and Plugin Checks
+
+- No-browser tests cover `target init`, generated manifest shape, MCP target tools, and plugin metadata boundaries.
+- Browser smoke tests cover enriched findings, `action_plan`, `review_advisory`, target review reports, and route/viewport coverage artifacts.
+- Architecture tests verify `.codex-plugin/plugin.json`, `.mcp.json`, and `skills/browser-debug-review/SKILL.md` stay local and stdio-based.
+- Plugin validation should pass with the local plugin validator before publication or marketplace work is proposed.
+- Package dry-run verification must include plugin metadata, the plugin-facing skill, and the reusable target manifest template without publishing.
 
 ## Release Readiness Checks
 

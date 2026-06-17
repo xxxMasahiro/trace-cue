@@ -12,11 +12,13 @@ The goal is to provide an agent-independent Playwright interface that can observ
 - Collect screenshots, traces, and notes for reproducible fixes.
 - Use fast headless mode by default, with headed browser and DevTools support for visual quality checks.
 - Run deterministic local review findings for browser health, layout integrity, interaction quality, accessibility basics, and conservative mock metrics.
+- Generate target manifests for whole-app route and viewport review.
+- Return action plans, implementation-focused fix candidates, and local heuristic review advisory data for developer handoff.
 - Use the same CLI/core contract from a local stdio MCP adapter when an MCP client is useful.
 
 ## Current Status
 
-This repository has completed the Free Development scaffold, local Git initialization, Phase 2a package/runtime design, the local MVP runtime slice, and the Phase 7 local review-platform slice. The current CLI supports `doctor`, deterministic JSON errors, Playwright-backed one-shot `observe`, headed/devtools launch modes, local artifacts, session metadata, simple actions, process-scoped supervision, local background daemon start/status/stop, screenshots/traces, reports, spec export, deterministic `review`, target-manifest site review, schema commands, shell-safe structured input, and a local stdio MCP adapter.
+This repository has completed the Free Development scaffold, local Git initialization, Phase 2a package/runtime design, the local MVP runtime slice, the Phase 7 local review-platform slice, and the Phase 8 local dogfood/plugin-readiness slice. The current CLI supports `doctor`, deterministic JSON errors, Playwright-backed one-shot `observe`, headed/devtools launch modes, local artifacts, session metadata, simple actions, process-scoped supervision, local background daemon start/status/stop, screenshots/traces, reports, spec export, deterministic `review`, target-manifest site review, target manifest initialization, action plans, local heuristic review advisory data, schema commands, shell-safe structured input, and a local stdio MCP adapter.
 
 ## Local CLI
 
@@ -27,6 +29,7 @@ node ./bin/browser-debug.js supervise --url http://127.0.0.1:3000/ --actions '[{
 node ./bin/browser-debug.js daemon start --url http://127.0.0.1:3000/ --json
 node ./bin/browser-debug.js daemon status --daemon <id> --json
 node ./bin/browser-debug.js daemon stop --daemon <id> --json
+node ./bin/browser-debug.js target init --url http://127.0.0.1:3000/ --json
 node ./bin/browser-debug.js review --url http://127.0.0.1:3000/ --viewport mobile --screenshot --report --json
 node ./bin/browser-debug.js review --target ./browser-debug-target.json --json
 node ./bin/browser-debug.js schema list --json
@@ -39,7 +42,7 @@ npm run test:pack
 npm run release:check
 ```
 
-Artifacts are written under ignored `.browser-debug/` directories and are retained until the developer manually removes that local artifact root. Trace artifacts can contain page content and must remain local. Review artifacts include local review JSON, layout JSON, screenshots, mock metrics, coverage, and Markdown reports when requested. `supervise` keeps one ephemeral browser context alive only for that CLI process and closes it before exit. `daemon start` keeps a local ephemeral browser worker alive until `daemon stop` and controls it only through local process signals and metadata. The MCP adapter is local stdio-only and does not expose HTTP/socket listeners, shell tools, cleanup tools, external upload, profile reuse, OAuth, or credential handling. `npm test` runs deterministic no-browser tests; `npm run test:browser` launches local Chromium for smoke coverage; `npm run test:pack` runs a local dry-run package check without publishing; `npm run release:check` combines no-browser and package checks without publishing.
+Artifacts are written under ignored `.browser-debug/` directories and are retained until the developer manually removes that local artifact root. Trace artifacts can contain page content and must remain local. Review artifacts include local target manifests, review JSON, layout JSON, screenshots, mock metrics, coverage, action plans, local heuristic advisory data, and Markdown reports when requested. `supervise` keeps one ephemeral browser context alive only for that CLI process and closes it before exit. `daemon start` keeps a local ephemeral browser worker alive until `daemon stop` and controls it only through local process signals and metadata. The MCP adapter is local stdio-only and does not expose HTTP/socket listeners, shell tools, cleanup tools, external upload, profile reuse, OAuth, or credential handling. The repository also contains plugin metadata under `.codex-plugin/`, `.mcp.json`, and `skills/browser-debug-review/`; marketplace installation, license changes, and npm publication remain separate approval-bound release work. `npm test` runs deterministic no-browser tests; `npm run test:browser` launches local Chromium for smoke coverage; `npm run test:pack` runs a local dry-run package check without publishing; `npm run release:check` combines no-browser and package checks without publishing.
 
 ## Canonical Documents
 

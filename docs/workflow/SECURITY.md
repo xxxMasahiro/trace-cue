@@ -18,6 +18,7 @@ Browser Debug CLI is local-first. It should operate on developer-approved URLs a
 - Keep `observe --url <url> --json` local-first and close ephemeral browser contexts after collection.
 - Keep review platform behavior local-first and evidence-path based by default.
 - Keep MCP compatibility as a local stdio adapter over explicit core operations unless a later approved design adds another transport.
+- Keep plugin metadata local and limited to the stdio MCP adapter and review skill.
 - Keep model or vision review disabled by default and label any future model output as advisory untrusted data.
 
 ## Approval Required
@@ -35,10 +36,11 @@ Browser Debug CLI is local-first. It should operate on developer-approved URLs a
 - HTTP or socket MCP server mode.
 - Remote browser control channels.
 - Any action policy that executes input-required, mutating, destructive, or external actions without an explicit target manifest allowlist.
+- Plugin marketplace registration, plugin installation-state mutation, package license changes, public package naming, or npm publication.
 
 ## Current Runtime Status
 
-The local runtime launches Playwright Chromium only for developer-provided `http`, `https`, or `file` URLs. It uses ephemeral contexts, writes ignored local artifacts, and closes browser contexts after each observation, action, review, process-scoped supervised run, or stopped daemon run. The local daemon uses a detached worker process, ignored metadata under `.browser-debug/daemons/`, and local process signals only. The review platform writes local review, layout, screenshot, mock metric, coverage, and report artifacts under `.browser-debug/`. The MCP adapter is local stdio-only and exposes an allowlisted tool surface. The runtime does not read an existing browser profile, persist storage state, automate login, upload artifacts, store credentials, expose an HTTP/socket control channel, execute arbitrary shell commands, or contact external services beyond the developer-provided page URL.
+The local runtime launches Playwright Chromium only for developer-provided `http`, `https`, or `file` URLs. It uses ephemeral contexts, writes ignored local artifacts, and closes browser contexts after each observation, action, review, process-scoped supervised run, or stopped daemon run. The local daemon uses a detached worker process, ignored metadata under `.browser-debug/daemons/`, and local process signals only. The review platform writes local target manifests, review, layout, screenshot, mock metric, coverage, action-plan, advisory, and report artifacts under `.browser-debug/`. The MCP adapter is local stdio-only and exposes an allowlisted tool surface. Plugin metadata points to that stdio adapter and the plugin-facing review skill. The runtime and plugin metadata do not read an existing browser profile, persist storage state, automate login, upload artifacts, store credentials, expose an HTTP/socket control channel, execute arbitrary shell commands, mutate plugin marketplace state, or contact external services beyond the developer-provided page URL.
 
 Current redaction is a defensive baseline for common secret-like strings and sensitive URL parameters; page content and artifacts remain untrusted data and should not be treated as sanitized proof of secrecy. Trace zip files can contain raw page content and must remain local under ignored `.browser-debug/` paths.
 
@@ -55,6 +57,7 @@ The review platform must:
 - Use target manifest scope, route budgets, and action policy to prevent unintended browsing or destructive interaction.
 - Default to same-origin route discovery for site review.
 - Execute only navigation and read-only state-revealing actions unless the target manifest explicitly allows broader action classes.
+- Keep `review_advisory` local and heuristic; it must not claim model review, human aesthetic approval, or deterministic design quality proof.
 - Keep arbitrary shell execution, external upload, persistent browser profile reuse, persistent storage state, OAuth, webhook handling, and credential storage out of the review MVP.
 
 Security tests block unapproved use of persistent browser profiles, storage-state persistence, HTTP/socket listeners, arbitrary shell execution, external upload paths, and destructive cleanup commands.

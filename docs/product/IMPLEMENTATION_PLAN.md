@@ -166,6 +166,46 @@ Current status: completed for local deterministic review, target manifests, rout
 - Completed: kept local dry-run package verification through `npm run test:pack`; packed install smoke remains a release-hardening task before npm publication.
 - Completed as boundary: package naming, license choice, npm token handling, and publication remain approval-bound.
 
+### Phase 8: Dogfood Review Workflow, Plugin Bundle, and Publication Readiness
+
+Phase 8 turns the Phase 7 review core into a more complete local workflow for whole-application review and Codex plugin use. It preserves all existing command surfaces and does not add external upload, OAuth, existing-profile reuse, HTTP/socket MCP transport, marketplace registration, license changes, or npm publication.
+
+#### Phase 8a: Control-Surface Target Manifest Readiness
+
+- Completed: added `browser-debug target init --url <url> --json`.
+- Completed: generated target manifests are local artifacts under `.browser-debug/targets/`.
+- Completed: generated manifests include same-origin scope, seed route, viewport matrix, route budget, screenshot defaults, masks, regions, and app hints.
+- Completed: route budgets now count routes rather than route-viewport pairs during target review.
+- Completed as boundary: application-specific route names, localhost ports, and product-specific labels remain in manifests or user-provided acceptance evidence, not runtime branches.
+
+#### Phase 8b: Actionable Developer Review Reports
+
+- Completed: findings now carry `priority`, `impact`, `recommendation`, `fix_candidates`, and `implementation_notes`.
+- Completed: review JSON now includes `action_plan` with local release-gate status, prioritized next actions, and coverage summary.
+- Completed: Markdown reports include action plan, local review advisory, recommendations, findings, and artifact references.
+- Completed: target review supports `--report`.
+
+#### Phase 8c: Local Heuristic Visual Review Advisory
+
+- Completed: review JSON now includes `review_advisory` as a local heuristic summary of browser-health, layout, accessibility, interaction, mock, and coverage signals.
+- Completed: advisory output clearly states it is not human aesthetic approval and not model output.
+- Completed as boundary: subjective model or vision review remains approval-bound and external evidence transfer remains unimplemented.
+
+#### Phase 8d: Codex Plugin Bundle
+
+- Completed: added `.codex-plugin/plugin.json` for a local Browser Debug CLI plugin bundle.
+- Completed: added `.mcp.json` pointing to the local `browser-debug-mcp` stdio adapter.
+- Completed: added `skills/browser-debug-review/SKILL.md` with local review workflow and security boundaries.
+- Completed: MCP allowlist now includes `browser_debug_target_init` and `browser_debug_review_target`.
+- Completed as boundary: no personal marketplace entry was written, and no plugin installation state was mutated.
+
+#### Phase 8e: Distribution Readiness Without Publication
+
+- Completed: package file-set includes plugin metadata, the plugin-facing skill, and reusable review target template.
+- Completed: added `templates/review-target-manifest.json`.
+- Completed: product structure, security, manifest, schema, test, README, and workflow docs are synchronized with Phase 8.
+- Completed as boundary: public package name, license, npm token handling, marketplace publication, and npm publication remain approval-bound.
+
 ## Verification Method
 
 - `./tools/product-gate`
@@ -183,6 +223,7 @@ Current status: completed for local deterministic review, target manifests, rout
 - Phase 7 browser smoke checks should add fixture-based review runs for console errors, failed requests, empty render, horizontal overflow, clipped text, missing labels, screenshots, route coverage, viewport coverage, and artifact placement under ignored `.browser-debug/`.
 - Phase 7 mock-comparison checks should prove exact fixture matches are within thresholds, shifted UI produces diff artifacts and metrics, masks suppress volatile regions, dimension mismatches are `inconclusive`, and stable fixtures produce stable findings across repeated runs.
 - Phase 7 MCP adapter checks should prove stdio/local-only behavior, tool allowlists, no shell tools, no cleanup tools, no HTTP/socket listener, schema-compatible responses, and no external upload by default.
+- Phase 8 checks cover target manifest generation, MCP target tools, plugin metadata validation, action plans, local review advisory, target Markdown reports, package dry-run file-set readiness, and local security boundaries.
 - Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, external listener creation, arbitrary shell execution, unapproved upload paths, and destructive cleanup commands.
 
 ## Recovery Path

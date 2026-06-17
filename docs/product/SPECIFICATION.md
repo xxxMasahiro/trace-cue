@@ -32,6 +32,7 @@ browser-debug supervise --url <url> --actions <json-array> --json
 browser-debug daemon start --url <url> --json
 browser-debug daemon status --daemon <id> --json
 browser-debug daemon stop --daemon <id> --json
+browser-debug target init --url <url> --json
 browser-debug act --session <id> --action <json>
 browser-debug report --session <id>
 browser-debug spec export --session <id>
@@ -72,8 +73,10 @@ Implemented behavior:
 - `spec export --session <id>` writes a JSON action/spec export.
 - `review --url <url>` runs a single-URL deterministic local review, captures observation and layout evidence, optionally captures screenshots and mock metrics, writes review artifacts, and returns evidence-backed findings.
 - `review --target <manifest>` runs a manifest-driven site review with generic route discovery, viewport matrix execution, coverage artifacts, and aggregated findings.
+- `target init --url <url>` writes a reusable local target manifest artifact under `.browser-debug/targets/` with same-origin scope, seed route, viewport matrix, route budget, screenshot defaults, and safe local review boundaries.
+- Review results include `action_plan` and `review_advisory` objects. `action_plan` prioritizes findings, groups developer next actions, and reports a local release gate. `review_advisory` is a local heuristic signal that summarizes browser health, layout, accessibility, interaction, mock, and coverage concerns without claiming human or model aesthetic approval.
 - `schema list` and `schema get --name <schema>` expose machine-readable JSON contracts for envelopes, artifacts, findings, target manifests, review results, and MCP tool metadata.
-- `browser-debug-mcp` provides a local stdio MCP adapter with an allowlisted tool surface over the same CLI/core contracts.
+- `browser-debug-mcp` provides a local stdio MCP adapter with an allowlisted tool surface over the same CLI/core contracts, including target manifest initialization and target review.
 - `act --input -`, `supervise --input -`, `--action @file`, and `--actions @file` support shell-safe structured input while preserving inline JSON compatibility.
 - `npm test` runs deterministic no-browser tests, including headed/devtools launch-mode regression through an injected Playwright browser type and architecture regressions for generic runtime boundaries, shared page evidence helpers, local daemon boundaries, and local Node CLI packaging. `npm run test:browser` runs Playwright smoke tests for observation, screenshots/traces, click actions, form controls, keyboard input, scroll, wait, reports, spec export, supervised ordered actions, and local daemon start/status/stop.
 - `npm run test:pack` runs `npm pack --dry-run --json` with an ignored local npm cache to verify the package file set without publishing.
@@ -93,7 +96,7 @@ Implemented review components:
 - `evidence-model`: normalized DOM, accessibility, bounding box, computed style, console, network, viewport, and artifact evidence.
 - `review-engine`: deterministic rules for browser health, layout integrity, interaction quality, accessibility basics, mock fidelity, and evidence quality.
 - `site-review`: target manifest loading, route discovery, viewport matrix execution, action risk policy, budgets, and coverage reporting.
-- `reporter`: JSON and Markdown issue reports with artifact references and reproduction steps.
+- `reporter`: JSON and Markdown issue reports with artifact references, reproduction steps, prioritized action plans, local heuristic advisory data, and implementation-focused fix candidates.
 - `schema`: machine-readable contracts for envelopes, findings, artifacts, target manifests, reports, and MCP tool I/O.
 - `cli-adapter`: the primary command surface for review workflows.
 - `mcp-adapter`: a thin local stdio adapter over the same core through `browser-debug-mcp`.
@@ -120,6 +123,11 @@ message
 evidence
 artifacts
 repro
+priority
+impact
+recommendation
+fix_candidates
+implementation_notes
 owner_decision_required
 ```
 
@@ -158,6 +166,8 @@ The runtime must not contain product-specific branches for Dashboard Control Cen
 
 Route discovery is generic and uses same-origin anchors and navigation action candidates in the current implementation. Coverage output reports discovered, visited, skipped, failed, and expected-missing routes. Later enhancements may add history navigation, DOM metadata, redirects, and app-provided manifest hints without changing the core contract.
 
+`target init` exists so a developer or agent can create a starting manifest before reviewing a whole application. The generated manifest is intentionally generic: it does not include application-specific route names or control labels, and it expects owners to add known `expectedRoutes`, route budgets, viewport matrices, masks, or regions as needed.
+
 Action exploration should be risk-gated. The default policy may execute navigation and read-only state-revealing actions. Input-required, mutating, destructive, and external actions require explicit manifest allowlists and must remain local-first.
 
 Mock comparison is optional. The current local implementation compares PNG dimensions, hashes, and byte-difference metrics without adding image-processing dependencies. If actual and mock dimensions differ, the result is `inconclusive` rather than a false pass/fail claim. Pixel heatmaps and region crops remain later compatible enhancements.
@@ -168,7 +178,7 @@ MCP compatibility is implemented as an adapter, not as the product owner layer. 
 
 - Uses stdio/local process communication only.
 - Calls the same CLI/core contracts used by local commands.
-- Exposes a narrow allowlist: `browser_debug_doctor`, `browser_debug_observe`, `browser_debug_review`, `browser_debug_schema_list`, and `browser_debug_schema_get`.
+- Exposes a narrow allowlist: `browser_debug_doctor`, `browser_debug_observe`, `browser_debug_review`, `browser_debug_target_init`, `browser_debug_review_target`, `browser_debug_schema_list`, and `browser_debug_schema_get`.
 - Avoids HTTP listeners, socket listeners, remote control channels, arbitrary shell execution, cleanup commands, profile reuse, storage-state persistence, OAuth, external upload, and credential handling.
 - Returns the same envelope families as the CLI.
 
@@ -212,6 +222,7 @@ The initial artifact layout is:
   traces/
   reports/
   specs/
+  targets/
   reviews/
   layouts/
   diffs/
@@ -245,6 +256,19 @@ The local MVP schema version is `0.1.0`. This version applies to top-level JSON 
 Compatible changes may add fields while keeping existing field names, meanings, and JSON types stable. Breaking changes include renaming fields, removing fields, changing field types, or changing status/error vocabulary semantics; those changes require a schema version bump, synchronized product documents, and regression tests.
 
 `doctor --json` exposes `data.schema_version_policy` and `data.artifact_retention` so agents and scripts can inspect the current compatibility and artifact-retention policy without scraping documents.
+
+## Plugin Bundle Contract
+
+The repository includes local Codex plugin metadata:
+
+```text
+.codex-plugin/plugin.json
+.mcp.json
+skills/browser-debug-review/SKILL.md
+templates/review-target-manifest.json
+```
+
+The plugin bundle points to the local stdio MCP adapter and the plugin-facing review skill. It does not register a marketplace entry, publish a package, change the license, add external upload, add OAuth, add credential storage, or start HTTP/socket MCP transports.
 
 ## Runtime Security Contract
 
