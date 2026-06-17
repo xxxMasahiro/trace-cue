@@ -7,6 +7,8 @@ product.ci_workflow	optional	all	all	.github/workflows/ci.yml	ci	file_nonempty	w
 product.ci_manifest	optional	all	all	ops/CI_MANIFEST.tsv	ops	file_nonempty	workflow	CI authority manifest for product-local workflow checks.
 product.cli_bin	optional	all	all	bin/browser-debug.js	source	file_nonempty	workflow	Local browser-debug executable entrypoint.
 product.source	required	all	all	src/cli.js	source	file_nonempty	workflow	CLI runtime entrypoint.
+product.daemon	optional	all	all	src/daemon.js	source	file_nonempty	workflow	Local background browser daemon controller.
+product.daemon_worker	optional	all	all	src/daemon-worker.js	source	file_nonempty	workflow	Local background browser daemon worker process.
 product.page_evidence	optional	all	all	src/page-evidence.js	source	file_nonempty	workflow	Reusable page observation and event evidence helpers.
 product.observe	optional	all	all	src/observe.js	source	file_nonempty	workflow	Playwright-backed one-shot observation runtime.
 product.sessions	optional	all	all	src/sessions.js	source	file_nonempty	workflow	Local session, action, report, and spec runtime.

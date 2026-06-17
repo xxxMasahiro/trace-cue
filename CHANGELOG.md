@@ -14,6 +14,7 @@ All notable local development changes are tracked here before public release.
 - Added headed/devtools launch-mode regression coverage without requiring a GUI display.
 - Added local package dry-run verification with `npm run test:pack`.
 - Added `supervise` for one process-scoped ephemeral browser context with ordered actions.
+- Added `daemon start`, `daemon status`, and `daemon stop` for local background ephemeral browser supervision.
 - Added architecture regressions for generic runtime boundaries, shared page evidence helpers, and local Node CLI packaging.
 - Added local GitHub Actions CI configuration and `ops/CI_MANIFEST.tsv` with a product-local CI validation check.
 - Added `npm run release:check` for local release-readiness verification without publishing.

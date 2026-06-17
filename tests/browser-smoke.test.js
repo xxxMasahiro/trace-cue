@@ -239,6 +239,64 @@ test('supervise keeps one ephemeral context for ordered actions', { skip: !runBr
   await access(path.join(cwd, supervision.path));
 });
 
+test('daemon start status and stop keep a local ephemeral browser process', { skip: !runBrowserSmoke }, async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-daemon-smoke-'));
+  await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
+  const fixture = path.join(cwd, 'fixture.html');
+  await writeFile(fixture, [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head><title>Daemon Smoke</title></head>',
+    '<body>',
+    '<h1>Daemon Smoke Page</h1>',
+    '</body>',
+    '</html>'
+  ].join('\n'), 'utf8');
+
+  let daemonId = null;
+  try {
+    const started = await executeCli([
+      'daemon',
+      'start',
+      '--url',
+      `file://${fixture}`,
+      '--timeout',
+      '10000',
+      '--json'
+    ], { cwd });
+    assert.equal(started.exitCode, 0);
+    const startedBody = JSON.parse(started.stdout);
+    daemonId = startedBody.data.daemon.id;
+    assert.equal(startedBody.command, 'daemon start');
+    assert.equal(startedBody.data.daemon.status, 'running');
+    assert.equal(startedBody.data.daemon.browser.ephemeral_context, true);
+    assert.equal(startedBody.data.daemon.browser.existing_profile_reused, false);
+    assert.equal(startedBody.data.daemon.browser.persistent_storage, false);
+    assert.equal(startedBody.data.daemon.control.external_channel, false);
+    assert.match(startedBody.data.daemon.current_url, /^file:/);
+
+    const daemonArtifact = startedBody.artifacts.find((artifact) => artifact.type === 'daemon');
+    assert.ok(daemonArtifact);
+    await access(path.join(cwd, daemonArtifact.path));
+
+    const status = await executeCli(['daemon', 'status', '--daemon', daemonId, '--json'], { cwd });
+    assert.equal(status.exitCode, 0);
+    const statusBody = JSON.parse(status.stdout);
+    assert.equal(statusBody.data.daemon.status, 'running');
+    assert.equal(statusBody.data.daemon.process_status, 'alive');
+
+    const stopped = await executeCli(['daemon', 'stop', '--daemon', daemonId, '--json'], { cwd });
+    assert.equal(stopped.exitCode, 0);
+    const stoppedBody = JSON.parse(stopped.stdout);
+    assert.match(stoppedBody.data.daemon.status, /^(stopped|exited)$/);
+    assert.equal(stoppedBody.data.daemon.process_status, 'not_alive');
+  } finally {
+    if (daemonId) {
+      await executeCli(['daemon', 'stop', '--daemon', daemonId, '--json'], { cwd }).catch(() => {});
+    }
+  }
+});
+
 async function runAction(cwd, sessionId, action) {
   const result = await executeCli([
     'act',

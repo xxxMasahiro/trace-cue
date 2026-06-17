@@ -28,6 +28,8 @@ for rel in \
   package-lock.json \
   bin/browser-debug.js \
   src/cli.js \
+  src/daemon.js \
+  src/daemon-worker.js \
   src/page-evidence.js \
   src/observe.js \
   src/sessions.js \

@@ -123,6 +123,65 @@ test('supervise parses actions and returns a deterministic JSON envelope', async
   assert.equal(body.data.supervision.action_history[0].type, 'observe');
 });
 
+test('daemon commands parse and return deterministic JSON envelopes', async () => {
+  const started = await executeCli(
+    ['daemon', 'start', '--url', 'https://example.test/', '--json'],
+    {
+      now: fixedNow,
+      daemonStartRunner: async (options) => ({
+        status: 'ok',
+        data: {
+          daemon: {
+            id: 'daemon-fixed',
+            status: 'running',
+            current_url: options.url,
+            browser: {
+              ephemeral_context: true,
+              existing_profile_reused: false,
+              persistent_storage: false
+            }
+          }
+        },
+        warnings: [],
+        errors: [],
+        artifacts: [{ type: 'daemon', path: '.browser-debug/daemons/daemon-fixed.json' }]
+      })
+    }
+  );
+  assert.equal(started.exitCode, 0);
+  const startedBody = JSON.parse(started.stdout);
+  assert.equal(startedBody.command, 'daemon start');
+  assert.equal(startedBody.data.daemon.id, 'daemon-fixed');
+  assert.equal(startedBody.data.daemon.browser.existing_profile_reused, false);
+
+  const statusParsed = parseCliArgs(['daemon', 'status', '--daemon', 'daemon-fixed', '--json']);
+  assert.equal(statusParsed.ok, true);
+  assert.equal(statusParsed.command, 'daemon status');
+  assert.equal(statusParsed.options.daemon, 'daemon-fixed');
+
+  const stopped = await executeCli(
+    ['daemon', 'stop', '--daemon', 'daemon-fixed', '--json'],
+    {
+      now: fixedNow,
+      daemonStopRunner: async (options) => ({
+        status: 'ok',
+        data: {
+          daemon: {
+            id: options.daemon,
+            status: 'stopped',
+            process_status: 'not_alive'
+          }
+        },
+        warnings: [],
+        errors: [],
+        artifacts: [{ type: 'daemon', path: `.browser-debug/daemons/${options.daemon}.json` }]
+      })
+    }
+  );
+  assert.equal(stopped.exitCode, 0);
+  assert.equal(JSON.parse(stopped.stdout).data.daemon.status, 'stopped');
+});
+
 test('session start, act, report, and spec export use local artifacts', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-cli-'));
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');

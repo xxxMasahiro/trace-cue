@@ -38,6 +38,8 @@
     { "path": "package-lock.json", "role": "manifest" },
     { "path": "bin/browser-debug.js", "role": "manifest" },
     { "path": "src/cli.js", "role": "manifest" },
+    { "path": "src/daemon.js", "role": "manifest" },
+    { "path": "src/daemon-worker.js", "role": "manifest" },
     { "path": "src/page-evidence.js", "role": "manifest" },
     { "path": "src/observe.js", "role": "manifest" },
     { "path": "src/sessions.js", "role": "manifest" },

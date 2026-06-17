@@ -1,4 +1,5 @@
 import { CLI_NAME, DEFAULT_ARTIFACT_ROOT, PACKAGE_VERSION, PLANNED_COMMANDS } from './constants.js';
+import { daemonStatus, startDaemon, stopDaemon } from './daemon.js';
 import { runDoctor } from './doctor.js';
 import { createEnvelope, createErrorEnvelope, stringifyEnvelope } from './envelope.js';
 import { runObserve } from './observe.js';
@@ -87,6 +88,18 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'supervise') {
       return runtimeResult(parsed.command, await (context.supervisorRunner ?? runSupervisor)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'daemon start') {
+      return runtimeResult(parsed.command, await (context.daemonStartRunner ?? startDaemon)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'daemon status') {
+      return runtimeResult(parsed.command, await (context.daemonStatusRunner ?? daemonStatus)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'daemon stop') {
+      return runtimeResult(parsed.command, await (context.daemonStopRunner ?? stopDaemon)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'session start') {
@@ -247,6 +260,26 @@ function usageText(topic) {
     return `Usage: ${CLI_NAME} doctor [--json]`;
   }
 
+  if (topic === 'daemon' || topic === 'daemon start') {
+    return [
+      `Usage: ${CLI_NAME} daemon start --url <url> [--json]`,
+      '',
+      'Options:',
+      '  --url <url>              Absolute http, https, or file URL to inspect.',
+      `  --artifact-root <path>   Local artifact root. Default: ${DEFAULT_ARTIFACT_ROOT}`,
+      '  --headed                 Keep the background browser visible.',
+      '  --devtools               Keep the background browser visible with DevTools.'
+    ].join('\n');
+  }
+
+  if (topic === 'daemon status') {
+    return `Usage: ${CLI_NAME} daemon status --daemon <id> [--json]`;
+  }
+
+  if (topic === 'daemon stop') {
+    return `Usage: ${CLI_NAME} daemon stop --daemon <id> [--json]`;
+  }
+
   if (topic === 'session start') {
     return `Usage: ${CLI_NAME} session start [--url <url>] [--json]`;
   }
@@ -258,6 +291,9 @@ function usageText(topic) {
     '  doctor',
     '  observe --url <url> --json',
     '  supervise --url <url> [--actions <json-array>] --json',
+    '  daemon start --url <url> --json',
+    '  daemon status --daemon <id> --json',
+    '  daemon stop --daemon <id> --json',
     '  session start [--url <url>]',
     '  session close --session <id>',
     '  act --session <id> --action <json>',

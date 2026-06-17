@@ -39,6 +39,7 @@ Read AGENTS.MD and docs/workflow/HANDOFF.md, confirm the current state, then res
 - Implemented local `.browser-debug/` artifact handling for sessions, observations, screenshots, reports, and specs.
 - Implemented `session start`, `session close`, simple `act`, `report`, and `spec export` using file-backed local session metadata.
 - Implemented `supervise --url <url> --actions <json-array>` for process-scoped ephemeral browser supervision.
+- Implemented `daemon start`, `daemon status`, and `daemon stop` for local background ephemeral browser supervision.
 - Added `npm run test:browser` for real Playwright smoke coverage.
 - Strengthened browser smoke coverage for form controls, keyboard input, deterministic scroll, wait actions, screenshots, reports, and spec export.
 - Added deterministic headed/devtools launch-mode regression coverage without requiring a GUI display.
@@ -46,8 +47,9 @@ Read AGENTS.MD and docs/workflow/HANDOFF.md, confirm the current state, then res
 - Added `CHANGELOG.md` and `docs/workflow/RELEASE.md` for local release readiness without publishing.
 - Added browser smoke coverage for supervised ordered actions in one ephemeral context.
 - Added architecture regression coverage for generic runtime boundaries, shared evidence helpers, and local Node CLI packaging.
+- Added architecture and browser smoke coverage for local daemon boundaries and start/status/stop.
 - Added local GitHub Actions CI configuration, `ops/CI_MANIFEST.tsv`, `tools/check_product_ci.sh`, and `npm run release:check` without remote execution or publishing.
 - Verification passed with `npm test`, `npm run test:browser`, `node ./bin/browser-debug.js doctor --json`, Dashboard Control Center observation at `http://127.0.0.1:5173/`, screenshot review, and trace artifact existence checks.
 - `http://127.0.0.1:5174/` was not listening during verification.
 - Final checks also passed with `./tools/product-gate`, `git diff --check`, lesson-side product scaffold check, lesson-side product repository authority status, and lesson-side workflow-pair sync check.
-- Next approval-bound work: GitHub repository creation, remote setup, push, remote CI execution, public package naming, license changes, npm publication, background browser daemon supervision, existing-browser-profile reuse, OAuth/login automation, external upload, or credential storage.
+- Next approval-bound work: GitHub repository creation, remote setup, push, remote CI execution, public package naming, license changes, npm publication, existing-browser-profile reuse, OAuth/login automation, external daemon control channels, external upload, or credential storage.

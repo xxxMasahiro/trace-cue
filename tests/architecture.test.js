@@ -10,6 +10,8 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
   const files = [
     'src/cli.js',
     'src/constants.js',
+    'src/daemon.js',
+    'src/daemon-worker.js',
     'src/observe.js',
     'src/page-evidence.js',
     'src/parser.js',
@@ -78,6 +80,18 @@ test('CI workflow stays generic and release-safe', async () => {
   assert.match(workflow, /run: npm run test:pack/);
   assert.match(workflow, /run: npm run test:browser/);
   assert.doesNotMatch(workflow, /npm publish|gh repo|secrets\.|curl |wget /i);
+});
+
+test('background daemon uses local process boundaries only', async () => {
+  const daemon = await readText('src/daemon.js');
+  const worker = await readText('src/daemon-worker.js');
+  const combined = `${daemon}\n${worker}`;
+
+  assert.doesNotMatch(combined, /createServer|listen\(|WebSocket|EventSource/);
+  assert.doesNotMatch(combined, /userDataDir|launchPersistentContext|storageState/);
+  assert.match(combined, /existing_profile_reused:\s*false/);
+  assert.match(combined, /persistent_storage:\s*false/);
+  assert.match(combined, /local_process_signal/);
 });
 
 function readText(relativePath) {

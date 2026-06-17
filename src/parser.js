@@ -2,6 +2,7 @@ const VALUE_OPTIONS = new Set([
   'action',
   'actions',
   'artifact-root',
+  'daemon',
   'session',
   'timeout',
   'url'
@@ -45,6 +46,8 @@ export function parseCliArgs(argv) {
       return parseObserve(args, globals);
     case 'supervise':
       return parseSupervise(args, globals);
+    case 'daemon':
+      return parseDaemon(args, globals);
     case 'session':
       return parseSession(args, globals);
     case 'act':
@@ -194,6 +197,60 @@ function parseSession(args, globals) {
     message: `Unknown session subcommand: ${subcommand}`,
     details: { subcommands: ['start', 'close'] }
   });
+}
+
+function parseDaemon(args, globals) {
+  if (globals.help) {
+    return { ok: true, command: 'help', json: globals.json, options: { topic: 'daemon' } };
+  }
+  const subcommand = args[0];
+  if (!subcommand) {
+    return parseError('daemon', globals.json, {
+      code: 'MISSING_SUBCOMMAND',
+      message: 'daemon requires a subcommand.',
+      details: { subcommands: ['start', 'status', 'stop'] }
+    });
+  }
+  if (subcommand === 'start') {
+    return parseDaemonStart(args.slice(1), globals);
+  }
+  if (subcommand === 'status' || subcommand === 'stop') {
+    return parseRequiredOptions(`daemon ${subcommand}`, args.slice(1), globals, ['daemon']);
+  }
+  return parseError('daemon', globals.json, {
+    code: 'UNKNOWN_SUBCOMMAND',
+    message: `Unknown daemon subcommand: ${subcommand}`,
+    details: { subcommands: ['start', 'status', 'stop'] }
+  });
+}
+
+function parseDaemonStart(args, globals) {
+  if (globals.help) {
+    return { ok: true, command: 'help', json: globals.json, options: { topic: 'daemon start' } };
+  }
+  const parsed = parseOptions('daemon start', args, globals.json);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (parsed.positionals.length > 0) {
+    return parseError('daemon start', globals.json, {
+      code: 'UNEXPECTED_ARGUMENT',
+      message: 'daemon start does not accept positional arguments.',
+      details: { argument: parsed.positionals[0] }
+    });
+  }
+  if (!parsed.options.url) {
+    return parseError('daemon start', globals.json, {
+      code: 'MISSING_REQUIRED_OPTION',
+      message: 'daemon start requires --url <url>.',
+      details: { option: 'url' }
+    });
+  }
+  const urlError = validateUrl(parsed.options.url);
+  if (urlError) {
+    return parseError('daemon start', globals.json, urlError);
+  }
+  return { ok: true, command: 'daemon start', json: globals.json, options: parsed.options };
 }
 
 function parseSpec(args, globals) {
@@ -361,6 +418,9 @@ function plannedCommands() {
     'doctor',
     'observe',
     'supervise',
+    'daemon start',
+    'daemon status',
+    'daemon stop',
     'session start',
     'session close',
     'act',

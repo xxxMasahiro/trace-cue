@@ -36,6 +36,7 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 - Playwright is installed as a runtime dependency.
 - `session start`, `session close`, simple `act`, `report`, and `spec export` are implemented with local file-backed session metadata.
 - `supervise --url <url> --actions <json-array>` is implemented for process-scoped ephemeral browser supervision and closes before CLI exit.
+- `daemon start`, `daemon status`, and `daemon stop` are implemented for local background ephemeral browser supervision through a detached worker process, local metadata, and local process signals.
 - `npm run test:browser` passed for local file observation and click action smoke coverage.
 - `npm run test:browser` now covers local file observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, reports, and spec export.
 - `npm test` now covers headed/devtools launch-mode wiring through a deterministic injected browser type.
@@ -43,6 +44,7 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 - `CHANGELOG.md` and `docs/workflow/RELEASE.md` now track unreleased local changes and publication blockers.
 - `npm run test:browser` covers supervised ordered actions in one ephemeral context.
 - `npm test` includes architecture regressions for generic runtime boundaries, shared evidence helpers, and local Node CLI packaging.
+- `npm run test:browser` covers daemon start/status/stop, and `npm test` covers local daemon boundary regressions.
 - Local GitHub Actions CI configuration is present under `.github/workflows/ci.yml`.
 - `ops/CI_MANIFEST.tsv` and `tools/check_product_ci.sh` validate CI configuration without remote execution.
 - `npm run release:check` provides local release-readiness verification without publishing.
@@ -53,7 +55,7 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 
 ## Next Step
 
-Ask for explicit approval before background browser daemon supervision, authentication automation, external upload, existing-browser-profile reuse, credential storage, GitHub repository creation, remote setup, push, remote CI execution, license change, public package naming, or npm publication. No remaining local MVP implementation work is currently planned; the next useful non-code check is real headed visual verification in an environment with a display.
+Ask for explicit approval before authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, GitHub repository creation, remote setup, push, remote CI execution, license change, public package naming, or npm publication. No remaining local MVP implementation work is currently planned; the next useful non-code check is real headed visual verification in an environment with a display.
 
 ## Restart Notes
 

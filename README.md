@@ -14,7 +14,7 @@ The goal is to provide an agent-independent Playwright interface that can observ
 
 ## Current Status
 
-This repository has completed the Free Development scaffold, local Git initialization, Phase 2a package/runtime design, and the local MVP runtime slice. The current CLI supports `doctor`, deterministic JSON errors, Playwright-backed one-shot `observe`, headed/devtools launch modes, local artifacts, session metadata, simple actions, screenshots/traces, reports, and spec export.
+This repository has completed the Free Development scaffold, local Git initialization, Phase 2a package/runtime design, and the local MVP runtime slice. The current CLI supports `doctor`, deterministic JSON errors, Playwright-backed one-shot `observe`, headed/devtools launch modes, local artifacts, session metadata, simple actions, process-scoped supervision, local background daemon start/status/stop, screenshots/traces, reports, and spec export.
 
 ## Local CLI
 
@@ -22,13 +22,16 @@ This repository has completed the Free Development scaffold, local Git initializ
 node ./bin/browser-debug.js doctor --json
 node ./bin/browser-debug.js observe --url http://127.0.0.1:3000/ --screenshot --trace --json
 node ./bin/browser-debug.js supervise --url http://127.0.0.1:3000/ --actions '[{"type":"observe"}]' --json
+node ./bin/browser-debug.js daemon start --url http://127.0.0.1:3000/ --json
+node ./bin/browser-debug.js daemon status --daemon <id> --json
+node ./bin/browser-debug.js daemon stop --daemon <id> --json
 npm test
 npm run test:browser
 npm run test:pack
 npm run release:check
 ```
 
-Artifacts are written under ignored `.browser-debug/` directories. Trace artifacts can contain page content and must remain local. `supervise` keeps one ephemeral browser context alive only for that CLI process and closes it before exit. `npm test` runs deterministic no-browser tests; `npm run test:browser` launches local Chromium for smoke coverage; `npm run test:pack` runs a local dry-run package check without publishing; `npm run release:check` combines no-browser and package checks without publishing.
+Artifacts are written under ignored `.browser-debug/` directories. Trace artifacts can contain page content and must remain local. `supervise` keeps one ephemeral browser context alive only for that CLI process and closes it before exit. `daemon start` keeps a local ephemeral browser worker alive until `daemon stop` and controls it only through local process signals and metadata. `npm test` runs deterministic no-browser tests; `npm run test:browser` launches local Chromium for smoke coverage; `npm run test:pack` runs a local dry-run package check without publishing; `npm run release:check` combines no-browser and package checks without publishing.
 
 ## Canonical Documents
 

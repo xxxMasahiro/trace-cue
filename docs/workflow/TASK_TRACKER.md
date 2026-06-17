@@ -39,6 +39,7 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 - [x] Implemented `observe --trace` with local Playwright trace zip artifacts and trace-content warnings.
 - [x] Implemented `session start`, `session close`, simple `act`, `report`, and `spec export`.
 - [x] Implemented `supervise --url <url> --actions <json-array>` for process-scoped ephemeral browser supervision.
+- [x] Implemented `daemon start`, `daemon status`, and `daemon stop` for local background ephemeral browser supervision.
 - [x] Added browser smoke tests for local file observation and click actions.
 - [x] Strengthened browser smoke coverage for form controls, keyboard input, deterministic scroll, wait actions, screenshots, reports, and spec export.
 - [x] Added deterministic headed/devtools launch-mode regression coverage without requiring a GUI display.
@@ -46,6 +47,7 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 - [x] Added local release readiness notes in `CHANGELOG.md` and `docs/workflow/RELEASE.md`.
 - [x] Added browser smoke coverage for supervised ordered actions in one ephemeral context.
 - [x] Added architecture regression coverage for generic runtime boundaries, shared evidence helpers, and local Node CLI packaging.
+- [x] Added architecture and browser smoke coverage for local daemon boundaries and start/status/stop.
 - [x] Added local GitHub Actions CI configuration and `ops/CI_MANIFEST.tsv`.
 - [x] Added `tools/check_product_ci.sh` and wired it into product-local aggregate checks.
 - [x] Added `npm run release:check` for local release-readiness verification without publishing.
@@ -60,7 +62,6 @@ No remaining local MVP implementation work is currently planned.
 
 ## Future Approval-Bound Work
 
-- [ ] If approved later, implement background browser daemon supervision.
 - [ ] If approved later, run real headed visual regression checks in an environment with a display.
 - [ ] If approved later, create the public GitHub repository with `gh`.
 - [ ] If approved later, choose the public package name and license.
@@ -69,7 +70,7 @@ No remaining local MVP implementation work is currently planned.
 
 ## Next Step
 
-Ask for explicit approval before background browser daemon supervision, trace capture expansion, authentication automation, external upload, existing-browser-profile reuse, credential storage, GitHub repository creation, remote setup, push, remote CI execution, public package naming, license changes, or npm publication.
+Ask for explicit approval before trace capture expansion, authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, GitHub repository creation, remote setup, push, remote CI execution, public package naming, license changes, or npm publication.
 
 ## Stop Conditions
 
