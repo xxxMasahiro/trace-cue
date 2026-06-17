@@ -312,6 +312,12 @@ test('review reports deterministic layout and browser-health findings', { skip: 
     '<div id="wide" style="width:2000px;height:20px;background:#ccc">Wide content</div>',
     '<div id="clip" style="width:20px;height:18px;overflow:hidden;white-space:nowrap">Clipped content should be detected</div>',
     '<button id="nameless" style="width:32px;height:32px"></button>',
+    '<img id="missing-alt" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" style="width:32px;height:32px">',
+    '<p id="low-contrast" style="color:rgb(120,120,120);background:rgb(120,120,120)">Low contrast text</p>',
+    '<div style="position:relative;width:160px;height:70px">',
+    '<p id="overlap-a" style="position:absolute;left:0;top:0;width:90px;height:36px;background:#eee">Alpha panel</p>',
+    '<p id="overlap-b" style="position:absolute;left:10px;top:6px;width:90px;height:36px;background:#ddd">Beta panel</p>',
+    '</div>',
     '<script>console.error("Review smoke console failure")</script>',
     '</body>',
     '</html>'
@@ -339,10 +345,18 @@ test('review reports deterministic layout and browser-health findings', { skip: 
   assert.equal(body.data.review.mode, 'single_url');
   assert.equal(body.data.action_plan.release_gate.status, 'blocked');
   assert.equal(body.data.review_advisory.status, 'needs_attention');
+  assert.equal(body.data.quality_signals.reviewer, 'local_quality_signals');
+  assert.equal(body.data.quality_signals.model_review_boundary.external_evidence_transfer, false);
+  assert.equal(body.data.quality_signals.accessibility_structure.missing_image_alt_count >= 1, true);
+  assert.equal(body.data.quality_signals.accessibility_structure.low_contrast_text_count >= 1, true);
+  assert.equal(body.data.quality_signals.responsive_layout.overlap_pair_count >= 1, true);
   assert.ok(body.data.findings.some((finding) => finding.category === 'browser_health'));
   assert.ok(body.data.findings.some((finding) => finding.category === 'layout_integrity'));
   assert.ok(body.data.findings.some((finding) => finding.category === 'accessibility_basics'));
   assert.ok(body.data.findings.some((finding) => finding.category === 'mock_fidelity'));
+  assert.ok(body.data.findings.some((finding) => /alt text/.test(finding.message)));
+  assert.ok(body.data.findings.some((finding) => /contrast/.test(finding.message)));
+  assert.ok(body.data.findings.some((finding) => /overlap/.test(finding.message)));
   assert.ok(body.data.findings.every((finding) => finding.priority));
   assert.ok(body.data.findings.some((finding) => finding.recommendation));
 
@@ -351,6 +365,10 @@ test('review reports deterministic layout and browser-health findings', { skip: 
     assert.ok(artifact, `missing ${type} artifact`);
     await access(path.join(cwd, artifact.path));
   }
+  const report = body.artifacts.find((artifact) => artifact.type === 'report');
+  const reportText = await readFile(path.join(cwd, report.path), 'utf8');
+  assert.match(reportText, /Quality Signals/);
+  assert.match(reportText, /Local release gate/);
 });
 
 test('target review discovers same-origin routes and records coverage', { skip: !runBrowserSmoke }, async () => {
@@ -408,9 +426,13 @@ test('target review discovers same-origin routes and records coverage', { skip: 
   await access(path.join(cwd, coverage.path));
   assert.equal(body.data.action_plan.coverage.discovered_routes >= 2, true);
   assert.equal(body.data.review_advisory.reviewer, 'local_heuristic');
+  assert.equal(body.data.quality_signals.route_coverage.status, 'passed');
+  assert.equal(body.data.quality_signals.model_review_boundary.external_evidence_transfer, false);
   const report = body.artifacts.find((artifact) => artifact.type === 'report');
   assert.ok(report);
   await access(path.join(cwd, report.path));
+  const reportText = await readFile(path.join(cwd, report.path), 'utf8');
+  assert.match(reportText, /Quality Signals/);
 });
 
 async function runAction(cwd, sessionId, action) {

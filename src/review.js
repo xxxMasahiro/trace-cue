@@ -170,12 +170,20 @@ export async function runSingleUrlReview(options = {}, context = {}) {
       findings.push(...mockResult.findings.map((finding, index) => withFindingId(id, finding, findings.length + index + 1)));
       warnings.push(...mockResult.warnings);
     }
+    const qualitySignals = buildQualitySignals({
+      findings,
+      layout,
+      viewport,
+      screenshotArtifact,
+      mockMetrics: mockResult?.metrics ?? null
+    });
     const actionPlan = buildActionPlan(findings);
     const reviewAdvisory = buildReviewAdvisory({
       findings,
       layout,
       screenshotArtifact,
-      mockMetrics: mockResult?.metrics ?? null
+      mockMetrics: mockResult?.metrics ?? null,
+      qualitySignals
     });
 
     const review = redact({
@@ -203,6 +211,7 @@ export async function runSingleUrlReview(options = {}, context = {}) {
       metrics,
       action_plan: actionPlan,
       review_advisory: reviewAdvisory,
+      quality_signals: qualitySignals,
       environment: {
         browser: {
           engine: 'chromium',
@@ -358,8 +367,9 @@ export async function runTargetReview(options = {}, context = {}) {
     description: 'Structured site review coverage JSON.'
   }));
 
+  const qualitySignals = buildTargetQualitySignals({ findings, coverage });
   const actionPlan = buildActionPlan(findings, { coverage });
-  const reviewAdvisory = buildTargetReviewAdvisory({ findings, coverage });
+  const reviewAdvisory = buildTargetReviewAdvisory({ findings, coverage, qualitySignals });
   const data = redact({
     review: {
       schema_version: SCHEMA_VERSION,
@@ -383,6 +393,7 @@ export async function runTargetReview(options = {}, context = {}) {
     }),
     action_plan: actionPlan,
     review_advisory: reviewAdvisory,
+    quality_signals: qualitySignals,
     environment: {
       artifact_root: artifactRootInput,
       viewports: target.viewportMatrix
@@ -640,6 +651,9 @@ async function collectLayoutEvidence(page, actionCandidates, baseUrl) {
       return style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
     };
     const accessibleName = (element) => {
+      if (element.tagName.toLowerCase() === 'img') {
+        return trim(element.getAttribute('alt') || '');
+      }
       const labelledBy = element.getAttribute('aria-labelledby');
       if (labelledBy) {
         return labelledBy
@@ -674,11 +688,11 @@ async function collectLayoutEvidence(page, actionCandidates, baseUrl) {
         return accumulator;
       }, {})
     ).filter(([, count]) => count > 1).map(([id, count]) => ({ id, count }));
-    const elementSelector = 'a, button, input, select, textarea, [role], h1, h2, h3, p, label, main, nav, header, section, article, [data-testid]';
-    const elements = [...document.querySelectorAll(elementSelector)]
+    const elementSelector = 'a, button, input, select, textarea, [role], h1, h2, h3, h4, h5, h6, p, label, main, nav, header, footer, aside, section, article, img, [tabindex], [data-testid]';
+    const nodes = [...document.querySelectorAll(elementSelector)]
       .filter(isVisible)
-      .slice(0, 180)
-      .map((element) => {
+      .slice(0, 180);
+    const elements = nodes.map((element) => {
         const style = window.getComputedStyle(element);
         return {
           selector: selectorFor(element),
@@ -698,6 +712,8 @@ async function collectLayoutEvidence(page, actionCandidates, baseUrl) {
             client_height: element.clientHeight
           },
           computed: {
+            color: style.color,
+            background_color: style.backgroundColor,
             display: style.display,
             visibility: style.visibility,
             overflow_x: style.overflowX,
@@ -705,11 +721,72 @@ async function collectLayoutEvidence(page, actionCandidates, baseUrl) {
             position: style.position,
             z_index: style.zIndex,
             font_size: style.fontSize,
+            font_weight: style.fontWeight,
+            line_height: style.lineHeight,
+            white_space: style.whiteSpace,
             outline_style: style.outlineStyle,
+            cursor: style.cursor,
             opacity: style.opacity
           }
         };
       });
+    const headings = nodes
+      .filter((element) => /^H[1-6]$/.test(element.tagName))
+      .map((element) => ({
+        level: Number(element.tagName.slice(1)),
+        selector: selectorFor(element),
+        text: trim(element.innerText || element.textContent || '', 200),
+        rect: rectFor(element)
+      }));
+    const landmarks = [...document.querySelectorAll('main, nav, header, footer, aside, [role="main"], [role="navigation"], [role="banner"], [role="contentinfo"], [role="complementary"]')]
+      .filter(isVisible)
+      .slice(0, 80)
+      .map((element) => ({
+        selector: selectorFor(element),
+        tag: element.tagName.toLowerCase(),
+        role: element.getAttribute('role') || null,
+        rect: rectFor(element)
+      }));
+    const images = [...document.querySelectorAll('img')]
+      .filter(isVisible)
+      .slice(0, 80)
+      .map((element) => ({
+        selector: selectorFor(element),
+        alt: trim(element.getAttribute('alt') || '', 300),
+        decorative: element.getAttribute('role') === 'presentation' || element.getAttribute('aria-hidden') === 'true',
+        rect: rectFor(element)
+      }));
+    const overlaps = [];
+    const overlapNodes = nodes.slice(0, 80);
+    for (let leftIndex = 0; leftIndex < overlapNodes.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < overlapNodes.length; rightIndex += 1) {
+        const left = overlapNodes[leftIndex];
+        const right = overlapNodes[rightIndex];
+        if (left.contains(right) || right.contains(left)) {
+          continue;
+        }
+        const leftRect = left.getBoundingClientRect();
+        const rightRect = right.getBoundingClientRect();
+        const width = Math.max(0, Math.min(leftRect.right, rightRect.right) - Math.max(leftRect.left, rightRect.left));
+        const height = Math.max(0, Math.min(leftRect.bottom, rightRect.bottom) - Math.max(leftRect.top, rightRect.top));
+        const area = width * height;
+        const leftArea = leftRect.width * leftRect.height;
+        const rightArea = rightRect.width * rightRect.height;
+        const ratio = area / Math.max(Math.min(leftArea, rightArea), 1);
+        if (area > 16 && ratio >= 0.35) {
+          overlaps.push({
+            left: { selector: selectorFor(left), rect: rectFor(left), text: trim(left.innerText || left.textContent || '', 120) },
+            right: { selector: selectorFor(right), rect: rectFor(right), text: trim(right.innerText || right.textContent || '', 120) },
+            overlap: {
+              width: Math.round(width),
+              height: Math.round(height),
+              area: Math.round(area),
+              ratio: Number(ratio.toFixed(3))
+            }
+          });
+        }
+      }
+    }
     return {
       page: {
         url: window.location.href,
@@ -724,6 +801,10 @@ async function collectLayoutEvidence(page, actionCandidates, baseUrl) {
         }
       },
       duplicate_ids: duplicateIds,
+      headings,
+      landmarks,
+      images,
+      overlaps: overlaps.slice(0, 40),
       elements,
       anchors: [...document.querySelectorAll('a[href]')].slice(0, 120).map((anchor) => ({
         url: anchor.href,
@@ -938,6 +1019,50 @@ function createFindings({ id, url, viewport, observation, layout, screenshotArti
         owner_decision_required: true
       });
     }
+
+    if (
+      viewport.width <= 480
+      && element.focusable
+      && !element.disabled
+      && (element.rect.width < 44 || element.rect.height < 44)
+      && element.rect.width >= 24
+      && element.rect.height >= 24
+    ) {
+      add({
+        category: 'interaction_quality',
+        severity: 'low',
+        confidence: 'medium',
+        source: 'heuristic',
+        selector: element.selector,
+        rect: element.rect,
+        route,
+        viewport,
+        message: `Focusable target ${element.selector} is smaller than the 44px mobile touch-target guideline.`,
+        evidence: { rect: element.rect, guideline: { min_width: 44, min_height: 44 } },
+        artifacts: screenshotArtifact ? [screenshotArtifact.path] : [],
+        repro: [`Open ${route} at ${viewport.width}x${viewport.height}.`, `Inspect mobile hit area for ${element.selector}.`],
+        owner_decision_required: true
+      });
+    }
+
+    const contrast = contrastForElement(element);
+    if (contrast && contrast.ratio < contrast.threshold && element.text) {
+      add({
+        category: 'accessibility_basics',
+        severity: 'medium',
+        confidence: 'medium',
+        source: 'heuristic',
+        selector: element.selector,
+        rect: element.rect,
+        route,
+        viewport,
+        message: `Text contrast may be too low in ${element.selector}.`,
+        evidence: contrast,
+        artifacts: screenshotArtifact ? [screenshotArtifact.path] : [],
+        repro: [`Open ${route} at ${viewport.width}x${viewport.height}.`, `Inspect foreground and background colors for ${element.selector}.`],
+        owner_decision_required: true
+      });
+    }
   }
 
   for (const duplicate of layout.duplicate_ids) {
@@ -955,6 +1080,115 @@ function createFindings({ id, url, viewport, observation, layout, screenshotArti
       artifacts: [],
       repro: [`Open ${route}.`, `Search DOM for id="${duplicate.id}".`],
       owner_decision_required: false
+    });
+  }
+
+  const headings = layout.headings ?? [];
+  const h1Count = headings.filter((heading) => heading.level === 1).length;
+  if (layout.page.visible_text_length > 0 && h1Count === 0) {
+    add({
+      category: 'accessibility_basics',
+      severity: 'low',
+      confidence: 'medium',
+      source: 'heuristic',
+      selector: null,
+      rect: null,
+      route,
+      viewport,
+      message: 'No visible h1 heading was found for this route.',
+      evidence: { heading_count: headings.length, h1_count: h1Count },
+      artifacts: screenshotArtifact ? [screenshotArtifact.path] : [],
+      repro: [`Open ${route}.`, 'Inspect the page heading hierarchy.'],
+      owner_decision_required: true
+    });
+  }
+  if (h1Count > 1) {
+    add({
+      category: 'accessibility_basics',
+      severity: 'low',
+      confidence: 'medium',
+      source: 'heuristic',
+      selector: headings.find((heading) => heading.level === 1)?.selector ?? null,
+      rect: null,
+      route,
+      viewport,
+      message: 'Multiple visible h1 headings were found for this route.',
+      evidence: { h1_count: h1Count, headings: headings.filter((heading) => heading.level === 1).slice(0, 5) },
+      artifacts: screenshotArtifact ? [screenshotArtifact.path] : [],
+      repro: [`Open ${route}.`, 'Confirm whether the visual hierarchy should have one primary page heading.'],
+      owner_decision_required: true
+    });
+  }
+  for (const skip of headingOrderSkips(headings).slice(0, 5)) {
+    add({
+      category: 'accessibility_basics',
+      severity: 'low',
+      confidence: 'medium',
+      source: 'heuristic',
+      selector: skip.current.selector,
+      rect: skip.current.rect,
+      route,
+      viewport,
+      message: `Heading order skips from h${skip.previous.level} to h${skip.current.level}.`,
+      evidence: skip,
+      artifacts: screenshotArtifact ? [screenshotArtifact.path] : [],
+      repro: [`Open ${route}.`, `Inspect heading ${skip.current.selector}.`],
+      owner_decision_required: true
+    });
+  }
+
+  const hasMainLandmark = (layout.landmarks ?? []).some((landmark) => landmark.tag === 'main' || landmark.role === 'main');
+  if (layout.page.visible_text_length > 80 && !hasMainLandmark) {
+    add({
+      category: 'accessibility_basics',
+      severity: 'low',
+      confidence: 'medium',
+      source: 'heuristic',
+      selector: null,
+      rect: null,
+      route,
+      viewport,
+      message: 'No visible main landmark was found for this route.',
+      evidence: { landmarks: layout.landmarks ?? [] },
+      artifacts: screenshotArtifact ? [screenshotArtifact.path] : [],
+      repro: [`Open ${route}.`, 'Inspect document landmarks and main content semantics.'],
+      owner_decision_required: true
+    });
+  }
+
+  for (const image of (layout.images ?? []).filter((candidate) => !candidate.decorative && !candidate.alt).slice(0, 10)) {
+    add({
+      category: 'accessibility_basics',
+      severity: 'medium',
+      confidence: 'high',
+      source: 'deterministic',
+      selector: image.selector,
+      rect: image.rect,
+      route,
+      viewport,
+      message: `Image ${image.selector} has no alt text or decorative marker.`,
+      evidence: image,
+      artifacts: screenshotArtifact ? [screenshotArtifact.path] : [],
+      repro: [`Open ${route}.`, `Inspect image semantics for ${image.selector}.`],
+      owner_decision_required: false
+    });
+  }
+
+  for (const overlap of (layout.overlaps ?? []).slice(0, 10)) {
+    add({
+      category: 'layout_integrity',
+      severity: 'medium',
+      confidence: 'medium',
+      source: 'heuristic',
+      selector: overlap.left.selector,
+      rect: overlap.left.rect,
+      route,
+      viewport,
+      message: `Visible elements may overlap: ${overlap.left.selector} and ${overlap.right.selector}.`,
+      evidence: overlap,
+      artifacts: screenshotArtifact ? [screenshotArtifact.path] : [],
+      repro: [`Open ${route} at ${viewport.width}x${viewport.height}.`, `Inspect ${overlap.left.selector} and ${overlap.right.selector}.`],
+      owner_decision_required: true
     });
   }
 
@@ -977,6 +1211,252 @@ function createFindings({ id, url, viewport, observation, layout, screenshotArti
   }
 
   return findings;
+}
+
+function headingOrderSkips(headings) {
+  const skips = [];
+  let previous = null;
+  for (const current of headings) {
+    if (previous && current.level > previous.level + 1) {
+      skips.push({ previous, current });
+    }
+    previous = current;
+  }
+  return skips;
+}
+
+function contrastForElement(element) {
+  if (!element.text || !element.computed?.color || !element.computed?.background_color) {
+    return null;
+  }
+  const foreground = parseCssColor(element.computed.color);
+  const background = parseCssColor(element.computed.background_color);
+  if (!foreground || !background || background.alpha < 1) {
+    return null;
+  }
+  const fontSize = parseCssPx(element.computed.font_size);
+  const fontWeight = Number.parseInt(element.computed.font_weight, 10);
+  const largeText = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700);
+  const ratio = contrastRatio(foreground, background);
+  return {
+    ratio: Number(ratio.toFixed(2)),
+    threshold: largeText ? 3 : 4.5,
+    large_text: largeText,
+    foreground: element.computed.color,
+    background: element.computed.background_color,
+    font_size: element.computed.font_size,
+    font_weight: element.computed.font_weight
+  };
+}
+
+function parseCssPx(value) {
+  const match = /^([0-9.]+)px$/.exec(String(value ?? ''));
+  return match ? Number(match[1]) : 0;
+}
+
+function parseCssColor(value) {
+  const match = /^rgba?\(([^)]+)\)$/.exec(String(value ?? '').trim());
+  if (!match) {
+    return null;
+  }
+  const parts = match[1].split(',').map((part) => Number(part.trim()));
+  if (parts.length < 3 || parts.slice(0, 3).some((part) => !Number.isFinite(part))) {
+    return null;
+  }
+  return {
+    red: parts[0],
+    green: parts[1],
+    blue: parts[2],
+    alpha: Number.isFinite(parts[3]) ? parts[3] : 1
+  };
+}
+
+function contrastRatio(foreground, background) {
+  const lighter = Math.max(relativeLuminance(foreground), relativeLuminance(background));
+  const darker = Math.min(relativeLuminance(foreground), relativeLuminance(background));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function relativeLuminance(color) {
+  const channel = (value) => {
+    const normalized = value / 255;
+    return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(color.red) + 0.7152 * channel(color.green) + 0.0722 * channel(color.blue);
+}
+
+function buildQualitySignals({ findings, layout, viewport, screenshotArtifact, mockMetrics }) {
+  const h1Count = (layout.headings ?? []).filter((heading) => heading.level === 1).length;
+  const headingSkips = headingOrderSkips(layout.headings ?? []);
+  const clippedElements = (layout.elements ?? []).filter((element) => element.text && (element.overflow.clipped_x || element.overflow.clipped_y));
+  const focusableElements = (layout.elements ?? []).filter((element) => element.focusable && !element.disabled);
+  const smallTargets = focusableElements.filter((element) => element.rect.width < 24 || element.rect.height < 24);
+  const mobileTargets = viewport.width <= 480
+    ? focusableElements.filter((element) => element.rect.width < 44 || element.rect.height < 44)
+    : [];
+  const missingNames = (layout.elements ?? []).filter((element) => {
+    const needsName = ['button', 'input', 'select', 'textarea'].includes(element.tag) || ['button', 'link'].includes(element.role);
+    return needsName && !element.accessible_name && !element.text;
+  });
+  const missingImageAlt = (layout.images ?? []).filter((image) => !image.decorative && !image.alt);
+  const contrastFindings = findings.filter((finding) => /contrast/i.test(finding.message ?? ''));
+  const actionable = actionableFindings(findings);
+  const gate = releaseGateForFindings(actionable);
+  return {
+    reviewer: 'local_quality_signals',
+    status: gate.status === 'pass' ? 'passed' : 'needs_attention',
+    visual_hierarchy: {
+      status: h1Count === 1 && headingSkips.length === 0 ? 'passed' : 'needs_attention',
+      h1_count: h1Count,
+      heading_count: (layout.headings ?? []).length,
+      heading_order_skip_count: headingSkips.length,
+      signals: [
+        ...(h1Count === 0 ? ['missing_primary_heading'] : []),
+        ...(h1Count > 1 ? ['multiple_primary_headings'] : []),
+        ...(headingSkips.length > 0 ? ['heading_order_skip'] : [])
+      ]
+    },
+    responsive_layout: {
+      status: layout.page.horizontal_overflow || clippedElements.length > 0 || (layout.overlaps ?? []).length > 0 ? 'needs_attention' : 'passed',
+      horizontal_overflow: Boolean(layout.page.horizontal_overflow),
+      clipped_element_count: clippedElements.length,
+      overlap_pair_count: (layout.overlaps ?? []).length,
+      mobile_touch_target_warning_count: mobileTargets.length
+    },
+    interaction_affordance: {
+      status: smallTargets.length > 0 || mobileTargets.length > 0 ? 'needs_attention' : 'passed',
+      action_candidate_count: (layout.actions ?? []).length,
+      action_risk_counts: countBy(layout.actions ?? [], 'risk'),
+      small_focus_target_count: smallTargets.length,
+      mobile_touch_target_warning_count: mobileTargets.length
+    },
+    accessibility_structure: {
+      status: missingNames.length > 0 || missingImageAlt.length > 0 || contrastFindings.length > 0 || (layout.duplicate_ids ?? []).length > 0 ? 'needs_attention' : 'passed',
+      missing_accessible_name_count: missingNames.length,
+      duplicate_id_count: (layout.duplicate_ids ?? []).length,
+      missing_image_alt_count: missingImageAlt.length,
+      low_contrast_text_count: contrastFindings.length,
+      main_landmark_count: (layout.landmarks ?? []).filter((landmark) => landmark.tag === 'main' || landmark.role === 'main').length
+    },
+    evidence_completeness: {
+      status: screenshotArtifact ? 'visual_evidence_captured' : 'limited_without_screenshot',
+      screenshot_captured: Boolean(screenshotArtifact),
+      mock_status: mockMetrics?.status ?? 'not_provided',
+      local_artifacts_only: true
+    },
+    developer_handoff: developerHandoff(findings),
+    release_readiness: localReleaseReadiness(findings),
+    model_review_boundary: modelReviewBoundary()
+  };
+}
+
+function buildTargetQualitySignals({ findings, coverage }) {
+  const expectedVisits = coverage.routes.discovered.length * Math.max(coverage.viewports.length, 1);
+  const actionable = actionableFindings(findings);
+  const gate = releaseGateForFindings(actionable);
+  return {
+    reviewer: 'local_quality_signals',
+    status: gate.status === 'pass' && coverage.routes.failed.length === 0 && coverage.routes.expected_missing.length === 0
+      ? 'passed'
+      : 'needs_attention',
+    route_coverage: {
+      status: coverage.routes.failed.length === 0 && coverage.routes.expected_missing.length === 0 ? 'passed' : 'needs_attention',
+      discovered_routes: coverage.routes.discovered.length,
+      visited_route_viewports: coverage.routes.visited.length,
+      expected_route_viewports: expectedVisits,
+      failed_route_viewports: coverage.routes.failed.length,
+      expected_missing_routes: coverage.routes.expected_missing.length,
+      skipped_routes: coverage.routes.skipped.length
+    },
+    viewport_coverage: {
+      status: coverage.viewports.length > 0 ? 'passed' : 'needs_attention',
+      viewports: coverage.viewports.map((viewport) => viewport.name),
+      viewport_count: coverage.viewports.length
+    },
+    finding_summary: {
+      status: actionable.length > 0 ? 'needs_attention' : 'passed',
+      by_category: reviewMetrics(findings).by_category,
+      by_severity: reviewMetrics(findings).by_severity
+    },
+    evidence_completeness: {
+      status: 'target_coverage_artifact_captured',
+      coverage_captured: true,
+      local_artifacts_only: true
+    },
+    developer_handoff: developerHandoff(findings),
+    release_readiness: {
+      ...localReleaseReadiness(findings),
+      route_blockers: coverage.routes.failed.length + coverage.routes.expected_missing.length
+    },
+    model_review_boundary: modelReviewBoundary()
+  };
+}
+
+function developerHandoff(findings) {
+  return {
+    implementation_focus: summarizeImplementationFocus(findings),
+    fix_queue: actionableFindings(findings).sort(compareFindingPriority).slice(0, 8).map((finding) => ({
+      priority: finding.priority,
+      severity: finding.severity,
+      category: finding.category,
+      route: finding.route,
+      selector: finding.selector,
+      recommendation: finding.recommendation,
+      implementation_notes: finding.implementation_notes
+    })),
+    rerun_guidance: [
+      'Rerun the same review command after fixes.',
+      'Keep the same target manifest and viewport matrix when verifying regression fixes.',
+      'Use --report and --screenshot when handing visual evidence to developers.'
+    ]
+  };
+}
+
+function localReleaseReadiness(findings) {
+  const actionable = actionableFindings(findings);
+  const gate = releaseGateForFindings(actionable);
+  const bySeverity = reviewMetrics(actionable).by_severity;
+  return {
+    local_gate: gate.status,
+    reason: gate.reason,
+    blocker_counts: {
+      critical: bySeverity.critical ?? 0,
+      high: bySeverity.high ?? 0,
+      medium: bySeverity.medium ?? 0
+    },
+    owner_review_required: actionable.some((finding) => finding.owner_decision_required),
+    publication_scope: 'not_evaluated',
+    approval_boundaries: [
+      'package name',
+      'license',
+      'npm publication',
+      'plugin marketplace registration',
+      'external evidence transfer'
+    ]
+  };
+}
+
+function modelReviewBoundary() {
+  return {
+    status: 'not_enabled',
+    external_evidence_transfer: false,
+    approval_required: true,
+    evidence_classes: ['screenshots', 'DOM', 'console logs', 'network data', 'trace archives', 'reports'],
+    local_alternative: 'deterministic and heuristic quality signals'
+  };
+}
+
+function actionableFindings(findings) {
+  return findings.filter((finding) => finding.category !== 'evidence_quality' || finding.severity !== 'info');
+}
+
+function countBy(items, field) {
+  const counts = {};
+  for (const item of items) {
+    const key = item[field] ?? 'unknown';
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
 }
 
 function withFindingId(reviewId, finding, index) {
@@ -1042,7 +1522,7 @@ function buildActionPlan(findings, { coverage = null } = {}) {
   };
 }
 
-function buildReviewAdvisory({ findings, layout, screenshotArtifact, mockMetrics }) {
+function buildReviewAdvisory({ findings, layout, screenshotArtifact, mockMetrics, qualitySignals }) {
   const categories = new Set(findings.map((finding) => finding.category));
   const signals = [];
   if (categories.has('browser_health')) {
@@ -1066,6 +1546,15 @@ function buildReviewAdvisory({ findings, layout, screenshotArtifact, mockMetrics
   if (layout?.page?.visible_text_length < 20) {
     signals.push('The page has very little visible text, so empty-state or loading-state intent should be checked.');
   }
+  if (qualitySignals?.visual_hierarchy?.status === 'needs_attention') {
+    signals.push('Visual hierarchy signals indicate heading structure should be reviewed.');
+  }
+  if (qualitySignals?.responsive_layout?.overlap_pair_count > 0) {
+    signals.push('Responsive layout signals indicate visible overlap risk.');
+  }
+  if (qualitySignals?.accessibility_structure?.missing_image_alt_count > 0) {
+    signals.push('Accessibility structure signals indicate image semantics need attention.');
+  }
   return {
     reviewer: 'local_heuristic',
     status: signals.length > 0 ? 'needs_attention' : 'no_local_visual_blockers',
@@ -1081,7 +1570,7 @@ function buildReviewAdvisory({ findings, layout, screenshotArtifact, mockMetrics
   };
 }
 
-function buildTargetReviewAdvisory({ findings, coverage }) {
+function buildTargetReviewAdvisory({ findings, coverage, qualitySignals }) {
   const routeFailures = coverage.routes.failed.length;
   const expectedMissing = coverage.routes.expected_missing.length;
   const signals = [];
@@ -1093,6 +1582,9 @@ function buildTargetReviewAdvisory({ findings, coverage }) {
   }
   if (findings.length > 0) {
     signals.push('At least one visited route produced review findings.');
+  }
+  if (qualitySignals?.route_coverage?.visited_route_viewports < qualitySignals?.route_coverage?.expected_route_viewports) {
+    signals.push('Route and viewport coverage did not reach every discovered route viewport pair.');
   }
   return {
     reviewer: 'local_heuristic',
@@ -1213,7 +1705,71 @@ function guidanceForFinding(finding) {
       }
     };
   }
+  if (finding.category === 'layout_integrity' && message.includes('overlap')) {
+    return {
+      impact: 'Overlapping visible elements can hide content, block controls, or make a page look broken at the reviewed viewport.',
+      recommendation: 'Inspect the overlapping selectors, then adjust layout constraints, stacking, or responsive breakpoints.',
+      fix_candidates: [
+        'Remove unintended absolute positioning or z-index layering.',
+        'Add responsive grid/flex constraints so adjacent content has stable space.'
+      ],
+      implementation_notes: {
+        html: [],
+        css: ['Inspect position, z-index, grid/flex sizing, margins, and breakpoint rules for the overlapping selectors.'],
+        javascript: [],
+        test: ['Keep the failing viewport in the target manifest and rerun review after the layout change.']
+      }
+    };
+  }
   if (finding.category === 'accessibility_basics') {
+    if (message.includes('contrast')) {
+      return {
+        impact: 'Low text contrast can make important labels and content hard to read.',
+        recommendation: 'Adjust foreground and background colors to meet the configured contrast threshold.',
+        fix_candidates: [
+          'Increase foreground/background contrast in the design token or component style.',
+          'Check disabled, muted, and secondary text states separately.'
+        ],
+        implementation_notes: {
+          html: [],
+          css: ['Update color tokens or component-specific color rules near the failing selector.'],
+          javascript: [],
+          test: ['Keep a review fixture or target route that renders the same color state.']
+        }
+      };
+    }
+    if (message.includes('heading') || message.includes('h1')) {
+      return {
+        impact: 'Heading hierarchy affects scanning, accessibility navigation, and automated page understanding.',
+        recommendation: 'Align the rendered heading structure with the visual information hierarchy.',
+        fix_candidates: [
+          'Use one primary h1 for the page-level title when applicable.',
+          'Avoid skipping heading levels unless the owner intentionally accepts that structure.'
+        ],
+        implementation_notes: {
+          html: ['Adjust semantic heading tags in the owning component.'],
+          css: ['Use styling classes for visual size instead of choosing heading tags by appearance.'],
+          javascript: [],
+          test: ['Assert important route headings in a component or browser-level test.']
+        }
+      };
+    }
+    if (message.includes('image')) {
+      return {
+        impact: 'Images without alt text or decorative markers can leave screen reader and automation users without useful context.',
+        recommendation: 'Add meaningful alt text, or explicitly mark decorative images as hidden/presentation.',
+        fix_candidates: [
+          'Set alt text that describes the image purpose in context.',
+          'Use aria-hidden or role="presentation" only for decorative images.'
+        ],
+        implementation_notes: {
+          html: ['Update the image element or image component props.'],
+          css: [],
+          javascript: [],
+          test: ['Add an accessibility assertion for important rendered images.']
+        }
+      };
+    }
     return {
       impact: 'Missing labels or duplicate IDs can break keyboard, screen reader, and agent-driven interaction.',
       recommendation: 'Fix semantic names and DOM identity before relying on automated interaction or review.',
@@ -1230,6 +1786,22 @@ function guidanceForFinding(finding) {
     };
   }
   if (finding.category === 'interaction_quality') {
+    if (message.includes('44px')) {
+      return {
+        impact: 'Small mobile touch targets make repeated human and automated interaction less reliable.',
+        recommendation: 'Increase the interactive hit area while preserving the visual design.',
+        fix_candidates: [
+          'Increase padding, min-width, or min-height to meet the target size.',
+          'Use an invisible hit-area wrapper when the visible icon must remain compact.'
+        ],
+        implementation_notes: {
+          html: ['Confirm the interactive element exposes a stable accessible name.'],
+          css: ['Set mobile-safe min-size or padding for the owning control component.'],
+          javascript: [],
+          test: ['Rerun the mobile viewport review after changing the control dimensions.']
+        }
+      };
+    }
     return {
       impact: 'Small or unclear controls reduce interaction reliability for humans and automation.',
       recommendation: 'Increase target size and verify focus, hover, and touch ergonomics.',
@@ -1493,6 +2065,29 @@ function renderReviewReport(data, artifacts) {
     lines.push('## Local Review Advisory', '');
     for (const signal of data.review_advisory.visual_assessment) {
       lines.push(`- ${signal}`);
+    }
+    lines.push('');
+  }
+  if (data.quality_signals) {
+    lines.push('## Quality Signals', '');
+    lines.push(`- Status: ${data.quality_signals.status ?? 'unknown'}`);
+    if (data.quality_signals.visual_hierarchy) {
+      lines.push(`- Visual hierarchy: ${data.quality_signals.visual_hierarchy.status}`);
+    }
+    if (data.quality_signals.responsive_layout) {
+      lines.push(`- Responsive layout: ${data.quality_signals.responsive_layout.status}`);
+    }
+    if (data.quality_signals.interaction_affordance) {
+      lines.push(`- Interaction affordance: ${data.quality_signals.interaction_affordance.status}`);
+    }
+    if (data.quality_signals.accessibility_structure) {
+      lines.push(`- Accessibility structure: ${data.quality_signals.accessibility_structure.status}`);
+    }
+    if (data.quality_signals.route_coverage) {
+      lines.push(`- Route coverage: ${data.quality_signals.route_coverage.status}`);
+    }
+    if (data.quality_signals.release_readiness) {
+      lines.push(`- Local release gate: ${data.quality_signals.release_readiness.local_gate}`);
     }
     lines.push('');
   }

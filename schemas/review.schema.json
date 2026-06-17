@@ -10,6 +10,7 @@
     "metrics": { "type": "object" },
     "action_plan": { "type": "object" },
     "review_advisory": { "type": "object" },
+    "quality_signals": { "type": "object" },
     "environment": { "type": "object" },
     "coverage": { "type": "object" }
   },
