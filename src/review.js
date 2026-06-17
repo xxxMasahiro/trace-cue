@@ -305,6 +305,9 @@ export async function runTargetReview(options = {}, context = {}) {
   for (const seed of target.seeds) {
     enqueueRoute(queue, discovered, seed, 'seed', target);
   }
+  for (const expectedRoute of target.expectedRoutes) {
+    enqueueRoute(queue, discovered, expectedRoute, 'expected_route', target);
+  }
 
   let processedRoutes = 0;
   while (queue.length > 0 && processedRoutes < routeBudget) {
@@ -340,16 +343,21 @@ export async function runTargetReview(options = {}, context = {}) {
       }
     }
   }
+  while (queue.length > 0) {
+    skipped.push({ ...queue.shift(), reason: 'route_budget_exceeded' });
+  }
 
   const expectedMissing = target.expectedRoutes
     .filter((url) => ![...discovered.keys()].includes(normalizeUrlKey(url)))
     .map((url) => ({ url, reason: 'expected_route_not_discovered' }));
+  const expectedRoutes = target.expectedRoutes.map((url) => normalizeRoute(url, 'expected_route'));
   const coverage = redact({
     schema_version: SCHEMA_VERSION,
     id,
     base_url: target.baseUrl,
     route_budget: routeBudget,
     routes: {
+      expected: expectedRoutes,
       discovered: [...discovered.values()],
       visited,
       skipped: dedupeByUrl(skipped),
@@ -1354,19 +1362,22 @@ function buildTargetQualitySignals({ findings, coverage }) {
   const expectedVisits = coverage.routes.discovered.length * Math.max(coverage.viewports.length, 1);
   const actionable = actionableFindings(findings);
   const gate = releaseGateForFindings(actionable);
+  const routeBudgetExceeded = coverage.routes.skipped.some((route) => route.reason === 'route_budget_exceeded');
   return {
     reviewer: 'local_quality_signals',
-    status: gate.status === 'pass' && coverage.routes.failed.length === 0 && coverage.routes.expected_missing.length === 0
+    status: gate.status === 'pass' && coverage.routes.failed.length === 0 && coverage.routes.expected_missing.length === 0 && !routeBudgetExceeded
       ? 'passed'
       : 'needs_attention',
     route_coverage: {
-      status: coverage.routes.failed.length === 0 && coverage.routes.expected_missing.length === 0 ? 'passed' : 'needs_attention',
+      status: coverage.routes.failed.length === 0 && coverage.routes.expected_missing.length === 0 && !routeBudgetExceeded ? 'passed' : 'needs_attention',
+      expected_manifest_routes: coverage.routes.expected?.length ?? 0,
       discovered_routes: coverage.routes.discovered.length,
       visited_route_viewports: coverage.routes.visited.length,
       expected_route_viewports: expectedVisits,
       failed_route_viewports: coverage.routes.failed.length,
       expected_missing_routes: coverage.routes.expected_missing.length,
-      skipped_routes: coverage.routes.skipped.length
+      skipped_routes: coverage.routes.skipped.length,
+      route_budget_exceeded_routes: coverage.routes.skipped.filter((route) => route.reason === 'route_budget_exceeded').length
     },
     viewport_coverage: {
       status: coverage.viewports.length > 0 ? 'passed' : 'needs_attention',
@@ -1579,6 +1590,10 @@ function buildTargetReviewAdvisory({ findings, coverage, qualitySignals }) {
   }
   if (expectedMissing > 0) {
     signals.push(`${expectedMissing} expected routes were not discovered.`);
+  }
+  const routeBudgetExceeded = coverage.routes.skipped.filter((route) => route.reason === 'route_budget_exceeded').length;
+  if (routeBudgetExceeded > 0) {
+    signals.push(`${routeBudgetExceeded} discovered routes were skipped because the route budget was exhausted.`);
   }
   if (findings.length > 0) {
     signals.push('At least one visited route produced review findings.');

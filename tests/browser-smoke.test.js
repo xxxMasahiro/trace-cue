@@ -376,6 +376,7 @@ test('target review discovers same-origin routes and records coverage', { skip: 
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const first = path.join(cwd, 'first.html');
   const second = path.join(cwd, 'second.html');
+  const expected = path.join(cwd, 'expected.html');
   const manifest = path.join(cwd, 'target.json');
   await writeFile(first, [
     '<!doctype html>',
@@ -396,11 +397,21 @@ test('target review discovers same-origin routes and records coverage', { skip: 
     '</body>',
     '</html>'
   ].join('\n'), 'utf8');
+  await writeFile(expected, [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head><title>Expected Review Route</title></head>',
+    '<body>',
+    '<h1>Expected Route</h1>',
+    '</body>',
+    '</html>'
+  ].join('\n'), 'utf8');
   await writeFile(manifest, JSON.stringify({
     baseUrl: `file://${first}`,
     seeds: [`file://${first}`],
+    expectedRoutes: [`file://${expected}`],
     viewportMatrix: ['mobile'],
-    budgets: { maxRoutes: 2 },
+    budgets: { maxRoutes: 3 },
     artifacts: { screenshots: true }
   }), 'utf8');
 
@@ -419,20 +430,76 @@ test('target review discovers same-origin routes and records coverage', { skip: 
   assert.equal(body.command, 'review');
   assert.equal(body.status, 'ok');
   assert.equal(body.data.review.mode, 'target_manifest');
-  assert.ok(body.data.coverage.routes.discovered.length >= 2);
-  assert.ok(body.data.coverage.routes.visited.length >= 2);
+  assert.ok(body.data.coverage.routes.discovered.length >= 3);
+  assert.ok(body.data.coverage.routes.visited.length >= 3);
+  assert.equal(body.data.coverage.routes.expected.length, 1);
+  assert.ok(body.data.coverage.routes.visited.some((route) => route.url === `file://${expected}`));
   const coverage = body.artifacts.find((artifact) => artifact.type === 'coverage');
   assert.ok(coverage);
   await access(path.join(cwd, coverage.path));
-  assert.equal(body.data.action_plan.coverage.discovered_routes >= 2, true);
+  assert.equal(body.data.action_plan.coverage.discovered_routes >= 3, true);
   assert.equal(body.data.review_advisory.reviewer, 'local_heuristic');
   assert.equal(body.data.quality_signals.route_coverage.status, 'passed');
+  assert.equal(body.data.quality_signals.route_coverage.expected_manifest_routes, 1);
   assert.equal(body.data.quality_signals.model_review_boundary.external_evidence_transfer, false);
   const report = body.artifacts.find((artifact) => artifact.type === 'report');
   assert.ok(report);
   await access(path.join(cwd, report.path));
   const reportText = await readFile(path.join(cwd, report.path), 'utf8');
   assert.match(reportText, /Quality Signals/);
+});
+
+test('target review records route budget skips for unvisited discovered routes', { skip: !runBrowserSmoke }, async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-target-budget-smoke-'));
+  await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
+  const first = path.join(cwd, 'first.html');
+  const expected = path.join(cwd, 'expected.html');
+  const manifest = path.join(cwd, 'target.json');
+  await writeFile(first, [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head><title>Budget First Route</title></head>',
+    '<body>',
+    '<h1>Budget First Route</h1>',
+    '</body>',
+    '</html>'
+  ].join('\n'), 'utf8');
+  await writeFile(expected, [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head><title>Budget Expected Route</title></head>',
+    '<body>',
+    '<h1>Budget Expected Route</h1>',
+    '</body>',
+    '</html>'
+  ].join('\n'), 'utf8');
+  await writeFile(manifest, JSON.stringify({
+    baseUrl: `file://${first}`,
+    seeds: [`file://${first}`],
+    expectedRoutes: [`file://${expected}`],
+    viewportMatrix: ['mobile'],
+    budgets: { maxRoutes: 1 },
+    artifacts: { screenshots: false }
+  }), 'utf8');
+
+  const result = await executeCli([
+    'review',
+    '--target',
+    '@target.json',
+    '--timeout',
+    '10000',
+    '--json'
+  ], { cwd });
+
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'review');
+  assert.equal(body.status, 'ok');
+  assert.equal(body.data.coverage.routes.expected.length, 1);
+  assert.equal(body.data.coverage.routes.visited.length, 1);
+  assert.ok(body.data.coverage.routes.skipped.some((route) => route.reason === 'route_budget_exceeded'));
+  assert.equal(body.data.quality_signals.route_coverage.status, 'needs_attention');
+  assert.equal(body.data.quality_signals.route_coverage.route_budget_exceeded_routes, 1);
 });
 
 async function runAction(cwd, sessionId, action) {
