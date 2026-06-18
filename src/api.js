@@ -3,6 +3,11 @@ export { runObserve } from './observe.js';
 export { runReview } from './review.js';
 export { runSupervisor } from './supervisor.js';
 export { createTargetManifest, runTargetInit } from './target.js';
+export {
+  buildLocalContentUxAdvisory,
+  normalizeContentDataBindings,
+  normalizeContentUxAdvisoryConfig
+} from './content-ux-advisory.js';
 export { listSchemas, getSchema, schemaNames } from './schema-registry.js';
 export { MCP_TOOLS, handleMcpRequest, runMcpStdio } from './mcp.js';
 export {

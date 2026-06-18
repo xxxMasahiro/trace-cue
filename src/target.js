@@ -96,6 +96,13 @@ export function createTargetManifest(options = {}) {
     seeds: [baseUrl],
     expectedRoutes: [],
     pages: [],
+    sourceData: [],
+    localContentUxAdvisory: {
+      enabled: false,
+      audience: [],
+      goal: null,
+      checks: ['content_contract', 'source_data_alignment']
+    },
     viewportMatrix: options.viewport ? [options.viewport] : ['desktop', 'mobile'],
     actionPolicy: {
       allow: ['navigation', 'state_revealing']

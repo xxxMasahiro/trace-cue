@@ -10,6 +10,7 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
   const files = [
     'src/cli.js',
     'src/constants.js',
+    'src/content-ux-advisory.js',
     'src/daemon.js',
     'src/daemon-worker.js',
     'src/observe.js',
@@ -84,9 +85,10 @@ test('package keeps a standard local Node CLI surface', async () => {
 
 test('review platform keeps local-first and manifest-driven boundaries', async () => {
   const review = await readText('src/review.js');
+  const contentUxAdvisory = await readText('src/content-ux-advisory.js');
   const mcp = await readText('src/mcp.js');
   const target = await readText('src/target.js');
-  const combined = `${review}\n${mcp}\n${target}`;
+  const combined = `${review}\n${contentUxAdvisory}\n${mcp}\n${target}`;
 
   assert.doesNotMatch(combined, /127\.0\.0\.1:517[34]|Control Center|FrameCue|ai-driven-development-lesson/);
   assert.doesNotMatch(combined, /launchPersistentContext|userDataDir|storageState/);
@@ -94,6 +96,8 @@ test('review platform keeps local-first and manifest-driven boundaries', async (
   assert.doesNotMatch(combined, /node:child_process|child_process|execFile|spawn\(/);
   assert.match(review, /normalizeTargetManifest/);
   assert.match(review, /classifyActionCandidate/);
+  assert.match(contentUxAdvisory, /local_content_ux_advisory/);
+  assert.doesNotMatch(contentUxAdvisory, /from 'node:fs|from 'node:fs\/promises|from 'playwright'|import\('playwright'\)/);
   assert.match(target, /createTargetManifest/);
   assert.match(mcp, /tools\/list/);
   assert.match(mcp, /tools\/call/);

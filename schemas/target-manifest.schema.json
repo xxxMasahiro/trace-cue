@@ -12,6 +12,8 @@
     "seeds": { "type": "array", "items": { "type": "string" } },
     "expectedRoutes": { "type": "array", "items": { "type": "string" } },
     "pages": { "type": "array" },
+    "sourceData": { "type": "array" },
+    "localContentUxAdvisory": { "type": "object" },
     "viewportMatrix": { "type": "array" },
     "actionPolicy": { "type": "object" },
     "budgets": { "type": "object" },

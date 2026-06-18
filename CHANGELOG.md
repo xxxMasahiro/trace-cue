@@ -46,7 +46,10 @@ All notable local development changes are tracked here before public release.
 - Added rendered-state quality signals, Developer Triage Markdown report summaries, and target manifest suggestions for dogfood reruns.
 - Added browser smoke coverage for rendered-state findings, evidence summaries, developer triage reports, and manifest suggestions.
 - Refined loading indicator detection so normal ready/progress business-state text is not reported as lingering loading UI unless explicit loading semantics or loading-like attributes are present.
+- Added manifest opt-in content UX advisory with bounded inline `sourceData`, page `expectations.dataBindings`, `local_content_ux_advisory`, and `quality_signals.content_ux`.
+- Added schema registry/file parity coverage for review and target manifest contracts.
+- Added no-browser and browser smoke coverage proving content UX advisory does not change findings, metrics, action plans, or release readiness.
 
 ## Release Status
 
-No public package has been released. Package naming, license selection, npm authentication, npm publication, plugin marketplace registration, model/API review, evidence leaving the local process, HTTP/socket MCP server mode, OAuth/login automation, and external upload remain explicit release blockers.
+No public package has been released. Package naming, license selection, npm authentication, npm publication, plugin marketplace registration, model/API review, evidence leaving the local process, arbitrary source-data file or URL loaders, HTTP/socket MCP server mode, OAuth/login automation, and external upload remain explicit release blockers.

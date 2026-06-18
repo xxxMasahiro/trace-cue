@@ -676,6 +676,102 @@ test('target review checks manifest page expectations and writes an artifact ind
   assert.match(reportText, /Page expectations/);
 });
 
+test('target content UX advisory is opt-in and does not alter review gates', { skip: !runBrowserSmoke }, async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-content-ux-smoke-'));
+  await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
+  const page = path.join(cwd, 'overview.html');
+  const disabledManifest = path.join(cwd, 'disabled.json');
+  const enabledManifest = path.join(cwd, 'enabled.json');
+  await writeFile(page, [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head><title>Overview Route</title></head>',
+    '<body>',
+    '<main>',
+    '<h1>Overview</h1>',
+    '<p id="summary">Operations summary ready</p>',
+    '<button id="primary">Open Details</button>',
+    '</main>',
+    '</body>',
+    '</html>'
+  ].join('\n'), 'utf8');
+  const baseManifest = {
+    baseUrl: `file://${page}`,
+    seeds: [`file://${page}`],
+    pages: [{
+      name: 'Overview Page',
+      url: `file://${page}`,
+      expectations: {
+        dataBindings: [{
+          id: 'summary-copy',
+          sourceId: 'workflow',
+          pointer: '/status/summary',
+          target: 'text'
+        }]
+      }
+    }],
+    viewportMatrix: ['desktop'],
+    budgets: { maxRoutes: 1 },
+    artifacts: { screenshots: true }
+  };
+  await writeFile(disabledManifest, JSON.stringify(baseManifest), 'utf8');
+  await writeFile(enabledManifest, JSON.stringify({
+    ...baseManifest,
+    sourceData: [{
+      id: 'workflow',
+      data: { status: { summary: 'Operations summary ready' } }
+    }],
+    localContentUxAdvisory: {
+      enabled: true,
+      audience: ['operators'],
+      goal: 'Explain the current workflow state at a glance.'
+    }
+  }), 'utf8');
+
+  const disabled = await executeCli([
+    'review',
+    '--target',
+    '@disabled.json',
+    '--report',
+    '--timeout',
+    '10000',
+    '--json'
+  ], { cwd });
+  const enabled = await executeCli([
+    'review',
+    '--target',
+    '@enabled.json',
+    '--report',
+    '--timeout',
+    '10000',
+    '--json'
+  ], { cwd });
+
+  assert.equal(disabled.exitCode, 0);
+  assert.equal(enabled.exitCode, 0);
+  const disabledBody = JSON.parse(disabled.stdout);
+  const enabledBody = JSON.parse(enabled.stdout);
+  assert.equal(disabledBody.data.local_content_ux_advisory, undefined);
+  assert.equal(disabledBody.data.quality_signals.content_ux, undefined);
+  assert.equal(enabledBody.data.local_content_ux_advisory.status, 'passed');
+  assert.equal(enabledBody.data.quality_signals.content_ux.status, 'passed');
+  assert.equal(enabledBody.data.local_content_ux_advisory.gate_effect, 'none');
+  assert.equal(enabledBody.data.local_content_ux_advisory.external_evidence_transfer, false);
+  assert.equal(enabledBody.data.metrics.finding_count, disabledBody.data.metrics.finding_count);
+  assert.deepEqual(
+    enabledBody.data.findings.map((finding) => [finding.category, finding.severity, finding.message]),
+    disabledBody.data.findings.map((finding) => [finding.category, finding.severity, finding.message])
+  );
+  assert.deepEqual(enabledBody.data.action_plan.release_gate, disabledBody.data.action_plan.release_gate);
+  assert.deepEqual(enabledBody.data.quality_signals.release_readiness, disabledBody.data.quality_signals.release_readiness);
+
+  const report = enabledBody.artifacts.find((artifact) => artifact.type === 'report');
+  assert.ok(report);
+  const reportText = await readFile(path.join(cwd, report.path), 'utf8');
+  assert.match(reportText, /Content UX Advisory/);
+  assert.doesNotMatch(reportText, /Operations summary ready/);
+});
+
 async function runAction(cwd, sessionId, action) {
   const result = await executeCli([
     'act',

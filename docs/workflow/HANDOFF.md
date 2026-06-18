@@ -2,7 +2,7 @@
 
 ## Current State
 
-Browser Debug CLI has completed Phase 1, Phase 2a package/runtime design verification, the Phase 5 local MVP runtime slice, the Phase 7 local review-platform implementation, the Phase 8 local dogfood/plugin-readiness implementation, the Phase 9 local review-quality implementation, the Phase 10 local dogfood route-readiness implementation, the Phase 11 local page-expectation review implementation, the Phase 12 local rendered-state dogfood hardening implementation, and the Phase 13 local dogfood signal refinement implementation. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally.
+Browser Debug CLI has completed Phase 1, Phase 2a package/runtime design verification, the Phase 5 local MVP runtime slice, the Phase 7 local review-platform implementation, the Phase 8 local dogfood/plugin-readiness implementation, the Phase 9 local review-quality implementation, the Phase 10 local dogfood route-readiness implementation, the Phase 11 local page-expectation review implementation, the Phase 12 local rendered-state dogfood hardening implementation, the Phase 13 local dogfood signal refinement implementation, and the Phase 14 local content UX advisory implementation. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally.
 
 This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and TASK_TRACKER workflow-state pair synchronized whenever task state changes.
 
@@ -96,11 +96,17 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 - Browser smoke coverage verifies rendered-state findings, evidence summaries, developer triage reports, and manifest suggestions.
 - Loading indicator evidence now ignores normal ready/progress business-state text unless explicit loading semantics or loading-like attributes are present.
 - Browser smoke coverage verifies ready/progress business-state text is not reported as lingering loading UI.
+- Target manifests now support opt-in `localContentUxAdvisory`, bounded inline `sourceData`, and page `expectations.dataBindings` for local source-to-screen advisory checks.
+- `src/content-ux-advisory.js` is a pure local helper with no Playwright, filesystem access, artifact reads, external transfer, or target-specific runtime branches.
+- Target review emits `local_content_ux_advisory` and `quality_signals.content_ux` only when manifest opt-in is enabled.
+- Content UX advisory is additive and does not create findings, change `metrics.finding_count`, change `action_plan`, or change `quality_signals.release_readiness`.
+- Markdown reports include a bounded Content UX Advisory section when enabled and do not copy source values or full page text.
+- Schema registry and packaged schema files are covered by parity tests for the review and target manifest property sets.
 - Model/API review, evidence leaving the local process, HTTP/socket MCP server mode, persistent browser profile reuse, authentication automation, external upload, arbitrary shell execution, destructive cleanup, npm publication, package naming, and license changes remain approval-bound.
 
 ## Next Step
 
-No remaining local Phase 13 implementation work is currently planned. Ask for explicit approval before authentication automation, external daemon control channels, external upload, evidence leaving the local process, model/API review, HTTP/socket MCP server mode, existing-browser-profile reuse, credential storage, plugin marketplace registration, license change, public package naming, npm publication, or destructive cleanup.
+No remaining local Phase 14 implementation work is currently planned. Ask for explicit approval before authentication automation, external daemon control channels, external upload, evidence leaving the local process, arbitrary source-data file or URL loaders, model/API review, HTTP/socket MCP server mode, existing-browser-profile reuse, credential storage, plugin marketplace registration, license change, public package naming, npm publication, or destructive cleanup.
 
 ## Restart Notes
 
@@ -112,6 +118,7 @@ No remaining local Phase 13 implementation work is currently planned. Ask for ex
 - Keep MCP as a local stdio adapter until a separate approved design changes the transport.
 - Keep model or vision review out of deterministic local gates.
 - Keep target-specific Control Center details in manifests, fixtures, or acceptance evidence.
+- Keep content UX source data bounded and inline unless a separate approved loader design is added.
 - Keep plugin marketplace registration out of local implementation unless explicitly approved.
 
 ## Stop Conditions
@@ -122,5 +129,6 @@ No remaining local Phase 13 implementation work is currently planned. Ask for ex
 - External service, OAuth, webhook, browser profile reuse, or artifact upload requested without a security plan and approval.
 - Any design path that requires arbitrary shell execution or persistent credential storage.
 - Review platform code adds app-specific runtime branches for individual Control Centers.
+- Content UX advisory starts reading arbitrary manifest paths or remote source URLs without explicit approval and security documentation.
 - MCP adapter code adds HTTP/socket listeners, external upload, arbitrary shell execution, cleanup tools, or persistent storage without explicit approval.
 - Plugin metadata adds external upload, profile reuse, credential storage, marketplace mutation, or network transport without explicit approval.

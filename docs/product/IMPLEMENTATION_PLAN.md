@@ -369,6 +369,41 @@ Phase 13 completes the local dogfood refinement found while reviewing real Contr
 - Completed: corrected FrameCue Control Center review no longer reports loading indicators for ready/progress business-state copy.
 - Completed as boundary: remaining Control Center findings are target UI findings or owner-review heuristics, not target-specific Browser Debug CLI runtime branches.
 
+### Phase 14: Manifest Opt-In Content UX Advisory
+
+Phase 14 adds a local content UX advisory layer for the gap identified during dogfood review: deterministic rendered-state checks do not judge whether a page communicates the right workflow state, audience, or source facts. The implementation is manifest-driven, reusable, and additive. It does not add model/API review, evidence transfer, Control Center-specific runtime branches, arbitrary source-data file reads, HTTP/socket MCP transport, authentication automation, existing-profile reuse, package publication, license changes, or marketplace mutation.
+
+#### Phase 14a: Document and Contract Sync
+
+- Completed: requirements, specification, implementation plan, task tracker, handoff, security, verification, README, changelog, manifests, schema files, and target template are synchronized with the content UX advisory contract.
+- Completed: the canonical opt-in field is `localContentUxAdvisory.enabled=true`.
+- Completed: absent or disabled advisory configuration leaves target review output compatible with previous behavior.
+
+#### Phase 14b: Schema Parity and Manifest Contract
+
+- Completed: `schema get --name review` and `schema get --name target_manifest` now match the packaged schema-file property sets for the fields touched by this phase.
+- Completed: target manifests can declare bounded inline `sourceData`, `localContentUxAdvisory`, and page `expectations.dataBindings`.
+- Completed: generated and template target manifests include disabled content UX advisory scaffolding for discoverability.
+
+#### Phase 14c: Pure Advisory Module
+
+- Completed: `src/content-ux-advisory.js` normalizes advisory configuration and page data bindings, evaluates source-to-screen text bindings, and returns advisory output without Playwright, filesystem access, artifact reads, or application-specific literals.
+- Completed: source values and full page text are used only in process and are not copied into advisory messages or Markdown reports.
+- Completed: manifest path or URL source references are recorded as ignored advisory signals rather than read automatically.
+
+#### Phase 14d: Target Review Integration
+
+- Completed: target review emits `local_content_ux_advisory` and `quality_signals.content_ux` only when the manifest opts in.
+- Completed: content UX advisory does not create review findings, does not change `metrics.finding_count`, does not change `action_plan`, and does not change `quality_signals.release_readiness`.
+- Completed: the MCP adapter inherits the behavior through existing target manifest review tools without adding new MCP arguments or a broader tool surface.
+
+#### Phase 14e: Reports, Tests, and Boundaries
+
+- Completed: Markdown target reports include a bounded Content UX Advisory section when advisory output exists.
+- Completed: no-browser tests cover schema parity, manifest normalization, source-value non-disclosure, and pure advisory behavior.
+- Completed: browser smoke tests verify opt-in advisory output and prove the enabled advisory does not alter existing findings, metrics, action plans, or release readiness.
+- Completed: architecture tests cover the pure advisory module and continue to block target-specific literals, browser profile reuse, storage-state persistence, external listeners, arbitrary shell execution, unapproved uploads, and destructive cleanup.
+
 ## Verification Method
 
 - `./tools/product-gate`
@@ -392,6 +427,7 @@ Phase 13 completes the local dogfood refinement found while reviewing real Contr
 - Phase 11 checks cover manifest page expectation normalization, page-specific viewport execution, expected text and selector checks, page-level mock metrics, local review artifact indexes, and page expectation quality signals.
 - Phase 12 checks cover rendered-state evidence for broken images, lingering loading indicators, empty data containers, developer triage report summaries, manifest suggestions, and fixture-backed target review report output.
 - Phase 13 checks cover loading-indicator precision for ready/progress business-state text and local dogfood rechecks against Control Center pages without target-specific runtime branches.
+- Phase 14 checks cover schema registry/file parity, manifest opt-in content UX advisory, bounded inline source data, source-to-screen text binding checks, source-value non-disclosure, report output, advisory purity, and unchanged findings, metrics, action plans, and release readiness.
 - Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, external listener creation, arbitrary shell execution, unapproved upload paths, and destructive cleanup commands.
 
 ## Recovery Path

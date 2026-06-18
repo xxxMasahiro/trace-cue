@@ -9,6 +9,7 @@ import { runObserve } from '../src/observe.js';
 import { parseCliArgs } from '../src/parser.js';
 import { redact, redactUrl } from '../src/redaction.js';
 import { classifyActionCandidate, normalizeTargetManifest } from '../src/review.js';
+import { buildLocalContentUxAdvisory } from '../src/content-ux-advisory.js';
 import { createTargetManifest } from '../src/target.js';
 
 const fixedNow = '2026-06-17T00:00:00.000Z';
@@ -176,6 +177,22 @@ test('schema commands expose machine-readable contracts', async () => {
   const fetchedBody = JSON.parse(fetched.stdout);
   assert.equal(fetchedBody.command, 'schema get');
   assert.equal(fetchedBody.data.schema.title, 'Browser Debug CLI Review Finding');
+
+  const reviewSchemaFile = JSON.parse(await readFile(new URL('../schemas/review.schema.json', import.meta.url), 'utf8'));
+  const reviewSchema = await executeCli(['schema', 'get', '--name', 'review', '--json'], { now: fixedNow });
+  const reviewSchemaBody = JSON.parse(reviewSchema.stdout);
+  assert.deepEqual(
+    Object.keys(reviewSchemaBody.data.schema.properties).sort(),
+    Object.keys(reviewSchemaFile.properties).sort()
+  );
+
+  const targetManifestSchemaFile = JSON.parse(await readFile(new URL('../schemas/target-manifest.schema.json', import.meta.url), 'utf8'));
+  const targetManifestSchema = await executeCli(['schema', 'get', '--name', 'target_manifest', '--json'], { now: fixedNow });
+  const targetManifestSchemaBody = JSON.parse(targetManifestSchema.stdout);
+  assert.deepEqual(
+    Object.keys(targetManifestSchemaBody.data.schema.properties).sort(),
+    Object.keys(targetManifestSchemaFile.properties).sort()
+  );
 });
 
 test('target manifests and action candidates use generic review abstractions', () => {
@@ -198,10 +215,25 @@ test('target manifests and action candidates use generic review abstractions', (
       viewports: ['mobile', { name: 'tablet', width: 768, height: 1024 }],
       expectations: {
         text: ['Overview'],
-        selectors: ['#primary']
+        selectors: ['#primary'],
+        dataBindings: [{
+          id: 'git-status',
+          sourceId: 'workflow',
+          pointer: '/git/status',
+          target: 'text'
+        }]
       },
       mock: 'mocks/overview.png'
     }],
+    sourceData: [{
+      id: 'workflow',
+      data: { git: { status: 'clean' } }
+    }],
+    localContentUxAdvisory: {
+      enabled: true,
+      audience: ['non-engineer', 'early-career engineer'],
+      goal: 'Help users understand the current workflow state.'
+    },
     viewportMatrix: ['desktop', { name: 'phone', width: 390, height: 844 }],
     budgets: { maxRoutes: 5 }
   });
@@ -216,11 +248,74 @@ test('target manifests and action candidates use generic review abstractions', (
   assert.equal(normalized.target.pages[0].priority, 'high');
   assert.equal(normalized.target.pages[0].expectations.text[0].value, 'Overview');
   assert.equal(normalized.target.pages[0].expectations.selectors[0].value, '#primary');
+  assert.equal(normalized.target.pages[0].expectations.dataBindings[0].sourceId, 'workflow');
+  assert.equal(normalized.target.localContentUxAdvisory.enabled, true);
+  assert.equal(normalized.target.localContentUxAdvisory.sourceData[0].available, true);
 
   assert.equal(classifyActionCandidate({ tag: 'a', href: 'https://example.test/app#next' }, 'https://example.test/app'), 'navigation');
   assert.equal(classifyActionCandidate({ tag: 'input' }, 'https://example.test/app'), 'input_required');
   assert.equal(classifyActionCandidate({ tag: 'button', text: 'Delete project' }, 'https://example.test/app'), 'destructive');
   assert.equal(classifyActionCandidate({ tag: 'button', text: 'Open settings' }, 'https://example.test/app'), 'state_revealing');
+});
+
+test('local content UX advisory is manifest opt-in and does not expose source values', () => {
+  const normalized = normalizeTargetManifest({
+    baseUrl: 'https://example.test/app',
+    pages: [{
+      name: 'Overview',
+      path: '/app',
+      expectations: {
+        dataBindings: [{
+          id: 'run-summary',
+          sourceId: 'workflow',
+          pointer: '/status/summary',
+          target: 'text',
+          severity: 'medium'
+        }]
+      }
+    }],
+    sourceData: [{
+      id: 'workflow',
+      data: { status: { summary: 'Current local run is healthy' } }
+    }],
+    localContentUxAdvisory: {
+      enabled: true,
+      audience: ['operators'],
+      goal: 'Expose workflow state in a way users can understand.'
+    }
+  });
+  assert.equal(normalized.ok, true);
+  const target = normalized.target;
+  const matched = buildLocalContentUxAdvisory({
+    target,
+    routeReviews: [{
+      route: { url: target.pages[0].url },
+      viewport: { name: 'desktop' },
+      evidenceSummary: {
+        visible_text: 'Dashboard overview. Current local run is healthy.',
+        visible_text_length: 53
+      }
+    }]
+  });
+  assert.equal(matched.status, 'passed');
+  assert.equal(matched.counts.data_binding_matches, 1);
+  assert.doesNotMatch(JSON.stringify(matched), /Current local run is healthy/);
+
+  const mismatched = buildLocalContentUxAdvisory({
+    target,
+    routeReviews: [{
+      route: { url: target.pages[0].url },
+      viewport: { name: 'desktop' },
+      evidenceSummary: {
+        visible_text: 'Dashboard overview is unavailable.',
+        visible_text_length: 34
+      }
+    }]
+  });
+  assert.equal(mismatched.status, 'needs_owner_review');
+  assert.equal(mismatched.counts.data_binding_mismatches, 1);
+  assert.ok(mismatched.signals.some((signal) => signal.id === 'content_ux_source_text_not_visible'));
+  assert.doesNotMatch(JSON.stringify(mismatched), /Current local run is healthy/);
 });
 
 test('target init writes a reusable local target manifest artifact', async () => {

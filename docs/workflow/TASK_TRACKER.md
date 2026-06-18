@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Phase 5 local MVP runtime implementation is complete after Phase 1 and Phase 2a. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally. Phase 7 local review-platform implementation is complete for deterministic review, target manifests, route/viewport coverage, risk classification, conservative mock metrics, local stdio MCP adapter, schema registry, and package API/file-set readiness. Phase 8 local dogfood/plugin-readiness work is complete for target manifest generation, developer action plans, local heuristic review advisory data, target Markdown reports, plugin metadata, MCP target tools, reusable manifest template, and package file-set readiness without publication. Phase 9 local review-quality work is complete for quality signals, expanded local heuristics, developer handoff, local release decision support, and explicit model-review boundaries. Phase 10 local dogfood route-readiness work is complete for expected-route execution, expected-route coverage artifacts, route-budget skip accounting, and fixture-backed validation without target-specific runtime branches. Phase 11 local page-expectation review work is complete for optional manifest pages, page-specific viewports, deterministic page-state checks, page-level mock metrics, local review artifact indexes, and fixture-backed validation. Phase 12 local rendered-state dogfood hardening is complete for broken-image, lingering-loading, empty-data-container, developer triage report, manifest suggestion, and fixture-backed validation support. Phase 13 local dogfood signal refinement is complete for loading-indicator precision around ready/progress business-state text and Control Center recheck validation without target-specific runtime branches.
+Phase 5 local MVP runtime implementation is complete after Phase 1 and Phase 2a. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally. Phase 7 local review-platform implementation is complete for deterministic review, target manifests, route/viewport coverage, risk classification, conservative mock metrics, local stdio MCP adapter, schema registry, and package API/file-set readiness. Phase 8 local dogfood/plugin-readiness work is complete for target manifest generation, developer action plans, local heuristic review advisory data, target Markdown reports, plugin metadata, MCP target tools, reusable manifest template, and package file-set readiness without publication. Phase 9 local review-quality work is complete for quality signals, expanded local heuristics, developer handoff, local release decision support, and explicit model-review boundaries. Phase 10 local dogfood route-readiness work is complete for expected-route execution, expected-route coverage artifacts, route-budget skip accounting, and fixture-backed validation without target-specific runtime branches. Phase 11 local page-expectation review work is complete for optional manifest pages, page-specific viewports, deterministic page-state checks, page-level mock metrics, local review artifact indexes, and fixture-backed validation. Phase 12 local rendered-state dogfood hardening is complete for broken-image, lingering-loading, empty-data-container, developer triage report, manifest suggestion, and fixture-backed validation support. Phase 13 local dogfood signal refinement is complete for loading-indicator precision around ready/progress business-state text and Control Center recheck validation without target-specific runtime branches. Phase 14 local content UX advisory work is complete for manifest opt-in source-to-screen advisory checks, schema parity, bounded report output, and fixture-backed invariance validation without changing findings, metrics, action plans, release readiness, or target-specific runtime branches.
 
 This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and HANDOFF workflow-state pair synchronized whenever task state changes.
 
@@ -104,10 +104,18 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 - [x] Browser smoke coverage verifies rendered-state findings, evidence summaries, developer triage reports, and manifest suggestions.
 - [x] Refined loading indicator evidence so normal ready/progress business-state text does not produce lingering loading UI findings without explicit loading semantics.
 - [x] Browser smoke coverage verifies ready/progress business-state text is not reported as a loading indicator.
+- [x] Added target manifest `sourceData`, `localContentUxAdvisory`, and page `expectations.dataBindings` support for opt-in content UX advisory.
+- [x] Added pure `src/content-ux-advisory.js` advisory logic without Playwright, filesystem access, artifact reads, external transfer, or target-specific literals.
+- [x] Added target review `local_content_ux_advisory` and `quality_signals.content_ux` output only when manifest opt-in is enabled.
+- [x] Preserved existing review findings, `metrics.finding_count`, `action_plan`, and `quality_signals.release_readiness` when content UX advisory is enabled.
+- [x] Synchronized schema registry and schema files for review and target manifest fields, with no-browser parity coverage.
+- [x] Added Markdown report output for Content UX Advisory without copying source values or full page text.
+- [x] Updated generated target manifests and reusable target manifest template with disabled advisory scaffolding.
+- [x] Added no-browser, architecture, and browser smoke coverage for content UX advisory opt-in behavior, non-disclosure, and local-first boundaries.
 
 ## Remaining Work
 
-No remaining local Phase 13 implementation work is currently planned.
+No remaining local Phase 14 implementation work is currently planned.
 
 ## Future Approval-Bound Work
 
@@ -120,7 +128,7 @@ No remaining local Phase 13 implementation work is currently planned.
 
 ## Next Step
 
-Ask for explicit approval before model/API review, evidence leaving the local process, HTTP/socket MCP server mode, authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, public package naming, license changes, plugin marketplace registration, npm publication, or destructive cleanup.
+Ask for explicit approval before model/API review, evidence leaving the local process, arbitrary source-data file or URL loaders, HTTP/socket MCP server mode, authentication automation, external daemon control channels, external upload, existing-browser-profile reuse, credential storage, public package naming, license changes, plugin marketplace registration, npm publication, or destructive cleanup.
 
 ## Stop Conditions
 

@@ -11,6 +11,7 @@
     "action_plan": { "type": "object" },
     "review_advisory": { "type": "object" },
     "manifest_suggestions": { "type": "array" },
+    "local_content_ux_advisory": { "type": "object" },
     "quality_signals": { "type": "object" },
     "evidence_summary": { "type": "object" },
     "artifact_index": { "type": "object" },

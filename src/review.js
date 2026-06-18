@@ -19,6 +19,11 @@ import {
 import { normalizeTimeout, validateUrl } from './observe.js';
 import { resolveJsonInput } from './input.js';
 import { redact, redactUrl, truncateText } from './redaction.js';
+import {
+  buildLocalContentUxAdvisory,
+  normalizeContentDataBindings,
+  normalizeContentUxAdvisoryConfig
+} from './content-ux-advisory.js';
 
 const DEFAULT_VIEWPORT = Object.freeze({ name: 'laptop', width: 1280, height: 720 });
 const VIEWPORTS = Object.freeze({
@@ -329,6 +334,7 @@ export async function runTargetReview(options = {}, context = {}) {
   const artifacts = [];
   const warnings = [];
   const queue = [];
+  const routeReviews = [];
   const routeBudget = target.budgets.maxRoutes;
 
   for (const page of target.pages) {
@@ -370,6 +376,15 @@ export async function runTargetReview(options = {}, context = {}) {
         continue;
       }
       visited.push({ ...route, viewport, review_id: result.data.review.id });
+      routeReviews.push({
+        route: normalizeRoute(route.url, route.source),
+        viewport,
+        review_id: result.data.review.id,
+        manifest_page_id: route.manifest_page?.id ?? null,
+        evidenceSummary: result.data.evidence_summary,
+        qualitySignals: result.data.quality_signals,
+        finding_count: result.data.findings.length
+      });
       findings.push(...result.data.findings);
       if (route.manifest_page) {
         const pageEvaluation = evaluateManifestPage({
@@ -434,10 +449,17 @@ export async function runTargetReview(options = {}, context = {}) {
     description: 'Structured site review coverage JSON.'
   }));
 
-  const qualitySignals = buildTargetQualitySignals({ findings, coverage });
+  let qualitySignals = buildTargetQualitySignals({ findings, coverage });
   const actionPlan = buildActionPlan(findings, { coverage });
   const reviewAdvisory = buildTargetReviewAdvisory({ findings, coverage, qualitySignals });
   const manifestSuggestions = buildManifestSuggestions({ target, coverage, qualitySignals });
+  const localContentUxAdvisory = buildLocalContentUxAdvisory({ target, coverage, routeReviews });
+  if (localContentUxAdvisory) {
+    qualitySignals = {
+      ...qualitySignals,
+      content_ux: localContentUxAdvisory.quality_signal
+    };
+  }
   const data = redact({
     review: {
       schema_version: SCHEMA_VERSION,
@@ -464,6 +486,7 @@ export async function runTargetReview(options = {}, context = {}) {
     action_plan: actionPlan,
     review_advisory: reviewAdvisory,
     manifest_suggestions: manifestSuggestions,
+    ...(localContentUxAdvisory ? { local_content_ux_advisory: localContentUxAdvisory } : {}),
     quality_signals: qualitySignals,
     environment: {
       artifact_root: artifactRootInput,
@@ -573,6 +596,10 @@ export function normalizeTargetManifest(manifest) {
   }
   const baseUrl = new URL(manifest.baseUrl).toString();
   const pages = normalizeManifestPages(manifest.pages ?? manifest.expectedPages ?? [], baseUrl);
+  const localContentUxAdvisory = normalizeContentUxAdvisoryConfig(
+    manifest.localContentUxAdvisory ?? manifest.contentUxAdvisory ?? manifest.appHints?.localContentUxAdvisory ?? {},
+    manifest.sourceData ?? manifest.appHints?.sourceData
+  );
   const viewportMatrix = mergeViewportMatrix(
     normalizeViewportMatrix(manifest.viewportMatrix),
     pages.flatMap((page) => page.viewports)
@@ -601,7 +628,8 @@ export function normalizeTargetManifest(manifest) {
       },
       masks: Array.isArray(manifest.masks) ? manifest.masks : [],
       regions: Array.isArray(manifest.regions) ? manifest.regions : [],
-      appHints: manifest.appHints && typeof manifest.appHints === 'object' ? manifest.appHints : {}
+      appHints: manifest.appHints && typeof manifest.appHints === 'object' ? manifest.appHints : {},
+      localContentUxAdvisory
     }
   };
 }
@@ -720,7 +748,14 @@ function normalizeManifestPage(entry, index, baseUrl) {
     viewports: normalizeOptionalViewportMatrix(raw.viewports ?? raw.viewportMatrix ?? (raw.viewport ? [raw.viewport] : [])),
     expectations: {
       text: normalizeExpectationList(expectations.text ?? raw.expectedText ?? []),
-      selectors: normalizeExpectationList(expectations.selectors ?? raw.expectedSelectors ?? [])
+      selectors: normalizeExpectationList(expectations.selectors ?? raw.expectedSelectors ?? []),
+      dataBindings: normalizeContentDataBindings(
+        expectations.dataBindings
+        ?? expectations.data_bindings
+        ?? raw.dataBindings
+        ?? raw.data_bindings
+        ?? []
+      )
     },
     mock: typeof raw.mock === 'string' && raw.mock ? raw.mock : null,
     threshold: raw.threshold,
@@ -1746,7 +1781,8 @@ function evaluateManifestPage({
       expected_text_count: page.expectations.text.length,
       missing_text: missingText,
       expected_selector_count: page.expectations.selectors.length,
-      missing_selectors: missingSelectors
+      missing_selectors: missingSelectors,
+      data_binding_count: page.expectations.dataBindings?.length ?? 0
     },
     mock_status: mockMetrics?.status ?? (page.mock ? 'not_evaluated' : 'not_provided'),
     evidence: {
@@ -1828,7 +1864,8 @@ function coveragePage(page) {
     viewports: page.viewports.map((viewport) => viewport.name),
     expectations: {
       text_count: page.expectations.text.length,
-      selector_count: page.expectations.selectors.length
+      selector_count: page.expectations.selectors.length,
+      data_binding_count: page.expectations.dataBindings?.length ?? 0
     },
     mock: page.mock ? { provided: true, threshold: page.threshold ?? null } : { provided: false }
   });
@@ -1845,7 +1882,8 @@ function skippedPageCheck(page, route, reason) {
       expected_text_count: page.expectations.text.length,
       missing_text: page.expectations.text,
       expected_selector_count: page.expectations.selectors.length,
-      missing_selectors: page.expectations.selectors
+      missing_selectors: page.expectations.selectors,
+      data_binding_count: page.expectations.dataBindings?.length ?? 0
     },
     mock_status: page.mock ? 'not_evaluated' : 'not_provided',
     evidence: {
@@ -2992,8 +3030,25 @@ function renderReviewReport(data, artifacts) {
     if (data.quality_signals.page_expectations) {
       lines.push(`- Page expectations: ${data.quality_signals.page_expectations.status}`);
     }
+    if (data.quality_signals.content_ux) {
+      lines.push(`- Content UX advisory: ${data.quality_signals.content_ux.status}`);
+    }
     if (data.quality_signals.release_readiness) {
       lines.push(`- Local release gate: ${data.quality_signals.release_readiness.local_gate}`);
+    }
+    lines.push('');
+  }
+  if (data.local_content_ux_advisory) {
+    const advisory = data.local_content_ux_advisory;
+    lines.push('## Content UX Advisory', '');
+    lines.push(`- Status: ${advisory.status}`);
+    lines.push(`- Gate effect: ${advisory.gate_effect}`);
+    lines.push(`- Data binding checks: ${advisory.counts?.data_binding_checks ?? 0}`);
+    lines.push(`- Data binding mismatches: ${advisory.counts?.data_binding_mismatches ?? 0}`);
+    if (advisory.signals?.length) {
+      for (const signal of advisory.signals.slice(0, 12)) {
+        lines.push(`- ${signal.severity.toUpperCase()} ${signal.id}: ${signal.recommendation}`);
+      }
     }
     lines.push('');
   }

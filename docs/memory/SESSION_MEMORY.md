@@ -73,3 +73,13 @@ Read AGENTS.MD and docs/workflow/HANDOFF.md, confirm the current state, then res
 - Target review output includes manifest suggestions for missing page expectations, unpinned expected routes, exhausted route budgets, failed page checks, and rendered-state gaps.
 - Browser smoke coverage verifies rendered-state findings, evidence summaries, developer triage reports, and manifest suggestions.
 - The implementation remains generic and local-first. No Control Center-specific runtime branches, external upload, model/API review, OAuth/login automation, existing-profile reuse, HTTP/socket MCP transport, npm publication, license change, or marketplace mutation was added.
+
+## 2026-06-18 Phase 14 Content UX Advisory Handoff
+
+- Phase 14 is complete for manifest opt-in local content UX advisory.
+- Target manifests support bounded inline `sourceData`, `localContentUxAdvisory`, and page `expectations.dataBindings`.
+- Target review emits `local_content_ux_advisory` and `quality_signals.content_ux` only when `localContentUxAdvisory.enabled=true`.
+- The advisory checks source-to-screen text bindings without creating findings, changing `metrics.finding_count`, changing `action_plan`, or changing `quality_signals.release_readiness`.
+- The advisory module is pure local code without Playwright, filesystem reads, artifact reads, external transfer, or target-specific runtime branches.
+- Schema registry/file parity, source-value non-disclosure, report output, and browser-smoke invariance are covered by tests.
+- The implementation remains generic and local-first. No arbitrary source-data file or URL loader, Control Center-specific runtime branch, external upload, model/API review, OAuth/login automation, existing-profile reuse, HTTP/socket MCP transport, npm publication, license change, or marketplace mutation was added.
