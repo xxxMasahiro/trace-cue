@@ -493,7 +493,9 @@ export async function runTargetReview(options = {}, context = {}) {
       content_ux_action_plan: localContentUxAdvisory.action_plan,
       content_ux_readiness: localContentUxAdvisory.readiness,
       content_ux_page_handoff: localContentUxAdvisory.page_handoff,
-      content_ux_manifest_authoring: localContentUxAdvisory.manifest_authoring
+      content_ux_manifest_authoring: localContentUxAdvisory.manifest_authoring,
+      content_ux_review_brief: localContentUxAdvisory.review_brief,
+      content_ux_rubric_evaluation: localContentUxAdvisory.rubric_evaluation
     } : {}),
     quality_signals: qualitySignals,
     environment: {
@@ -752,6 +754,7 @@ function normalizeManifestPage(entry, index, baseUrl) {
     id,
     name: raw.name ? String(raw.name) : id,
     url,
+    role: normalizePageRole(raw.role ?? raw.pageRole ?? raw.page_role ?? raw.kind),
     priority: normalizePagePriority(raw.priority),
     viewports: normalizeOptionalViewportMatrix(raw.viewports ?? raw.viewportMatrix ?? (raw.viewport ? [raw.viewport] : [])),
     expectations: {
@@ -778,6 +781,14 @@ function normalizeManifestPage(entry, index, baseUrl) {
     threshold: raw.threshold,
     notes: Array.isArray(raw.notes) ? raw.notes.map((note) => truncateText(note, 300)) : []
   };
+}
+
+function normalizePageRole(value) {
+  if (!value) {
+    return null;
+  }
+  const role = String(value).trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+  return role ? truncateText(role, 80) : null;
 }
 
 function normalizePagePriority(value) {
@@ -3129,6 +3140,26 @@ function renderReviewReport(data, artifacts) {
       lines.push(`- Manifest authoring suggestions: ${suggestions.length}`);
       for (const suggestion of suggestions.slice(0, 6)) {
         lines.push(`- ${suggestion.severity.toUpperCase()} ${suggestion.type}: ${suggestion.recommendation}`);
+      }
+    }
+    lines.push('');
+  }
+  if (data.content_ux_review_brief || data.content_ux_rubric_evaluation) {
+    const brief = data.content_ux_review_brief ?? {};
+    const rubric = data.content_ux_rubric_evaluation ?? {};
+    lines.push('## Content UX Review Brief', '');
+    if (brief.status) {
+      lines.push(`- Brief status: ${brief.status}`);
+      lines.push(`- Page roles declared: ${brief.summary?.pages_with_declared_roles ?? 0}/${brief.summary?.pages ?? 0}`);
+      lines.push(`- Decision needs needing review: ${brief.summary?.decision_needs_needing_owner_review ?? 0}`);
+    }
+    if (rubric.status) {
+      lines.push(`- Rubric status: ${rubric.status}`);
+      lines.push(`- Rubric criteria: ${rubric.summary?.criteria ?? 0}`);
+      lines.push(`- Criteria needing review: ${rubric.summary?.criteria_needing_owner_review ?? 0}`);
+      for (const criterion of (rubric.criteria ?? []).filter((candidate) => candidate.status !== 'passed').slice(0, 8)) {
+        const locator = criterion.selector ? ` (${criterion.selector})` : '';
+        lines.push(`- ${criterion.severity.toUpperCase()} ${criterion.category}${locator}: ${criterion.recommendation}`);
       }
     }
     lines.push('');

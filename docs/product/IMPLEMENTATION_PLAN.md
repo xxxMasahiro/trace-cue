@@ -513,6 +513,44 @@ Phase 17 completes the six-step local implementation path for making content UX 
 - Completed: review schema registry and packaged review schema files include additive `content_ux_page_handoff` and `content_ux_manifest_authoring` properties.
 - Completed: requirements, specification, implementation plan, task tracker, handoff, security, verification, README, changelog, manifests, templates, and session memory are synchronized with the Phase 17 contract.
 
+### Phase 18: Content UX Review Brief and Rubric Evaluation
+
+Phase 18 completes the six-step local implementation path for making content UX advisory compare reviewed evidence with manifest-declared product communication intent. It remains manifest-driven, local-only, advisory-only, additive, and generic. It does not add external source loaders, model/API review, evidence upload, existing-profile reuse, HTTP/socket MCP transport, authentication automation, package publication, license changes, marketplace mutation, or target-specific runtime branches.
+
+#### Phase 18a: Review Brief Manifest Contract
+
+- Completed: `localContentUxAdvisory.reviewBrief` supports a bounded summary, user roles, and decision needs.
+- Completed: manifest pages can declare a generic `role` such as workflow overview or triage detail.
+- Completed: target init and reusable templates expose review brief scaffolding while keeping advisory opt-in disabled by default.
+
+#### Phase 18b: Rubric Manifest Contract
+
+- Completed: `localContentUxAdvisory.rubric[]` supports category, page, selector, criterion, expected evidence, match mode, text match, severity, and required fields.
+- Completed: rubric categories remain generic and reusable across Control Center-style applications.
+- Completed: expected evidence phrases are used only for local matching and are not copied into reports.
+
+#### Phase 18c: Local Brief and Rubric Evaluation
+
+- Completed: content UX advisory evaluates decision needs and rubric criteria against reviewed page text or selector-scoped element evidence.
+- Completed: evaluation returns passed, owner-review, and inconclusive states with evidence counts and reviewed viewport summaries.
+- Completed: evaluation remains pure local code without Playwright, filesystem reads, artifact reads, external transfer, or target-specific runtime branches.
+
+#### Phase 18d: Additive Review Output and Reports
+
+- Completed: target review emits additive `content_ux_review_brief` and `content_ux_rubric_evaluation` only when content UX advisory is enabled.
+- Completed: Markdown target reports include a bounded Content UX Review Brief section.
+- Completed: existing review `findings`, `metrics.finding_count`, existing `action_plan`, and `quality_signals.release_readiness` remain unchanged.
+
+#### Phase 18e: Tests and Boundary Preservation
+
+- Completed: no-browser tests cover target manifest normalization, review brief output, rubric evaluation, source-value non-disclosure, and unchanged advisory-only gates.
+- Completed: browser smoke tests cover disabled-output absence, enabled review brief output, enabled rubric evaluation, report output, and unchanged review findings, metrics, existing action plans, and release readiness.
+
+#### Phase 18f: Documentation, Schema, and Evidence Sync
+
+- Completed: review schema registry and packaged review schema files include additive `content_ux_review_brief` and `content_ux_rubric_evaluation` properties.
+- Completed: requirements, specification, implementation plan, task tracker, handoff, security, verification, README, changelog, manifests, templates, and session memory are synchronized with the Phase 18 contract.
+
 ## Verification Method
 
 - `./tools/product-gate`
@@ -540,6 +578,7 @@ Phase 17 completes the six-step local implementation path for making content UX 
 - Phase 15 checks cover selector-scoped content UX advisory bindings, attribute/state/risk targets, required user-question advisory checks, reusable Control Center-style manifest templates, source-value non-disclosure, and unchanged review findings, metrics, action plans, and release readiness.
 - Phase 16 checks cover additive `content_ux_findings`, `content_ux_action_plan`, `content_ux_readiness`, Markdown Content UX Developer Handoff output, source-value non-disclosure, and unchanged review findings, metrics, existing action plans, and release readiness.
 - Phase 17 checks cover expanded content UX categories, `content_ux_page_handoff`, `content_ux_manifest_authoring`, report page/authoring summaries, source-value non-disclosure, and unchanged review findings, metrics, existing action plans, and release readiness.
+- Phase 18 checks cover additive `content_ux_review_brief`, additive `content_ux_rubric_evaluation`, report brief/rubric summaries, source-value non-disclosure, and unchanged review findings, metrics, existing action plans, and release readiness.
 - Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, external listener creation, arbitrary shell execution, unapproved upload paths, and destructive cleanup commands.
 
 ## Recovery Path

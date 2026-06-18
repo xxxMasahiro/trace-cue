@@ -7,6 +7,16 @@ const SUPPORTED_BINDING_TARGETS = new Set(['text', 'attribute', 'data-state', 'd
 const KNOWN_BINDING_TARGETS = SUPPORTED_BINDING_TARGETS;
 const SEVERITIES = new Set(['info', 'low', 'medium', 'high', 'critical']);
 const SEVERITY_RANK = Object.freeze({ info: 0, low: 1, medium: 2, high: 3, critical: 4 });
+const RUBRIC_CATEGORIES = new Set([
+  'workflow_state_clarity',
+  'next_action_clarity',
+  'navigation_clarity',
+  'information_architecture',
+  'decision_support',
+  'explanation_clarity',
+  'content_completeness',
+  'content_contract'
+]);
 const DEFAULT_STATE_ATTRIBUTES = ['data-state', 'data-status', 'aria-current', 'aria-selected', 'aria-expanded', 'aria-pressed'];
 const DEFAULT_RISK_ATTRIBUTES = ['data-risk', 'data-severity', 'aria-invalid', 'aria-disabled'];
 const SAFE_ATTRIBUTE_NAME = /^[a-zA-Z_][a-zA-Z0-9_:.:-]{0,119}$/;
@@ -24,6 +34,8 @@ export function normalizeContentUxAdvisoryConfig(configValue = {}, sourceDataVal
     requiredUserQuestions: normalizeContentUserQuestions(
       raw.requiredUserQuestions ?? raw.required_user_questions ?? raw.userQuestions ?? raw.questions ?? []
     ),
+    reviewBrief: normalizeContentUxReviewBrief(raw.reviewBrief ?? raw.review_brief ?? raw.brief ?? {}),
+    rubric: normalizeContentUxRubric(raw.rubric ?? raw.reviewRubric ?? raw.review_rubric ?? []),
     sourceData,
     boundaries: {
       local_only: true,
@@ -272,6 +284,8 @@ export function buildLocalContentUxAdvisory({ target, routeReviews = [] } = {}) 
   const findings = buildContentUxFindings(advisorySignals);
   const pageHandoff = buildContentUxPageHandoff({ findings, target });
   const manifestAuthoring = buildContentUxManifestAuthoring({ config, target, counts, findings });
+  const reviewBrief = buildContentUxReviewBrief({ config, target, routeReviews });
+  const rubricEvaluation = buildContentUxRubricEvaluation({ config, target, routeReviews });
   const actionPlan = buildContentUxActionPlan({ findings, counts, status, pageHandoff, manifestAuthoring });
   const readiness = buildContentUxReadiness({ findings, counts, status, pageHandoff });
   return redact({
@@ -291,6 +305,8 @@ export function buildLocalContentUxAdvisory({ target, routeReviews = [] } = {}) 
     readiness,
     page_handoff: pageHandoff,
     manifest_authoring: manifestAuthoring,
+    review_brief: reviewBrief,
+    rubric_evaluation: rubricEvaluation,
     source_data: {
       declared: counts.source_data_declared,
       inline_available: counts.source_data_available,
@@ -308,11 +324,16 @@ export function buildLocalContentUxAdvisory({ target, routeReviews = [] } = {}) 
       required_user_questions: counts.required_user_questions,
       user_questions_unanswered: counts.user_questions_unanswered,
       user_questions_inconclusive: counts.user_questions_inconclusive,
+      review_brief_status: reviewBrief.status,
+      rubric_status: rubricEvaluation.status,
+      rubric_criteria: rubricEvaluation.summary.criteria,
+      rubric_needs_owner_review: rubricEvaluation.summary.criteria_needing_owner_review,
       external_evidence_transfer: false
     },
     limitations: [
       'This advisory is manifest opt-in and does not change review findings, metrics, action plans, or release gates.',
       'The local advisory layer checks declared source-to-screen contracts, selector-scoped evidence, and required user-question coverage; it is not model output or final product approval.',
+      'Review brief and rubric output is local, advisory-only, manifest-driven, and separate from deterministic review findings.',
       'Inline source data is used only in-process and source values are not copied into advisory messages or Markdown reports.',
       'External source references are recorded but not read by this phase.'
     ]
@@ -445,6 +466,59 @@ function normalizeEvidencePhrases(value) {
   return [...new Set(entries
     .map((entry) => truncateText(String(entry).replace(/\s+/g, ' ').trim(), 240))
     .filter(Boolean))];
+}
+
+function normalizeContentUxReviewBrief(value) {
+  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return {
+    summary: raw.summary || raw.context ? truncateText(raw.summary ?? raw.context, 500) : null,
+    userRoles: normalizeAudience(raw.userRoles ?? raw.user_roles ?? raw.roles ?? []),
+    decisionNeeds: normalizeContentUserQuestions(
+      raw.decisionNeeds ?? raw.decision_needs ?? raw.requiredDecisions ?? raw.required_decisions ?? [],
+      null
+    )
+  };
+}
+
+function normalizeContentUxRubric(value) {
+  const entries = Array.isArray(value) ? value : [value].filter(Boolean);
+  return entries
+    .map((entry, index) => normalizeContentUxRubricCriterion(entry, index))
+    .filter(Boolean);
+}
+
+function normalizeContentUxRubricCriterion(entry, index) {
+  const raw = typeof entry === 'string' ? { criterion: entry } : entry;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+  const criterion = raw.criterion ?? raw.question ?? raw.prompt ?? raw.text ?? raw.name;
+  if (!criterion) {
+    return null;
+  }
+  const category = safeId(raw.category ?? raw.type ?? 'decision_support', 'decision_support');
+  const pageId = raw.pageId ?? raw.page_id ?? raw.page;
+  const matchMode = String(raw.matchMode ?? raw.match_mode ?? raw.mode ?? 'any').toLowerCase();
+  return {
+    id: safeId(raw.id ?? raw.name ?? `rubric-${index + 1}`, `rubric-${index + 1}`),
+    category: RUBRIC_CATEGORIES.has(category) ? category : 'decision_support',
+    criterion: truncateText(String(criterion).replace(/\s+/g, ' ').trim(), 240),
+    pageId: pageId ? safeId(pageId, String(pageId)) : null,
+    selector: raw.selector ? truncateText(String(raw.selector), 240) : null,
+    expectedEvidence: normalizeEvidencePhrases(
+      raw.expectedEvidence
+      ?? raw.expected_evidence
+      ?? raw.evidence
+      ?? raw.answers
+      ?? raw.answer
+      ?? raw.keywords
+      ?? []
+    ),
+    matchMode: matchMode === 'all' ? 'all' : 'any',
+    textMatch: ['contains', 'exact'].includes(raw.textMatch ?? raw.text_match) ? (raw.textMatch ?? raw.text_match) : 'contains',
+    severity: SEVERITIES.has(raw.severity) ? raw.severity : 'medium',
+    required: raw.required !== false
+  };
 }
 
 function normalizeAttributeName(value) {
@@ -1130,6 +1204,197 @@ function buildContentUxManifestAuthoring({ config, target, counts, findings }) {
     suggestions,
     suggested_manifest_sections: [...new Set(suggestions.map((suggestion) => suggestion.type))]
   };
+}
+
+function buildContentUxReviewBrief({ config, target, routeReviews }) {
+  const brief = config.reviewBrief ?? { summary: null, userRoles: [], decisionNeeds: [] };
+  const pageRoles = (target?.pages ?? []).map((page) => compactObject({
+    page_id: page.id,
+    name: page.name,
+    url: page.url,
+    role: page.role,
+    priority: page.priority,
+    status: page.role ? 'declared' : 'missing_role'
+  }));
+  const decisionNeeds = brief.decisionNeeds.map((need) => evaluateRubricLikeQuestion({
+    item: {
+      ...need,
+      criterion: need.question,
+      category: 'decision_support'
+    },
+    target,
+    routeReviews,
+    source: 'review_brief_decision_need'
+  }));
+  const missingRoleCount = pageRoles.filter((page) => page.status === 'missing_role').length;
+  const needsOwnerReview = decisionNeeds.filter((need) => need.status === 'needs_owner_review').length;
+  const inconclusive = decisionNeeds.filter((need) => need.status === 'inconclusive').length;
+  const authoringRecommended = !brief.summary || brief.userRoles.length === 0 || missingRoleCount > 0 || inconclusive > 0;
+  return {
+    reviewer: 'local_content_ux_advisory',
+    status: needsOwnerReview > 0
+      ? 'needs_content_owner_review'
+      : authoringRecommended
+        ? 'brief_authoring_recommended'
+        : 'passed',
+    advisory_only: true,
+    gate_effect: 'none',
+    external_evidence_transfer: false,
+    summary: {
+      configured: Boolean(brief.summary || brief.userRoles.length > 0 || brief.decisionNeeds.length > 0),
+      pages: pageRoles.length,
+      pages_with_declared_roles: pageRoles.length - missingRoleCount,
+      pages_missing_roles: missingRoleCount,
+      decision_needs: decisionNeeds.length,
+      decision_needs_met: decisionNeeds.filter((need) => need.status === 'passed').length,
+      decision_needs_needing_owner_review: needsOwnerReview,
+      decision_needs_inconclusive: inconclusive
+    },
+    audience: config.audience,
+    goal_declared: Boolean(config.goal),
+    brief_summary_declared: Boolean(brief.summary),
+    user_roles: brief.userRoles,
+    page_roles: pageRoles,
+    decision_needs: decisionNeeds,
+    limitations: [
+      'Review brief output evaluates manifest-declared communication intent only; it is advisory and local-only.',
+      'Expected evidence phrases and source values are not copied into report output.'
+    ]
+  };
+}
+
+function buildContentUxRubricEvaluation({ config, target, routeReviews }) {
+  const criteria = config.rubric.map((criterion) => evaluateRubricLikeQuestion({
+    item: criterion,
+    target,
+    routeReviews,
+    source: 'content_ux_rubric'
+  }));
+  const needsOwnerReview = criteria.filter((criterion) => criterion.status === 'needs_owner_review').length;
+  const inconclusive = criteria.filter((criterion) => criterion.status === 'inconclusive').length;
+  return {
+    reviewer: 'local_content_ux_advisory',
+    status: criteria.length === 0
+      ? 'not_configured'
+      : needsOwnerReview > 0
+        ? 'needs_content_owner_review'
+        : inconclusive > 0
+          ? 'rubric_authoring_recommended'
+          : 'passed',
+    advisory_only: true,
+    gate_effect: 'none',
+    external_evidence_transfer: false,
+    summary: {
+      criteria: criteria.length,
+      criteria_passed: criteria.filter((criterion) => criterion.status === 'passed').length,
+      criteria_needing_owner_review: needsOwnerReview,
+      criteria_inconclusive: inconclusive,
+      categories: [...new Set(criteria.map((criterion) => criterion.category))]
+    },
+    criteria
+  };
+}
+
+function evaluateRubricLikeQuestion({ item, target, routeReviews, source }) {
+  const pageReviews = item.pageId ? reviewsForPageId(routeReviews, target, item.pageId) : routeReviews;
+  const base = compactObject({
+    id: item.id,
+    category: item.category ?? 'decision_support',
+    page_id: item.pageId,
+    selector: item.selector,
+    criterion: item.criterion ?? item.question,
+    severity: item.required === false ? 'info' : item.severity,
+    source,
+    advisory_only: true,
+    gate_effect: 'none',
+    external_evidence_transfer: false,
+    owner_decision_required: false
+  });
+
+  if ((item.expectedEvidence ?? []).length === 0) {
+    return {
+      ...base,
+      status: 'inconclusive',
+      confidence: 'high',
+      evidence: {
+        expected_evidence_count: 0,
+        reviewed_viewports: pageReviews.map((review) => review.viewport?.name ?? 'unknown'),
+        local_only: true,
+        external_evidence_transfer: false
+      },
+      recommendation: 'Add bounded expectedEvidence phrases so this review criterion can be checked against local page evidence.'
+    };
+  }
+  if (pageReviews.length === 0) {
+    return {
+      ...base,
+      status: 'inconclusive',
+      confidence: 'high',
+      evidence: {
+        expected_evidence_count: item.expectedEvidence.length,
+        reviewed_viewports: [],
+        local_only: true,
+        external_evidence_transfer: false
+      },
+      recommendation: 'Add the page to expectedRoutes or pages, raise route budget, or split the target manifest so this criterion can be reviewed.'
+    };
+  }
+
+  const matched = questionEvidenceMatched({
+    expectedEvidence: item.expectedEvidence,
+    selector: item.selector,
+    textMatch: item.textMatch,
+    matchMode: item.matchMode
+  }, pageReviews);
+  return {
+    ...base,
+    status: matched ? 'passed' : 'needs_owner_review',
+    confidence: matched ? 'medium' : 'medium',
+    owner_decision_required: !matched,
+    evidence: {
+      expected_evidence_count: item.expectedEvidence.length,
+      match_mode: item.matchMode,
+      reviewed_viewports: pageReviews.map((review) => review.viewport?.name ?? 'unknown'),
+      reviewed_visible_text_lengths: pageReviews.map((review) => review.evidenceSummary?.visible_text_length ?? 0),
+      local_only: true,
+      external_evidence_transfer: false
+    },
+    recommendation: matched
+      ? 'Keep this rubric criterion in the manifest so the communication contract remains regression-testable.'
+      : recommendationForRubricCategory(item.category)
+  };
+}
+
+function reviewsForPageId(routeReviews, target, pageId) {
+  const page = (target?.pages ?? []).find((candidate) => candidate.id === pageId || safeId(candidate.name, candidate.id) === pageId);
+  return routeReviews.filter((review) => {
+    if (review.manifest_page_id === pageId) {
+      return true;
+    }
+    return page ? normalizeUrlKey(review.route?.url ?? review.url) === normalizeUrlKey(page.url) : false;
+  });
+}
+
+function recommendationForRubricCategory(category) {
+  if (category === 'workflow_state_clarity') {
+    return 'Clarify state labels, blocker summaries, and risk/status indicators so the target user can understand the workflow state without CLI context.';
+  }
+  if (category === 'next_action_clarity') {
+    return 'Clarify the next step, owner, or available action so the target user can decide what to do next.';
+  }
+  if (category === 'navigation_clarity') {
+    return 'Clarify links, detail affordances, or drill-down labels so the target user can move through the workflow naturally.';
+  }
+  if (category === 'information_architecture') {
+    return 'Rework headings, grouping, hierarchy, or summary copy so important workflow information is easier to scan.';
+  }
+  if (category === 'explanation_clarity') {
+    return 'Improve explanatory copy so non-expert users can understand why the state matters.';
+  }
+  if (category === 'content_completeness') {
+    return 'Add missing context, status details, or supporting facts required by the declared review brief.';
+  }
+  return 'Review the page content against the declared rubric and add clearer evidence, copy, or page structure for this criterion.';
 }
 
 function contentUxDecisionStatus(findings, fallbackStatus) {

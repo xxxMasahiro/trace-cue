@@ -112,3 +112,12 @@ Read AGENTS.MD and docs/workflow/HANDOFF.md, confirm the current state, then res
 - Target init and reusable templates expose the expanded content UX check vocabulary while keeping advisory opt-in disabled by default.
 - Markdown reports include page-level content UX summaries and manifest-authoring suggestion counts.
 - The implementation remains generic, local-first, advisory-only, and non-mutating. It does not read arbitrary source-data files or URLs, add Control Center-specific runtime branches, upload evidence, call models/APIs, automate OAuth/login, reuse existing profiles, add HTTP/socket MCP transport, publish packages, change license, or mutate marketplace state.
+
+## 2026-06-18 Phase 18 Content UX Review Brief and Rubric Handoff
+
+- Phase 18 is complete for local content UX review brief and rubric evaluation.
+- Target manifests can declare page `role`, `localContentUxAdvisory.reviewBrief`, and `localContentUxAdvisory.rubric`.
+- Target review emits additive `content_ux_review_brief` with audience, page-role, and decision-need summaries.
+- Target review emits additive `content_ux_rubric_evaluation` with rubric criteria status, category counts, owner-review counts, and inconclusive counts.
+- Markdown reports include a bounded Content UX Review Brief section.
+- The implementation remains generic, local-first, advisory-only, and non-mutating. It does not change review findings, `metrics.finding_count`, the existing `action_plan`, or `quality_signals.release_readiness`; it does not read arbitrary source-data files or URLs, add Control Center-specific runtime branches, upload evidence, call models/APIs, automate OAuth/login, reuse existing profiles, add HTTP/socket MCP transport, publish packages, change license, or mutate marketplace state.

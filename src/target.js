@@ -111,9 +111,17 @@ export function createTargetManifest(options = {}) {
         'information_architecture',
         'user_journey',
         'next_action_clarity',
-        'navigation_clarity'
+        'navigation_clarity',
+        'decision_support',
+        'explanation_clarity'
       ],
-      requiredUserQuestions: []
+      requiredUserQuestions: [],
+      reviewBrief: {
+        summary: null,
+        userRoles: [],
+        decisionNeeds: []
+      },
+      rubric: []
     },
     viewportMatrix: options.viewport ? [options.viewport] : ['desktop', 'mobile'],
     actionPolicy: {

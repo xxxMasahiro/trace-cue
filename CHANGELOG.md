@@ -57,6 +57,8 @@ All notable local development changes are tracked here before public release.
 - Added expanded content UX advisory categories for workflow state clarity, next-action clarity, navigation clarity, information architecture, source alignment, content contracts, coverage contracts, and review scope.
 - Added separate `content_ux_page_handoff` and `content_ux_manifest_authoring` target-review outputs.
 - Added page-level content UX and manifest-authoring summaries to Markdown target reports.
+- Added separate `content_ux_review_brief` and `content_ux_rubric_evaluation` target-review outputs for manifest-declared audience, page role, decision-need, and rubric checks.
+- Added Content UX Review Brief summaries to Markdown target reports and reusable manifest templates without changing existing review findings, metrics, action plans, or release readiness.
 
 ## Release Status
 

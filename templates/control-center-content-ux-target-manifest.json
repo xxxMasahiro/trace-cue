@@ -20,6 +20,7 @@
     {
       "name": "Overview",
       "url": "https://example.test/control-center/",
+      "role": "workflow_overview",
       "priority": "high",
       "expectations": {
         "text": [
@@ -131,7 +132,9 @@
       "information_architecture",
       "user_journey",
       "next_action_clarity",
-      "navigation_clarity"
+      "navigation_clarity",
+      "decision_support",
+      "explanation_clarity"
     ],
     "requiredUserQuestions": [
       {
@@ -155,6 +158,59 @@
           "clean",
           "dirty",
           "uncommitted"
+        ],
+        "matchMode": "any",
+        "severity": "medium"
+      }
+    ],
+    "reviewBrief": {
+      "summary": "The overview page should let a non-expert user understand current workflow health, blockers, Git state, checks, and the safest next action.",
+      "userRoles": [
+        "non-engineer",
+        "early-career engineer",
+        "maintainer"
+      ],
+      "decisionNeeds": [
+        {
+          "id": "overview-decision-readiness",
+          "pageId": "overview",
+          "question": "Can the user decide whether the workflow needs intervention?",
+          "expectedEvidence": [
+            "blocked",
+            "passed",
+            "failed",
+            "ready"
+          ],
+          "matchMode": "any",
+          "severity": "medium"
+        }
+      ]
+    },
+    "rubric": [
+      {
+        "id": "workflow-state-rubric",
+        "category": "workflow_state_clarity",
+        "pageId": "overview",
+        "criterion": "The page communicates the current workflow state and blocker risk.",
+        "expectedEvidence": [
+          "blocked",
+          "passed",
+          "failed",
+          "ready"
+        ],
+        "matchMode": "any",
+        "severity": "medium"
+      },
+      {
+        "id": "next-action-rubric",
+        "category": "next_action_clarity",
+        "pageId": "overview",
+        "criterion": "The page gives the user a clear next action or review decision.",
+        "expectedEvidence": [
+          "next",
+          "rerun",
+          "fix",
+          "review"
         ],
         "matchMode": "any",
         "severity": "medium"

@@ -211,6 +211,7 @@ test('target manifests and action candidates use generic review abstractions', (
     pages: [{
       name: 'Overview',
       path: '/app#overview',
+      role: 'workflow_overview',
       priority: 'P1',
       viewports: ['mobile', { name: 'tablet', width: 768, height: 1024 }],
       expectations: {
@@ -245,6 +246,23 @@ test('target manifests and action candidates use generic review abstractions', (
         pageId: 'overview',
         question: 'Can the user identify the active branch?',
         expectedEvidence: ['main']
+      }],
+      reviewBrief: {
+        summary: 'The overview page should explain current workflow state and next decisions.',
+        userRoles: ['operator'],
+        decisionNeeds: [{
+          id: 'intervention-decision',
+          pageId: 'overview',
+          question: 'Can the user decide whether intervention is needed?',
+          expectedEvidence: ['No blockers']
+        }]
+      },
+      rubric: [{
+        id: 'workflow-state-criterion',
+        category: 'workflow_state_clarity',
+        pageId: 'overview',
+        criterion: 'The page communicates workflow state clearly.',
+        expectedEvidence: ['No blockers']
       }]
     },
     viewportMatrix: ['desktop', { name: 'phone', width: 390, height: 844 }],
@@ -258,6 +276,7 @@ test('target manifests and action candidates use generic review abstractions', (
   assert.equal(normalized.target.viewportMatrix.some((viewport) => viewport.name === 'tablet'), true);
   assert.equal(normalized.target.budgets.maxRoutes, 5);
   assert.equal(normalized.target.pages[0].id, 'overview');
+  assert.equal(normalized.target.pages[0].role, 'workflow_overview');
   assert.equal(normalized.target.pages[0].priority, 'high');
   assert.equal(normalized.target.pages[0].expectations.text[0].value, 'Overview');
   assert.equal(normalized.target.pages[0].expectations.selectors[0].value, '#primary');
@@ -266,6 +285,8 @@ test('target manifests and action candidates use generic review abstractions', (
   assert.equal(normalized.target.pages[0].expectations.userQuestions[0].id, 'blocked-state');
   assert.equal(normalized.target.localContentUxAdvisory.enabled, true);
   assert.equal(normalized.target.localContentUxAdvisory.requiredUserQuestions[0].id, 'branch-state');
+  assert.equal(normalized.target.localContentUxAdvisory.reviewBrief.decisionNeeds[0].id, 'intervention-decision');
+  assert.equal(normalized.target.localContentUxAdvisory.rubric[0].category, 'workflow_state_clarity');
   assert.equal(normalized.target.localContentUxAdvisory.sourceData[0].available, true);
 
   assert.equal(classifyActionCandidate({ tag: 'a', href: 'https://example.test/app#next' }, 'https://example.test/app'), 'navigation');
@@ -280,6 +301,7 @@ test('local content UX advisory is manifest opt-in and does not expose source va
     pages: [{
       name: 'Overview',
       path: '/app',
+      role: 'workflow_overview',
       expectations: {
         dataBindings: [{
           id: 'run-summary',
@@ -297,7 +319,25 @@ test('local content UX advisory is manifest opt-in and does not expose source va
     localContentUxAdvisory: {
       enabled: true,
       audience: ['operators'],
-      goal: 'Expose workflow state in a way users can understand.'
+      goal: 'Expose workflow state in a way users can understand.',
+      reviewBrief: {
+        summary: 'The overview page should let operators decide whether intervention is needed.',
+        userRoles: ['operator'],
+        decisionNeeds: [{
+          id: 'operator-decision',
+          pageId: 'overview',
+          question: 'Can operators decide whether intervention is needed?',
+          expectedEvidence: ['healthy']
+        }]
+      },
+      rubric: [{
+        id: 'state-summary-rubric',
+        category: 'workflow_state_clarity',
+        pageId: 'overview',
+        criterion: 'The page communicates workflow health clearly.',
+        expectedEvidence: ['healthy'],
+        severity: 'medium'
+      }]
     }
   });
   assert.equal(normalized.ok, true);
@@ -323,6 +363,11 @@ test('local content UX advisory is manifest opt-in and does not expose source va
   assert.equal(matched.page_handoff.summary.pages, 1);
   assert.equal(matched.page_handoff.summary.pages_with_findings, 0);
   assert.equal(matched.manifest_authoring.status, 'advisory_notes');
+  assert.equal(matched.review_brief.status, 'passed');
+  assert.equal(matched.review_brief.summary.decision_needs_met, 1);
+  assert.equal(matched.rubric_evaluation.status, 'passed');
+  assert.equal(matched.rubric_evaluation.summary.criteria_passed, 1);
+  assert.equal(matched.quality_signal.rubric_criteria, 1);
   assert.doesNotMatch(JSON.stringify(matched), /Current local run is healthy/);
 
   const mismatched = buildLocalContentUxAdvisory({
@@ -353,6 +398,10 @@ test('local content UX advisory is manifest opt-in and does not expose source va
   assert.equal(mismatched.page_handoff.summary.pages_with_findings, 1);
   assert.equal(mismatched.page_handoff.pages[0].status, 'needs_content_owner_review');
   assert.ok(mismatched.manifest_authoring.suggestions.some((suggestion) => suggestion.type === 'add_user_questions'));
+  assert.equal(mismatched.review_brief.status, 'needs_content_owner_review');
+  assert.equal(mismatched.review_brief.summary.decision_needs_needing_owner_review, 1);
+  assert.equal(mismatched.rubric_evaluation.status, 'needs_content_owner_review');
+  assert.equal(mismatched.rubric_evaluation.summary.criteria_needing_owner_review, 1);
   assert.doesNotMatch(JSON.stringify(mismatched), /Current local run is healthy/);
 });
 
