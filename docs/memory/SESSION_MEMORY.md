@@ -91,4 +91,14 @@ Read AGENTS.MD and docs/workflow/HANDOFF.md, confirm the current state, then res
 - `pages[].expectations.dataBindings` now evaluates selector-scoped `text`, explicit `attribute`, `data-state`, and `data-risk` targets.
 - `localContentUxAdvisory.requiredUserQuestions` and page `expectations.userQuestions` now provide advisory information-architecture and user-journey checks.
 - `templates/control-center-content-ux-target-manifest.json` provides a reusable disabled-by-default Control Center-style manifest example.
-- The implementation remains generic, local-first, and advisory-only. It does not create findings, change `metrics.finding_count`, change `action_plan`, change `quality_signals.release_readiness`, read arbitrary source-data files or URLs, add Control Center-specific runtime branches, upload evidence, call models/APIs, automate OAuth/login, reuse existing profiles, add HTTP/socket MCP transport, publish packages, change license, or mutate marketplace state.
+- The implementation remains generic, local-first, and advisory-only. It does not create review findings, change `metrics.finding_count`, change the existing `action_plan`, change `quality_signals.release_readiness`, read arbitrary source-data files or URLs, add Control Center-specific runtime branches, upload evidence, call models/APIs, automate OAuth/login, reuse existing profiles, add HTTP/socket MCP transport, publish packages, change license, or mutate marketplace state.
+
+## 2026-06-18 Phase 16 Content UX Handoff Output Handoff
+
+- Phase 16 is complete for dedicated content UX handoff outputs.
+- Target review emits additive `content_ux_findings`, `content_ux_action_plan`, and `content_ux_readiness` only when `localContentUxAdvisory.enabled=true`.
+- `content_ux_findings` stay separate from review `findings` and do not change `metrics.finding_count`.
+- `content_ux_action_plan` stays separate from the existing `action_plan` and records `legacy_action_plan_unchanged=true`.
+- `content_ux_readiness` stays separate from `quality_signals.release_readiness` and records `legacy_release_readiness_unchanged=true`, `blocking_release_gate=false`, and `external_evidence_transfer=false`.
+- Markdown reports include a bounded Content UX Developer Handoff section without copying source values or full page text.
+- The implementation remains generic, local-first, and advisory-only. It does not read arbitrary source-data files or URLs, add Control Center-specific runtime branches, upload evidence, call models/APIs, automate OAuth/login, reuse existing profiles, add HTTP/socket MCP transport, publish packages, change license, or mutate marketplace state.

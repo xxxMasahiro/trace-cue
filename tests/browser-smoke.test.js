@@ -793,8 +793,18 @@ test('target content UX advisory is opt-in and does not alter review gates', { s
   const disabledBody = JSON.parse(disabled.stdout);
   const enabledBody = JSON.parse(enabled.stdout);
   assert.equal(disabledBody.data.local_content_ux_advisory, undefined);
+  assert.equal(disabledBody.data.content_ux_findings, undefined);
+  assert.equal(disabledBody.data.content_ux_action_plan, undefined);
+  assert.equal(disabledBody.data.content_ux_readiness, undefined);
   assert.equal(disabledBody.data.quality_signals.content_ux, undefined);
   assert.equal(enabledBody.data.local_content_ux_advisory.status, 'passed');
+  assert.deepEqual(enabledBody.data.content_ux_findings, []);
+  assert.equal(enabledBody.data.content_ux_action_plan.status, 'passed');
+  assert.equal(enabledBody.data.content_ux_action_plan.gate_effect, 'none');
+  assert.equal(enabledBody.data.content_ux_action_plan.legacy_action_plan_unchanged, true);
+  assert.equal(enabledBody.data.content_ux_readiness.status, 'passed');
+  assert.equal(enabledBody.data.content_ux_readiness.gate_effect, 'none');
+  assert.equal(enabledBody.data.content_ux_readiness.legacy_release_readiness_unchanged, true);
   assert.equal(enabledBody.data.quality_signals.content_ux.status, 'passed');
   assert.equal(enabledBody.data.local_content_ux_advisory.counts.data_binding_checks, 4);
   assert.equal(enabledBody.data.local_content_ux_advisory.counts.selector_scoped_binding_checks, 4);
@@ -817,6 +827,7 @@ test('target content UX advisory is opt-in and does not alter review gates', { s
   assert.ok(report);
   const reportText = await readFile(path.join(cwd, report.path), 'utf8');
   assert.match(reportText, /Content UX Advisory/);
+  assert.match(reportText, /Content UX Developer Handoff/);
   assert.doesNotMatch(reportText, /Operations summary ready/);
 });
 

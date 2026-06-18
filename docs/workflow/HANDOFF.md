@@ -2,7 +2,7 @@
 
 ## Current State
 
-Browser Debug CLI has completed Phase 1, Phase 2a package/runtime design verification, the Phase 5 local MVP runtime slice, the Phase 7 local review-platform implementation, the Phase 8 local dogfood/plugin-readiness implementation, the Phase 9 local review-quality implementation, the Phase 10 local dogfood route-readiness implementation, the Phase 11 local page-expectation review implementation, the Phase 12 local rendered-state dogfood hardening implementation, the Phase 13 local dogfood signal refinement implementation, the Phase 14 local content UX advisory implementation, and the Phase 15 local content UX heuristic strengthening implementation. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally.
+Browser Debug CLI has completed Phase 1, Phase 2a package/runtime design verification, the Phase 5 local MVP runtime slice, the Phase 7 local review-platform implementation, the Phase 8 local dogfood/plugin-readiness implementation, the Phase 9 local review-quality implementation, the Phase 10 local dogfood route-readiness implementation, the Phase 11 local page-expectation review implementation, the Phase 12 local rendered-state dogfood hardening implementation, the Phase 13 local dogfood signal refinement implementation, the Phase 14 local content UX advisory implementation, the Phase 15 local content UX heuristic strengthening implementation, and the Phase 16 local content UX handoff output implementation. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally.
 
 This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and TASK_TRACKER workflow-state pair synchronized whenever task state changes.
 
@@ -99,19 +99,22 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 - Target manifests now support opt-in `localContentUxAdvisory`, bounded inline `sourceData`, and page `expectations.dataBindings` for local source-to-screen advisory checks.
 - `src/content-ux-advisory.js` is a pure local helper with no Playwright, filesystem access, artifact reads, external transfer, or target-specific runtime branches.
 - Target review emits `local_content_ux_advisory` and `quality_signals.content_ux` only when manifest opt-in is enabled.
-- Content UX advisory is additive and does not create findings, change `metrics.finding_count`, change `action_plan`, or change `quality_signals.release_readiness`.
+- Content UX advisory is additive and does not create review findings, change `metrics.finding_count`, change the existing `action_plan`, or change `quality_signals.release_readiness`.
 - Markdown reports include a bounded Content UX Advisory section when enabled and do not copy source values or full page text.
 - Schema registry and packaged schema files are covered by parity tests for the review and target manifest property sets.
 - Target review evidence summaries now include bounded element evidence for selector-scoped advisory checks.
 - Content UX advisory now evaluates selector-scoped text, explicit attributes, state attributes, and risk attributes from target manifest data bindings.
 - Content UX advisory now evaluates `localContentUxAdvisory.requiredUserQuestions` and page `expectations.userQuestions` as advisory information-architecture and user-journey signals.
 - `templates/control-center-content-ux-target-manifest.json` provides a reusable disabled-by-default Control Center-style manifest example without runtime product-specific branches.
+- Target review now emits additive `content_ux_findings`, `content_ux_action_plan`, and `content_ux_readiness` only when content UX advisory is enabled.
+- `content_ux_findings` are separate from review `findings`; they do not change `metrics.finding_count`, the existing `action_plan`, or `quality_signals.release_readiness`.
+- Markdown reports now include a bounded Content UX Developer Handoff section without copying source values or full page text.
 - No arbitrary source-data file or URL loader was added; external references remain ignored advisory signals until a separately approved loader design exists.
 - Model/API review, evidence leaving the local process, HTTP/socket MCP server mode, persistent browser profile reuse, authentication automation, external upload, arbitrary shell execution, destructive cleanup, npm publication, package naming, and license changes remain approval-bound.
 
 ## Next Step
 
-No remaining local Phase 15 implementation work is currently planned. Ask for explicit approval before authentication automation, external daemon control channels, external upload, evidence leaving the local process, arbitrary source-data file or URL loaders, model/API review, HTTP/socket MCP server mode, existing-browser-profile reuse, credential storage, plugin marketplace registration, license change, public package naming, npm publication, or destructive cleanup.
+No remaining local Phase 16 implementation work is currently planned. Ask for explicit approval before authentication automation, external daemon control channels, external upload, evidence leaving the local process, arbitrary source-data file or URL loaders, model/API review, HTTP/socket MCP server mode, existing-browser-profile reuse, credential storage, plugin marketplace registration, license change, public package naming, npm publication, or destructive cleanup.
 
 ## Restart Notes
 

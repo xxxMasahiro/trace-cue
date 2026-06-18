@@ -439,6 +439,44 @@ Phase 15 completes the five-step local implementation path for making content an
 - Completed: browser smoke tests cover real Playwright element evidence for selector-scoped advisory checks and prove findings, metrics, action plans, and release readiness are unchanged.
 - Completed: arbitrary source-data file and URL loaders remain unimplemented and approval-bound; external references continue to be recorded as ignored advisory inputs.
 
+### Phase 16: Content UX Handoff Outputs
+
+Phase 16 completes the six-step local implementation path for turning content UX advisory signals into developer handoff output without trading off existing review behavior. It keeps existing `findings`, `metrics.finding_count`, `action_plan`, and `quality_signals.release_readiness` semantics unchanged, and it does not add external source loaders, model/API review, evidence upload, existing-profile reuse, HTTP/socket MCP transport, authentication automation, package publication, license changes, marketplace mutation, or target-specific runtime branches.
+
+#### Phase 16a: Dedicated Advisory Finding Namespace
+
+- Completed: target review emits top-level `content_ux_findings` only when `localContentUxAdvisory.enabled=true`.
+- Completed: `content_ux_findings` are derived from local advisory signals and are not appended to the existing review `findings` array.
+- Completed: bounded advisory evidence includes source signal, selector/page context, counts, and local-only flags without source values or full page text.
+
+#### Phase 16b: Dedicated Advisory Action Plan
+
+- Completed: target review emits top-level `content_ux_action_plan` only when content UX advisory is enabled.
+- Completed: content UX next actions are prioritized from advisory findings and remain separate from the existing `action_plan`.
+- Completed: `content_ux_action_plan` sets `gate_effect="none"` and `legacy_action_plan_unchanged=true`.
+
+#### Phase 16c: Dedicated Advisory Readiness
+
+- Completed: target review emits top-level `content_ux_readiness` only when content UX advisory is enabled.
+- Completed: content UX readiness summarizes content-owner review needs without changing `quality_signals.release_readiness`.
+- Completed: `content_ux_readiness` sets `gate_effect="none"`, `blocking_release_gate=false`, `legacy_release_readiness_unchanged=true`, and `external_evidence_transfer=false`.
+
+#### Phase 16d: Report Handoff Section
+
+- Completed: Markdown target reports include a bounded Content UX Developer Handoff section when dedicated advisory handoff output exists.
+- Completed: the report section references advisory IDs, severity, selectors, and recommendations without copying source values or full page text.
+
+#### Phase 16e: Schema, Docs, and Manifests
+
+- Completed: review schema registry and packaged review schema files include the additive content UX handoff properties.
+- Completed: requirements, specification, implementation plan, task tracker, handoff, security, verification, README, changelog, and test manifest documentation are synchronized with the Phase 16 contract.
+
+#### Phase 16f: Regression Coverage and Boundary Preservation
+
+- Completed: no-browser tests cover dedicated content UX findings/action/readiness generation, advisory status, source-value non-disclosure, and unchanged advisory-only gates.
+- Completed: browser smoke tests cover opt-in top-level `content_ux_*` output, disabled-output absence, Markdown handoff output, and unchanged review findings, metrics, existing action plans, and release readiness.
+- Completed: architecture tests continue to guard against target-specific runtime literals, profile reuse, storage-state persistence, external listeners, arbitrary shell execution, unapproved upload paths, destructive cleanup, filesystem reads in the advisory helper, and model/API review.
+
 ## Verification Method
 
 - `./tools/product-gate`
@@ -464,6 +502,7 @@ Phase 15 completes the five-step local implementation path for making content an
 - Phase 13 checks cover loading-indicator precision for ready/progress business-state text and local dogfood rechecks against Control Center pages without target-specific runtime branches.
 - Phase 14 checks cover schema registry/file parity, manifest opt-in content UX advisory, bounded inline source data, source-to-screen text binding checks, source-value non-disclosure, report output, advisory purity, and unchanged findings, metrics, action plans, and release readiness.
 - Phase 15 checks cover selector-scoped content UX advisory bindings, attribute/state/risk targets, required user-question advisory checks, reusable Control Center-style manifest templates, source-value non-disclosure, and unchanged findings, metrics, action plans, and release readiness.
+- Phase 16 checks cover additive `content_ux_findings`, `content_ux_action_plan`, `content_ux_readiness`, Markdown Content UX Developer Handoff output, source-value non-disclosure, and unchanged review findings, metrics, existing action plans, and release readiness.
 - Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, external listener creation, arbitrary shell execution, unapproved upload paths, and destructive cleanup commands.
 
 ## Recovery Path

@@ -2,9 +2,11 @@ import { redact, truncateText } from './redaction.js';
 
 const DEFAULT_MAX_SOURCE_BYTES = 32768;
 const SIGNAL_LIMIT = 80;
+const CONTENT_UX_FINDING_LIMIT = 80;
 const SUPPORTED_BINDING_TARGETS = new Set(['text', 'attribute', 'data-state', 'data-risk']);
 const KNOWN_BINDING_TARGETS = SUPPORTED_BINDING_TARGETS;
 const SEVERITIES = new Set(['info', 'low', 'medium', 'high', 'critical']);
+const SEVERITY_RANK = Object.freeze({ info: 0, low: 1, medium: 2, high: 3, critical: 4 });
 const DEFAULT_STATE_ATTRIBUTES = ['data-state', 'data-status', 'aria-current', 'aria-selected', 'aria-expanded', 'aria-pressed'];
 const DEFAULT_RISK_ATTRIBUTES = ['data-risk', 'data-severity', 'aria-invalid', 'aria-disabled'];
 const SAFE_ATTRIBUTE_NAME = /^[a-zA-Z_][a-zA-Z0-9_:.:-]{0,119}$/;
@@ -266,6 +268,10 @@ export function buildLocalContentUxAdvisory({ target, routeReviews = [] } = {}) 
   });
 
   const status = statusForSignals(signals);
+  const advisorySignals = signals.slice(0, SIGNAL_LIMIT);
+  const findings = buildContentUxFindings(advisorySignals);
+  const actionPlan = buildContentUxActionPlan({ findings, counts, status });
+  const readiness = buildContentUxReadiness({ findings, counts, status });
   return redact({
     reviewer: 'local_content_ux_advisory',
     status,
@@ -277,7 +283,10 @@ export function buildLocalContentUxAdvisory({ target, routeReviews = [] } = {}) 
     audience: config.audience,
     goal: config.goal,
     counts,
-    signals: signals.slice(0, SIGNAL_LIMIT),
+    signals: advisorySignals,
+    findings,
+    action_plan: actionPlan,
+    readiness,
     source_data: {
       declared: counts.source_data_declared,
       inline_available: counts.source_data_available,
@@ -808,6 +817,145 @@ function statusForSignals(signals) {
     return 'advisory_notes';
   }
   return 'passed';
+}
+
+function buildContentUxFindings(signals) {
+  return signals.slice(0, CONTENT_UX_FINDING_LIMIT).map((signal, index) => redact({
+    id: `content-ux-${index + 1}`,
+    category: contentUxFindingCategory(signal),
+    severity: signal.severity,
+    confidence: signal.confidence,
+    source: 'local_content_ux_advisory',
+    signal_id: signal.id,
+    page: signal.page ?? (signal.question?.page_id ? { id: signal.question.page_id } : null),
+    selector: signal.binding?.selector ?? signal.question?.selector ?? signal.evidence?.selector ?? null,
+    target: signal.binding?.target ?? signal.evidence?.target ?? null,
+    message: signal.message,
+    evidence: contentUxFindingEvidence(signal),
+    recommendation: signal.recommendation,
+    owner_decision_required: signal.owner_decision_required !== false,
+    gate_effect: 'none'
+  }));
+}
+
+function contentUxFindingCategory(signal) {
+  if (signal.question) {
+    return 'information_architecture';
+  }
+  if (signal.binding) {
+    return 'content_contract';
+  }
+  if (signal.id?.includes('source')) {
+    return 'source_data_alignment';
+  }
+  if (signal.id?.includes('page')) {
+    return 'coverage_contract';
+  }
+  return 'review_scope';
+}
+
+function contentUxFindingEvidence(signal) {
+  return compactObject({
+    source_signal: signal.id,
+    page_id: signal.page?.id ?? signal.question?.page_id ?? signal.evidence?.page_id ?? null,
+    selector: signal.binding?.selector ?? signal.question?.selector ?? signal.evidence?.selector ?? null,
+    target: signal.binding?.target ?? signal.evidence?.target ?? null,
+    source_id: signal.binding?.source_id ?? signal.evidence?.source_id ?? null,
+    pointer: signal.binding?.pointer ?? signal.evidence?.pointer ?? null,
+    match: signal.binding?.match ?? signal.evidence?.match ?? null,
+    match_mode: signal.question?.match_mode ?? signal.evidence?.match_mode ?? null,
+    expected_evidence_count: signal.question?.expected_evidence_count ?? signal.evidence?.expected_evidence_count ?? null,
+    candidate_count: signal.evidence?.candidate_count ?? null,
+    reviewed_viewports: signal.evidence?.reviewed_viewports ?? [],
+    local_only: true,
+    external_evidence_transfer: false
+  });
+}
+
+function buildContentUxActionPlan({ findings, counts, status }) {
+  const nextActions = findings
+    .slice()
+    .sort(compareContentUxFindingPriority)
+    .slice(0, 12)
+    .map((finding) => compactObject({
+      finding_id: finding.id,
+      category: finding.category,
+      severity: finding.severity,
+      page_id: finding.page?.id ?? null,
+      selector: finding.selector,
+      owner_decision_required: finding.owner_decision_required,
+      recommendation: finding.recommendation
+    }));
+
+  return {
+    reviewer: 'local_content_ux_advisory',
+    status: contentUxDecisionStatus(findings, status),
+    advisory_only: true,
+    gate_effect: 'none',
+    legacy_action_plan_unchanged: true,
+    total_action_items: findings.length,
+    total_actionable_items: findings.filter((finding) => finding.owner_decision_required).length,
+    focus_areas: [...new Set(findings.map((finding) => finding.category))],
+    counts: {
+      data_binding_mismatches: counts.data_binding_mismatches,
+      data_binding_inconclusive: counts.data_binding_inconclusive,
+      user_questions_unanswered: counts.user_questions_unanswered,
+      user_questions_inconclusive: counts.user_questions_inconclusive,
+      pages_without_content_contract: counts.pages_without_content_contract
+    },
+    next_actions: nextActions
+  };
+}
+
+function buildContentUxReadiness({ findings, counts, status }) {
+  return {
+    reviewer: 'local_content_ux_advisory',
+    status: contentUxDecisionStatus(findings, status),
+    advisory_only: true,
+    gate_effect: 'none',
+    legacy_release_readiness_unchanged: true,
+    content_owner_review_required: findings.some((finding) => severityRank(finding.severity) >= SEVERITY_RANK.medium),
+    advisory_findings: findings.length,
+    blocking_release_gate: false,
+    external_evidence_transfer: false,
+    source_data: {
+      declared: counts.source_data_declared,
+      inline_available: counts.source_data_available,
+      external_references_ignored: counts.source_data_external_references_ignored
+    },
+    counts: {
+      data_binding_checks: counts.data_binding_checks,
+      data_binding_mismatches: counts.data_binding_mismatches,
+      required_user_questions: counts.required_user_questions,
+      user_questions_unanswered: counts.user_questions_unanswered
+    }
+  };
+}
+
+function contentUxDecisionStatus(findings, fallbackStatus) {
+  if (findings.some((finding) => severityRank(finding.severity) >= SEVERITY_RANK.medium)) {
+    return 'needs_content_owner_review';
+  }
+  if (findings.length > 0) {
+    return 'advisory_notes';
+  }
+  return fallbackStatus === 'passed' ? 'passed' : 'advisory_notes';
+}
+
+function compareContentUxFindingPriority(left, right) {
+  const severityDelta = severityRank(right.severity) - severityRank(left.severity);
+  if (severityDelta !== 0) {
+    return severityDelta;
+  }
+  return left.id.localeCompare(right.id);
+}
+
+function severityRank(severity) {
+  return SEVERITY_RANK[severity] ?? SEVERITY_RANK.info;
+}
+
+function compactObject(value) {
+  return Object.fromEntries(Object.entries(value).filter(([, nested]) => nested !== undefined && nested !== null));
 }
 
 function safeJson(value) {

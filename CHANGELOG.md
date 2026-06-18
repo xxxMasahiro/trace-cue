@@ -48,11 +48,13 @@ All notable local development changes are tracked here before public release.
 - Refined loading indicator detection so normal ready/progress business-state text is not reported as lingering loading UI unless explicit loading semantics or loading-like attributes are present.
 - Added manifest opt-in content UX advisory with bounded inline `sourceData`, page `expectations.dataBindings`, `local_content_ux_advisory`, and `quality_signals.content_ux`.
 - Added schema registry/file parity coverage for review and target manifest contracts.
-- Added no-browser and browser smoke coverage proving content UX advisory does not change findings, metrics, action plans, or release readiness.
+- Added no-browser and browser smoke coverage proving content UX advisory does not change review findings, metrics, existing action plans, or release readiness.
 - Added selector-scoped content UX advisory checks for text, explicit attributes, data-state, and data-risk evidence.
 - Added required user-question advisory checks for information architecture and user journey review.
 - Added a reusable disabled-by-default Control Center-style content UX target manifest template.
+- Added separate `content_ux_findings`, `content_ux_action_plan`, and `content_ux_readiness` target-review outputs without changing review findings, metrics, existing action plans, or release readiness.
+- Added bounded Content UX Developer Handoff Markdown report output.
 
 ## Release Status
 
-No public package has been released. Package naming, license selection, npm authentication, npm publication, plugin marketplace registration, model/API review, evidence leaving the local process, arbitrary source-data file or URL loaders, HTTP/socket MCP server mode, OAuth/login automation, and external upload remain explicit release blockers.
+No public package has been released. Package naming, license selection, npm authentication, npm publication, plugin marketplace registration, model/API review, evidence leaving the local process, arbitrary source-data file or URL loaders, HTTP/socket MCP server mode, OAuth/login automation, profile reuse, and external upload remain explicit release blockers.

@@ -315,6 +315,11 @@ test('local content UX advisory is manifest opt-in and does not expose source va
   });
   assert.equal(matched.status, 'passed');
   assert.equal(matched.counts.data_binding_matches, 1);
+  assert.deepEqual(matched.findings, []);
+  assert.equal(matched.action_plan.status, 'passed');
+  assert.equal(matched.action_plan.gate_effect, 'none');
+  assert.equal(matched.readiness.status, 'passed');
+  assert.equal(matched.readiness.legacy_release_readiness_unchanged, true);
   assert.doesNotMatch(JSON.stringify(matched), /Current local run is healthy/);
 
   const mismatched = buildLocalContentUxAdvisory({
@@ -331,6 +336,16 @@ test('local content UX advisory is manifest opt-in and does not expose source va
   assert.equal(mismatched.status, 'needs_owner_review');
   assert.equal(mismatched.counts.data_binding_mismatches, 1);
   assert.ok(mismatched.signals.some((signal) => signal.id === 'content_ux_source_text_not_visible'));
+  assert.equal(mismatched.findings.length, 1);
+  assert.equal(mismatched.findings[0].category, 'content_contract');
+  assert.equal(mismatched.findings[0].source, 'local_content_ux_advisory');
+  assert.equal(mismatched.findings[0].gate_effect, 'none');
+  assert.equal(mismatched.action_plan.status, 'needs_content_owner_review');
+  assert.equal(mismatched.action_plan.legacy_action_plan_unchanged, true);
+  assert.equal(mismatched.action_plan.total_action_items, 1);
+  assert.equal(mismatched.readiness.status, 'needs_content_owner_review');
+  assert.equal(mismatched.readiness.gate_effect, 'none');
+  assert.equal(mismatched.readiness.blocking_release_gate, false);
   assert.doesNotMatch(JSON.stringify(mismatched), /Current local run is healthy/);
 });
 
@@ -426,6 +441,9 @@ test('local content UX advisory supports selector-scoped state contracts and use
   assert.equal(advisory.counts.required_user_questions, 2);
   assert.equal(advisory.counts.user_questions_answered, 2);
   assert.equal(advisory.quality_signal.required_user_questions, 2);
+  assert.deepEqual(advisory.findings, []);
+  assert.equal(advisory.action_plan.status, 'passed');
+  assert.equal(advisory.readiness.status, 'passed');
   assert.doesNotMatch(JSON.stringify(advisory), /"clean"|"complete"|"minor"/);
 
   const mismatch = buildLocalContentUxAdvisory({
@@ -450,6 +468,14 @@ test('local content UX advisory supports selector-scoped state contracts and use
   assert.equal(mismatch.counts.user_questions_unanswered, 1);
   assert.ok(mismatch.signals.some((signal) => signal.id === 'content_ux_source_state_not_matched'));
   assert.ok(mismatch.signals.some((signal) => signal.id === 'content_ux_user_question_not_answered'));
+  assert.equal(mismatch.findings.length, 4);
+  assert.ok(mismatch.findings.some((finding) => finding.category === 'content_contract'));
+  assert.ok(mismatch.findings.some((finding) => finding.category === 'information_architecture'));
+  assert.equal(mismatch.action_plan.total_action_items, mismatch.findings.length);
+  assert.equal(mismatch.action_plan.status, 'needs_content_owner_review');
+  assert.equal(mismatch.action_plan.gate_effect, 'none');
+  assert.equal(mismatch.readiness.status, 'needs_content_owner_review');
+  assert.equal(mismatch.readiness.content_owner_review_required, true);
   assert.doesNotMatch(JSON.stringify(mismatch), /"clean"|"complete"|"minor"/);
 
   const questionOnly = normalizeTargetManifest({
@@ -487,6 +513,8 @@ test('local content UX advisory supports selector-scoped state contracts and use
   assert.equal(questionOnlyAdvisory.counts.pages_without_content_contract, 1);
   assert.equal(questionOnlyAdvisory.counts.required_user_questions, 1);
   assert.equal(questionOnlyAdvisory.counts.user_questions_answered, 1);
+  assert.equal(questionOnlyAdvisory.action_plan.status, 'advisory_notes');
+  assert.ok(questionOnlyAdvisory.findings.some((finding) => finding.category === 'coverage_contract'));
 });
 
 test('target init writes a reusable local target manifest artifact', async () => {

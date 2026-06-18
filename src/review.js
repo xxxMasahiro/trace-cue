@@ -487,7 +487,12 @@ export async function runTargetReview(options = {}, context = {}) {
     action_plan: actionPlan,
     review_advisory: reviewAdvisory,
     manifest_suggestions: manifestSuggestions,
-    ...(localContentUxAdvisory ? { local_content_ux_advisory: localContentUxAdvisory } : {}),
+    ...(localContentUxAdvisory ? {
+      local_content_ux_advisory: localContentUxAdvisory,
+      content_ux_findings: localContentUxAdvisory.findings,
+      content_ux_action_plan: localContentUxAdvisory.action_plan,
+      content_ux_readiness: localContentUxAdvisory.readiness
+    } : {}),
     quality_signals: qualitySignals,
     environment: {
       artifact_root: artifactRootInput,
@@ -3091,6 +3096,22 @@ function renderReviewReport(data, artifacts) {
     if (advisory.signals?.length) {
       for (const signal of advisory.signals.slice(0, 12)) {
         lines.push(`- ${signal.severity.toUpperCase()} ${signal.id}: ${signal.recommendation}`);
+      }
+    }
+    lines.push('');
+  }
+  if (data.content_ux_action_plan || data.content_ux_readiness) {
+    const plan = data.content_ux_action_plan ?? {};
+    const readiness = data.content_ux_readiness ?? {};
+    lines.push('## Content UX Developer Handoff', '');
+    lines.push(`- Status: ${readiness.status ?? plan.status ?? 'unknown'}`);
+    lines.push(`- Gate effect: ${readiness.gate_effect ?? plan.gate_effect ?? 'none'}`);
+    lines.push(`- Content findings: ${readiness.advisory_findings ?? plan.total_action_items ?? 0}`);
+    lines.push(`- Owner review required: ${readiness.content_owner_review_required === true}`);
+    if (plan.next_actions?.length) {
+      for (const action of plan.next_actions.slice(0, 12)) {
+        const locator = action.selector ? ` (${action.selector})` : '';
+        lines.push(`- ${action.severity.toUpperCase()} ${action.finding_id}${locator}: ${action.recommendation}`);
       }
     }
     lines.push('');
