@@ -11,6 +11,7 @@
     "scope": { "type": "object" },
     "seeds": { "type": "array", "items": { "type": "string" } },
     "expectedRoutes": { "type": "array", "items": { "type": "string" } },
+    "pages": { "type": "array" },
     "viewportMatrix": { "type": "array" },
     "actionPolicy": { "type": "object" },
     "budgets": { "type": "object" },

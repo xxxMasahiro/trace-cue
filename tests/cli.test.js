@@ -191,6 +191,17 @@ test('target manifests and action candidates use generic review abstractions', (
   const normalized = normalizeTargetManifest({
     baseUrl: 'https://example.test/app',
     seeds: ['/app#overview'],
+    pages: [{
+      name: 'Overview',
+      path: '/app#overview',
+      priority: 'P1',
+      viewports: ['mobile', { name: 'tablet', width: 768, height: 1024 }],
+      expectations: {
+        text: ['Overview'],
+        selectors: ['#primary']
+      },
+      mock: 'mocks/overview.png'
+    }],
     viewportMatrix: ['desktop', { name: 'phone', width: 390, height: 844 }],
     budgets: { maxRoutes: 5 }
   });
@@ -198,7 +209,13 @@ test('target manifests and action candidates use generic review abstractions', (
   assert.equal(normalized.target.seeds[0], 'https://example.test/app#overview');
   assert.equal(normalized.target.viewportMatrix[0].name, 'desktop');
   assert.equal(normalized.target.viewportMatrix[1].name, 'phone');
+  assert.equal(normalized.target.viewportMatrix.some((viewport) => viewport.name === 'mobile'), true);
+  assert.equal(normalized.target.viewportMatrix.some((viewport) => viewport.name === 'tablet'), true);
   assert.equal(normalized.target.budgets.maxRoutes, 5);
+  assert.equal(normalized.target.pages[0].id, 'overview');
+  assert.equal(normalized.target.pages[0].priority, 'high');
+  assert.equal(normalized.target.pages[0].expectations.text[0].value, 'Overview');
+  assert.equal(normalized.target.pages[0].expectations.selectors[0].value, '#primary');
 
   assert.equal(classifyActionCandidate({ tag: 'a', href: 'https://example.test/app#next' }, 'https://example.test/app'), 'navigation');
   assert.equal(classifyActionCandidate({ tag: 'input' }, 'https://example.test/app'), 'input_required');
@@ -246,6 +263,7 @@ test('target init writes a reusable local target manifest artifact', async () =>
   assert.equal(body.command, 'target init');
   assert.equal(body.data.target_manifest.name, 'Example App');
   assert.equal(body.data.target_manifest.budgets.maxRoutes, 8);
+  assert.deepEqual(body.data.target_manifest.pages, []);
   assert.equal(body.data.boundary.external_upload, false);
   const artifact = body.artifacts.find((candidate) => candidate.type === 'target_manifest');
   assert.ok(artifact);

@@ -11,6 +11,7 @@
     "https://example.test/"
   ],
   "expectedRoutes": [],
+  "pages": [],
   "viewportMatrix": [
     "desktop",
     "mobile"

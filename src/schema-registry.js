@@ -88,6 +88,7 @@ const schemas = Object.freeze({
       scope: { type: 'object' },
       seeds: { type: 'array', items: { type: 'string' } },
       expectedRoutes: { type: 'array', items: { type: 'string' } },
+      pages: { type: 'array' },
       viewportMatrix: { type: 'array' },
       actionPolicy: { type: 'object' },
       budgets: { type: 'object' },
@@ -110,6 +111,9 @@ const schemas = Object.freeze({
       metrics: { type: 'object' },
       action_plan: { type: 'object' },
       review_advisory: { type: 'object' },
+      quality_signals: { type: 'object' },
+      evidence_summary: { type: 'object' },
+      artifact_index: { type: 'object' },
       environment: { type: 'object' },
       coverage: { type: 'object' }
     },

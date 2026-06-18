@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
+import { CLI_NAME, DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
 import {
   artifactObject,
   artifactRelPath,
@@ -222,6 +222,11 @@ export async function runSingleUrlReview(options = {}, context = {}) {
         viewport,
         artifact_root: artifactRootInput
       },
+      evidence_summary: buildEvidenceSummary({
+        observation: observationResult.data,
+        layout,
+        screenshotArtifact
+      }),
       discovery: {
         routes: layout.routes
       }
@@ -244,6 +249,29 @@ export async function runSingleUrlReview(options = {}, context = {}) {
         description: 'Markdown browser review report.'
       }));
     }
+
+    const artifactIndex = await writeReviewArtifactIndex({
+      id,
+      mode: 'single_url',
+      root,
+      artifactRoot: artifactRootInput,
+      artifacts,
+      qualitySignals,
+      coverage: null,
+      rerun: {
+        command: reviewRerunCommand({
+          url: options.url,
+          viewport,
+          screenshot: Boolean(options.screenshot || options.mock),
+          report: Boolean(options.report),
+          mock: options.mock
+        }),
+        guidance: ['Rerun the same command after fixes to compare findings and quality signals.']
+      }
+    });
+    data.artifact_index = artifactIndex.data;
+    artifacts.push(artifactIndex.artifact);
+    await writeJsonArtifact(root, ['reviews', `${id}.json`], data);
 
     return {
       status: 'ok',
@@ -296,12 +324,16 @@ export async function runTargetReview(options = {}, context = {}) {
   const visited = [];
   const failed = [];
   const skipped = [];
+  const pageChecks = [];
   const findings = [];
   const artifacts = [];
   const warnings = [];
   const queue = [];
   const routeBudget = target.budgets.maxRoutes;
 
+  for (const page of target.pages) {
+    enqueueRoute(queue, discovered, page.url, 'expected_page', target, { manifestPage: page });
+  }
   for (const seed of target.seeds) {
     enqueueRoute(queue, discovered, seed, 'seed', target);
   }
@@ -313,7 +345,8 @@ export async function runTargetReview(options = {}, context = {}) {
   while (queue.length > 0 && processedRoutes < routeBudget) {
     const route = queue.shift();
     processedRoutes += 1;
-    for (const viewport of target.viewportMatrix) {
+    const viewports = viewportsForRoute(route, target.viewportMatrix);
+    for (const viewport of viewports) {
       const childId = `${id}-r${processedRoutes}-${viewport.name}`;
       const result = await runSingleUrlReview({
         ...options,
@@ -322,7 +355,9 @@ export async function runTargetReview(options = {}, context = {}) {
         url: route.url,
         viewport: `${viewport.width}x${viewport.height}`,
         screenshot: target.artifacts.screenshots,
-        report: false
+        report: false,
+        mock: route.manifest_page?.mock ?? undefined,
+        threshold: route.manifest_page?.threshold ?? options.threshold
       }, {
         ...context,
         cwd,
@@ -336,6 +371,20 @@ export async function runTargetReview(options = {}, context = {}) {
       }
       visited.push({ ...route, viewport, review_id: result.data.review.id });
       findings.push(...result.data.findings);
+      if (route.manifest_page) {
+        const pageEvaluation = evaluateManifestPage({
+          reviewId: id,
+          page: route.manifest_page,
+          route,
+          viewport,
+          evidenceSummary: result.data.evidence_summary,
+          mockMetrics: result.data.metrics?.mock ?? null,
+          screenshotArtifact: result.artifacts.find((artifact) => artifact.type === 'screenshot') ?? null,
+          findingOffset: findings.length
+        });
+        pageChecks.push(pageEvaluation.check);
+        findings.push(...pageEvaluation.findings);
+      }
       for (const next of result.data.discovery.routes) {
         if (!enqueueRoute(queue, discovered, next.url, next.source, target)) {
           skipped.push({ url: next.url, source: next.source, reason: 'out_of_scope_or_duplicate' });
@@ -344,7 +393,11 @@ export async function runTargetReview(options = {}, context = {}) {
     }
   }
   while (queue.length > 0) {
-    skipped.push({ ...queue.shift(), reason: 'route_budget_exceeded' });
+    const route = queue.shift();
+    skipped.push({ ...route, reason: 'route_budget_exceeded' });
+    if (route.manifest_page) {
+      pageChecks.push(skippedPageCheck(route.manifest_page, route, 'route_budget_exceeded'));
+    }
   }
 
   const expectedMissing = target.expectedRoutes
@@ -363,6 +416,12 @@ export async function runTargetReview(options = {}, context = {}) {
       skipped: dedupeByUrl(skipped),
       failed,
       expected_missing: expectedMissing
+    },
+    pages: {
+      expected: target.pages.map(coveragePage),
+      checked: pageChecks,
+      failed: pageChecks.filter((check) => check.status === 'needs_attention'),
+      skipped: pageChecks.filter((check) => check.status === 'skipped')
     },
     viewports: target.viewportMatrix,
     action_policy: target.actionPolicy
@@ -397,7 +456,9 @@ export async function runTargetReview(options = {}, context = {}) {
       discovered_routes: discovered.size,
       visited_routes: visited.length,
       failed_routes: failed.length,
-      expected_missing_routes: expectedMissing.length
+      expected_missing_routes: expectedMissing.length,
+      expected_pages: target.pages.length,
+      failed_page_expectations: pageChecks.filter((check) => check.status === 'needs_attention').length
     }),
     action_plan: actionPlan,
     review_advisory: reviewAdvisory,
@@ -425,6 +486,26 @@ export async function runTargetReview(options = {}, context = {}) {
       description: 'Markdown site review report.'
     }));
   }
+
+  const artifactIndex = await writeReviewArtifactIndex({
+    id,
+    mode: 'target_manifest',
+    root,
+    artifactRoot: artifactRootInput,
+    artifacts,
+    qualitySignals,
+    coverage,
+    rerun: {
+      command: targetRerunCommand({ manifestResult, report: Boolean(options.report) }),
+      guidance: [
+        'Rerun the same target manifest after fixes.',
+        'Keep expected pages, expected routes, and the viewport matrix stable when verifying regressions.'
+      ]
+    }
+  });
+  data.artifact_index = artifactIndex.data;
+  artifacts.push(artifactIndex.artifact);
+  await writeJsonArtifact(root, ['reviews', `${id}.json`], data);
 
   return {
     status: 'ok',
@@ -489,6 +570,11 @@ export function normalizeTargetManifest(manifest) {
     return { ok: false, error: urlError };
   }
   const baseUrl = new URL(manifest.baseUrl).toString();
+  const pages = normalizeManifestPages(manifest.pages ?? manifest.expectedPages ?? [], baseUrl);
+  const viewportMatrix = mergeViewportMatrix(
+    normalizeViewportMatrix(manifest.viewportMatrix),
+    pages.flatMap((page) => page.viewports)
+  );
   return {
     ok: true,
     target: {
@@ -500,7 +586,8 @@ export function normalizeTargetManifest(manifest) {
       },
       seeds: normalizeRouteList(manifest.seeds?.length ? manifest.seeds : [baseUrl], baseUrl),
       expectedRoutes: normalizeRouteList(manifest.expectedRoutes ?? [], baseUrl),
-      viewportMatrix: normalizeViewportMatrix(manifest.viewportMatrix),
+      pages,
+      viewportMatrix,
       actionPolicy: {
         allow: Array.isArray(manifest.actionPolicy?.allow) ? manifest.actionPolicy.allow : ['navigation', 'state_revealing']
       },
@@ -544,6 +631,140 @@ function normalizeViewportMatrix(value) {
   });
 }
 
+function normalizeOptionalViewportMatrix(value) {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [];
+  }
+  return value.map((entry) => {
+    if (typeof entry === 'string') {
+      return parseViewport(entry);
+    }
+    if (entry && typeof entry === 'object') {
+      return {
+        name: entry.name ?? `${entry.width}x${entry.height}`,
+        width: Number(entry.width ?? DEFAULT_VIEWPORT.width),
+        height: Number(entry.height ?? DEFAULT_VIEWPORT.height),
+        isMobile: Boolean(entry.isMobile),
+        hasTouch: Boolean(entry.hasTouch)
+      };
+    }
+    return null;
+  }).filter(Boolean);
+}
+
+function mergeViewportMatrix(base, extra) {
+  const byKey = new Map();
+  for (const viewport of [...base, ...extra]) {
+    byKey.set(viewportKey(viewport), viewport);
+  }
+  return [...byKey.values()];
+}
+
+function viewportKey(viewport) {
+  return `${viewport.name}:${viewport.width}x${viewport.height}:${Boolean(viewport.isMobile)}:${Boolean(viewport.hasTouch)}`;
+}
+
+function viewportMatches(candidate, allowed) {
+  return allowed.some((viewport) => (
+    viewportKey(viewport) === viewportKey(candidate)
+    || viewport.name === candidate.name
+    || `${viewport.width}x${viewport.height}` === `${candidate.width}x${candidate.height}`
+  ));
+}
+
+function viewportsForRoute(route, viewportMatrix) {
+  const pageViewports = route.manifest_page?.viewports ?? [];
+  if (pageViewports.length === 0) {
+    return viewportMatrix;
+  }
+  const matched = viewportMatrix.filter((viewport) => viewportMatches(viewport, pageViewports));
+  return matched.length > 0 ? matched : viewportMatrix;
+}
+
+function normalizeManifestPages(value, baseUrl) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry, index) => normalizeManifestPage(entry, index, baseUrl))
+    .filter(Boolean);
+}
+
+function normalizeManifestPage(entry, index, baseUrl) {
+  const raw = typeof entry === 'string' ? { url: entry } : entry;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+  const routeValue = raw.url ?? raw.route ?? raw.path;
+  if (!routeValue) {
+    return null;
+  }
+  let url;
+  try {
+    url = new URL(routeValue, baseUrl).toString();
+  } catch {
+    return null;
+  }
+  const id = String(raw.id ?? raw.name ?? `page-${index + 1}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || `page-${index + 1}`;
+  const expectations = raw.expectations ?? raw.expect ?? {};
+  return {
+    id,
+    name: raw.name ? String(raw.name) : id,
+    url,
+    priority: normalizePagePriority(raw.priority),
+    viewports: normalizeOptionalViewportMatrix(raw.viewports ?? raw.viewportMatrix ?? (raw.viewport ? [raw.viewport] : [])),
+    expectations: {
+      text: normalizeExpectationList(expectations.text ?? raw.expectedText ?? []),
+      selectors: normalizeExpectationList(expectations.selectors ?? raw.expectedSelectors ?? [])
+    },
+    mock: typeof raw.mock === 'string' && raw.mock ? raw.mock : null,
+    threshold: raw.threshold,
+    notes: Array.isArray(raw.notes) ? raw.notes.map((note) => truncateText(note, 300)) : []
+  };
+}
+
+function normalizePagePriority(value) {
+  const normalized = String(value ?? 'medium').toLowerCase();
+  if (['critical', 'high', 'medium', 'low'].includes(normalized)) {
+    return normalized;
+  }
+  if (normalized === 'p0') {
+    return 'critical';
+  }
+  if (normalized === 'p1') {
+    return 'high';
+  }
+  if (normalized === 'p3' || normalized === 'p4') {
+    return 'low';
+  }
+  return 'medium';
+}
+
+function normalizeExpectationList(value) {
+  const entries = Array.isArray(value) ? value : [value].filter(Boolean);
+  return entries
+    .map((entry) => {
+      if (typeof entry === 'string') {
+        return { value: entry, match: 'contains' };
+      }
+      if (!entry || typeof entry !== 'object') {
+        return null;
+      }
+      const value = entry.value ?? entry.text ?? entry.selector;
+      if (!value) {
+        return null;
+      }
+      return {
+        value: String(value),
+        match: ['contains', 'exact'].includes(entry.match) ? entry.match : 'contains'
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizeRouteList(routes, baseUrl) {
   return routes
     .map((route) => {
@@ -557,15 +778,24 @@ function normalizeRouteList(routes, baseUrl) {
     .filter(Boolean);
 }
 
-function enqueueRoute(queue, discovered, url, source, target) {
+function enqueueRoute(queue, discovered, url, source, target, metadata = {}) {
   if (!isRouteInScope(url, target)) {
     return false;
   }
   const key = normalizeUrlKey(url);
   if (discovered.has(key)) {
+    const existing = discovered.get(key);
+    if (metadata.manifestPage && !existing.manifest_page) {
+      existing.manifest_page = metadata.manifestPage;
+      existing.sources = [...new Set([existing.source, ...(existing.sources ?? []), source])];
+      return true;
+    }
     return false;
   }
-  const route = normalizeRoute(url, source);
+  const route = {
+    ...normalizeRoute(url, source),
+    ...(metadata.manifestPage ? { manifest_page: metadata.manifestPage } : {})
+  };
   discovered.set(key, route);
   queue.push(route);
   return true;
@@ -1293,6 +1523,163 @@ function relativeLuminance(color) {
   return 0.2126 * channel(color.red) + 0.7152 * channel(color.green) + 0.0722 * channel(color.blue);
 }
 
+function buildEvidenceSummary({ observation, layout, screenshotArtifact }) {
+  return redact({
+    url: observation.final_url,
+    title: observation.title,
+    visible_text: truncateText(observation.page?.visible_text ?? '', 4000),
+    visible_text_length: layout.page.visible_text_length,
+    selectors: [...new Set((layout.elements ?? []).map((element) => element.selector).filter(Boolean))].slice(0, 240),
+    headings: layout.headings ?? [],
+    landmarks: layout.landmarks ?? [],
+    images: layout.images ?? [],
+    actions: (layout.actions ?? []).map((action) => ({
+      id: action.id,
+      selector: action.selector,
+      risk: action.risk,
+      confidence: action.confidence,
+      text: truncateText(action.text ?? '', 160)
+    })),
+    console_error_count: (observation.console?.messages ?? []).filter((message) => message.type === 'error').length,
+    failed_request_count: observation.network?.failed_requests?.length ?? 0,
+    screenshot_captured: Boolean(screenshotArtifact)
+  });
+}
+
+function evaluateManifestPage({
+  reviewId,
+  page,
+  route,
+  viewport,
+  evidenceSummary,
+  mockMetrics,
+  screenshotArtifact,
+  findingOffset
+}) {
+  const missingText = page.expectations.text.filter((expectation) => !textExpectationMatched(evidenceSummary.visible_text, expectation));
+  const selectorSet = new Set(evidenceSummary.selectors ?? []);
+  const missingSelectors = page.expectations.selectors.filter((expectation) => !selectorExpectationMatched(selectorSet, expectation));
+  const status = missingText.length > 0 || missingSelectors.length > 0 ? 'needs_attention' : 'passed';
+  const check = redact({
+    page: coveragePage(page),
+    route: normalizeRoute(route.url, route.source),
+    viewport,
+    status,
+    expectations: {
+      expected_text_count: page.expectations.text.length,
+      missing_text: missingText,
+      expected_selector_count: page.expectations.selectors.length,
+      missing_selectors: missingSelectors
+    },
+    mock_status: mockMetrics?.status ?? (page.mock ? 'not_evaluated' : 'not_provided'),
+    evidence: {
+      title: evidenceSummary.title,
+      visible_text_length: evidenceSummary.visible_text_length,
+      selector_count: evidenceSummary.selectors?.length ?? 0,
+      screenshot_captured: evidenceSummary.screenshot_captured
+    }
+  });
+  const findings = [];
+  const severity = severityForPagePriority(page.priority);
+  for (const expectation of missingText) {
+    findings.push(withFindingId(reviewId, {
+      category: 'layout_integrity',
+      severity,
+      confidence: 'high',
+      source: 'deterministic',
+      selector: null,
+      rect: null,
+      route: redactUrl(route.url),
+      viewport,
+      message: `Expected text was not visible for manifest page "${page.name}".`,
+      evidence: { page: coveragePage(page), expectation, evidence_title: evidenceSummary.title },
+      artifacts: screenshotArtifact ? [screenshotArtifact.path] : [],
+      repro: [`Open ${redactUrl(route.url)} at ${viewport.width}x${viewport.height}.`, `Verify expected page text "${expectation.value}".`],
+      owner_decision_required: false
+    }, findingOffset + findings.length + 1));
+  }
+  for (const expectation of missingSelectors) {
+    findings.push(withFindingId(reviewId, {
+      category: 'layout_integrity',
+      severity,
+      confidence: 'high',
+      source: 'deterministic',
+      selector: expectation.value,
+      rect: null,
+      route: redactUrl(route.url),
+      viewport,
+      message: `Expected selector ${expectation.value} was not visible for manifest page "${page.name}".`,
+      evidence: { page: coveragePage(page), expectation, selector_count: evidenceSummary.selectors?.length ?? 0 },
+      artifacts: screenshotArtifact ? [screenshotArtifact.path] : [],
+      repro: [`Open ${redactUrl(route.url)} at ${viewport.width}x${viewport.height}.`, `Inspect expected selector ${expectation.value}.`],
+      owner_decision_required: false
+    }, findingOffset + findings.length + 1));
+  }
+  return { check, findings };
+}
+
+function textExpectationMatched(text, expectation) {
+  const haystack = String(text ?? '');
+  if (expectation.match === 'exact') {
+    return haystack.trim() === expectation.value.trim();
+  }
+  return haystack.includes(expectation.value);
+}
+
+function selectorExpectationMatched(selectors, expectation) {
+  if (expectation.match === 'exact') {
+    return selectors.has(expectation.value);
+  }
+  return [...selectors].some((selector) => selector === expectation.value || selector.includes(expectation.value));
+}
+
+function severityForPagePriority(priority) {
+  return {
+    critical: 'high',
+    high: 'high',
+    medium: 'medium',
+    low: 'low'
+  }[priority] ?? 'medium';
+}
+
+function coveragePage(page) {
+  return redact({
+    id: page.id,
+    name: page.name,
+    url: page.url,
+    priority: page.priority,
+    viewports: page.viewports.map((viewport) => viewport.name),
+    expectations: {
+      text_count: page.expectations.text.length,
+      selector_count: page.expectations.selectors.length
+    },
+    mock: page.mock ? { provided: true, threshold: page.threshold ?? null } : { provided: false }
+  });
+}
+
+function skippedPageCheck(page, route, reason) {
+  return redact({
+    page: coveragePage(page),
+    route: normalizeRoute(route.url, route.source),
+    viewport: null,
+    status: 'skipped',
+    reason,
+    expectations: {
+      expected_text_count: page.expectations.text.length,
+      missing_text: page.expectations.text,
+      expected_selector_count: page.expectations.selectors.length,
+      missing_selectors: page.expectations.selectors
+    },
+    mock_status: page.mock ? 'not_evaluated' : 'not_provided',
+    evidence: {
+      title: null,
+      visible_text_length: 0,
+      selector_count: 0,
+      screenshot_captured: false
+    }
+  });
+}
+
 function buildQualitySignals({ findings, layout, viewport, screenshotArtifact, mockMetrics }) {
   const h1Count = (layout.headings ?? []).filter((heading) => heading.level === 1).length;
   const headingSkips = headingOrderSkips(layout.headings ?? []);
@@ -1363,9 +1750,11 @@ function buildTargetQualitySignals({ findings, coverage }) {
   const actionable = actionableFindings(findings);
   const gate = releaseGateForFindings(actionable);
   const routeBudgetExceeded = coverage.routes.skipped.some((route) => route.reason === 'route_budget_exceeded');
+  const pageFailures = coverage.pages?.failed?.length ?? 0;
+  const pageSkips = coverage.pages?.skipped?.length ?? 0;
   return {
     reviewer: 'local_quality_signals',
-    status: gate.status === 'pass' && coverage.routes.failed.length === 0 && coverage.routes.expected_missing.length === 0 && !routeBudgetExceeded
+    status: gate.status === 'pass' && coverage.routes.failed.length === 0 && coverage.routes.expected_missing.length === 0 && !routeBudgetExceeded && pageFailures === 0 && pageSkips === 0
       ? 'passed'
       : 'needs_attention',
     route_coverage: {
@@ -1378,6 +1767,15 @@ function buildTargetQualitySignals({ findings, coverage }) {
       expected_missing_routes: coverage.routes.expected_missing.length,
       skipped_routes: coverage.routes.skipped.length,
       route_budget_exceeded_routes: coverage.routes.skipped.filter((route) => route.reason === 'route_budget_exceeded').length
+    },
+    page_expectations: {
+      status: pageFailures === 0 && pageSkips === 0 ? 'passed' : 'needs_attention',
+      expected_pages: coverage.pages?.expected?.length ?? 0,
+      checked_pages: coverage.pages?.checked?.filter((check) => check.status !== 'skipped').length ?? 0,
+      failed_pages: pageFailures,
+      skipped_pages: pageSkips,
+      missing_text_expectations: (coverage.pages?.failed ?? []).reduce((count, check) => count + (check.expectations?.missing_text?.length ?? 0), 0),
+      missing_selector_expectations: (coverage.pages?.failed ?? []).reduce((count, check) => count + (check.expectations?.missing_selectors?.length ?? 0), 0)
     },
     viewport_coverage: {
       status: coverage.viewports.length > 0 ? 'passed' : 'needs_attention',
@@ -1397,7 +1795,8 @@ function buildTargetQualitySignals({ findings, coverage }) {
     developer_handoff: developerHandoff(findings),
     release_readiness: {
       ...localReleaseReadiness(findings),
-      route_blockers: coverage.routes.failed.length + coverage.routes.expected_missing.length
+      route_blockers: coverage.routes.failed.length + coverage.routes.expected_missing.length,
+      page_expectation_blockers: pageFailures + pageSkips
     },
     model_review_boundary: modelReviewBoundary()
   };
@@ -1528,6 +1927,8 @@ function buildActionPlan(findings, { coverage = null } = {}) {
       visited_routes: coverage.routes.visited.length,
       failed_routes: coverage.routes.failed.length,
       expected_missing_routes: coverage.routes.expected_missing.length,
+      expected_pages: coverage.pages?.expected?.length ?? 0,
+      failed_page_expectations: coverage.pages?.failed?.length ?? 0,
       viewports: coverage.viewports.map((viewport) => viewport.name)
     } : null
   };
@@ -1594,6 +1995,14 @@ function buildTargetReviewAdvisory({ findings, coverage, qualitySignals }) {
   const routeBudgetExceeded = coverage.routes.skipped.filter((route) => route.reason === 'route_budget_exceeded').length;
   if (routeBudgetExceeded > 0) {
     signals.push(`${routeBudgetExceeded} discovered routes were skipped because the route budget was exhausted.`);
+  }
+  const pageFailures = coverage.pages?.failed?.length ?? 0;
+  if (pageFailures > 0) {
+    signals.push(`${pageFailures} manifest pages did not satisfy their expected UI state.`);
+  }
+  const pageSkips = coverage.pages?.skipped?.length ?? 0;
+  if (pageSkips > 0) {
+    signals.push(`${pageSkips} manifest pages were not checked because coverage stopped before visiting them.`);
   }
   if (findings.length > 0) {
     signals.push('At least one visited route produced review findings.');
@@ -2055,6 +2464,133 @@ function reviewLimitations({ screenshot, mock }) {
   return limitations;
 }
 
+async function writeReviewArtifactIndex({
+  id,
+  mode,
+  root,
+  artifactRoot,
+  artifacts,
+  qualitySignals,
+  coverage,
+  rerun
+}) {
+  const rel = artifactRelPath(artifactRoot, 'review-artifacts', `${id}.json`);
+  const data = redact({
+    schema_version: SCHEMA_VERSION,
+    id,
+    mode,
+    local_only: true,
+    external_upload: false,
+    artifact_root: artifactRoot,
+    artifact_count: artifacts.length,
+    evidence_classes: evidenceClassesForArtifacts(artifacts),
+    artifacts: artifacts.map((artifact) => ({
+      type: artifact.type,
+      path: artifact.path,
+      description: artifact.description
+    })),
+    triage: {
+      status: qualitySignals?.status ?? 'unknown',
+      local_release_gate: qualitySignals?.release_readiness?.local_gate ?? null,
+      route_coverage: qualitySignals?.route_coverage?.status ?? null,
+      page_expectations: qualitySignals?.page_expectations?.status ?? null,
+      model_review_enabled: qualitySignals?.model_review_boundary?.status !== 'not_enabled'
+    },
+    coverage_summary: coverage ? {
+      discovered_routes: coverage.routes.discovered.length,
+      visited_routes: coverage.routes.visited.length,
+      expected_routes: coverage.routes.expected?.length ?? 0,
+      skipped_routes: coverage.routes.skipped.length,
+      expected_pages: coverage.pages?.expected?.length ?? 0,
+      failed_page_expectations: coverage.pages?.failed?.length ?? 0,
+      viewports: coverage.viewports.map((viewport) => viewport.name)
+    } : null,
+    rerun,
+    boundaries: {
+      screenshots_may_contain_page_content: artifacts.some((artifact) => artifact.type === 'screenshot'),
+      traces_may_contain_page_content: artifacts.some((artifact) => artifact.type === 'trace'),
+      profile_reuse: false,
+      credential_storage: false
+    }
+  });
+  await writeJsonArtifact(root, ['review-artifacts', `${id}.json`], data);
+  return {
+    data,
+    artifact: artifactObject({
+      type: 'review_artifact_index',
+      path: rel,
+      description: 'Local index of review artifacts, evidence classes, and rerun guidance.'
+    })
+  };
+}
+
+function evidenceClassesForArtifacts(artifacts) {
+  const classes = new Set();
+  for (const artifact of artifacts) {
+    if (artifact.type === 'observation') {
+      classes.add('DOM summary');
+      classes.add('console');
+      classes.add('network');
+    } else if (artifact.type === 'layout') {
+      classes.add('layout');
+      classes.add('accessibility basics');
+    } else if (artifact.type === 'screenshot') {
+      classes.add('screenshot');
+    } else if (artifact.type === 'coverage') {
+      classes.add('route coverage');
+      classes.add('viewport coverage');
+    } else if (artifact.type === 'mock_metrics') {
+      classes.add('mock metrics');
+    } else if (artifact.type === 'report') {
+      classes.add('developer report');
+    } else if (artifact.type === 'review') {
+      classes.add('review JSON');
+    }
+  }
+  return [...classes].sort();
+}
+
+function reviewRerunCommand({ url, viewport, screenshot, report, mock }) {
+  const parts = [
+    CLI_NAME,
+    'review',
+    '--url',
+    quoteCommandValue(url),
+    '--viewport',
+    quoteCommandValue(`${viewport.width}x${viewport.height}`)
+  ];
+  if (screenshot) {
+    parts.push('--screenshot');
+  }
+  if (mock) {
+    parts.push('--mock', quoteCommandValue(mock));
+  }
+  if (report) {
+    parts.push('--report');
+  }
+  parts.push('--json');
+  return parts.join(' ');
+}
+
+function targetRerunCommand({ manifestResult, report }) {
+  const target = manifestResult.path
+    ? `@${manifestResult.path}`
+    : manifestResult.source === 'stdin'
+      ? '-'
+      : '<target-manifest>';
+  const parts = [CLI_NAME, 'review', '--target', quoteCommandValue(target)];
+  if (report) {
+    parts.push('--report');
+  }
+  parts.push('--json');
+  return parts.join(' ');
+}
+
+function quoteCommandValue(value) {
+  const text = String(value ?? '');
+  return /^[A-Za-z0-9._~:/@=-]+$/.test(text) ? text : JSON.stringify(text);
+}
+
 function renderReviewReport(data, artifacts) {
   const lines = [
     `# Browser Debug Review: ${data.review.id}`,
@@ -2100,6 +2636,9 @@ function renderReviewReport(data, artifacts) {
     }
     if (data.quality_signals.route_coverage) {
       lines.push(`- Route coverage: ${data.quality_signals.route_coverage.status}`);
+    }
+    if (data.quality_signals.page_expectations) {
+      lines.push(`- Page expectations: ${data.quality_signals.page_expectations.status}`);
     }
     if (data.quality_signals.release_readiness) {
       lines.push(`- Local release gate: ${data.quality_signals.release_readiness.local_gate}`);

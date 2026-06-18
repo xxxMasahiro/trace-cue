@@ -95,6 +95,7 @@ export function createTargetManifest(options = {}) {
     },
     seeds: [baseUrl],
     expectedRoutes: [],
+    pages: [],
     viewportMatrix: options.viewport ? [options.viewport] : ['desktop', 'mobile'],
     actionPolicy: {
       allow: ['navigation', 'state_revealing']

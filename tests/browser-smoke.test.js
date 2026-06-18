@@ -502,6 +502,87 @@ test('target review records route budget skips for unvisited discovered routes',
   assert.equal(body.data.quality_signals.route_coverage.route_budget_exceeded_routes, 1);
 });
 
+test('target review checks manifest page expectations and writes an artifact index', { skip: !runBrowserSmoke }, async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-page-expectation-smoke-'));
+  await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
+  const page = path.join(cwd, 'state.html');
+  const mock = path.join(cwd, 'mock.png');
+  const manifest = path.join(cwd, 'target.json');
+  await writeFile(mock, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l9V2JwAAAABJRU5ErkJggg==', 'base64'));
+  await writeFile(page, [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head><title>State Route</title></head>',
+    '<body>',
+    '<main>',
+    '<h1>Expected State</h1>',
+    '<button id="primary">Primary Action</button>',
+    '</main>',
+    '</body>',
+    '</html>'
+  ].join('\n'), 'utf8');
+  await writeFile(manifest, JSON.stringify({
+    baseUrl: `file://${page}`,
+    seeds: [`file://${page}`],
+    pages: [{
+      name: 'Expected State Page',
+      url: `file://${page}`,
+      priority: 'high',
+      viewports: ['mobile'],
+      expectations: {
+        text: ['Expected State'],
+        selectors: ['#primary', '#secondary']
+      },
+      mock: 'mock.png',
+      threshold: 0
+    }],
+    viewportMatrix: ['desktop'],
+    budgets: { maxRoutes: 2 },
+    artifacts: { screenshots: true }
+  }), 'utf8');
+
+  const result = await executeCli([
+    'review',
+    '--target',
+    '@target.json',
+    '--report',
+    '--timeout',
+    '10000',
+    '--json'
+  ], { cwd });
+
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'review');
+  assert.equal(body.status, 'ok');
+  assert.equal(body.data.coverage.pages.expected.length, 1);
+  assert.equal(body.data.coverage.pages.checked.length, 1);
+  assert.equal(body.data.coverage.pages.failed.length, 1);
+  assert.equal(body.data.coverage.pages.checked[0].viewport.name, 'mobile');
+  assert.equal(body.data.quality_signals.page_expectations.status, 'needs_attention');
+  assert.equal(body.data.quality_signals.page_expectations.failed_pages, 1);
+  assert.equal(body.data.quality_signals.page_expectations.missing_selector_expectations, 1);
+  assert.equal(body.data.artifact_index.local_only, true);
+  assert.equal(body.data.artifact_index.external_upload, false);
+  assert.ok(body.data.findings.some((finding) => /Expected selector #secondary/.test(finding.message)));
+  assert.ok(body.artifacts.some((artifact) => artifact.type === 'mock_metrics'));
+
+  const indexes = body.artifacts.filter((artifact) => artifact.type === 'review_artifact_index');
+  assert.ok(indexes.length >= 1);
+  const targetIndex = indexes[indexes.length - 1];
+  const indexJson = JSON.parse(await readFile(path.join(cwd, targetIndex.path), 'utf8'));
+  assert.equal(indexJson.triage.page_expectations, 'needs_attention');
+  assert.equal(indexJson.coverage_summary.expected_pages, 1);
+  assert.equal(indexJson.boundaries.profile_reuse, false);
+  assert.equal(indexJson.boundaries.credential_storage, false);
+  assert.ok(indexJson.evidence_classes.includes('screenshot'));
+
+  const report = body.artifacts.find((artifact) => artifact.type === 'report');
+  assert.ok(report);
+  const reportText = await readFile(path.join(cwd, report.path), 'utf8');
+  assert.match(reportText, /Page expectations/);
+});
+
 async function runAction(cwd, sessionId, action) {
   const result = await executeCli([
     'act',
