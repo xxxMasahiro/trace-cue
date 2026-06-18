@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Phase 5 local MVP runtime implementation is complete after Phase 1 and Phase 2a. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally. Phase 7 local review-platform implementation is complete for deterministic review, target manifests, route/viewport coverage, risk classification, conservative mock metrics, local stdio MCP adapter, schema registry, and package API/file-set readiness. Phase 8 local dogfood/plugin-readiness work is complete for target manifest generation, developer action plans, local heuristic review advisory data, target Markdown reports, plugin metadata, MCP target tools, reusable manifest template, and package file-set readiness without publication. Phase 9 local review-quality work is complete for quality signals, expanded local heuristics, developer handoff, local release decision support, and explicit model-review boundaries. Phase 10 local dogfood route-readiness work is complete for expected-route execution, expected-route coverage artifacts, route-budget skip accounting, and fixture-backed validation without target-specific runtime branches.
+Phase 5 local MVP runtime implementation is complete after Phase 1 and Phase 2a. Phase 0 scaffold and document sync are complete, local Git is initialized, the initial scaffold commit exists, local CI configuration is present, and product-gate evidence has been recorded locally. Phase 7 local review-platform implementation is complete for deterministic review, target manifests, route/viewport coverage, risk classification, conservative mock metrics, local stdio MCP adapter, schema registry, and package API/file-set readiness. Phase 8 local dogfood/plugin-readiness work is complete for target manifest generation, developer action plans, local heuristic review advisory data, target Markdown reports, plugin metadata, MCP target tools, reusable manifest template, and package file-set readiness without publication. Phase 9 local review-quality work is complete for quality signals, expanded local heuristics, developer handoff, local release decision support, and explicit model-review boundaries. Phase 10 local dogfood route-readiness work is complete for expected-route execution, expected-route coverage artifacts, route-budget skip accounting, and fixture-backed validation without target-specific runtime branches. Phase 11 local page-expectation review work is complete for optional manifest pages, page-specific viewports, deterministic page-state checks, page-level mock metrics, local review artifact indexes, and fixture-backed validation.
 
 This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and HANDOFF workflow-state pair synchronized whenever task state changes.
 
@@ -90,10 +90,16 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 - [x] Target review records `route_budget_exceeded` skipped routes when `budgets.maxRoutes` prevents full coverage.
 - [x] Target quality signals report expected manifest route counts and route-budget-exceeded counts.
 - [x] Browser smoke coverage verifies unlinked expected routes and route-budget skip accounting.
+- [x] Target manifests support optional `pages` entries for named page expectations, page-specific viewports, page-specific mock paths, and priority.
+- [x] Target review checks manifest page expected visible text and selectors against local browser evidence.
+- [x] Target coverage now includes page expectation expected, checked, failed, and skipped records.
+- [x] Target quality signals now include `page_expectations` counts for checked pages, failed pages, skipped pages, and missing expectations.
+- [x] Single-URL and target reviews write local `review_artifact_index` artifacts with evidence classes, rerun guidance, and local safety boundaries.
+- [x] Browser smoke coverage verifies page expectation checks, page-specific mock metrics, artifact indexes, and report output.
 
 ## Remaining Work
 
-No remaining local Phase 10 implementation work is currently planned.
+No remaining local Phase 11 implementation work is currently planned.
 
 ## Future Approval-Bound Work
 

@@ -280,6 +280,43 @@ Phase 10 completes the seven-step local dogfood readiness plan for real applicat
 - Completed as workflow boundary: findings from real dogfood runs should be classified as target-app issues or generic CLI detection gaps.
 - Completed as boundary: new detection rules must remain generic and evidence-derived before being added to the runtime.
 
+### Phase 11: Manifest Page Expectations and Artifact Indexes
+
+Phase 11 completes the five-step local implementation path for practical whole-application review handoff. It extends the manifest-driven review workflow with optional named page expectations, structured local artifact indexes, deterministic page-state checks, page-level mock metrics, and fixture-backed dogfood validation. It remains local-first and generic. It does not add target-specific runtime branches, external upload, model/API calls, authentication automation, existing-profile reuse, HTTP/socket MCP transport, marketplace mutation, license changes, or npm publication.
+
+#### Phase 11a: Review Target Manifest Extension
+
+- Completed: target manifests can now include optional `pages` entries with page name, URL or path, priority, expected text, expected selectors, page-specific viewports, page-specific mock path, and threshold.
+- Completed: `target init` and the reusable template include an empty `pages` array so owners can edit manifests after generation.
+- Completed: page-specific viewports are merged into the target viewport matrix and executed only for the matching page when specified.
+- Completed as boundary: specific application routes, labels, ports, and UI names remain in local manifests or fixtures, not runtime branches.
+
+#### Phase 11b: Structured Review Artifact Indexes
+
+- Completed: single-URL and target reviews write local `review_artifact_index` artifacts under `.browser-debug/review-artifacts/`.
+- Completed: artifact indexes summarize artifact descriptors, evidence classes, local triage state, route and page coverage summaries, rerun guidance, and local safety boundaries.
+- Completed: review output includes `evidence_summary` and `artifact_index` metadata for developer handoff.
+- Completed as boundary: artifact indexes do not upload evidence, delete artifacts, reuse profiles, store credentials, or authorize publication.
+
+#### Phase 11c: Deterministic Page-State Checks
+
+- Completed: target review evaluates manifest page expected visible text and expected selectors against local browser evidence.
+- Completed: missing expected text or selectors produce evidence-backed `layout_integrity` findings with route, viewport, priority-derived severity, reproduction steps, and fix guidance.
+- Completed: target coverage includes `coverage.pages.expected`, `coverage.pages.checked`, `coverage.pages.failed`, and `coverage.pages.skipped`.
+- Completed: target quality signals include `quality_signals.page_expectations` for expected, checked, failed, skipped, missing-text, and missing-selector counts.
+
+#### Phase 11d: Page-Level Mock Metrics
+
+- Completed: manifest page entries can provide a workspace-relative `mock` path and optional threshold.
+- Completed: page-level mock metrics reuse the existing local mock comparison path and remain conservative when screenshots or dimensions are inconclusive.
+- Completed as boundary: mock metrics are local numeric evidence and do not claim subjective design approval.
+
+#### Phase 11e: Dogfood Fixture Validation
+
+- Completed: browser smoke coverage verifies page-specific viewports, expected text, missing expected selectors, page-level mock metrics, target report output, and review artifact indexes.
+- Completed: no-browser tests verify manifest page normalization and generated target manifest shape.
+- Completed as boundary: live Control Center review should run only when URLs are provided and listening; fixture tests cover the generic runtime path when no live target is available.
+
 ## Verification Method
 
 - `./tools/product-gate`
@@ -300,6 +337,7 @@ Phase 10 completes the seven-step local dogfood readiness plan for real applicat
 - Phase 8 checks cover target manifest generation, MCP target tools, plugin metadata validation, action plans, local review advisory, target Markdown reports, package dry-run file-set readiness, and local security boundaries.
 - Phase 9 checks cover local quality signals, heading hierarchy evidence, image alt findings, contrast findings, overlap findings, mobile target sizing, developer handoff, local release readiness, report summaries, and disabled model-review boundaries.
 - Phase 10 checks cover unlinked expected route execution, expected route coverage artifacts, route budget skip accounting, and target quality signal route-budget warnings.
+- Phase 11 checks cover manifest page expectation normalization, page-specific viewport execution, expected text and selector checks, page-level mock metrics, local review artifact indexes, and page expectation quality signals.
 - Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, external listener creation, arbitrary shell execution, unapproved upload paths, and destructive cleanup commands.
 
 ## Recovery Path

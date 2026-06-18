@@ -31,7 +31,9 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Support evidence-backed UI review findings for browser health, layout integrity, interaction quality, accessibility basics, and mock fidelity.
 - Support generic target manifests so site review can cover local applications such as Control Centers without hard-coded product-specific branches.
 - Treat manifest `expectedRoutes` as reviewable local targets so known app routes can be covered even when route discovery cannot find them from anchors or navigation candidates.
+- Support optional manifest `pages` entries so named pages can define expected visible text, expected selectors, page-specific viewport coverage, and page-specific mock metrics without runtime product branches.
 - Keep review findings developer-facing, reproducible, and tied to selectors, rectangles, routes, viewports, artifacts, confidence, severity, and reproduction steps.
+- Produce a local review artifact index that groups review JSON, layout JSON, screenshots, mock metrics, coverage, reports, evidence classes, local boundaries, and rerun guidance for developer handoff.
 - Generate reusable target manifests so whole-application review can start from a URL without hand-writing the full manifest.
 - Provide action plans, implementation-focused fix candidates, and local heuristic advisory signals that help developers decide what to fix first.
 - Provide structured local quality signals for visual hierarchy, responsive layout, interaction affordance, accessibility structure, evidence completeness, local release readiness, and model-review boundaries.
@@ -92,6 +94,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Browser smoke tests cover deterministic review findings, mock metrics, target manifest review, route discovery, viewport execution, and coverage artifacts.
 - `target init --url <url> --json` writes a reusable local target manifest artifact for route and viewport review.
 - Review outputs include `action_plan`, `review_advisory`, and `quality_signals` objects for developer handoff while keeping subjective or model-like judgment out of deterministic gates.
+- Review outputs include local `evidence_summary` data and `artifact_index` metadata so agents can evaluate expected UI state and hand developers a bounded artifact bundle.
 - The repository includes local plugin metadata, local MCP configuration, and a plugin-facing skill without adding marketplace registration, npm publication, external upload, credential handling, or HTTP/socket MCP transport.
 
 ## Review Platform Criteria
@@ -101,11 +104,15 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Completed: `browser-debug review --target <manifest> --json` extends review to a generic target manifest with `baseUrl`, seed routes, scope rules, viewport matrix, action policy, artifact settings, and execution budgets.
 - Completed: site review discovers routes from same-origin links and action candidates, then reports discovered, visited, skipped, failed, and expected-missing routes.
 - Completed: site review visits manifest `expectedRoutes` as explicit review targets and records route-budget skips when `budgets.maxRoutes` prevents full coverage.
+- Completed: site review checks optional manifest `pages` for expected visible text and selectors, records page expectation coverage, and emits findings when expected UI state is missing.
+- Completed: page entries can add page-specific viewport coverage and page-specific mock metrics while reusing the existing target review and mock comparison paths.
 - Completed: review runs a viewport matrix and records route, viewport, and action coverage without depending on a specific application stack.
 - Completed: findings include `category`, `severity`, `confidence`, `selector`, `rect`, `evidence`, `artifacts`, and `repro` data.
 - Completed: findings include developer-facing enrichment fields such as `priority`, `impact`, `recommendation`, `fix_candidates`, and `implementation_notes`.
 - Completed: review results include `action_plan` and `review_advisory` to prioritize remediation and summarize local heuristic visual review signals.
 - Completed: review results include `quality_signals` for heading hierarchy, landmarks, image alt text, contrast, overlap, mobile target sizing, route coverage, evidence completeness, release readiness, developer handoff, and the disabled model-review boundary.
+- Completed: target review results include `quality_signals.page_expectations` for expected page counts, checked pages, failed pages, skipped pages, and missing text or selector expectations.
+- Completed: review results include local artifact indexes that summarize evidence classes and rerun guidance without uploading artifacts.
 - Completed: mock comparison is optional and conservative; dimension mismatches, missing baselines, or unsupported images produce `inconclusive` review metrics rather than false pass/fail certainty.
 - Completed: MCP support is implemented as a thin local stdio adapter over the same core, not as a separate product runtime, network service, or default dependency.
 - Completed: model or vision review remains outside deterministic local review checks and has not been implemented.
@@ -114,6 +121,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 
 - Completed: `target init` creates a manifest artifact that can be edited for applications with multiple routes.
 - Completed: edited manifests can add unlinked `expectedRoutes`, and target review will visit them within scope and budget.
+- Completed: edited manifests can add optional `pages` entries for expected page state and per-page mock metrics.
 - Completed: target review can emit a Markdown report with action plan and local advisory sections.
 - Completed: Markdown reports include quality signal summaries so developers can triage local review output without reading raw JSON first.
 - Completed: MCP tool allowlists include target manifest initialization and target review without adding shell, cleanup, HTTP/socket, external upload, or profile-reuse tools.

@@ -39,6 +39,9 @@ All notable local development changes are tracked here before public release.
 - Added explicit target review execution for manifest `expectedRoutes`.
 - Added target coverage output for expected routes and route-budget-exceeded skips.
 - Added browser smoke coverage for unlinked expected routes and route budget skip accounting.
+- Added optional target manifest `pages` for named page expectations, page-specific viewports, and page-specific mock metrics.
+- Added review `evidence_summary`, local `review_artifact_index` artifacts, and `quality_signals.page_expectations`.
+- Added browser smoke coverage for manifest page expectations, page-specific mock metrics, review artifact indexes, and page expectation report output.
 
 ## Release Status
 

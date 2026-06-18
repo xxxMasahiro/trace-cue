@@ -55,3 +55,10 @@ Read AGENTS.MD and docs/workflow/HANDOFF.md, confirm the current state, then res
 - Completed after developer approval: public GitHub repository creation at `https://github.com/xxxMasahiro/browser-debug-cli`, remote `origin` setup, local `main` fast-forward, `origin/main` push, and GitHub Actions `main` CI verification.
 - Updated GitHub Actions checkout and Node setup actions to v5 after the first remote run reported Node 20 action-runtime deprecation annotations.
 - Next approval-bound work: public package naming, license changes, npm publication, existing-browser-profile reuse, OAuth/login automation, external daemon control channels, external upload, or credential storage.
+
+## 2026-06-17 Phase 11 Review Handoff
+
+- Phase 7 through Phase 10 review-platform work was completed before this state: deterministic review, target manifests, route and viewport coverage, risk-gated actions, conservative mock metrics, local stdio MCP adapter, plugin metadata, quality signals, expected route execution, and route-budget skip coverage.
+- Phase 11 is complete for optional manifest `pages`, page-specific viewports, deterministic expected text and selector checks, page-level mock metrics, local `review_artifact_index` artifacts, `coverage.pages`, and `quality_signals.page_expectations`.
+- The implementation remains generic and local-first. No Control Center-specific runtime branches, external upload, model/API review, OAuth/login automation, existing-profile reuse, HTTP/socket MCP transport, npm publication, license change, or marketplace mutation was added.
+- Current local verification includes `npm test`, `npm run test:browser`, product-local checks, release readiness checks, and parent workflow authority checks.

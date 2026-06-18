@@ -15,8 +15,9 @@ The Phase 2a design baseline uses Node.js 20 or newer, ESM modules, and a local 
 - Action layer: performs explicit actions such as click, fill, select, press, scroll, wait, navigate, screenshot, and trace capture.
 - Report layer: converts session evidence into issue reports and handoff notes.
 - Review core: converts normalized browser evidence into deterministic UI review findings.
-- Quality signal layer: summarizes local review evidence into visual hierarchy, responsive layout, interaction, accessibility, evidence completeness, release-readiness, and model-boundary signals.
+- Quality signal layer: summarizes local review evidence into visual hierarchy, responsive layout, interaction, accessibility, page expectations, evidence completeness, release-readiness, and model-boundary signals.
 - Site review layer: discovers routes, runs viewport matrices, applies action risk policy, and emits coverage.
+- Artifact index layer: groups local review artifacts, evidence classes, rerun guidance, and local safety boundaries for developer handoff.
 - Schema layer: defines stable JSON contracts for envelopes, artifacts, target manifests, findings, reports, and adapter I/O.
 - Adapter layer: keeps CLI as the source of truth and later exposes the same core through an MCP stdio adapter.
 
@@ -73,9 +74,9 @@ Implemented behavior:
 - `report --session <id>` writes a Markdown report.
 - `spec export --session <id>` writes a JSON action/spec export.
 - `review --url <url>` runs a single-URL deterministic local review, captures observation and layout evidence, optionally captures screenshots and mock metrics, writes review artifacts, and returns evidence-backed findings.
-- `review --target <manifest>` runs a manifest-driven site review with generic route discovery, explicit expected-route execution, viewport matrix execution, coverage artifacts, and aggregated findings.
-- `target init --url <url>` writes a reusable local target manifest artifact under `.browser-debug/targets/` with same-origin scope, seed route, viewport matrix, route budget, screenshot defaults, and safe local review boundaries.
-- Review results include `action_plan`, `review_advisory`, and `quality_signals` objects. `action_plan` prioritizes findings, groups developer next actions, and reports a local release gate. `review_advisory` is a local heuristic signal that summarizes browser health, layout, accessibility, interaction, mock, and coverage concerns without claiming human or model aesthetic approval. `quality_signals` gives structured developer handoff data for visual hierarchy, responsive layout, interaction affordance, accessibility structure, evidence completeness, local release readiness, route coverage, and the disabled model-review boundary.
+- `review --target <manifest>` runs a manifest-driven site review with generic route discovery, explicit expected-route execution, optional page expectation checks, viewport matrix execution, coverage artifacts, local review artifact indexes, and aggregated findings.
+- `target init --url <url>` writes a reusable local target manifest artifact under `.browser-debug/targets/` with same-origin scope, seed route, empty expected route and page lists, viewport matrix, route budget, screenshot defaults, and safe local review boundaries.
+- Review results include `action_plan`, `review_advisory`, `quality_signals`, `evidence_summary`, and `artifact_index` objects. `action_plan` prioritizes findings, groups developer next actions, and reports a local release gate. `review_advisory` is a local heuristic signal that summarizes browser health, layout, accessibility, interaction, mock, and coverage concerns without claiming human or model aesthetic approval. `quality_signals` gives structured developer handoff data for visual hierarchy, responsive layout, interaction affordance, accessibility structure, evidence completeness, local release readiness, route coverage, page expectations, and the disabled model-review boundary. `artifact_index` points to a local artifact index JSON that groups evidence classes and rerun guidance.
 - `schema list` and `schema get --name <schema>` expose machine-readable JSON contracts for envelopes, artifacts, findings, target manifests, review results, and MCP tool metadata.
 - `browser-debug-mcp` provides a local stdio MCP adapter with an allowlisted tool surface over the same CLI/core contracts, including target manifest initialization and target review.
 - `act --input -`, `supervise --input -`, `--action @file`, and `--actions @file` support shell-safe structured input while preserving inline JSON compatibility.
@@ -97,7 +98,7 @@ Implemented review components:
 - `evidence-model`: normalized DOM, accessibility, bounding box, computed style, console, network, viewport, and artifact evidence.
 - `review-engine`: deterministic and bounded heuristic rules for browser health, layout integrity, interaction quality, accessibility basics, mock fidelity, evidence quality, heading hierarchy, landmarks, image alt text, contrast, overlap, and mobile target sizing.
 - `site-review`: target manifest loading, route discovery, viewport matrix execution, action risk policy, budgets, and coverage reporting.
-- `reporter`: JSON and Markdown issue reports with artifact references, reproduction steps, prioritized action plans, local heuristic advisory data, and implementation-focused fix candidates.
+- `reporter`: JSON and Markdown issue reports with artifact references, reproduction steps, prioritized action plans, local artifact indexes, local heuristic advisory data, and implementation-focused fix candidates.
 - `schema`: machine-readable contracts for envelopes, findings, artifacts, target manifests, reports, and MCP tool I/O.
 - `cli-adapter`: the primary command surface for review workflows.
 - `mcp-adapter`: a thin local stdio adapter over the same core through `browser-debug-mcp`.
@@ -154,6 +155,7 @@ baseUrl
 scope
 seeds
 expectedRoutes
+pages
 viewportMatrix
 actionPolicy
 budgets
@@ -165,9 +167,9 @@ appHints
 
 The runtime must not contain product-specific branches for Dashboard Control Center, FrameCue Control Center, localhost ports, route names, menu labels, or page IDs. Those targets can be represented as examples or local manifests outside the generic review runtime.
 
-Route discovery is generic and uses same-origin anchors and navigation action candidates in the current implementation. Manifest `expectedRoutes` are also enqueued as explicit review targets, so owners can cover known routes that are not discoverable from the initial crawl. Coverage output reports expected, discovered, visited, skipped, failed, and expected-missing routes. Queued routes that cannot be reviewed because `budgets.maxRoutes` is exhausted are recorded as skipped with `reason=route_budget_exceeded`. Later enhancements may add history navigation, DOM metadata, redirects, and app-provided manifest hints without changing the core contract.
+Route discovery is generic and uses same-origin anchors and navigation action candidates in the current implementation. Manifest `expectedRoutes` are also enqueued as explicit review targets, so owners can cover known routes that are not discoverable from the initial crawl. Optional manifest `pages` are also enqueued as review targets and can define `name`, `url` or `path`, `priority`, `viewports`, `expectations.text`, `expectations.selectors`, and optional page-level `mock` metrics. Coverage output reports expected, discovered, visited, skipped, failed, expected-missing routes, and page expectation checks. Queued routes or pages that cannot be reviewed because `budgets.maxRoutes` is exhausted are recorded as skipped with `reason=route_budget_exceeded`. Later enhancements may add history navigation, DOM metadata, redirects, and app-provided manifest hints without changing the core contract.
 
-`target init` exists so a developer or agent can create a starting manifest before reviewing a whole application. The generated manifest is intentionally generic: it does not include application-specific route names or control labels, and it expects owners to add known `expectedRoutes`, route budgets, viewport matrices, masks, or regions as needed. After editing, `expectedRoutes` are review inputs, not just passive coverage expectations.
+`target init` exists so a developer or agent can create a starting manifest before reviewing a whole application. The generated manifest is intentionally generic: it does not include application-specific route names or control labels, and it expects owners to add known `expectedRoutes`, `pages`, route budgets, viewport matrices, masks, or regions as needed. After editing, `expectedRoutes` and `pages` are review inputs, not just passive coverage expectations.
 
 Action exploration should be risk-gated. The default policy may execute navigation and read-only state-revealing actions. Input-required, mutating, destructive, and external actions require explicit manifest allowlists and must remain local-first.
 
@@ -192,6 +194,7 @@ Target-manifest review includes:
 
 ```text
 route_coverage
+page_expectations
 viewport_coverage
 finding_summary
 evidence_completeness
@@ -202,7 +205,11 @@ model_review_boundary
 
 The `model_review_boundary` signal must remain `not_enabled` with `external_evidence_transfer=false` until a separately approved model or vision review layer exists. Local release readiness is a review gate over the current evidence only; it does not authorize package publication, license changes, marketplace registration, npm publication, or evidence upload.
 
-For target reviews, `quality_signals.route_coverage` includes expected manifest route counts, visited route-viewport counts, skipped route counts, and route-budget-exceeded counts so agents can decide whether to raise the route budget, split a manifest, or rerun the review.
+For target reviews, `quality_signals.route_coverage` includes expected manifest route counts, visited route-viewport counts, skipped route counts, and route-budget-exceeded counts so agents can decide whether to raise the route budget, split a manifest, or rerun the review. `quality_signals.page_expectations` includes expected page counts, checked pages, failed pages, skipped pages, missing text expectations, and missing selector expectations so agents can identify page-state mismatches before human or model approval.
+
+## Local Artifact Index Contract
+
+Each review writes a local `review_artifact_index` JSON artifact under `.browser-debug/review-artifacts/`. The index records the review ID, review mode, artifact root, artifact descriptors, evidence classes, triage summary, coverage summary when available, rerun guidance, and local safety boundaries. The index is a handoff aid only; it does not upload evidence, delete artifacts, reuse browser profiles, store credentials, or authorize publication.
 
 ## MCP Adapter Contract
 
