@@ -98,7 +98,7 @@ export async function runDoctor({
   checks.push({
     id: 'artifact_retention.manual',
     status: 'pass',
-    summary: 'Artifacts are retained until the developer manually removes the ignored artifact root.',
+    summary: 'Artifacts are retained until the developer manually removes the ignored artifact root or explicitly runs local artifact-root cleanup.',
     details: ARTIFACT_RETENTION_POLICY
   });
 

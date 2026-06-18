@@ -72,6 +72,18 @@ export const MCP_TOOLS = Object.freeze([
     inputSchema: { type: 'object', additionalProperties: false, properties: {} }
   },
   {
+    name: 'browser_debug_resource_artifacts_plan',
+    description: 'Report local Browser Debug CLI artifact size and cleanup candidates without deleting files.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        maxBytes: { type: 'string' },
+        olderThan: { type: 'string' }
+      }
+    }
+  },
+  {
     name: 'browser_debug_review_target',
     description: 'Run a deterministic local browser review for a target manifest.',
     inputSchema: {
@@ -184,6 +196,17 @@ function toolToCliArgs(name, args) {
   }
   if (name === 'browser_debug_resource_status') {
     return ['resource', 'status', '--json'];
+  }
+  if (name === 'browser_debug_resource_artifacts_plan') {
+    const output = ['resource', 'artifacts', 'plan'];
+    if (args.maxBytes !== undefined) {
+      output.push('--max-bytes', String(args.maxBytes));
+    }
+    if (args.olderThan !== undefined) {
+      output.push('--older-than', String(args.olderThan));
+    }
+    output.push('--json');
+    return output;
   }
   if (name === 'browser_debug_review_target') {
     return withCommonOptions(['review', '--target', args.target], args);

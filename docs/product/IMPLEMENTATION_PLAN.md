@@ -149,7 +149,7 @@ Current status: completed for local deterministic review, target manifests, rout
 - Completed: reused the same CLI/core contracts used by local commands.
 - Completed: exposed a narrow allowlist of tools for doctor, observe, review, and schema operations.
 - Completed: kept the adapter local and stdio-only.
-- Completed: did not add HTTP listeners, socket listeners, remote control channels, arbitrary shell tools, cleanup tools, existing profile reuse, storage-state persistence, OAuth, external upload, or credential handling.
+- Completed: did not add HTTP listeners, socket listeners, remote control channels, arbitrary shell tools, cleanup execution tools, existing profile reuse, storage-state persistence, OAuth, external upload, or credential handling.
 - Completed: added adapter tests that verify tool allowlists and schema-compatible output.
 
 #### Phase 7h: Model or Vision Review Layer
@@ -351,7 +351,7 @@ Phase 12 completes the six-step local dogfood hardening path for making real app
 #### Phase 12f: Sync and Release-Safe Boundaries
 
 - Completed: requirements, specification, implementation plan, task tracker, handoff, README, changelog, and test manifest are synchronized with the rendered-state dogfood hardening slice.
-- Completed as boundary: model/API review, evidence leaving the local process, HTTP/socket MCP server mode, authentication automation, external upload, existing-profile reuse, public package naming, license changes, plugin marketplace registration, npm publication, and destructive cleanup remain approval-bound.
+- Completed as boundary: model/API review, evidence leaving the local process, HTTP/socket MCP server mode, authentication automation, external upload, existing-profile reuse, public package naming, license changes, plugin marketplace registration, npm publication, automatic cleanup, and cleanup outside the configured artifact root remain approval-bound.
 
 ### Phase 13: Dogfood Signal Refinement
 
@@ -402,7 +402,7 @@ Phase 14 adds a local content UX advisory layer for the gap identified during do
 - Completed: Markdown target reports include a bounded Content UX Advisory section when advisory output exists.
 - Completed: no-browser tests cover schema parity, manifest normalization, source-value non-disclosure, and pure advisory behavior.
 - Completed: browser smoke tests verify opt-in advisory output and prove the enabled advisory does not alter existing findings, metrics, action plans, or release readiness.
-- Completed: architecture tests cover the pure advisory module and continue to block target-specific literals, browser profile reuse, storage-state persistence, external listeners, arbitrary shell execution, unapproved uploads, and destructive cleanup.
+- Completed: architecture tests cover the pure advisory module and continue to block target-specific literals, browser profile reuse, storage-state persistence, external listeners, arbitrary shell execution, unapproved uploads, and cleanup outside the configured artifact root.
 
 ### Phase 15: Content UX Heuristic Strengthening
 
@@ -475,7 +475,7 @@ Phase 16 completes the six-step local implementation path for turning content UX
 
 - Completed: no-browser tests cover dedicated content UX findings/action/readiness generation, advisory status, source-value non-disclosure, and unchanged advisory-only gates.
 - Completed: browser smoke tests cover opt-in top-level `content_ux_*` output, disabled-output absence, Markdown handoff output, and unchanged review findings, metrics, existing action plans, and release readiness.
-- Completed: architecture tests continue to guard against target-specific runtime literals, profile reuse, storage-state persistence, external listeners, arbitrary shell execution, unapproved upload paths, destructive cleanup, filesystem reads in the advisory helper, and model/API review.
+- Completed: architecture tests continue to guard against target-specific runtime literals, profile reuse, storage-state persistence, external listeners, arbitrary shell execution, unapproved upload paths, cleanup outside the configured artifact root, filesystem reads in the advisory helper, and model/API review.
 
 ### Phase 17: Practical Content UX Handoff
 
@@ -565,7 +565,7 @@ Phase 19 completes the local no-browser manifest-authoring checkpoint for target
 
 - Completed: the local stdio MCP adapter exposes `browser_debug_target_validate` over the same CLI/core path.
 - Completed: `runTargetValidate` is exported from the local package API next to target manifest creation.
-- Completed: no HTTP/socket transport, shell tool, cleanup tool, marketplace mutation, external upload, or profile-reuse capability was added.
+- Completed: no HTTP/socket transport, shell tool, cleanup execution tool, marketplace mutation, external upload, or profile-reuse capability was added.
 
 #### Phase 19c: Tests and Documentation
 
@@ -586,13 +586,56 @@ Phase 20 adds a no-browser local resource status preflight for safer browser-hea
 
 - Completed: the local stdio MCP adapter exposes `browser_debug_resource_status` over the same CLI/core path.
 - Completed: `runResourceStatus`, `collectResourceStatus`, `parseMeminfoText`, and `parsePressureText` are exported from the local package API.
-- Completed: no shell tool, cleanup tool, privileged helper, HTTP/socket transport, external upload, profile-reuse capability, or host mutation capability was added.
+- Completed: no shell tool, cleanup execution tool, privileged helper, HTTP/socket transport, external upload, profile-reuse capability, or host mutation capability was added.
 
 #### Phase 20c: Tests and Documentation
 
 - Completed: no-browser tests cover parser shape, deterministic resource fixture output, cgroup and pressure parsing through injected readers, MCP tool wiring, and local safety boundaries.
 - Completed: architecture tests verify the resource status module has no Playwright import, child process use, external listener, profile reuse, storage persistence, file deletion, or host mutation path.
 - Completed: product documents, workflow documents, README, changelog, security notes, test-plan manifest, and plugin-facing skill are synchronized with the resource status preflight contract.
+
+### Phase 21: Resource Guard Integration
+
+Phase 21 integrates the Phase 20 resource status signal into browser-heavy review flows. It remains additive and local-first. Default advisory mode does not change review findings, `metrics.finding_count`, existing action plans, or release readiness.
+
+#### Phase 21a: Review Preflight and Rechecks
+
+- Completed: `review --resource-guard advisory|fail-critical|off` is parsed as an explicit review option.
+- Completed: single-URL review runs a local resource preflight before browser launch and emits additive `data.resource_guard`.
+- Completed: target review reuses single-URL review for route/viewport rechecks and aggregates resource guard checks into the target review output.
+- Completed: `fail-critical` stops before browser launch or skips remaining target work only when resource status is critical.
+
+#### Phase 21b: Heavy Artifact Warnings and Invariance
+
+- Completed: screenshot and trace requests produce resource guard warnings because those artifacts can increase memory and local artifact pressure.
+- Completed: resource guard output remains separate from review findings, `metrics.finding_count`, existing `action_plan`, and `quality_signals.release_readiness`.
+- Completed: architecture tests verify the guard has no Playwright import, shell execution, external listener, profile reuse, host mutation, or file deletion path.
+
+### Phase 22: Daemon Lifecycle Guard
+
+Phase 22 adds optional local lifecycle bounds to the existing background daemon without changing the default daemon behavior.
+
+- Completed: `daemon start --idle-timeout <duration>` records idle timeout metadata and stops the worker after local inactivity.
+- Completed: `daemon start --max-lifetime <duration>` records lifetime metadata and stops the worker after the configured lifetime.
+- Completed: daemon metadata includes `lifecycle.idle_timeout_ms`, `lifecycle.max_lifetime_ms`, `started_at`, `last_activity_at`, `expires_at`, and `stop_reason`.
+- Completed: daemon control remains local process signal and metadata only; no HTTP/socket control channel, profile reuse, persistent storage, external upload, privileged helper, or arbitrary process control was added.
+
+### Phase 23: Artifact Size Monitor and Cleanup Proposal
+
+Phase 23 adds local artifact usage planning without deleting files.
+
+- Completed: `resource artifacts plan --json` reports `.browser-debug/` usage, top-level directory totals, largest files, cleanup policy, and cleanup candidates.
+- Completed: `resource artifacts cleanup --dry-run --json` returns the same proposal and confirms no files were deleted.
+- Completed: MCP exposes only `browser_debug_resource_artifacts_plan`; cleanup execution is not exposed through MCP.
+- Completed: package API exports artifact planning helpers.
+
+### Phase 24: Explicit Artifact Cleanup
+
+Phase 24 adds explicit local cleanup execution scoped to the configured Browser Debug CLI artifact root.
+
+- Completed: `resource artifacts cleanup --execute --json` deletes only selected regular files under the configured artifact root and writes a local receipt under `.browser-debug/receipts/`.
+- Completed: cleanup skips symbolic links, preserves receipts, uses the configured artifact root boundary, and does not mutate system cache, configure swap, execute shell commands, use privileged helpers, upload evidence, reuse profiles, or control arbitrary processes.
+- Completed: no-browser tests cover parser shape, dry-run no-delete behavior, explicit execute receipt behavior, MCP plan-only wiring, and architecture boundaries.
 
 ## Verification Method
 
@@ -610,7 +653,7 @@ Phase 20 adds a no-browser local resource status preflight for safer browser-hea
 - Phase 7 review-platform checks should add no-browser tests for parser contracts, target manifest validation, route normalization, viewport matrix expansion, action risk classification, finding generation, issue deduplication, schema compatibility, and report shape.
 - Phase 7 browser smoke checks should add fixture-based review runs for console errors, failed requests, empty render, horizontal overflow, clipped text, missing labels, screenshots, route coverage, viewport coverage, and artifact placement under ignored `.browser-debug/`.
 - Phase 7 mock-comparison checks should prove exact fixture matches are within thresholds, shifted UI produces diff artifacts and metrics, masks suppress volatile regions, dimension mismatches are `inconclusive`, and stable fixtures produce stable findings across repeated runs.
-- Phase 7 MCP adapter checks should prove stdio/local-only behavior, tool allowlists, no shell tools, no cleanup tools, no HTTP/socket listener, schema-compatible responses, and no external upload by default.
+- Phase 7 MCP adapter checks should prove stdio/local-only behavior, tool allowlists, no shell tools, no cleanup execution tools, no HTTP/socket listener, schema-compatible responses, and no external upload by default.
 - Phase 8 checks cover target manifest generation, MCP target tools, plugin metadata validation, action plans, local review advisory, target Markdown reports, package dry-run file-set readiness, and local security boundaries.
 - Phase 9 checks cover local quality signals, heading hierarchy evidence, image alt findings, contrast findings, overlap findings, mobile target sizing, developer handoff, local release readiness, report summaries, and disabled model-review boundaries.
 - Phase 10 checks cover unlinked expected route execution, expected route coverage artifacts, route budget skip accounting, and target quality signal route-budget warnings.
@@ -624,7 +667,11 @@ Phase 20 adds a no-browser local resource status preflight for safer browser-hea
 - Phase 18 checks cover additive `content_ux_review_brief`, additive `content_ux_rubric_evaluation`, report brief/rubric summaries, source-value non-disclosure, and unchanged review findings, metrics, existing action plans, and release readiness.
 - Phase 19 checks cover `target validate` parser/runtime behavior, invalid manifest errors, manifest count output, source-value non-disclosure, MCP tool coverage, API export, and no-browser local-first boundaries.
 - Phase 20 checks cover `resource status` parser/runtime behavior, deterministic memory/cgroup/pressure fixture output, MCP tool coverage, API export, warnings/recommendations, and read-only local-first boundaries without browser launch, artifact writes, cache mutation, swap mutation, file deletion, shell execution, or profile reuse.
-- Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, external listener creation, arbitrary shell execution, unapproved upload paths, and destructive cleanup commands.
+- Phase 21 checks cover review resource guard parser/runtime behavior, critical fail-before-launch behavior, additive `resource_guard` output, and unchanged review findings, metrics, existing action plans, and release readiness.
+- Phase 22 checks cover daemon lifecycle parser and metadata behavior plus local daemon boundary regressions.
+- Phase 23 checks cover artifact usage planning, dry-run cleanup proposals, MCP plan-only wiring, and no-delete boundaries.
+- Phase 24 checks cover explicit artifact-root-only cleanup receipts and architecture boundaries that prevent host cache/swap mutation, shell execution, privileged helpers, external upload, profile reuse, arbitrary process control, and MCP cleanup execution.
+- Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, external listener creation, arbitrary shell execution, unapproved upload paths, host cache/swap mutation, and cleanup outside the configured artifact root.
 
 ## Recovery Path
 
@@ -644,7 +691,7 @@ Phase 20 adds a no-browser local resource status preflight for safer browser-hea
 - Ask before commit, push, branch deletion, or remote changes.
 - Ask before `gh repo create`, remote setup, push, or any public GitHub action.
 - Ask before npm publish.
-- Ask before external uploads, OAuth, webhooks, credential storage, or destructive cleanup.
+- Ask before external uploads, OAuth, webhooks, credential storage, cleanup outside the configured artifact root, automatic cleanup, host cleanup, or destructive cleanup not explicitly scoped to `.browser-debug/`.
 - Ask before model/API review integration or any evidence leaves the local process.
 - Ask before HTTP/socket MCP server mode, remote control channels, persistent session storage, existing-browser-profile reuse, or authentication automation.
 - Ask before public API stabilization, npm package file-set changes intended for publication, package naming, license changes, or packed release promotion.

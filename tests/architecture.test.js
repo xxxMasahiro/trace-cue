@@ -13,9 +13,12 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'src/content-ux-advisory.js',
     'src/daemon.js',
     'src/daemon-worker.js',
+    'src/durations.js',
     'src/observe.js',
     'src/page-evidence.js',
     'src/parser.js',
+    'src/resource-artifacts.js',
+    'src/resource-guard.js',
     'src/resource-status.js',
     'src/review.js',
     'src/mcp.js',
@@ -122,6 +125,32 @@ test('resource status preflight stays read-only and local', async () => {
   assert.match(resourceStatus, /shell_used:\s*false/);
 });
 
+test('resource guard and artifact cleanup keep explicit local boundaries', async () => {
+  const resourceGuard = await readText('src/resource-guard.js');
+  const resourceArtifacts = await readText('src/resource-artifacts.js');
+
+  assert.doesNotMatch(resourceGuard, /node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(resourceGuard, /createServer|listen\(|WebSocket|EventSource/);
+  assert.doesNotMatch(resourceGuard, /from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(resourceGuard, /launchPersistentContext|userDataDir|storageState/);
+  assert.doesNotMatch(resourceGuard, /\bunlink\b|\brmdir\b|\bchmod\b|\bchown\b/);
+  assert.match(resourceGuard, /system_cache_mutated:\s*false/);
+  assert.match(resourceGuard, /swap_mutated:\s*false/);
+  assert.match(resourceGuard, /cache_deleted:\s*false/);
+
+  assert.doesNotMatch(resourceArtifacts, /node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(resourceArtifacts, /createServer|listen\(|WebSocket|EventSource/);
+  assert.doesNotMatch(resourceArtifacts, /from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(resourceArtifacts, /launchPersistentContext|userDataDir|storageState/);
+  assert.doesNotMatch(resourceArtifacts, /curl|wget|token|password/i);
+  assert.match(resourceArtifacts, /external_upload:\s*false/);
+  assert.match(resourceArtifacts, /resolveArtifactRoot/);
+  assert.match(resourceArtifacts, /requires_execute_flag:\s*true/);
+  assert.match(resourceArtifacts, /deletion_scope:\s*cacheDeleted \? 'artifact_root_only' : 'none'/);
+  assert.match(resourceArtifacts, /privileged_helper_used:\s*false/);
+  assert.match(resourceArtifacts, /shell_used:\s*false/);
+});
+
 test('packaged target templates stay domain-neutral', async () => {
   const templateFiles = [
     'templates/review-target-manifest.json',
@@ -182,6 +211,8 @@ test('background daemon uses local process boundaries only', async () => {
   assert.match(combined, /existing_profile_reused:\s*false/);
   assert.match(combined, /persistent_storage:\s*false/);
   assert.match(combined, /local_process_signal/);
+  assert.match(combined, /idle_timeout_ms/);
+  assert.match(combined, /max_lifetime_ms/);
 });
 
 function readText(relativePath) {

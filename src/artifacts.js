@@ -15,7 +15,9 @@ const ARTIFACT_DIRS = [
   'reviews',
   'layouts',
   'diffs',
-  'coverage'
+  'coverage',
+  'review-artifacts',
+  'receipts'
 ];
 
 export function createArtifactId(now = new Date(), prefix = 'run') {

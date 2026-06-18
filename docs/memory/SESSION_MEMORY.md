@@ -140,3 +140,14 @@ Read AGENTS.MD and docs/workflow/HANDOFF.md, confirm the current state, then res
 - Resource status output includes status classification, thresholds, warnings, recommendations, cache policy, and explicit local-first boundaries.
 - The local MCP adapter exposes `browser_debug_resource_status`, and the package API exports resource status collection and parsing helpers.
 - The implementation remains generic, local-first, no-browser, read-only, and non-mutating. It does not launch Chromium, write artifacts, mutate system cache, configure swap, delete files, execute shell commands, use privileged helpers, upload evidence, reuse profiles, add HTTP/socket MCP transport, control arbitrary processes, change review findings, change `metrics.finding_count`, change the existing `action_plan`, or change `quality_signals.release_readiness`.
+
+## 2026-06-18 Phase 21-24 Resource Safety Handoff
+
+- Phase 21-24 is complete for local resource safety integration.
+- `browser-debug review --resource-guard advisory|fail-critical|off` emits additive `resource_guard` output, runs review preflight and target route/viewport rechecks, warns for screenshot/trace pressure, and can stop browser launch only in explicit `fail-critical` mode.
+- Resource guard output does not change review findings, `metrics.finding_count`, existing `action_plan`, or `quality_signals.release_readiness`.
+- `browser-debug daemon start --idle-timeout <duration>` and `browser-debug daemon start --max-lifetime <duration>` add optional local lifecycle guards with daemon metadata and worker shutdown.
+- `browser-debug resource artifacts plan --json` and `browser-debug resource artifacts cleanup --dry-run --json` report artifact usage and cleanup candidates without deletion.
+- `browser-debug resource artifacts cleanup --execute --json` deletes selected regular files only under the configured artifact root and writes a receipt under `.browser-debug/receipts/`.
+- The local MCP adapter exposes `browser_debug_resource_artifacts_plan` only; cleanup execution is not exposed through MCP.
+- The implementation remains generic, local-first, and bounded. It does not mutate system cache, configure swap, execute shell commands, use privileged helpers, upload evidence, reuse profiles, add HTTP/socket MCP transport, expose MCP cleanup execution, clean outside the configured artifact root, or control arbitrary processes.

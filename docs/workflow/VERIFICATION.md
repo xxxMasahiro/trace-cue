@@ -2,7 +2,7 @@
 
 ## Verification Scope
 
-Current verification checks repository structure, document synchronization, security defaults, review/MCP/plugin local boundaries, CI configuration, design-system placeholders, product operation mode, local MVP runtime behavior, review platform behavior, dogfood target workflow behavior, no-browser target manifest validation, no-browser resource status preflight, expected-route execution, route-budget coverage accounting, page expectation coverage, rendered-state findings, manifest suggestions, opt-in content UX advisory behavior, selector-scoped advisory contracts, required user-question advisory checks, dedicated content UX handoff output, page-level content UX handoff, manifest-authoring suggestions, review brief/rubric evaluation, local artifact indexes, local review-quality signals, and browser smoke coverage.
+Current verification checks repository structure, document synchronization, security defaults, review/MCP/plugin local boundaries, CI configuration, design-system placeholders, product operation mode, local MVP runtime behavior, review platform behavior, dogfood target workflow behavior, no-browser target manifest validation, no-browser resource status preflight, review resource guard behavior, daemon lifecycle guards, artifact usage planning, explicit artifact-root cleanup receipts, expected-route execution, route-budget coverage accounting, page expectation coverage, rendered-state findings, manifest suggestions, opt-in content UX advisory behavior, selector-scoped advisory contracts, required user-question advisory checks, dedicated content UX handoff output, page-level content UX handoff, manifest-authoring suggestions, review brief/rubric evaluation, local artifact indexes, local review-quality signals, and browser smoke coverage.
 
 ## Product-Local Commands
 
@@ -34,7 +34,7 @@ From `/home/masahiro/projects/ai-driven-development-lesson`:
 
 ## Current Runtime Checks
 
-The current implementation includes command parser tests, deterministic JSON error tests, `doctor` tests for environment, schema-versioning, and artifact-retention metadata, resource status tests for deterministic memory/cgroup/pressure fixtures and read-only boundaries, review parser tests, schema command tests, schema registry/file parity tests, target init tests, target validate tests, target manifest tests, opt-in content UX advisory tests, selector-scoped binding tests, required user-question tests, dedicated content UX handoff tests, page handoff tests, manifest-authoring suggestion tests, review brief/rubric tests, action risk classification tests, MCP adapter allowlist tests, shell-safe action input tests, headed/devtools launch-mode tests, session/report/spec tests, daemon parser tests, redaction tests, architecture regressions for generic runtime boundaries, shared evidence helpers, local daemon boundaries, resource status read-only boundaries, content UX advisory purity, review/MCP/plugin security boundaries, local package dry-run verification, and Playwright smoke tests for local file observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, reports, spec export, process-scoped supervision, daemon start/status/stop, deterministic review findings, action plans, local review advisory output, quality signals, rendered-state findings, mock metrics, target manifest review, target reports, manifest suggestions, content UX advisory opt-in invariance, selector-scoped content UX advisory, content UX Developer Handoff reports, content UX page handoff output, manifest-authoring output, content UX review brief/rubric output, route discovery, explicit expected-route execution, route-budget skip coverage, viewport execution, and coverage artifacts. Manual local checks can use:
+The current implementation includes command parser tests, deterministic JSON error tests, `doctor` tests for environment, schema-versioning, and artifact-retention metadata, resource status tests for deterministic memory/cgroup/pressure fixtures and read-only boundaries, resource guard fail-critical tests, artifact plan/dry-run/execute receipt tests, review parser tests, schema command tests, schema registry/file parity tests, target init tests, target validate tests, target manifest tests, opt-in content UX advisory tests, selector-scoped binding tests, required user-question tests, dedicated content UX handoff tests, page handoff tests, manifest-authoring suggestion tests, review brief/rubric tests, action risk classification tests, MCP adapter allowlist tests, shell-safe action input tests, headed/devtools launch-mode tests, session/report/spec tests, daemon parser and lifecycle option tests, redaction tests, architecture regressions for generic runtime boundaries, shared evidence helpers, local daemon boundaries, resource status read-only boundaries, resource guard and artifact cleanup boundaries, content UX advisory purity, review/MCP/plugin security boundaries, local package dry-run verification, and Playwright smoke tests for local file observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, reports, spec export, process-scoped supervision, daemon start/status/stop, deterministic review findings, action plans, local review advisory output, quality signals, rendered-state findings, mock metrics, target manifest review, target reports, manifest suggestions, content UX advisory opt-in invariance, selector-scoped content UX advisory, content UX Developer Handoff reports, content UX page handoff output, manifest-authoring output, content UX review brief/rubric output, route discovery, explicit expected-route execution, route-budget skip coverage, viewport execution, and coverage artifacts. Manual local checks can use:
 
 Phase 11 adds no-browser coverage for optional manifest page normalization and browser smoke coverage for page expectation checks, page-specific mock metrics, review artifact indexes, `coverage.pages`, and `quality_signals.page_expectations`.
 
@@ -54,8 +54,12 @@ Phase 19 adds no-browser coverage for `target validate` parser/runtime behavior,
 
 Phase 20 adds no-browser coverage for `resource status` parser/runtime behavior, deterministic memory/cgroup/pressure fixture output, MCP resource status wiring, API export, warnings and recommendations, and read-only local-first boundaries without launching a browser, writing artifacts, mutating system cache, configuring swap, deleting files, executing shell commands, using privileged helpers, uploading evidence, reusing profiles, or controlling arbitrary processes.
 
+Phase 21-24 add no-browser coverage for review resource guard parser/runtime behavior, critical fail-before-launch behavior, additive resource guard output, daemon lifecycle parser/metadata behavior, artifact usage planning, dry-run no-delete behavior, explicit artifact-root-only cleanup receipts, MCP artifact-plan-only wiring, and architecture boundaries that prevent host cache/swap mutation, shell execution, privileged helpers, external upload, profile reuse, arbitrary process control, cleanup outside `.browser-debug/`, and MCP cleanup execution.
+
 ```bash
 node ./bin/browser-debug.js resource status --json
+node ./bin/browser-debug.js resource artifacts plan --json
+node ./bin/browser-debug.js resource artifacts cleanup --dry-run --json
 node ./bin/browser-debug.js observe --url http://127.0.0.1:3000/ --screenshot --trace --timeout 15000 --json
 node ./bin/browser-debug.js supervise --url http://127.0.0.1:3000/ --actions '[{"type":"observe"}]' --timeout 15000 --json
 node ./bin/browser-debug.js daemon start --url http://127.0.0.1:3000/ --timeout 15000 --json
@@ -64,6 +68,7 @@ node ./bin/browser-debug.js daemon stop --daemon <id> --json
 node ./bin/browser-debug.js target init --url http://127.0.0.1:3000/ --json
 node ./bin/browser-debug.js target validate --target .browser-debug/targets/<id>.json --json
 node ./bin/browser-debug.js review --url http://127.0.0.1:3000/ --viewport mobile --screenshot --report --timeout 15000 --json
+node ./bin/browser-debug.js review --url http://127.0.0.1:3000/ --resource-guard fail-critical --timeout 15000 --json
 node ./bin/browser-debug.js review --target .browser-debug/targets/<id>.json --report --timeout 15000 --json
 node ./bin/browser-debug.js schema list --json
 node ./bin/browser-debug.js schema get --name review --json
@@ -79,11 +84,12 @@ Phase 7 review-platform implementation includes focused checks before any releas
 - Parser tests for `review --url`, `review --target`, `schema list`, `schema get`, and MCP adapter entrypoints.
 - Schema tests for envelopes, artifacts, findings, target manifests, review results, and MCP tool metadata.
 - No-browser unit tests for target manifest validation, viewport matrix expansion, action risk classification, redaction, shell-safe action input, and MCP tool output shape.
-- Architecture tests that prevent application-specific runtime literals, persistent browser profile reuse, storage-state persistence, HTTP/socket listeners, arbitrary shell execution, unapproved upload paths, and destructive cleanup commands.
+- Architecture tests that prevent application-specific runtime literals, persistent browser profile reuse, storage-state persistence, HTTP/socket listeners, arbitrary shell execution, unapproved upload paths, and cleanup outside the configured artifact root.
 - Browser smoke fixture tests for console errors, empty renders, horizontal overflow, clipped text, missing accessible names, nonblank screenshots, route coverage, viewport coverage, and local artifact placement.
 - Mock comparison tests for local metrics and dimension mismatch `inconclusive` behavior.
-- MCP adapter tests for stdio/local-only behavior, tool allowlist, schema-compatible responses, no shell tool, no cleanup tool, and no external upload by default.
+- MCP adapter tests for stdio/local-only behavior, tool allowlist, schema-compatible responses, no shell tool, no cleanup execution tool, and no external upload by default.
 - Resource status tests for no-browser local memory, swap, cgroup, pressure, process memory, warning/recommendation output, MCP wiring, and read-only host boundaries.
+- Resource guard and artifact safety tests for advisory/fail-critical review output, daemon lifecycle metadata, artifact usage planning, explicit cleanup receipts, no MCP cleanup execution, and `.browser-debug/`-scoped deletion only.
 
 Optional acceptance checks against local application servers may run only when those servers are listening. Those checks should use target manifests or fixtures and should not introduce product-specific branches into the runtime.
 
@@ -100,7 +106,7 @@ Optional acceptance checks against local application servers may run only when t
 - Browser smoke tests cover `quality_signals` in single-URL and target review output.
 - Browser smoke tests cover image alt text findings, low contrast findings, visible overlap findings, local release readiness, and disabled model-review boundaries.
 - Markdown report smoke coverage verifies that the Quality Signals section is present.
-- Architecture tests continue to block target-specific runtime branches, existing-profile reuse, storage-state persistence, HTTP/socket listeners, arbitrary shell execution, unapproved upload paths, and destructive cleanup commands.
+- Architecture tests continue to block target-specific runtime branches, existing-profile reuse, storage-state persistence, HTTP/socket listeners, arbitrary shell execution, unapproved upload paths, and cleanup outside the configured artifact root.
 
 ## Phase 10 Dogfood Route Checks
 
@@ -132,7 +138,7 @@ Optional acceptance checks against local application servers may run only when t
 - No-browser tests cover schema registry/file property parity for review and target manifest schemas.
 - No-browser tests cover target manifest `sourceData`, `localContentUxAdvisory`, and page `expectations.dataBindings` normalization.
 - No-browser tests cover pure content UX advisory source-to-screen matching and verify source values are not copied into advisory JSON.
-- Architecture tests verify the advisory module has no Playwright import, filesystem import, target-specific literals, external control channel, arbitrary shell execution, upload path, or destructive cleanup path.
+- Architecture tests verify the advisory module has no Playwright import, filesystem import, target-specific literals, external control channel, arbitrary shell execution, upload path, or cleanup path.
 - Browser smoke tests cover manifest opt-in advisory output, `quality_signals.content_ux`, bounded Markdown report output, and unchanged review findings, `metrics.finding_count`, the existing `action_plan`, and `quality_signals.release_readiness`.
 - These checks use local fixture pages and do not depend on a specific application, framework, localhost port, route name, or UI label.
 
@@ -175,6 +181,14 @@ Optional acceptance checks against local application servers may run only when t
 - No-browser tests cover MCP `browser_debug_resource_status` wiring and local API exports.
 - Architecture tests verify the resource status module has no Playwright import, no child process use, no external listener, no profile reuse, no storage persistence, no file deletion path, and explicit host-mutation false boundaries.
 - `resource status` output is advisory preflight data only; it does not change review findings, `metrics.finding_count`, existing `action_plan`, or `quality_signals.release_readiness`.
+
+## Phase 21-24 Resource Safety Checks
+
+- No-browser tests cover `review --resource-guard fail-critical` stopping before browser launch when resource status is critical.
+- No-browser tests cover `resource artifacts plan`, `resource artifacts cleanup --dry-run`, and `resource artifacts cleanup --execute` with local receipts.
+- No-browser tests cover MCP `browser_debug_resource_artifacts_plan` while preserving the no-cleanup-tool MCP boundary.
+- Architecture tests verify resource guard and resource artifacts helpers avoid Playwright imports, shell execution, external listeners, profile reuse, host cache/swap mutation, external upload, privileged helpers, arbitrary process control, and cleanup outside the configured artifact root.
+- Resource guard output is additive and does not change review findings, `metrics.finding_count`, existing `action_plan`, or `quality_signals.release_readiness`.
 
 ## Release Readiness Checks
 

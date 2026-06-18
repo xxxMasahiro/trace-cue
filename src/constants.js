@@ -14,7 +14,7 @@ export const SCHEMA_VERSION_POLICY = Object.freeze({
 export const ARTIFACT_RETENTION_POLICY = Object.freeze({
   mode: 'manual',
   automatic_cleanup: false,
-  cleanup_command: null,
+  cleanup_command: 'browser-debug resource artifacts cleanup --execute',
   default_root: DEFAULT_ARTIFACT_ROOT
 });
 
@@ -26,6 +26,8 @@ export const PLANNED_COMMANDS = Object.freeze([
   'daemon status',
   'daemon stop',
   'resource status',
+  'resource artifacts plan',
+  'resource artifacts cleanup',
   'target init',
   'target validate',
   'session start',

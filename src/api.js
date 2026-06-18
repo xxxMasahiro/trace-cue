@@ -1,5 +1,7 @@
 export { executeCli, runCli } from './cli.js';
 export { runObserve } from './observe.js';
+export { buildArtifactCleanupPlan, runResourceArtifactsCleanup, runResourceArtifactsPlan } from './resource-artifacts.js';
+export { createResourceGuard, normalizeResourceGuardMode, resourceGuardSummary } from './resource-guard.js';
 export { collectResourceStatus, parseMeminfoText, parsePressureText, runResourceStatus } from './resource-status.js';
 export { runReview } from './review.js';
 export { runSupervisor } from './supervisor.js';

@@ -25,6 +25,7 @@ import {
   normalizeContentUxAdvisoryConfig,
   normalizeContentUserQuestions
 } from './content-ux-advisory.js';
+import { createResourceGuard, normalizeResourceGuardMode, resourceGuardSummary } from './resource-guard.js';
 
 const DEFAULT_VIEWPORT = Object.freeze({ name: 'laptop', width: 1280, height: 720 });
 const VIEWPORTS = Object.freeze({
@@ -50,6 +51,7 @@ export async function runSingleUrlReview(options = {}, context = {}) {
   const now = materializeNow(context.now);
   const id = context.createId?.('review', now) ?? createArtifactId(now, 'review');
   const viewport = parseViewport(options.viewport);
+  const warnings = [];
   let timeout;
   try {
     timeout = normalizeTimeout(options.timeout);
@@ -66,6 +68,36 @@ export async function runSingleUrlReview(options = {}, context = {}) {
     return failure(urlError);
   }
 
+  let resourceGuard;
+  try {
+    resourceGuard = createResourceGuard(options, context, now);
+    const preflight = await resourceGuard.check('preflight', {
+      mode: 'single_url',
+      url: redactUrl(options.url),
+      viewport: viewport.name,
+      screenshot: Boolean(options.screenshot || options.mock),
+      trace: Boolean(options.trace)
+    });
+    appendWarnings(warnings, resourceGuard.summary().warnings);
+    if (resourceGuard.shouldStop(preflight)) {
+      return resourceGuardFailure(resourceGuard, {
+        code: 'RESOURCE_GUARD_CRITICAL',
+        message: 'Resource guard stopped the review before browser launch because local memory or swap pressure is critical.',
+        details: {
+          stage: preflight.stage,
+          recommended_action: preflight.recommended_action,
+          browser_launched: false
+        }
+      }, warnings);
+    }
+  } catch (error) {
+    return failure({
+      code: 'INVALID_RESOURCE_GUARD',
+      message: error.message,
+      details: { resource_guard: options['resource-guard'] }
+    }, { warnings });
+  }
+
   let root;
   try {
     root = await ensureArtifactRoot(cwd, artifactRootInput);
@@ -77,7 +109,6 @@ export async function runSingleUrlReview(options = {}, context = {}) {
     });
   }
 
-  const warnings = [];
   const artifacts = [];
   let browser;
   let browserContext;
@@ -218,6 +249,7 @@ export async function runSingleUrlReview(options = {}, context = {}) {
       action_plan: actionPlan,
       review_advisory: reviewAdvisory,
       quality_signals: qualitySignals,
+      resource_guard: resourceGuard.summary(),
       environment: {
         browser: {
           engine: 'chromium',
@@ -287,6 +319,9 @@ export async function runSingleUrlReview(options = {}, context = {}) {
       artifacts
     };
   } catch (error) {
+    if (resourceGuard) {
+      appendWarnings(warnings, resourceGuard.summary().warnings);
+    }
     return failure({
       code: classifyReviewError(error),
       message: truncateText(error.message, 1000),
@@ -334,6 +369,17 @@ export async function runTargetReview(options = {}, context = {}) {
   const findings = [];
   const artifacts = [];
   const warnings = [];
+  let resourceGuardMode;
+  try {
+    resourceGuardMode = normalizeResourceGuardMode(options['resource-guard']);
+  } catch (error) {
+    return failure({
+      code: 'INVALID_RESOURCE_GUARD',
+      message: error.message,
+      details: { resource_guard: options['resource-guard'] }
+    });
+  }
+  const resourceGuardChecks = [];
   const queue = [];
   const routeReviews = [];
   const routeBudget = target.budgets.maxRoutes;
@@ -349,11 +395,13 @@ export async function runTargetReview(options = {}, context = {}) {
   }
 
   let processedRoutes = 0;
-  while (queue.length > 0 && processedRoutes < routeBudget) {
+  let resourceGuardStopped = false;
+  while (queue.length > 0 && processedRoutes < routeBudget && !resourceGuardStopped) {
     const route = queue.shift();
     processedRoutes += 1;
     const viewports = viewportsForRoute(route, target.viewportMatrix);
-    for (const viewport of viewports) {
+    for (let viewportIndex = 0; viewportIndex < viewports.length; viewportIndex += 1) {
+      const viewport = viewports[viewportIndex];
       const childId = `${id}-r${processedRoutes}-${viewport.name}`;
       const result = await runSingleUrlReview({
         ...options,
@@ -372,8 +420,16 @@ export async function runTargetReview(options = {}, context = {}) {
       });
       artifacts.push(...result.artifacts);
       warnings.push(...result.warnings);
+      collectResourceGuardChecks(resourceGuardChecks, result.data?.resource_guard);
       if (result.status !== 'ok') {
         failed.push({ ...route, viewport, errors: result.errors });
+        if (isResourceGuardCriticalResult(result)) {
+          resourceGuardStopped = true;
+          for (const skippedViewport of viewports.slice(viewportIndex + 1)) {
+            skipped.push({ ...route, viewport: skippedViewport, reason: 'resource_guard_critical' });
+          }
+          break;
+        }
         continue;
       }
       visited.push({ ...route, viewport, review_id: result.data.review.id });
@@ -410,9 +466,9 @@ export async function runTargetReview(options = {}, context = {}) {
   }
   while (queue.length > 0) {
     const route = queue.shift();
-    skipped.push({ ...route, reason: 'route_budget_exceeded' });
+    skipped.push({ ...route, reason: resourceGuardStopped ? 'resource_guard_critical' : 'route_budget_exceeded' });
     if (route.manifest_page) {
-      pageChecks.push(skippedPageCheck(route.manifest_page, route, 'route_budget_exceeded'));
+      pageChecks.push(skippedPageCheck(route.manifest_page, route, resourceGuardStopped ? 'resource_guard_critical' : 'route_budget_exceeded'));
     }
   }
 
@@ -498,6 +554,12 @@ export async function runTargetReview(options = {}, context = {}) {
       content_ux_rubric_evaluation: localContentUxAdvisory.rubric_evaluation
     } : {}),
     quality_signals: qualitySignals,
+    resource_guard: resourceGuardSummary({
+      mode: resourceGuardMode,
+      checks: resourceGuardChecks,
+      warnings: warnings.filter((warning) => String(warning.code ?? '').startsWith('RESOURCE_GUARD')),
+      enabled: resourceGuardMode !== 'off'
+    }),
     environment: {
       artifact_root: artifactRootInput,
       viewports: target.viewportMatrix
@@ -3224,6 +3286,41 @@ function clampNumber(value, min, max, fallback) {
     return fallback;
   }
   return Math.max(min, Math.min(max, Math.trunc(number)));
+}
+
+function appendWarnings(target, warnings) {
+  const seen = new Set(target.map((warning) => `${warning.code}:${JSON.stringify(warning.details ?? {})}`));
+  for (const warning of warnings) {
+    const key = `${warning.code}:${JSON.stringify(warning.details ?? {})}`;
+    if (!seen.has(key)) {
+      target.push(warning);
+      seen.add(key);
+    }
+  }
+}
+
+function resourceGuardFailure(resourceGuard, error, warnings) {
+  return {
+    status: 'error',
+    data: {
+      resource_guard: resourceGuard.summary()
+    },
+    warnings,
+    errors: [{ ...error, details: redact(error.details ?? {}) }],
+    artifacts: []
+  };
+}
+
+function collectResourceGuardChecks(target, resourceGuard) {
+  if (!resourceGuard?.checks?.length) {
+    return;
+  }
+  target.push(...resourceGuard.checks);
+}
+
+function isResourceGuardCriticalResult(result) {
+  return result.errors?.some((error) => error.code === 'RESOURCE_GUARD_CRITICAL') === true
+    || result.data?.resource_guard?.status === 'critical';
 }
 
 function failure(error, { warnings = [], artifacts = [] } = {}) {

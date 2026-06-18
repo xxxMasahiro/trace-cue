@@ -3,12 +3,17 @@ const VALUE_OPTIONS = new Set([
   'actions',
   'artifact-root',
   'daemon',
+  'idle-timeout',
   'input',
   'mask',
   'max-routes',
+  'max-bytes',
+  'max-lifetime',
   'mock',
   'name',
+  'older-than',
   'region',
+  'resource-guard',
   'session',
   'target',
   'threshold',
@@ -19,6 +24,8 @@ const VALUE_OPTIONS = new Set([
 
 const BOOLEAN_OPTIONS = new Set([
   'devtools',
+  'dry-run',
+  'execute',
   'headed',
   'report',
   'screenshot',
@@ -282,17 +289,60 @@ function parseResource(args, globals) {
     return parseError('resource', globals.json, {
       code: 'MISSING_SUBCOMMAND',
       message: 'resource requires a subcommand.',
-      details: { subcommands: ['status'] }
+      details: { subcommands: ['status', 'artifacts'] }
     });
   }
   if (subcommand === 'status') {
     return parseNoArgCommand('resource status', args.slice(1), globals);
   }
+  if (subcommand === 'artifacts') {
+    return parseResourceArtifacts(args.slice(1), globals);
+  }
   return parseError('resource', globals.json, {
     code: 'UNKNOWN_SUBCOMMAND',
     message: `Unknown resource subcommand: ${subcommand}`,
-    details: { subcommands: ['status'] }
+    details: { subcommands: ['status', 'artifacts'] }
   });
+}
+
+function parseResourceArtifacts(args, globals) {
+  if (globals.help) {
+    return { ok: true, command: 'help', json: globals.json, options: { topic: 'resource artifacts' } };
+  }
+  const subcommand = args[0];
+  if (!subcommand) {
+    return parseError('resource artifacts', globals.json, {
+      code: 'MISSING_SUBCOMMAND',
+      message: 'resource artifacts requires a subcommand.',
+      details: { subcommands: ['plan', 'cleanup'] }
+    });
+  }
+  if (subcommand !== 'plan' && subcommand !== 'cleanup') {
+    return parseError('resource artifacts', globals.json, {
+      code: 'UNKNOWN_SUBCOMMAND',
+      message: `Unknown resource artifacts subcommand: ${subcommand}`,
+      details: { subcommands: ['plan', 'cleanup'] }
+    });
+  }
+  const parsed = parseOptions(`resource artifacts ${subcommand}`, args.slice(1), globals.json);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (parsed.positionals.length > 0) {
+    return parseError(`resource artifacts ${subcommand}`, globals.json, {
+      code: 'UNEXPECTED_ARGUMENT',
+      message: `resource artifacts ${subcommand} does not accept positional arguments.`,
+      details: { argument: parsed.positionals[0] }
+    });
+  }
+  if (subcommand === 'cleanup' && parsed.options['dry-run'] && parsed.options.execute) {
+    return parseError('resource artifacts cleanup', globals.json, {
+      code: 'CONFLICTING_OPTIONS',
+      message: 'resource artifacts cleanup accepts either --dry-run or --execute, not both.',
+      details: { options: ['dry-run', 'execute'] }
+    });
+  }
+  return { ok: true, command: `resource artifacts ${subcommand}`, json: globals.json, options: parsed.options };
 }
 
 function parseSpec(args, globals) {
@@ -652,6 +702,9 @@ function plannedCommands() {
     'daemon start',
     'daemon status',
     'daemon stop',
+    'resource status',
+    'resource artifacts plan',
+    'resource artifacts cleanup',
     'target init',
     'target validate',
     'session start',

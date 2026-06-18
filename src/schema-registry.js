@@ -123,6 +123,7 @@ const schemas = Object.freeze({
       content_ux_review_brief: { type: 'object' },
       content_ux_rubric_evaluation: { type: 'object' },
       quality_signals: { type: 'object' },
+      resource_guard: { type: 'object' },
       evidence_summary: { type: 'object' },
       artifact_index: { type: 'object' },
       environment: { type: 'object' },

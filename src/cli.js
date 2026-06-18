@@ -4,6 +4,7 @@ import { runDoctor } from './doctor.js';
 import { createEnvelope, createErrorEnvelope, stringifyEnvelope } from './envelope.js';
 import { runObserve } from './observe.js';
 import { parseCliArgs } from './parser.js';
+import { runResourceArtifactsCleanup, runResourceArtifactsPlan } from './resource-artifacts.js';
 import { runResourceStatus } from './resource-status.js';
 import { runReview } from './review.js';
 import { schemaListResult, schemaResult } from './schema-registry.js';
@@ -108,6 +109,14 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'resource status') {
       return runtimeResult(parsed.command, await (context.resourceStatusRunner ?? runResourceStatus)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'resource artifacts plan') {
+      return runtimeResult(parsed.command, await (context.resourceArtifactsPlanRunner ?? runResourceArtifactsPlan)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'resource artifacts cleanup') {
+      return runtimeResult(parsed.command, await (context.resourceArtifactsCleanupRunner ?? runResourceArtifactsCleanup)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'target init') {
@@ -299,6 +308,8 @@ function usageText(topic) {
       'Options:',
       '  --url <url>              Absolute http, https, or file URL to inspect.',
       `  --artifact-root <path>   Local artifact root. Default: ${DEFAULT_ARTIFACT_ROOT}`,
+      '  --idle-timeout <dur>     Stop the daemon after local inactivity. Example: 15m.',
+      '  --max-lifetime <dur>     Stop the daemon after a fixed lifetime. Example: 2h.',
       '  --headed                 Keep the background browser visible.',
       '  --devtools               Keep the background browser visible with DevTools.'
     ].join('\n');
@@ -315,8 +326,24 @@ function usageText(topic) {
   if (topic === 'resource' || topic === 'resource status') {
     return [
       `Usage: ${CLI_NAME} resource status [--json]`,
+      `       ${CLI_NAME} resource artifacts plan [--max-bytes <bytes>] [--json]`,
+      `       ${CLI_NAME} resource artifacts cleanup [--dry-run|--execute] [--max-bytes <bytes>] [--json]`,
       '',
-      'Reports local memory, swap, cgroup, pressure, and process memory signals without launching a browser or mutating the host.'
+      'Reports local memory and local artifact pressure without launching a browser or mutating the host.'
+    ].join('\n');
+  }
+
+  if (topic === 'resource artifacts' || topic === 'resource artifacts plan' || topic === 'resource artifacts cleanup') {
+    return [
+      `Usage: ${CLI_NAME} resource artifacts plan [--max-bytes <bytes>] [--older-than <dur>] [--json]`,
+      `       ${CLI_NAME} resource artifacts cleanup [--dry-run|--execute] [--max-bytes <bytes>] [--older-than <dur>] [--json]`,
+      '',
+      'Options:',
+      `  --artifact-root <path>   Local artifact root. Default: ${DEFAULT_ARTIFACT_ROOT}`,
+      '  --max-bytes <bytes>      Target retained artifact size. Default: 1gib.',
+      '  --older-than <dur>       Select regular artifact files older than the duration.',
+      '  --dry-run                Show cleanup candidates without deleting files.',
+      '  --execute                Delete selected regular files under the artifact root and write a receipt.'
     ].join('\n');
   }
 
@@ -331,6 +358,8 @@ function usageText(topic) {
       '  --viewport <name|WxH>    Viewport profile or explicit size. Default: laptop.',
       `  --artifact-root <path>   Local artifact root. Default: ${DEFAULT_ARTIFACT_ROOT}`,
       '  --screenshot             Capture screenshot evidence.',
+      '  --trace                  Record resource pressure warning when trace capture is requested.',
+      '  --resource-guard <mode>  advisory, fail-critical, or off. Default: advisory.',
       '  --mock <path>            Compare against a workspace-relative PNG mock.',
       '  --threshold <number>     Mock byte-difference threshold. Default: 0.01.',
       '  --report                 Write a Markdown review report.'
@@ -389,6 +418,8 @@ function usageText(topic) {
     '  daemon status --daemon <id> --json',
     '  daemon stop --daemon <id> --json',
     '  resource status --json',
+    '  resource artifacts plan --json',
+    '  resource artifacts cleanup --dry-run --json',
     '  target init --url <url> --json',
     '  target validate --target <manifest> --json',
     '  session start [--url <url>]',

@@ -21,6 +21,9 @@ The Phase 2a design baseline uses Node.js 20 or newer, ESM modules, and a local 
 - Manifest suggestion layer: turns target review coverage and rendered-state evidence into local suggestions for better reruns without editing runtime code for specific applications.
 - Content UX advisory layer: evaluates manifest opt-in source-to-screen content contracts, selector-scoped state contracts, required user-question evidence, review briefs, and rubric criteria from existing target review evidence without creating review findings or changing release gates.
 - Resource status layer: reads local process-visible memory, swap, cgroup, and pressure signals before browser-heavy work without launching Playwright, writing artifacts, mutating host cache, changing swap, deleting files, or controlling arbitrary processes.
+- Resource guard layer: reuses resource status for review preflight and route/viewport rechecks, emits additive `resource_guard` data, warns on heavy screenshot/trace artifacts, and can stop browser work only when explicitly set to `fail-critical`.
+- Resource artifact layer: inventories `.browser-debug/` artifact usage, proposes cleanup candidates, and performs explicit artifact-root-only cleanup with receipts when `--execute` is provided.
+- Daemon lifecycle layer: adds optional local idle-timeout and max-lifetime shutdown guards to detached ephemeral browser workers.
 - Schema layer: defines stable JSON contracts for envelopes, artifacts, target manifests, findings, reports, and adapter I/O.
 - Adapter layer: keeps CLI as the source of truth and later exposes the same core through an MCP stdio adapter.
 
@@ -38,6 +41,9 @@ browser-debug daemon start --url <url> --json
 browser-debug daemon status --daemon <id> --json
 browser-debug daemon stop --daemon <id> --json
 browser-debug resource status --json
+browser-debug resource artifacts plan --json
+browser-debug resource artifacts cleanup --dry-run --json
+browser-debug resource artifacts cleanup --execute --json
 browser-debug target init --url <url> --json
 browser-debug target validate --target <manifest> --json
 browser-debug act --session <id> --action <json>
@@ -74,18 +80,22 @@ Implemented behavior:
 - `observe --devtools` launches visible browser mode with DevTools enabled when the host environment supports it.
 - `supervise --url <url> --actions <json-array>` launches one ephemeral Chromium context, applies ordered local actions in that same process-scoped context, writes observation metadata for the initial page and each action, writes local supervision metadata under `.browser-debug/sessions/`, and closes the context before process exit.
 - `daemon start --url <url>` starts a detached local worker process with one ephemeral Chromium context, writes daemon metadata under `.browser-debug/daemons/`, writes an initial observation, and returns a daemon ID and process ID. `daemon status --daemon <id>` reads metadata and checks whether the process is alive. `daemon stop --daemon <id>` sends a local process signal and records the stopped state.
+- `daemon start --idle-timeout <duration>` and `daemon start --max-lifetime <duration>` add optional lifecycle metadata and local worker timers that stop the daemon after inactivity or a fixed lifetime without external control channels.
 - `resource status --json` reports local memory, swap, cgroup, pressure, and current process memory signals. It returns `data.resource_status`, recommendations, local safety boundaries, and warnings for elevated pressure without launching a browser, writing artifacts, mutating system cache, configuring swap, deleting files, uploading evidence, or reusing profiles.
+- `resource artifacts plan --json` reports `.browser-debug/` usage, largest files, top-level directory totals, cleanup candidates, and local boundaries without deleting files.
+- `resource artifacts cleanup --dry-run --json` reports the same cleanup proposal without deleting files. `resource artifacts cleanup --execute --json` deletes only selected regular files under the configured artifact root, preserves receipts, and writes an `artifact_cleanup_receipt` artifact.
 - `session start --url <url>` creates local session metadata and can attach the first observation.
 - `act --session <id> --action <json>` supports simple local actions such as `navigate`, `observe`, `screenshot`, `click`, `fill`, `select`, `press`, `scroll`, and `wait` using an ephemeral page visit. Scroll actions use deterministic page scrolling from the requested deltas.
 - `report --session <id>` writes a Markdown report.
 - `spec export --session <id>` writes a JSON action/spec export.
 - `review --url <url>` runs a single-URL deterministic local review, captures observation and layout evidence, optionally captures screenshots and mock metrics, writes review artifacts, and returns evidence-backed findings.
 - `review --target <manifest>` runs a manifest-driven site review with generic route discovery, explicit expected-route execution, optional page expectation checks, viewport matrix execution, coverage artifacts, local review artifact indexes, and aggregated findings.
+- `review --resource-guard advisory|fail-critical|off` controls additive local resource guard behavior. Advisory is the default. Fail-critical can stop before browser launch or skip remaining target work only when resource status is critical. Resource guard output does not change review findings, `metrics.finding_count`, existing `action_plan`, or `quality_signals.release_readiness`.
 - `target init --url <url>` writes a reusable local target manifest artifact under `.browser-debug/targets/` with same-origin scope, seed route, empty expected route and page lists, viewport matrix, route budget, screenshot defaults, and safe local review boundaries.
 - `target validate --target <manifest>` or `target validate --input -` loads a target manifest through the same normalization contract as target review, returns route/page/content UX counts, manifest-authoring suggestions, review next commands, and explicit local-first boundaries, and does not launch a browser, mutate the manifest, expose sourceData values, upload artifacts, or reuse profiles.
 - Review results include `action_plan`, `review_advisory`, `quality_signals`, `evidence_summary`, and `artifact_index` objects. Target review results also include `manifest_suggestions`, and can include `local_content_ux_advisory`, `content_ux_findings`, `content_ux_action_plan`, `content_ux_readiness`, `content_ux_page_handoff`, `content_ux_manifest_authoring`, `content_ux_review_brief`, and `content_ux_rubric_evaluation` only when the target manifest explicitly enables it. `action_plan` prioritizes review findings, groups developer next actions, and reports a local release gate. Content UX action/readiness/page/authoring/brief/rubric output is separate and advisory-only. `review_advisory` is a local heuristic signal that summarizes browser health, rendered state, layout, accessibility, interaction, mock, and coverage concerns without claiming human or model aesthetic approval. `quality_signals` gives structured developer handoff data for visual hierarchy, rendered state, responsive layout, interaction affordance, accessibility structure, evidence completeness, local release readiness, route coverage, page expectations, optional content UX advisory, and the disabled model-review boundary. `artifact_index` points to a local artifact index JSON that groups evidence classes and rerun guidance.
 - `schema list` and `schema get --name <schema>` expose machine-readable JSON contracts for envelopes, artifacts, findings, target manifests, review results, and MCP tool metadata.
-- `browser-debug-mcp` provides a local stdio MCP adapter with an allowlisted tool surface over the same CLI/core contracts, including target manifest initialization, target manifest validation, local resource status preflight, and target review.
+- `browser-debug-mcp` provides a local stdio MCP adapter with an allowlisted tool surface over the same CLI/core contracts, including target manifest initialization, target manifest validation, local resource status preflight, local artifact usage planning, and target review. It does not expose artifact cleanup execution.
 - `act --input -`, `supervise --input -`, `--action @file`, and `--actions @file` support shell-safe structured input while preserving inline JSON compatibility.
 - `npm test` runs deterministic no-browser tests, including headed/devtools launch-mode regression through an injected Playwright browser type and architecture regressions for generic runtime boundaries, shared page evidence helpers, local daemon boundaries, and local Node CLI packaging. `npm run test:browser` runs Playwright smoke tests for observation, screenshots/traces, click actions, form controls, keyboard input, scroll, wait, reports, spec export, supervised ordered actions, and local daemon start/status/stop.
 - `npm run test:pack` runs `npm pack --dry-run --json` with an ignored local npm cache to verify the package file set without publishing.
@@ -108,6 +118,8 @@ Implemented review components:
 - `reporter`: JSON and Markdown issue reports with artifact references, reproduction steps, prioritized action plans, developer triage summaries, manifest suggestions, local artifact indexes, local heuristic advisory data, and implementation-focused fix candidates.
 - `content-ux-advisory`: pure local helper that reads normalized manifest data and target review summaries, then returns advisory source-to-screen, selector-scoped state, and user-question signals without Playwright, filesystem access, or artifact reads.
 - `resource-status`: pure local preflight helper that reads process-visible memory, swap, cgroup, and pressure state without Playwright, shell execution, host mutation, artifact writes, or external transfer.
+- `resource-guard`: reusable review guard that classifies local resource pressure before browser work and before each target route/viewport review.
+- `resource-artifacts`: local artifact usage and explicit cleanup helper scoped to the configured artifact root with dry-run and receipt behavior.
 - `schema`: machine-readable contracts for envelopes, findings, artifacts, target manifests, reports, and MCP tool I/O.
 - `cli-adapter`: the primary command surface for review workflows.
 - `mcp-adapter`: a thin local stdio adapter over the same core through `browser-debug-mcp`.
@@ -118,7 +130,7 @@ The review MVP supports:
 browser-debug review --url <url> --viewport <name-or-size> --screenshot --json
 ```
 
-It should produce the standard JSON envelope with `data.review`, `data.findings`, `data.metrics`, `data.action_plan`, `data.review_advisory`, `data.quality_signals`, and `data.environment`, plus artifact descriptors. Findings should include:
+It should produce the standard JSON envelope with `data.review`, `data.findings`, `data.metrics`, `data.action_plan`, `data.review_advisory`, `data.quality_signals`, additive `data.resource_guard`, and `data.environment`, plus artifact descriptors. Findings should include:
 
 ```text
 id
@@ -269,7 +281,13 @@ Each review writes a local `review_artifact_index` JSON artifact under `.browser
 
 The command status reflects successful inspection, while `data.resource_status.status` can be `ok`, `watch`, or `critical`. `watch` and `critical` produce warnings and recommendations such as reducing route or viewport budgets, splitting manifests, validating target manifests before browser review, capturing screenshots and traces selectively, and stopping unneeded Browser Debug CLI daemons. These are planning signals, not deterministic product gates.
 
-The command must not launch a browser, write artifacts, upload evidence, reuse browser profiles, mutate system cache, change swap configuration, delete files, execute shell commands, run privileged helpers, or control arbitrary processes. Any future host cleanup, swap configuration, artifact deletion, or privileged memory operation requires a separate approved design, security documentation, tests, and operator approval.
+The command must not launch a browser, write artifacts, upload evidence, reuse browser profiles, mutate system cache, change swap configuration, delete files, execute shell commands, run privileged helpers, or control arbitrary processes. Any future host cleanup, swap configuration, cleanup outside the configured artifact root, or privileged memory operation requires a separate approved design, security documentation, tests, and operator approval.
+
+## Local Resource Guard and Artifact Safety Contract
+
+`review --resource-guard advisory|fail-critical|off` reuses the local resource status contract. It records preflight checks before single-URL review and route/viewport checks during target review. Advisory is the default and emits warnings only. Fail-critical can stop browser launch or skip remaining target work only when the resource status is critical. The output is additive under `data.resource_guard` and must not change review findings, `metrics.finding_count`, existing `action_plan`, or `quality_signals.release_readiness`.
+
+`resource artifacts plan` inventories the configured artifact root and returns summary totals, top-level directory totals, largest files, cleanup candidates, and no-delete boundaries. `resource artifacts cleanup --dry-run` returns the same proposal without deleting files. `resource artifacts cleanup --execute` deletes selected regular files only under the configured artifact root and writes a local receipt under `receipts/`. It does not follow symlinks, mutate system cache, configure swap, execute shell commands, use privileged helpers, upload evidence, reuse profiles, control arbitrary processes, or expose cleanup execution through MCP.
 
 ## MCP Adapter Contract
 
@@ -277,8 +295,8 @@ MCP compatibility is implemented as an adapter, not as the product owner layer. 
 
 - Uses stdio/local process communication only.
 - Calls the same CLI/core contracts used by local commands.
-- Exposes a narrow allowlist: `browser_debug_doctor`, `browser_debug_observe`, `browser_debug_review`, `browser_debug_target_init`, `browser_debug_target_validate`, `browser_debug_resource_status`, `browser_debug_review_target`, `browser_debug_schema_list`, and `browser_debug_schema_get`.
-- Avoids HTTP listeners, socket listeners, remote control channels, arbitrary shell execution, cleanup commands, profile reuse, storage-state persistence, OAuth, external upload, and credential handling.
+- Exposes a narrow allowlist: `browser_debug_doctor`, `browser_debug_observe`, `browser_debug_review`, `browser_debug_target_init`, `browser_debug_target_validate`, `browser_debug_resource_status`, `browser_debug_resource_artifacts_plan`, `browser_debug_review_target`, `browser_debug_schema_list`, and `browser_debug_schema_get`.
+- Avoids HTTP listeners, socket listeners, remote control channels, arbitrary shell execution, cleanup execution commands, profile reuse, storage-state persistence, OAuth, external upload, and credential handling.
 - Returns the same envelope families as the CLI.
 
 Any network MCP server mode, external model integration, external upload, existing-profile reuse, or credential-bearing workflow requires separate approval, security documentation, and tests.
@@ -321,15 +339,19 @@ The initial artifact layout is:
   traces/
   reports/
   specs/
+  daemons/
   targets/
   reviews/
   layouts/
   diffs/
+  coverage/
+  review-artifacts/
+  receipts/
 ```
 
 Committed files must not include `.browser-debug/`, screenshots, traces, cookies, storage state, existing browser profiles, credentials, or secret-like values.
 
-The default artifact retention policy is manual retention. Browser Debug CLI does not automatically delete generated artifacts, does not upload artifacts, and does not provide a destructive cleanup command in the local MVP. Developers may remove the ignored `.browser-debug/` root themselves after reviewing whether screenshots, traces, reports, or session metadata are still needed. Any future built-in cleanup command must be explicit, local-only, non-secret-bearing, tested, and separately approved because cleanup is destructive.
+The default artifact retention policy is manual retention. Browser Debug CLI does not automatically delete generated artifacts and does not upload artifacts. Developers may remove the ignored `.browser-debug/` root themselves after reviewing whether screenshots, traces, reports, or session metadata are still needed, or run explicit artifact-root-scoped cleanup with `resource artifacts cleanup --execute`. Built-in cleanup must remain explicit, local-only, receipt-backed, tested, and limited to selected regular files under the configured artifact root.
 
 ## JSON Output Contract
 

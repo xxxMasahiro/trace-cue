@@ -10,6 +10,7 @@ import {
   readJsonArtifact,
   writeJsonArtifact
 } from './artifacts.js';
+import { parseDurationMs } from './durations.js';
 import { normalizeTimeout, validateUrl } from './observe.js';
 import { redact, truncateText } from './redaction.js';
 
@@ -27,6 +28,27 @@ export async function startDaemon(options = {}, context = {}) {
     timeout = normalizeTimeout(options.timeout);
   } catch (error) {
     return daemonError('INVALID_TIMEOUT', error.message, { timeout: options.timeout });
+  }
+  let idleTimeoutMs;
+  let maxLifetimeMs;
+  try {
+    idleTimeoutMs = parseDurationMs(options['idle-timeout'], {
+      name: 'idle-timeout',
+      defaultMs: null,
+      minMs: 1000,
+      maxMs: 7 * 24 * 60 * 60 * 1000
+    });
+    maxLifetimeMs = parseDurationMs(options['max-lifetime'], {
+      name: 'max-lifetime',
+      defaultMs: null,
+      minMs: 1000,
+      maxMs: 7 * 24 * 60 * 60 * 1000
+    });
+  } catch (error) {
+    return daemonError('INVALID_DAEMON_LIFECYCLE', error.message, {
+      idle_timeout: options['idle-timeout'],
+      max_lifetime: options['max-lifetime']
+    });
   }
 
   const urlError = validateUrl(options.url);
@@ -55,6 +77,12 @@ export async function startDaemon(options = {}, context = {}) {
     '--timeout',
     String(timeout)
   ];
+  if (idleTimeoutMs !== null) {
+    args.push('--idle-timeout', String(idleTimeoutMs));
+  }
+  if (maxLifetimeMs !== null) {
+    args.push('--max-lifetime', String(maxLifetimeMs));
+  }
   if (options.headed) {
     args.push('--headed');
   }
@@ -71,7 +99,9 @@ export async function startDaemon(options = {}, context = {}) {
     now,
     pid: null,
     headless: !options.headed && !options.devtools,
-    devtools: Boolean(options.devtools)
+    devtools: Boolean(options.devtools),
+    idleTimeoutMs,
+    maxLifetimeMs
   });
   await writeDaemonMetadata(root, metadata);
 
@@ -225,7 +255,7 @@ async function loadDaemonSafely(options, context) {
   }
 }
 
-function daemonMetadata({ id, status, cwd, artifactRoot, url, now, pid, headless, devtools }) {
+function daemonMetadata({ id, status, cwd, artifactRoot, url, now, pid, headless, devtools, idleTimeoutMs, maxLifetimeMs }) {
   return redact({
     schema_version: SCHEMA_VERSION,
     id,
@@ -250,8 +280,20 @@ function daemonMetadata({ id, status, cwd, artifactRoot, url, now, pid, headless
       type: 'local_process_signal',
       external_channel: false
     },
+    lifecycle: daemonLifecycle({ now, idleTimeoutMs, maxLifetimeMs }),
     observations: []
   });
+}
+
+function daemonLifecycle({ now, idleTimeoutMs, maxLifetimeMs }) {
+  return {
+    idle_timeout_ms: idleTimeoutMs,
+    max_lifetime_ms: maxLifetimeMs,
+    started_at: now.toISOString(),
+    last_activity_at: now.toISOString(),
+    expires_at: maxLifetimeMs === null ? null : new Date(now.getTime() + maxLifetimeMs).toISOString(),
+    stop_reason: null
+  };
 }
 
 async function waitForDaemonState(root, id, states, timeoutMs) {

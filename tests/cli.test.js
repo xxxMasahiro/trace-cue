@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { executeCli } from '../src/cli.js';
@@ -8,7 +8,7 @@ import { handleMcpRequest } from '../src/mcp.js';
 import { runObserve } from '../src/observe.js';
 import { parseCliArgs } from '../src/parser.js';
 import { redact, redactUrl } from '../src/redaction.js';
-import { classifyActionCandidate, normalizeTargetManifest } from '../src/review.js';
+import { classifyActionCandidate, normalizeTargetManifest, runReview } from '../src/review.js';
 import { buildLocalContentUxAdvisory } from '../src/content-ux-advisory.js';
 import { createTargetManifest } from '../src/target.js';
 
@@ -73,6 +73,81 @@ test('resource status reports local memory boundaries without launching a browse
   assert.equal(body.data.boundary.shell_used, false);
   assert.deepEqual(body.artifacts, []);
   assert.deepEqual(body.errors, []);
+});
+
+test('resource artifacts plan and explicit cleanup stay scoped to the artifact root', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-artifacts-'));
+  await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
+  await mkdir(path.join(cwd, '.browser-debug', 'screenshots'), { recursive: true });
+  await writeFile(path.join(cwd, '.browser-debug', 'screenshots', 'large-a.png'), '1234567890', 'utf8');
+  await writeFile(path.join(cwd, '.browser-debug', 'screenshots', 'large-b.png'), '1234567890', 'utf8');
+
+  const parsed = parseCliArgs(['resource', 'artifacts', 'plan', '--max-bytes', '5', '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'resource artifacts plan');
+
+  const planned = await executeCli(['resource', 'artifacts', 'plan', '--max-bytes', '5', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(planned.exitCode, 0);
+  const plannedBody = JSON.parse(planned.stdout);
+  assert.equal(plannedBody.command, 'resource artifacts plan');
+  assert.equal(plannedBody.data.boundary.browser_launched, false);
+  assert.equal(plannedBody.data.boundary.cache_deleted, false);
+  assert.equal(plannedBody.data.cleanup_proposal.candidate_count >= 1, true);
+
+  const dryRun = await executeCli(['resource', 'artifacts', 'cleanup', '--max-bytes', '5', '--dry-run', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(dryRun.exitCode, 0);
+  const dryRunBody = JSON.parse(dryRun.stdout);
+  assert.equal(dryRunBody.data.cleanup.dry_run, true);
+  assert.equal(dryRunBody.data.boundary.cache_deleted, false);
+  await access(path.join(cwd, '.browser-debug', 'screenshots', 'large-a.png'));
+
+  const cleaned = await executeCli(['resource', 'artifacts', 'cleanup', '--max-bytes', '5', '--execute', '--json'], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'artifact-cleanup-fixed'
+  });
+  assert.equal(cleaned.exitCode, 0);
+  const cleanedBody = JSON.parse(cleaned.stdout);
+  assert.equal(cleanedBody.data.cleanup.execute, true);
+  assert.equal(cleanedBody.data.cleanup.files_deleted >= 1, true);
+  assert.equal(cleanedBody.data.boundary.cache_deleted, true);
+  assert.equal(cleanedBody.artifacts[0].type, 'artifact_cleanup_receipt');
+  const receipt = JSON.parse(
+    await readFile(path.join(cwd, '.browser-debug', 'receipts', 'artifact-cleanup-fixed.json'), 'utf8')
+  );
+  assert.equal(receipt.execute, true);
+  assert.equal(receipt.boundary.deletion_scope, 'artifact_root_only');
+});
+
+test('review resource guard can stop critical browser work before launch', async () => {
+  let launches = 0;
+  const result = await runReview({
+    url: 'https://example.test/',
+    'resource-guard': 'fail-critical'
+  }, {
+    now: fixedNow,
+    collectResourceStatus: async () => criticalResourceStatus(),
+    browserType: {
+      async launch() {
+        launches += 1;
+        throw new Error('browser must not launch');
+      }
+    }
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.errors[0].code, 'RESOURCE_GUARD_CRITICAL');
+  assert.equal(result.data.resource_guard.status, 'critical');
+  assert.equal(result.data.resource_guard.stop_on_critical, true);
+  assert.equal(result.data.resource_guard.boundary.browser_launched_by_guard, false);
+  assert.equal(result.warnings.some((warning) => warning.code === 'RESOURCE_GUARD_CRITICAL'), true);
+  assert.equal(launches, 0);
 });
 
 test('missing command produces a deterministic JSON error', async () => {
@@ -168,12 +243,13 @@ test('supervise parses actions and returns a deterministic JSON envelope', async
 });
 
 test('review parses URL targets and returns a deterministic JSON envelope', async () => {
-  const parsed = parseCliArgs(['review', '--url', 'https://example.test/', '--viewport', 'mobile', '--screenshot', '--json']);
+  const parsed = parseCliArgs(['review', '--url', 'https://example.test/', '--viewport', 'mobile', '--screenshot', '--resource-guard', 'fail-critical', '--json']);
   assert.equal(parsed.ok, true);
   assert.equal(parsed.command, 'review');
   assert.equal(parsed.options.url, 'https://example.test/');
   assert.equal(parsed.options.viewport, 'mobile');
   assert.equal(parsed.options.screenshot, true);
+  assert.equal(parsed.options['resource-guard'], 'fail-critical');
 
   const result = await executeCli(
     ['review', '--url', 'https://example.test/', '--json'],
@@ -808,6 +884,7 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_target_init'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_target_validate'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_resource_status'), true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_resource_artifacts_plan'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_review_target'), true);
   assert.equal(listed.result.tools.some((tool) => /shell|cleanup/i.test(tool.name)), false);
 
@@ -836,6 +913,19 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(resource.result.structuredContent.status, 'ok');
   assert.equal(resource.result.structuredContent.data.boundary.browser_launched, false);
   assert.equal(resource.result.structuredContent.data.boundary.system_cache_mutated, false);
+
+  const artifactCwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-mcp-artifacts-'));
+  const artifactPlan = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 6,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_resource_artifacts_plan',
+      arguments: { maxBytes: '1mib' }
+    }
+  }, { cwd: artifactCwd, now: fixedNow });
+  assert.equal(artifactPlan.result.structuredContent.command, 'resource artifacts plan');
+  assert.equal(artifactPlan.result.structuredContent.data.boundary.cache_deleted, false);
 
   const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-mcp-target-'));
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
@@ -868,7 +958,7 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
 
 test('daemon commands parse and return deterministic JSON envelopes', async () => {
   const started = await executeCli(
-    ['daemon', 'start', '--url', 'https://example.test/', '--json'],
+    ['daemon', 'start', '--url', 'https://example.test/', '--idle-timeout', '30s', '--max-lifetime', '2h', '--json'],
     {
       now: fixedNow,
       daemonStartRunner: async (options) => ({
@@ -882,6 +972,10 @@ test('daemon commands parse and return deterministic JSON envelopes', async () =
               ephemeral_context: true,
               existing_profile_reused: false,
               persistent_storage: false
+            },
+            lifecycle: {
+              idle_timeout_ms: options['idle-timeout'],
+              max_lifetime_ms: options['max-lifetime']
             }
           }
         },
@@ -896,6 +990,7 @@ test('daemon commands parse and return deterministic JSON envelopes', async () =
   assert.equal(startedBody.command, 'daemon start');
   assert.equal(startedBody.data.daemon.id, 'daemon-fixed');
   assert.equal(startedBody.data.daemon.browser.existing_profile_reused, false);
+  assert.equal(startedBody.data.daemon.lifecycle.idle_timeout_ms, '30s');
 
   const statusParsed = parseCliArgs(['daemon', 'status', '--daemon', 'daemon-fixed', '--json']);
   assert.equal(statusParsed.ok, true);
@@ -1032,6 +1127,38 @@ function createFakeBrowserType(launches) {
     async launch(options) {
       launches.push(options);
       return createFakeBrowser();
+    }
+  };
+}
+
+function criticalResourceStatus() {
+  return {
+    status: 'critical',
+    source: 'fixture',
+    recommended_action: 'pause_browser_work_and_replan',
+    memory: {
+      available_bytes: 16 * 1024 * 1024,
+      available_ratio: 0.01,
+      swap_used_bytes: 900 * 1024 * 1024,
+      swap_used_ratio: 0.95
+    },
+    cgroup: {
+      available: true,
+      current_bytes: 950 * 1024 * 1024,
+      limit_bytes: 1024 * 1024 * 1024,
+      usage_ratio: 0.95
+    },
+    pressure: {
+      available: false,
+      some: null,
+      full: null
+    },
+    boundary: {
+      local_only: true,
+      browser_launched: false,
+      system_cache_mutated: false,
+      swap_mutated: false,
+      cache_deleted: false
     }
   };
 }

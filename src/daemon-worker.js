@@ -2,6 +2,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { SCHEMA_VERSION } from './constants.js';
 import { ensureArtifactRoot, artifactRelPath, writeJsonArtifact } from './artifacts.js';
+import { parseDurationMs } from './durations.js';
 import { normalizeTimeout } from './observe.js';
 import {
   attachPageObservers,
@@ -21,6 +22,7 @@ let browser;
 let browserContext;
 let page;
 let stopping = false;
+let latestMetadata = null;
 
 try {
   await main();
@@ -94,23 +96,28 @@ async function main() {
     current_url: page.url(),
     title: observation.data.title,
     warnings,
+    lifecycle: {
+      last_activity_at: new Date().toISOString()
+    },
     observations: [{
       id: observation.id,
       path: observation.artifact.path
     }]
   });
 
+  scheduleLifecycleStops();
+
   process.once('SIGTERM', () => {
-    void stop('stopped');
+    void stop('stopped', 'signal');
   });
   process.once('SIGINT', () => {
-    void stop('stopped');
+    void stop('stopped', 'signal');
   });
 
   await new Promise(() => {});
 }
 
-async function stop(status) {
+async function stop(status, reason = 'unknown') {
   if (stopping) {
     return;
   }
@@ -122,9 +129,25 @@ async function stop(status) {
     process_status: 'not_alive',
     pid: process.pid,
     updated_at: new Date().toISOString(),
-    current_url: page?.url?.() ?? options.url
+    current_url: page?.url?.() ?? options.url,
+    lifecycle: {
+      stop_reason: reason
+    }
   }).catch(() => {});
   process.exit(0);
+}
+
+function scheduleLifecycleStops() {
+  if (options.idleTimeout !== null) {
+    setTimeout(() => {
+      void stop('stopped', 'idle_timeout');
+    }, options.idleTimeout);
+  }
+  if (options.maxLifetime !== null) {
+    setTimeout(() => {
+      void stop('stopped', 'max_lifetime');
+    }, options.maxLifetime);
+  }
 }
 
 async function writeError(error) {
@@ -152,11 +175,11 @@ async function writeMetadata(partial) {
     status: partial.status,
     process_status: partial.process_status,
     pid: partial.pid,
-    created_at: partial.created_at ?? startedAt.toISOString(),
+    created_at: partial.created_at ?? latestMetadata?.created_at ?? startedAt.toISOString(),
     updated_at: partial.updated_at ?? now.toISOString(),
     artifact_root: options.artifactRoot,
     current_url: redactUrl(partial.current_url ?? options.url),
-    title: partial.title ?? null,
+    title: partial.title ?? latestMetadata?.title ?? null,
     mode: 'background_ephemeral_context',
     browser: {
       engine: 'chromium',
@@ -170,12 +193,26 @@ async function writeMetadata(partial) {
       type: 'local_process_signal',
       external_channel: false
     },
-    warnings: partial.warnings ?? [],
-    observations: partial.observations ?? [],
+    lifecycle: daemonLifecycle(partial),
+    warnings: partial.warnings ?? latestMetadata?.warnings ?? [],
+    observations: partial.observations ?? latestMetadata?.observations ?? [],
     error: partial.error ?? null,
     artifact: artifactRelPath(options.artifactRoot, 'daemons', `${options.id}.json`)
   });
+  latestMetadata = metadata;
   await writeJsonArtifact(root, ['daemons', `${options.id}.json`], metadata);
+}
+
+function daemonLifecycle(partial) {
+  const previous = latestMetadata?.lifecycle ?? {};
+  return {
+    idle_timeout_ms: options.idleTimeout,
+    max_lifetime_ms: options.maxLifetime,
+    started_at: previous.started_at ?? startedAt.toISOString(),
+    last_activity_at: partial.lifecycle?.last_activity_at ?? previous.last_activity_at ?? startedAt.toISOString(),
+    expires_at: options.maxLifetime === null ? null : new Date(startedAt.getTime() + options.maxLifetime).toISOString(),
+    stop_reason: partial.lifecycle?.stop_reason ?? previous.stop_reason ?? null
+  };
 }
 
 function parseWorkerArgs(argv) {
@@ -210,5 +247,17 @@ function parseWorkerArgs(argv) {
     }
   }
   parsed.id = path.basename(parsed.id);
+  parsed.idleTimeout = parseDurationMs(parsed.idleTimeout, {
+    name: 'idle-timeout',
+    defaultMs: null,
+    minMs: 1000,
+    maxMs: 7 * 24 * 60 * 60 * 1000
+  });
+  parsed.maxLifetime = parseDurationMs(parsed.maxLifetime, {
+    name: 'max-lifetime',
+    defaultMs: null,
+    minMs: 1000,
+    maxMs: 7 * 24 * 60 * 60 * 1000
+  });
   return parsed;
 }
