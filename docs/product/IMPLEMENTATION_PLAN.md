@@ -891,6 +891,56 @@ Phase 33 expands the local stdio MCP adapter with read-only local advisory/statu
 - Verification must include `npm test`, `npm run test:pack`, `npm run test:pack-install`, `npm run release:check`, `./tools/product-gate`, and `git diff --check`.
 - Browser smoke tests are required only if browser runtime behavior changes; Phase 33 changes MCP adapter mapping and no-browser tests only.
 
+### Phase 34: Safe HTTP MCP Foundation and Integration Docs
+
+Phase 34 adds a minimal HTTP MCP transport as a safe foundation for MCP clients that cannot use stdio. It preserves CLI-first behavior, packaged `.mcp.json` compatibility, existing stdio profile behavior, and every existing no-browser/browser/review/package contract. It does not add HTTP `full` or `admin`, socket transport, remote listeners, shell tools, cleanup execution, provider/API execution, `agent execution run`, package generation, ingest, report writing, workflow creation, execution planning, daemon/session control, external upload, profile reuse, credential storage, or marketplace mutation through MCP.
+
+#### Phase 34a: Transport Policy Module
+
+- Completed: added a reusable MCP transport policy that resolves `stdio` and `http` configs separately.
+- Completed: kept `stdio` profile resolution compatible with existing `BROWSER_DEBUG_MCP_PROFILE`, no-profile `full`, and packaged `.mcp.json` behavior.
+- Completed: limited HTTP transport to the `safe` profile, loopback bind hosts, an absolute endpoint path, bounded request bodies, and a bearer token read from `BROWSER_DEBUG_MCP_HTTP_TOKEN` by default.
+- Completed: exposed token-free public metadata for CLI/API inspection.
+
+#### Phase 34b: HTTP Transport Module
+
+- Completed: added an isolated `node:http` transport module that calls the existing `handleMcpRequest` core.
+- Completed: validated Host and Origin headers as loopback, rejected non-POST methods, rejected non-JSON bodies, rejected JSON-RPC batches in this phase, and returned JSON responses with `MCP-Protocol-Version: 2025-06-18`.
+- Completed: kept listener creation out of MCP core, profiles, review, resource, agent, and agent execution modules.
+- Completed: added process-safe listener shutdown support for embedding contexts that provide an abort signal.
+
+#### Phase 34c: CLI, Bin, and Package API
+
+- Completed: extended `browser-debug-mcp` with `--transport`, `--host`, `--port`, `--endpoint`, `--token-env`, and `--body-limit` options.
+- Completed: extended `browser-debug mcp serve --json` metadata so stdio and HTTP launch settings can be inspected without starting the long-running server.
+- Completed: exported HTTP transport and policy helpers from the package API for reusable embedding and tests.
+- Completed: kept the packaged `.mcp.json` unchanged as stdio compatibility configuration.
+
+#### Phase 34d: Docs, Plugin Skill, and Consumer Integration
+
+- Completed: documented CLI, MCP stdio, HTTP MCP safe, and Codex plugin usage as connection modes over the same core, not different feature tiers.
+- Completed: documented that consumer repositories should keep target manifests, reduced summaries, and consumer-specific policy in the consumer repository while raw `.browser-debug/` artifacts stay local and ignored.
+- Completed: documented a future rename/identity migration path without renaming package, repository, CLI, MCP server, plugin, license, or publication state in this phase.
+
+#### Phase 34e: Verification
+
+- Completed: added no-browser coverage for HTTP metadata, safe-profile-only startup, loopback host enforcement, token enforcement, Origin enforcement, method rejection, body-size limits, and safe tool listing.
+- Completed: added packed-install coverage for HTTP transport files and package API exports.
+- Completed: updated architecture and security checks so only the approved HTTP transport module may create the local listener.
+
+#### Phase 34 Verification Plan
+
+- Verification must include `node --check` on changed runtime and test files, `npm test`, `npm run test:pack`, `npm run test:pack-install`, `npm run release:check`, `./tools/product-gate`, and `git diff --check`.
+- Browser smoke tests are not required for Phase 34 unless browser runtime behavior changes; Phase 34 changes MCP transport, no-browser tests, package smoke checks, and documentation only.
+
+### Phase 35: Future Admin MCP Local Write/Execute Review
+
+Phase 35 is not implemented in Phase 34. If approved later, it should decide whether any write-producing local advisory operations belong in `admin` MCP. Candidate operations must be reviewed one at a time with explicit receipts, local scope, tests, and failure-safe behavior. Cleanup execution, provider/API execution, `agent execution run`, shell tools, daemon/session control, and credential-bearing flows remain excluded until separately approved.
+
+### Phase 36: Future Transport Expansion Review
+
+Phase 36 is not implemented in Phase 34. If approved later, it should decide whether socket transport, remote HTTP binding, streaming HTTP behavior, or broader MCP profiles over HTTP are necessary. Any such expansion requires a security design, authentication and origin policy, operational documentation, and tests before implementation.
+
 ## Verification Method
 
 - `./tools/product-gate`
@@ -934,7 +984,8 @@ Phase 33 expands the local stdio MCP adapter with read-only local advisory/statu
 - Phase 31 checks cover MCP profile registry behavior, safe/full/admin launch selection, out-of-profile tool rejection, compatibility `MCP_TOOLS` exports, packed-install API profile helpers, and MCP-only workspace-confined `@file` handling without changing normal CLI behavior.
 - Phase 32 checks cover product identity metadata, package/plugin/MCP name alignment, identity-derived package dry-run paths, derived packed-install tarball paths, package API identity exports, and unchanged current names before any approved rename.
 - Phase 33 checks cover MCP read-only agent surfaces, request status/detail, workflow status/index, execution status/list, safe-profile availability, packed-install exposure, and continued non-exposure of execution run, cleanup execution, provider/API execution, shell tools, HTTP/socket transport, and write-producing advisory tools.
-- Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, external listener creation, arbitrary shell execution, unapproved upload paths, host cache/swap mutation, and cleanup outside the configured artifact root.
+- Phase 34 checks cover HTTP MCP safe transport policy, loopback bind enforcement, bearer-token enforcement, Host and Origin validation, body-size limits, safe-profile-only tools, CLI metadata, packed-install API exports, and architecture/security isolation for the approved listener module.
+- Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, unapproved external listener creation, arbitrary shell execution, unapproved upload paths, host cache/swap mutation, and cleanup outside the configured artifact root.
 
 ## Recovery Path
 
@@ -958,5 +1009,5 @@ Phase 33 expands the local stdio MCP adapter with read-only local advisory/statu
 - Ask before model/API review integration outside the Phase 29 agent execution adapter boundary or any evidence transfer beyond the bounded package/prompt disclosure policy.
 - Ask before extending the generic API-provider boundary beyond Phase 29 dry-run planning, explicit `--execute`, env-only credentials, local receipts, bounded disclosure, advisory-only normalization, and no raw provider response storage.
 - Ask before adding provider SDKs, storing provider credentials, or exposing agent/API execution through MCP.
-- Ask before HTTP/socket MCP server mode, remote control channels, persistent session storage, existing-browser-profile reuse, or authentication automation.
+- Ask before socket MCP server mode, remote HTTP MCP listeners, HTTP `full` or `admin` MCP profiles, remote control channels, persistent session storage, existing-browser-profile reuse, or authentication automation.
 - Ask before public API stabilization, npm package file-set changes intended for publication, package naming, license changes, or packed release promotion.

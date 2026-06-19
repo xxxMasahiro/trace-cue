@@ -41,6 +41,8 @@ async function main() {
     await assertFile(packageDir, normalizePackagePath(PRODUCT_IDENTITY.cliBinPath));
     await assertFile(packageDir, normalizePackagePath(PRODUCT_IDENTITY.mcpBinPath));
     await assertFile(packageDir, 'src/api.js');
+    await assertFile(packageDir, 'src/mcp-http-transport.js');
+    await assertFile(packageDir, 'src/mcp-transport-policy.js');
     await assertFile(packageDir, 'src/product-identity.js');
     await assertFile(packageDir, 'src/mcp-profiles.js');
     await assertFile(packageDir, 'schemas/agent-execution.schema.json');
@@ -50,6 +52,7 @@ async function main() {
     await assertFile(packageDir, '.codex-plugin/plugin.json');
     await assertFile(packageDir, '.mcp.json');
     await assertFile(packageDir, PRODUCT_IDENTITY.pluginSkillPath);
+    await assertFile(packageDir, 'docs/workflow/IDENTITY_MIGRATION.md');
     await assertFile(packageDir, 'docs/workflow/SECURITY.md');
     await assert.rejects(access(path.join(packageDir, 'docs/product/IMPLEMENTATION_PLAN.md')));
 
@@ -64,6 +67,7 @@ async function main() {
     const browserDebugMcpBin = await readFile(path.join(packageDir, normalizePackagePath(PRODUCT_IDENTITY.mcpBinPath)), 'utf8');
     assert.match(browserDebugBin, /from '\.\.\/src\/cli\.js'/);
     assert.match(browserDebugMcpBin, /from '\.\.\/src\/mcp\.js'/);
+    assert.match(browserDebugMcpBin, /from '\.\.\/src\/mcp-http-transport\.js'/);
     assert.equal(((await stat(path.join(packageDir, normalizePackagePath(PRODUCT_IDENTITY.cliBinPath)))).mode & 0o111) !== 0, true);
     assert.equal(((await stat(path.join(packageDir, normalizePackagePath(PRODUCT_IDENTITY.mcpBinPath)))).mode & 0o111) !== 0, true);
 
@@ -81,9 +85,13 @@ async function main() {
     assert.equal(typeof api.packageTarballFilename, 'function');
     assert.equal(typeof api.getMcpTools, 'function');
     assert.equal(typeof api.resolveMcpProfile, 'function');
+    assert.equal(typeof api.startMcpHttpServer, 'function');
+    assert.equal(typeof api.resolveMcpTransportConfig, 'function');
     assert.equal(api.schemaNames().includes('agent_execution'), true);
     assert.equal(api.MCP_TOOLS.some((tool) => tool.name === 'browser_debug_review_target'), true);
     assert.equal(api.DEFAULT_MCP_PROFILE, 'full');
+    assert.equal(api.MCP_HTTP_DEFAULT_PROFILE, 'safe');
+    assert.equal(api.resolveMcpTransportConfig({ transport: 'http', profile: 'full' }, {}, { requireToken: false }).ok, false);
     assert.equal(api.resolveMcpProfile('safe').ok, true);
     assert.equal(api.getMcpTools('safe').some((tool) => tool.name === 'browser_debug_review'), false);
     assert.equal(api.getMcpTools('full').some((tool) => tool.name === 'browser_debug_review'), true);

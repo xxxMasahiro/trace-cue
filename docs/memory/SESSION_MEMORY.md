@@ -234,3 +234,13 @@ commit: 1af1fcd Document agent execution integration plan
 - Preserved the `safe` profile as no-browser, no-delete, no-provider, no-shell, and no-external-listener.
 - Added no-browser MCP coverage for tool listing, safe-profile availability, status/detail calls, packed-install exposure, and continued non-exposure of execution run, cleanup execution, provider/API execution, shell tools, HTTP/socket transport, and write-producing advisory tools.
 - Updated product manifests, implementation plan, specification, security/release/verification docs, README, changelog, task tracker, handoff, and AGENTS current phase for the MCP read-only agent status boundary.
+
+## 2026-06-20 Phase 34 Safe HTTP MCP Foundation
+
+- Completed Phase 34 safe HTTP MCP foundation without exposing HTTP `full` or `admin`, socket transport, remote HTTP listeners, cleanup execution, provider/API execution, `agent execution run`, shell tools, external upload, profile reuse, credential storage, or gate mutation through MCP.
+- Added `src/mcp-transport-policy.js` and `src/mcp-http-transport.js` for explicit `browser-debug-mcp --transport http --profile safe` operation.
+- HTTP MCP transport is loopback-only, bearer-token gated by `BROWSER_DEBUG_MCP_HTTP_TOKEN` by default, Host/Origin validated, request-size bounded, safe-profile-only, and isolated from review, resource, agent, provider, cleanup, daemon, and browser runtime modules.
+- Extended `browser-debug mcp serve --json`, `browser-debug-mcp` help, parser options, and package API exports for transport metadata and embedding.
+- Added no-browser tests for HTTP metadata, safe-profile-only startup, loopback enforcement, token enforcement, Origin rejection, method rejection, body-size limits, and safe tool listing.
+- Added packed-install and architecture/security coverage for HTTP transport files and package API exports.
+- Synchronized README integration modes, product requirements/specification/implementation plan, security, verification, release, changelog, manifests, task tracker, handoff, AGENTS current phase, plugin skill, and identity migration runbook.

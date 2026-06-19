@@ -2,7 +2,7 @@
 
 ## Verification Scope
 
-Current verification checks repository structure, document synchronization, security defaults, review/MCP/plugin local boundaries, MCP profile gating, MCP-only file-input confinement, MCP read-only agent status tools, product identity alignment, CI configuration, design-system placeholders, product operation mode, local MVP runtime behavior, review platform behavior, dogfood target workflow behavior, no-browser target manifest validation, no-browser resource status preflight, review resource guard behavior, daemon lifecycle guards, artifact usage planning, explicit artifact-root cleanup receipts, local agent advisory package/request-status/request-detail/workflow/ingest/report behavior, local agent execution plan/run/status/list behavior, deterministic fake provider execution, configured local runner callback execution, env-only generic API adapter behavior, expected-route execution, route-budget coverage accounting, page expectation coverage, rendered-state findings, manifest suggestions, opt-in content UX advisory behavior, selector-scoped advisory contracts, required user-question advisory checks, dedicated content UX handoff output, page-level content UX handoff, manifest-authoring suggestions, review brief/rubric evaluation, local artifact indexes, local review-quality signals, browser smoke coverage, Phase 29 agent execution boundaries, Phase 30 packed install release-hardening boundaries, Phase 31 MCP profile boundaries, Phase 32 rename-readiness boundaries, and Phase 33 MCP read-only agent status boundaries.
+Current verification checks repository structure, document synchronization, security defaults, review/MCP/plugin local boundaries, MCP profile gating, MCP-only file-input confinement, MCP read-only agent status tools, MCP safe HTTP transport boundaries, product identity alignment, CI configuration, design-system placeholders, product operation mode, local MVP runtime behavior, review platform behavior, dogfood target workflow behavior, no-browser target manifest validation, no-browser resource status preflight, review resource guard behavior, daemon lifecycle guards, artifact usage planning, explicit artifact-root cleanup receipts, local agent advisory package/request-status/request-detail/workflow/ingest/report behavior, local agent execution plan/run/status/list behavior, deterministic fake provider execution, configured local runner callback execution, env-only generic API adapter behavior, expected-route execution, route-budget coverage accounting, page expectation coverage, rendered-state findings, manifest suggestions, opt-in content UX advisory behavior, selector-scoped advisory contracts, required user-question advisory checks, dedicated content UX handoff output, page-level content UX handoff, manifest-authoring suggestions, review brief/rubric evaluation, local artifact indexes, local review-quality signals, browser smoke coverage, Phase 29 agent execution boundaries, Phase 30 packed install release-hardening boundaries, Phase 31 MCP profile boundaries, Phase 32 rename-readiness boundaries, Phase 33 MCP read-only agent status boundaries, and Phase 34 safe HTTP MCP foundation boundaries.
 
 ## Product-Local Commands
 
@@ -35,7 +35,7 @@ From `/home/masahiro/projects/ai-driven-development-lesson`:
 
 ## Current Runtime Checks
 
-The current implementation includes command parser tests, deterministic JSON error tests, `doctor` tests for environment, schema-versioning, and artifact-retention metadata, resource status tests for deterministic memory/cgroup/pressure fixtures and read-only boundaries, resource guard fail-critical tests, artifact plan/dry-run/execute receipt tests, agent surfaces/package/request-status/request-detail/workflow/ingest/report tests, agent execution plan/run/status/list tests for fake provider, configured local runner, missing API configuration, injected API transport, normalized advisory results, and dashboard status/list aggregation, review parser tests, schema command tests, schema registry/file parity tests, target init tests, target validate tests, target manifest tests, opt-in content UX advisory tests, selector-scoped binding tests, required user-question tests, dedicated content UX handoff tests, page handoff tests, manifest-authoring suggestion tests, review brief/rubric tests, action risk classification tests, MCP adapter allowlist tests, shell-safe action input tests, headed/devtools launch-mode tests, session/report/spec tests, daemon parser and lifecycle option tests, redaction tests, architecture regressions for generic runtime boundaries, shared evidence helpers, local daemon boundaries, resource status read-only boundaries, resource guard and artifact cleanup boundaries, agent advisory local handoff/workflow boundaries, agent execution provider adapter boundaries, content UX advisory purity, review/MCP/plugin security boundaries, local package dry-run verification, packed install smoke verification, and Playwright smoke tests for local file observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, reports, spec export, process-scoped supervision, daemon start/status/stop, deterministic review findings, action plans, local review advisory output, quality signals, rendered-state findings, mock metrics, target manifest review, target reports, manifest suggestions, content UX advisory opt-in invariance, selector-scoped content UX advisory, content UX Developer Handoff reports, content UX page handoff output, manifest-authoring output, content UX review brief/rubric output, route discovery, explicit expected-route execution, route-budget skip coverage, viewport execution, and coverage artifacts. Manual local checks can use:
+The current implementation includes command parser tests, deterministic JSON error tests, `doctor` tests for environment, schema-versioning, and artifact-retention metadata, resource status tests for deterministic memory/cgroup/pressure fixtures and read-only boundaries, resource guard fail-critical tests, artifact plan/dry-run/execute receipt tests, agent surfaces/package/request-status/request-detail/workflow/ingest/report tests, agent execution plan/run/status/list tests for fake provider, configured local runner, missing API configuration, injected API transport, normalized advisory results, and dashboard status/list aggregation, review parser tests, schema command tests, schema registry/file parity tests, target init tests, target validate tests, target manifest tests, opt-in content UX advisory tests, selector-scoped binding tests, required user-question tests, dedicated content UX handoff tests, page handoff tests, manifest-authoring suggestion tests, review brief/rubric tests, action risk classification tests, MCP adapter allowlist tests, MCP safe HTTP transport tests, shell-safe action input tests, headed/devtools launch-mode tests, session/report/spec tests, daemon parser and lifecycle option tests, redaction tests, architecture regressions for generic runtime boundaries, shared evidence helpers, local daemon boundaries, resource status read-only boundaries, resource guard and artifact cleanup boundaries, agent advisory local handoff/workflow boundaries, agent execution provider adapter boundaries, content UX advisory purity, review/MCP/plugin security boundaries, local package dry-run verification, packed install smoke verification, and Playwright smoke tests for local file observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, reports, spec export, process-scoped supervision, daemon start/status/stop, deterministic review findings, action plans, local review advisory output, quality signals, rendered-state findings, mock metrics, target manifest review, target reports, manifest suggestions, content UX advisory opt-in invariance, selector-scoped content UX advisory, content UX Developer Handoff reports, content UX page handoff output, manifest-authoring output, content UX review brief/rubric output, route discovery, explicit expected-route execution, route-budget skip coverage, viewport execution, and coverage artifacts. Manual local checks can use:
 
 Phase 11 adds no-browser coverage for optional manifest page normalization and browser smoke coverage for page expectation checks, page-specific mock metrics, review artifact indexes, `coverage.pages`, and `quality_signals.page_expectations`.
 
@@ -73,6 +73,8 @@ Phase 32 adds no-browser coverage for product identity metadata, package/plugin/
 
 Phase 33 adds no-browser coverage for MCP read-only agent advisory/status tools, safe-profile availability, package/request/workflow/execution status calls, packed-install tool exposure, and continued non-exposure of execution run, cleanup execution, provider/API execution, shell, HTTP/socket transport, and artifact-writing advisory tools. Browser smoke tests are not required for Phase 33 unless browser runtime behavior changes.
 
+Phase 34 adds no-browser coverage for explicit HTTP MCP metadata, safe-profile-only startup, loopback bind enforcement, bearer-token enforcement, Host and Origin validation, method rejection, request body-size limits, safe tool listing over HTTP, package API transport exports, and architecture/security isolation of the approved listener module. Browser smoke tests are not required for Phase 34 unless browser runtime behavior changes.
+
 ```bash
 node ./bin/browser-debug.js resource status --json
 node ./bin/browser-debug.js resource artifacts plan --json
@@ -104,7 +106,9 @@ node ./bin/browser-debug.js review --target .browser-debug/targets/<id>.json --r
 node ./bin/browser-debug.js schema list --json
 node ./bin/browser-debug.js schema get --name review --json
 node ./bin/browser-debug.js mcp serve --profile safe --json
+node ./bin/browser-debug.js mcp serve --transport http --profile safe --host 127.0.0.1 --port 0 --json
 node ./bin/browser-debug-mcp.js --profile safe
+BROWSER_DEBUG_MCP_HTTP_TOKEN=<token> node ./bin/browser-debug-mcp.js --transport http --profile safe --host 127.0.0.1 --port 0
 ```
 
 Optional acceptance checks against local application control surfaces should run only when their local URLs are provided and listening.
@@ -116,10 +120,10 @@ Phase 7 review-platform implementation includes focused checks before any releas
 - Parser tests for `review --url`, `review --target`, `schema list`, `schema get`, and MCP adapter entrypoints.
 - Schema tests for envelopes, artifacts, findings, target manifests, review results, and MCP tool metadata.
 - No-browser unit tests for target manifest validation, viewport matrix expansion, action risk classification, redaction, shell-safe action input, and MCP tool output shape.
-- Architecture tests that prevent application-specific runtime literals, persistent browser profile reuse, storage-state persistence, HTTP/socket listeners, arbitrary shell execution, unapproved upload paths, and cleanup outside the configured artifact root.
+- Architecture tests that prevent application-specific runtime literals, persistent browser profile reuse, storage-state persistence, unapproved listeners, arbitrary shell execution, unapproved upload paths, and cleanup outside the configured artifact root.
 - Browser smoke fixture tests for console errors, empty renders, horizontal overflow, clipped text, missing accessible names, nonblank screenshots, route coverage, viewport coverage, and local artifact placement.
 - Mock comparison tests for local metrics and dimension mismatch `inconclusive` behavior.
-- MCP adapter tests for stdio/local-only behavior, tool allowlist, schema-compatible responses, no shell tool, no cleanup execution tool, and no external upload by default.
+- MCP adapter tests for stdio compatibility behavior, safe HTTP loopback/token boundaries, tool allowlists, schema-compatible responses, no shell tool, no cleanup execution tool, and no external upload by default.
 - Resource status tests for no-browser local memory, swap, cgroup, pressure, process memory, warning/recommendation output, MCP wiring, and read-only host boundaries.
 - Resource guard and artifact safety tests for advisory/fail-critical review output, daemon lifecycle metadata, artifact usage planning, explicit cleanup receipts, no MCP cleanup execution, and `.browser-debug/`-scoped deletion only.
 
@@ -129,7 +133,7 @@ Optional acceptance checks against local application servers may run only when t
 
 - No-browser tests cover `target init`, generated manifest shape, MCP target tools, and plugin metadata boundaries.
 - Browser smoke tests cover enriched findings, `action_plan`, `review_advisory`, target review reports, and route/viewport coverage artifacts.
-- Architecture tests verify `.codex-plugin/plugin.json`, `.mcp.json`, and `skills/browser-debug-review/SKILL.md` stay local and stdio-based.
+- Architecture tests verify `.codex-plugin/plugin.json`, `.mcp.json`, and `skills/browser-debug-review/SKILL.md` stay local and keep the packaged MCP config stdio-based.
 - Plugin validation should pass with the local plugin validator before publication or marketplace work is proposed.
 - Package dry-run verification must include plugin metadata, the plugin-facing skill, and the reusable target manifest template without publishing.
 
@@ -138,7 +142,7 @@ Optional acceptance checks against local application servers may run only when t
 - Browser smoke tests cover `quality_signals` in single-URL and target review output.
 - Browser smoke tests cover image alt text findings, low contrast findings, visible overlap findings, local release readiness, and disabled model-review boundaries.
 - Markdown report smoke coverage verifies that the Quality Signals section is present.
-- Architecture tests continue to block target-specific runtime branches, existing-profile reuse, storage-state persistence, HTTP/socket listeners, arbitrary shell execution, unapproved upload paths, and cleanup outside the configured artifact root.
+- Architecture tests continue to block target-specific runtime branches, existing-profile reuse, storage-state persistence, unapproved listeners, arbitrary shell execution, unapproved upload paths, and cleanup outside the configured artifact root.
 
 ## Phase 10 Dogfood Route Checks
 
@@ -247,6 +251,15 @@ Optional acceptance checks against local application servers may run only when t
 - The check verifies packaged `browser-debug` and `browser-debug-mcp` entrypoints, public package API imports, schema files, templates, plugin metadata, plugin skill, and selected workflow security docs.
 - The check runs `doctor`, `schema list`, `target validate`, API import, and MCP `tools/list` from the packed layout.
 - The check is local-only and does not publish, install from registry, change package naming, change license, upload evidence, store credentials, or mutate marketplace state.
+
+## Phase 34 Safe HTTP MCP Checks
+
+- No-browser tests cover `browser-debug mcp serve --transport http --profile safe --json` metadata without starting a listener.
+- No-browser tests start the HTTP transport on a loopback ephemeral port with an injected bearer token and verify `tools/list` exposes only the safe profile.
+- HTTP transport tests reject missing bearer tokens, non-loopback origins, non-POST methods, oversized bodies, non-safe profiles, and non-loopback bind hosts.
+- Architecture tests verify `node:http`, `createServer`, and `listen` stay isolated to `src/mcp-http-transport.js`.
+- Security checks allow only the approved safe HTTP transport module to create a listener and continue to block unapproved listeners elsewhere.
+- Packed install smoke checks verify the HTTP transport files and package API transport exports are present without changing publication, package naming, license, marketplace, or external evidence boundaries.
 
 ## Release Readiness Checks
 

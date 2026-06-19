@@ -27,7 +27,7 @@ The Phase 2a design baseline uses Node.js 20 or newer, ESM modules, and a local 
 - Agent advisory layer: creates bounded local evidence packages from review artifact indexes, generates handoff prompts for local subscription agents, lists and inspects local request status from package/result artifacts, imports untrusted advisory JSON, and renders separate advisory reports without direct API calls, external upload, credential storage, or deterministic gate changes.
 - Agent execution layer: plans and runs subscription-style local agent or API-style provider execution from bounded agent packages through dedicated provider adapters, exposes status/list metadata, and normalizes output as advisory-only results without mutating deterministic review artifacts or existing workflow status semantics.
 - Schema layer: defines stable JSON contracts for envelopes, artifacts, target manifests, findings, reports, and adapter I/O.
-- Adapter layer: keeps CLI as the source of truth and later exposes the same core through an MCP stdio adapter.
+- Adapter layer: keeps CLI as the source of truth and exposes the same core through MCP adapters. Stdio preserves the compatibility profile surface, while explicit HTTP transport is limited to safe-profile loopback requests.
 
 ## Planned CLI Surface
 
@@ -70,6 +70,7 @@ browser-debug review --target <manifest> --json
 browser-debug schema list --json
 browser-debug schema get --name <schema> --json
 browser-debug mcp serve [--profile safe|full|admin]
+browser-debug mcp serve --transport http --profile safe --host 127.0.0.1 --port <port>
 ```
 
 The MVP implementation order is:
@@ -122,7 +123,8 @@ Implemented behavior:
 - Review results include `action_plan`, `review_advisory`, `quality_signals`, `evidence_summary`, and `artifact_index` objects. Target review results also include `manifest_suggestions`, and can include `local_content_ux_advisory`, `content_ux_findings`, `content_ux_action_plan`, `content_ux_readiness`, `content_ux_page_handoff`, `content_ux_manifest_authoring`, `content_ux_review_brief`, and `content_ux_rubric_evaluation` only when the target manifest explicitly enables it. `action_plan` prioritizes review findings, groups developer next actions, and reports a local release gate. Content UX action/readiness/page/authoring/brief/rubric output is separate and advisory-only. `review_advisory` is a local heuristic signal that summarizes browser health, rendered state, layout, accessibility, interaction, mock, and coverage concerns without claiming human or model aesthetic approval. `quality_signals` gives structured developer handoff data for visual hierarchy, rendered state, responsive layout, interaction affordance, accessibility structure, evidence completeness, local release readiness, route coverage, page expectations, optional content UX advisory, and the disabled model-review boundary. `artifact_index` points to a local artifact index JSON that groups evidence classes and rerun guidance.
 - `schema list` and `schema get --name <schema>` expose machine-readable JSON contracts for envelopes, artifacts, findings, target manifests, review results, and MCP tool metadata.
 - `browser-debug-mcp` provides a local stdio MCP adapter with an allowlisted tool surface over the same CLI/core contracts, including target manifest initialization, target manifest validation, local resource status preflight, local artifact usage planning, target review, and read-only local agent advisory/status inspection. It does not expose artifact cleanup execution, write-producing advisory commands, or agent execution run.
-- `browser-debug-mcp --profile safe|full|admin` selects the MCP tool surface at launch. No-profile `browser-debug-mcp` and the packaged `.mcp.json` resolve to `full` for compatibility with the existing adapter. `safe` exposes no-browser/no-delete/no-provider tools only, including local agent surfaces, request status/detail, workflow status/index, and execution status/list. `admin` is explicit and reserved for local-maintenance expansion, but in this phase it does not expose cleanup execution, provider/API execution, agent execution run, daemon/session control, shell, HTTP/socket listeners, external upload, provider credentials, or arbitrary process control.
+- `browser-debug-mcp --profile safe|full|admin` selects the MCP tool surface at launch. No-profile `browser-debug-mcp` and the packaged `.mcp.json` resolve to `full` for compatibility with the existing adapter. `safe` exposes no-browser/no-delete/no-provider tools only, including local agent surfaces, request status/detail, workflow status/index, and execution status/list. `admin` is explicit and reserved for local-maintenance expansion, but in this phase it does not expose cleanup execution, provider/API execution, agent execution run, daemon/session control, shell, socket listeners, HTTP `full` or `admin`, external upload, provider credentials, or arbitrary process control.
+- `browser-debug-mcp --transport http --profile safe --host 127.0.0.1 --port <port>` starts an explicit safe HTTP MCP endpoint. It binds only to loopback hosts, requires a bearer token from `BROWSER_DEBUG_MCP_HTTP_TOKEN` by default, validates loopback Host and Origin headers, limits request bodies, accepts one JSON-RPC object per POST, and uses the same safe-profile allowlist as stdio. It does not expose `full` or `admin` over HTTP.
 - MCP profile selection happens at server launch or trusted adapter context, not per MCP request. `tools/list` and `tools/call` fail closed for invalid profiles or out-of-profile tool names.
 - MCP `@file` structured input is workspace-confined. Absolute paths, parent traversal, symlink escapes, non-regular files, and oversized files are rejected for MCP requests. Normal CLI `@file` behavior is unchanged outside MCP-restricted contexts.
 - Product identity metadata is explicit and reusable. The current package name, CLI bin name, MCP bin name, MCP server name, plugin name, display name, repository URL, and packaged skill path remain unchanged, but tests, package dry-run checks, and packed-install smoke derive expectations from the identity contract so a future approved rename can be implemented predictably.
@@ -152,7 +154,7 @@ Implemented review components:
 - `resource-artifacts`: local artifact usage and explicit cleanup helper scoped to the configured artifact root with dry-run and receipt behavior.
 - `schema`: machine-readable contracts for envelopes, findings, artifacts, target manifests, reports, and MCP tool I/O.
 - `cli-adapter`: the primary command surface for review workflows.
-- `mcp-adapter`: a thin local stdio adapter over the same core through `browser-debug-mcp`.
+- `mcp-adapter`: thin local MCP adapters over the same core through `browser-debug-mcp`; stdio remains the compatibility default, and HTTP is explicit, loopback-only, token-gated, and safe-profile-only.
 
 The review MVP supports:
 
@@ -449,16 +451,31 @@ It does not change review `findings`, `metrics.finding_count`, existing `action_
 
 ## MCP Adapter Contract
 
-MCP compatibility is implemented as an adapter, not as the product owner layer. The initial MCP adapter:
+MCP compatibility is implemented as an adapter, not as the product owner layer. The CLI remains the complete source of truth.
 
-- Uses stdio/local process communication only.
+The stdio MCP adapter:
+
+- Uses local process stdio communication.
+- Preserves compatibility by resolving no-profile `browser-debug-mcp` and packaged `.mcp.json` launches to the `full` profile.
 - Calls the same CLI/core contracts used by local commands.
-- Exposes a narrow allowlist: `browser_debug_doctor`, `browser_debug_observe`, `browser_debug_review`, `browser_debug_target_init`, `browser_debug_target_validate`, `browser_debug_resource_status`, `browser_debug_resource_artifacts_plan`, `browser_debug_review_target`, `browser_debug_schema_list`, and `browser_debug_schema_get`.
-- Avoids HTTP listeners, socket listeners, remote control channels, arbitrary shell execution, cleanup execution commands, profile reuse, storage-state persistence, OAuth, external upload, and credential handling.
-- Does not expose `agent execution run`; execution remains a CLI/API-core boundary unless a later explicit MCP allowlist decision adds read-only plan/status tools.
+- Exposes profile-selected allowlists from the reusable profile registry.
 - Returns the same envelope families as the CLI.
 
-Any network MCP server mode, external model integration, external upload, existing-profile reuse, or credential-bearing workflow requires separate approval, security documentation, and tests.
+The safe HTTP MCP transport:
+
+- Is launched explicitly with `browser-debug-mcp --transport http --profile safe --host 127.0.0.1 --port <port>`.
+- Binds only to loopback hosts and rejects non-loopback bind hosts.
+- Requires a bearer token from `BROWSER_DEBUG_MCP_HTTP_TOKEN` by default. Token values are never returned in public metadata or error responses.
+- Validates Host and Origin headers as loopback when present.
+- Limits request body size and accepts one JSON-RPC object per POST in this phase.
+- Returns `MCP-Protocol-Version: 2025-06-18` with JSON responses.
+- Exposes only the same safe-profile tool surface as stdio.
+
+The `safe` profile is no-browser, no-delete, no-provider, no-shell, and no-external-listener in its tool effects. It includes no-browser discovery, schema, target validation, resource status, artifact planning, and read-only local agent advisory/status inspection. The `full` profile remains a stdio compatibility profile for local observe/review/target workflows. The `admin` profile remains explicit and reserved for future local maintenance but does not currently add write/execute powers.
+
+MCP does not expose artifact cleanup execution, package generation, ingest, report writing, workflow creation, execution planning, `agent execution run`, provider/API execution, daemon/session control, arbitrary shell execution, browser profile reuse, storage-state persistence, OAuth, external upload, credential handling, or gate mutation. HTTP transport does not expose `full` or `admin`.
+
+Any socket MCP transport, remote HTTP listener, HTTP `full` or `admin` profile, MCP cleanup execution, MCP agent/API execution, shell tool, credential-bearing workflow, external model integration, external upload, or existing-profile reuse requires separate approval, security documentation, and tests.
 
 ## Browser Modes
 
@@ -548,7 +565,7 @@ skills/browser-debug-review/SKILL.md
 templates/review-target-manifest.json
 ```
 
-The plugin bundle points to the local stdio MCP adapter and the plugin-facing review skill. It does not register a marketplace entry, publish a package, change the license, add external upload, add OAuth, add credential storage, or start HTTP/socket MCP transports.
+The plugin bundle points to the local stdio MCP adapter and the plugin-facing review skill. It does not register a marketplace entry, publish a package, change the license, add external upload, add OAuth, add credential storage, or change the packaged `.mcp.json` into an HTTP endpoint. The optional HTTP MCP transport is a separate explicit safe-profile launch mode.
 
 ## Runtime Security Contract
 
@@ -608,4 +625,4 @@ The current repository implements local CI configuration, local CI validation, r
 - External model/API calls without explicit opt-in.
 - Product-specific runtime branches for individual applications.
 - Persistent browser profile reuse, storage state, authentication automation, OAuth, webhooks, or credential storage.
-- HTTP/socket MCP server mode or arbitrary shell execution.
+- Socket MCP server mode, remote HTTP MCP listeners, HTTP `full` or `admin` MCP profiles, MCP execution tools, or arbitrary shell execution.

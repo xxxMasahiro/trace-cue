@@ -26,7 +26,9 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'src/resource-status.js',
     'src/review.js',
     'src/mcp.js',
+    'src/mcp-http-transport.js',
     'src/mcp-profiles.js',
+    'src/mcp-transport-policy.js',
     'src/api.js',
     'src/target.js',
     'src/sessions.js',
@@ -84,6 +86,7 @@ test('package keeps a standard local Node CLI surface', async () => {
   assert.equal(pkg.exports['./schemas/*'], './schemas/*.schema.json');
   assert.ok(pkg.files.includes('.codex-plugin/'));
   assert.ok(pkg.files.includes('.mcp.json'));
+  assert.ok(pkg.files.includes('docs/workflow/IDENTITY_MIGRATION.md'));
   assert.ok(pkg.files.includes('templates/'));
   assert.ok(pkg.files.includes(PRODUCT_IDENTITY.pluginSkillPath));
   assert.ok(pkg.scripts.test);
@@ -249,6 +252,32 @@ test('plugin metadata keeps local stdio MCP boundaries', async () => {
   assert.doesNotMatch(JSON.stringify(mcp), /http|https|WebSocket|listen|curl|wget|token|password/i);
   assert.match(skill, /browser-debug review --target/);
   assert.match(skill, /upload artifacts|external upload/i);
+});
+
+test('HTTP MCP listener stays isolated to the approved transport module', async () => {
+  const httpTransport = await readText('src/mcp-http-transport.js');
+  const policy = await readText('src/mcp-transport-policy.js');
+  const core = await readText('src/mcp.js');
+  const profiles = await readText('src/mcp-profiles.js');
+  const review = await readText('src/review.js');
+  const resourceStatus = await readText('src/resource-status.js');
+  const agent = await readText('src/agent.js');
+  const agentExecution = await readText('src/agent-execution.js');
+
+  assert.match(httpTransport, /from 'node:http'/);
+  assert.match(httpTransport, /createServer/);
+  assert.match(httpTransport, /\.listen\(/);
+  assert.match(httpTransport, /handleMcpRequest/);
+  assert.match(policy, /MCP_HTTP_DEFAULT_PROFILE = 'safe'/);
+  assert.match(policy, /HTTP MCP transport is limited to the safe profile/);
+  assert.match(policy, /HTTP_MCP_TOKEN_REQUIRED/);
+  assert.match(policy, /HTTP_MCP_HOST_REJECTED/);
+
+  for (const content of [policy, core, profiles, review, resourceStatus, agent, agentExecution]) {
+    assert.doesNotMatch(content, /from 'node:http'|createServer|\.listen\(/);
+  }
+  assert.doesNotMatch(httpTransport, /WebSocket|EventSource|node:child_process|execFile|spawn\(|provider_execute|cleanup_execute|agent_execution_run/);
+  assert.doesNotMatch(core, /from '\.\/mcp-http-transport\.js'/);
 });
 
 test('product identity keeps rename-sensitive surfaces aligned', async () => {
