@@ -705,31 +705,31 @@ The layer is additive. It must not change existing `agent_workflow` status meani
 
 #### Phase 29a: Document, Security, and Schema Planning
 
-- Plan: synchronize requirements, specification, implementation plan, security, verification, task tracker, handoff, README, and changelog before runtime work.
-- Plan: define the `agent_execution` schema as a new contract instead of overloading `agent_workflow`.
-- Plan: record the hard boundary fields: `api_call_performed`, `external_evidence_transfer`, `automatic_upload`, `credential_values_recorded`, `credential_storage`, `persistent_credential_storage`, `raw_response_stored`, `existing_review_mutated`, and `gate_effect`.
-- Plan: preserve the existing `agent_workflow` schema as workflow status and dashboard handoff state only.
+- Completed: synchronized requirements, specification, implementation plan, security, verification, task tracker, handoff, README, and changelog for the first runtime slice.
+- Completed: defined the `agent_execution` schema as a new contract instead of overloading `agent_workflow`.
+- Completed: recorded the hard boundary fields: `api_call_performed`, `external_evidence_transfer`, `automatic_upload`, `credential_values_recorded`, `credential_storage`, `persistent_credential_storage`, `raw_response_stored`, `raw_provider_response_stored`, `existing_review_mutated`, `mcp_execution_exposed`, and `gate_effect`.
+- Completed: preserved the existing `agent_workflow` schema as workflow status and dashboard handoff state only.
 
 #### Phase 29b: Parser and Public API Surface
 
-- Plan: add `agent execution plan --package <path> --surface <id> --json` for dry-run execution planning.
-- Plan: add `agent execution run --package <path> --surface <id> --provider <id> --model <id> --execute --json` for explicit execution only after the plan contract exists.
-- Plan: add `agent execution status --execution <path> --json` and `agent execution list --json` for local dashboard and automation status.
-- Plan: export the same core functions from the package API without changing existing exports or command behavior.
+- Completed: added `agent execution plan --package <path> --surface <id> --json` for dry-run execution planning.
+- Completed: added `agent execution run --package <path> --surface <id> --provider <id> --model <id> --execute --json` as an explicit fail-closed command surface; provider execution remains unimplemented in this slice.
+- Completed: added `agent execution status --execution <path> --json` and `agent execution list --json` for local dashboard and automation status.
+- Completed: exported the same core functions from the package API without changing existing exports or command behavior.
 
 #### Phase 29c: Core Execution Boundary Modules
 
-- Plan: add a dedicated execution module such as `src/agent-execution.js` for plan, run, status, list, receipts, and result normalization orchestration.
+- Completed: added `src/agent-execution.js` for plan, fail-closed run, status, list, and receipts.
 - Plan: add a dedicated provider adapter module such as `src/agent-providers.js` for provider registry and execution adapters.
 - Plan: keep provider calls out of `agent.js`, `review.js`, `mcp.js`, resource helpers, and Playwright runtime modules.
 - Plan: keep execution output separate from review artifacts and route provider responses through the existing advisory ingest-style normalization path.
 
 #### Phase 29d: Dry-Run Execution Plan
 
-- Plan: make `agent execution plan` the default, no-network operation for both subscription and API surfaces.
-- Plan: include package metadata, prompt metadata, disclosure policy, provider/surface selection, credential requirement names, artifact transfer policy, estimated evidence classes, and exact next command hints.
-- Plan: write only local execution-plan metadata and receipts under `.browser-debug/`.
-- Plan: set boundary fields to `api_call_performed=false`, `external_evidence_transfer=false`, `automatic_upload=false`, `credential_values_recorded=false`, `raw_response_stored=false`, and `existing_review_mutated=false`.
+- Completed: made `agent execution plan` the default, no-network operation for both subscription and API surfaces.
+- Completed: included package metadata, prompt metadata, disclosure policy, provider/surface selection, artifact transfer policy, and exact next command hints; credential requirement naming remains for the provider adapter slice.
+- Completed: wrote only local execution-plan metadata and receipts under `.browser-debug/`.
+- Completed: set boundary fields to `api_call_performed=false`, `external_evidence_transfer=false`, `automatic_upload=false`, `credential_values_recorded=false`, `raw_response_stored=false`, `raw_provider_response_stored=false`, `existing_review_mutated=false`, and `mcp_execution_exposed=false`.
 
 #### Phase 29e: Provider Runner Abstraction and Fake Provider
 

@@ -10,6 +10,7 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
   const files = [
     'src/cli.js',
     'src/agent.js',
+    'src/agent-execution.js',
     'src/constants.js',
     'src/content-ux-advisory.js',
     'src/daemon.js',
@@ -154,20 +155,23 @@ test('resource guard and artifact cleanup keep explicit local boundaries', async
 
 test('agent advisory layer keeps local handoff and import boundaries', async () => {
   const agent = await readText('src/agent.js');
+  const agentExecution = await readText('src/agent-execution.js');
   const mcp = await readText('src/mcp.js');
+  const combinedAgent = `${agent}\n${agentExecution}`;
 
-  assert.doesNotMatch(agent, /from 'playwright'|import\('playwright'\)/);
-  assert.doesNotMatch(agent, /node:child_process|child_process|execFile|spawn\(/);
-  assert.doesNotMatch(agent, /createServer|listen\(|WebSocket|EventSource/);
-  assert.doesNotMatch(agent, /\bfetch\s*\(|XMLHttpRequest|curl|wget/);
-  assert.doesNotMatch(agent, /launchPersistentContext|userDataDir|storageState/);
-  assert.match(agent, /api_call_performed:\s*false/);
-  assert.match(agent, /automatic_upload:\s*false/);
-  assert.match(agent, /credential_storage:\s*false/);
-  assert.match(agent, /existing_review_mutated:\s*false/);
-  assert.match(agent, /raw_artifact_content_included:\s*false/);
-  assert.match(agent, /external_evidence_transfer:\s*false/);
-  assert.doesNotMatch(mcp, /browser_debug_agent|agent package|agent ingest|agent report/);
+  assert.doesNotMatch(combinedAgent, /from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(combinedAgent, /node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(combinedAgent, /createServer|listen\(|WebSocket|EventSource/);
+  assert.doesNotMatch(combinedAgent, /\bfetch\s*\(|XMLHttpRequest|curl|wget/);
+  assert.doesNotMatch(combinedAgent, /launchPersistentContext|userDataDir|storageState/);
+  assert.match(combinedAgent, /api_call_performed:\s*false/);
+  assert.match(combinedAgent, /automatic_upload:\s*false/);
+  assert.match(combinedAgent, /credential_storage:\s*false/);
+  assert.match(combinedAgent, /existing_review_mutated:\s*false/);
+  assert.match(combinedAgent, /raw_artifact_content_included:\s*false/);
+  assert.match(combinedAgent, /external_evidence_transfer:\s*false/);
+  assert.match(agentExecution, /mcp_execution_exposed:\s*false/);
+  assert.doesNotMatch(mcp, /browser_debug_agent|agent package|agent ingest|agent report|agent execution/);
 });
 
 test('packaged target templates stay domain-neutral', async () => {

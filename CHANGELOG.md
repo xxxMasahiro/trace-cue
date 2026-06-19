@@ -72,7 +72,7 @@ All notable local development changes are tracked here before public release.
 - Added local `agent requests list` status output and schema so dashboards and local automation can track pending/imported advisory handoffs without API calls, uploads, credential storage, MCP agent execution, or review gate changes.
 - Added local `agent requests show` detail output and schema so dashboards can inspect one advisory handoff package/result without browser launch, provider API calls, uploads, credential storage, MCP agent execution, or review gate changes.
 - Added local `agent workflow create/status/index/report` output and schema so dashboards and local automation can track advisory handoff step state and write bounded workflow summaries without browser launch, provider API calls, uploads, credential storage, MCP agent execution, external evidence transfer, or review gate changes.
-- Documented the planned Phase 29 agent execution integration for subscription-style local runners and API-style providers, including dry-run plans, explicit `--execute`, env-only credentials, bounded disclosure, local receipts, advisory-only normalization, no raw response storage, no MCP execution, and unchanged deterministic review gates.
+- Added the first Phase 29 agent execution foundation slice: `agent_execution` schema parity, `agent execution plan/status/list`, package API exports, local dry-run plan receipts, explicit `--execute` parser enforcement, fail-closed run behavior, no MCP execution exposure, and unchanged deterministic review gates.
 
 ## Release Status
 

@@ -25,7 +25,7 @@ The Phase 2a design baseline uses Node.js 20 or newer, ESM modules, and a local 
 - Resource artifact layer: inventories `.browser-debug/` artifact usage, proposes cleanup candidates, and performs explicit artifact-root-only cleanup with receipts when `--execute` is provided.
 - Daemon lifecycle layer: adds optional local idle-timeout and max-lifetime shutdown guards to detached ephemeral browser workers.
 - Agent advisory layer: creates bounded local evidence packages from review artifact indexes, generates handoff prompts for local subscription agents, lists and inspects local request status from package/result artifacts, imports untrusted advisory JSON, and renders separate advisory reports without direct API calls, external upload, credential storage, or deterministic gate changes.
-- Agent execution layer: plans and runs subscription-style local agent or API-style provider execution from bounded agent packages, then normalizes runner/provider output into advisory results without mutating deterministic review artifacts or existing workflow status semantics.
+- Agent execution layer: plans subscription-style local agent or API-style provider execution from bounded agent packages, exposes status/list metadata, and keeps execution run fail-closed until dedicated runner/provider adapters are implemented without mutating deterministic review artifacts or existing workflow status semantics.
 - Schema layer: defines stable JSON contracts for envelopes, artifacts, target manifests, findings, reports, and adapter I/O.
 - Adapter layer: keeps CLI as the source of truth and later exposes the same core through an MCP stdio adapter.
 
@@ -390,9 +390,9 @@ Workflow create writes only local workflow metadata and a receipt under `.browse
 
 `agent_advisory_result` records imported advisory output as untrusted text. It may include visual design, content information architecture, user journey, mock interpretation, implementation diagnosis, accessibility advisory, and evidence-quality categories. It must set `gate_effect="none"`, `legacy_action_plan_unchanged=true`, `legacy_release_readiness_unchanged=true`, and `blocking_release_gate=false`. Imported advisory output must never execute shell commands, browser actions, file edits, cleanup, publication, dependency changes, manifest mutations, or external uploads.
 
-## Planned Agent Execution Contract
+## Agent Execution Contract
 
-The planned agent execution layer is an additive bridge from local packages to local subscription runners or API provider adapters. It is not a replacement for review, workflow, ingest, or report commands. It must keep the existing package, workflow, ingest, report, resource, daemon, cleanup, and review contracts intact.
+The agent execution layer is an additive bridge from local packages to local subscription runners or API provider adapters. The current implementation covers the no-network dry-run plan, explicit run parser/API surface, local status, and local list contract. Direct local runner/API provider execution remains unimplemented and fail-closed until a dedicated provider adapter slice is approved and tested. This layer is not a replacement for review, workflow, ingest, or report commands. It must keep the existing package, workflow, ingest, report, resource, daemon, cleanup, and review contracts intact.
 
 `agent_execution` records:
 
@@ -400,8 +400,8 @@ The planned agent execution layer is an additive bridge from local packages to l
 execution id, name, path, receipt path, created time, updated time
 package path, prompt path, source review artifact index, workflow path
 surface id, surface kind, provider id, model id, runner id
-mode: plan | run
-status: planned | running | succeeded | failed | canceled | credential_required | provider_unavailable
+mode: dry_run_plan | run
+status: planned | running | completed | failed | blocked
 step state for plan, runner/provider call, advisory normalization, ingest, and report
 advisory result path, normalized result summary, and dashboard handoff commands
 credential requirement names and credential source labels without values
@@ -415,7 +415,7 @@ The dry-run command:
 browser-debug agent execution plan --package <agent-package> --surface <surface-id> --json
 ```
 
-is the default no-network operation. It validates the package, resolves the surface, records the disclosure policy, checks whether credentials would be required by name only, and writes local plan metadata plus a receipt under `.browser-debug/agent-executions/`. It sets `api_call_performed=false`, `external_evidence_transfer=false`, `automatic_upload=false`, `credential_values_recorded=false`, `credential_storage="none"`, `persistent_credential_storage=false`, `raw_response_stored=false`, `existing_review_mutated=false`, and `gate_effect="none"`.
+is the default no-network operation. It validates the package, resolves the surface, records the disclosure policy, records provider/model selection metadata, and writes local plan metadata plus a receipt under `.browser-debug/agent-executions/`. It sets `api_call_performed=false`, `external_evidence_transfer=false`, `automatic_upload=false`, `credential_values_recorded=false`, `credential_storage="none"`, `persistent_credential_storage=false`, `raw_response_stored=false`, `raw_provider_response_stored=false`, `existing_review_mutated=false`, `mcp_execution_exposed=false`, and `gate_effect="none"`.
 
 The run command:
 
@@ -423,7 +423,7 @@ The run command:
 browser-debug agent execution run --package <agent-package> --surface <surface-id> --provider <provider-id> --model <model-id> --execute --json
 ```
 
-requires an explicit `--execute` flag and must fail deterministically without it. Subscription-style execution uses a configured local runner identifier or local stdio surface; it must not accept free-form shell commands or automate a SaaS web UI. API-style execution reads token values only from named environment variables, never from CLI arguments, committed files, package artifacts, workflow files, reports, receipts, `.env` auto-loading, or persistent local storage.
+requires an explicit `--execute` flag and fails deterministically without it. In the current implementation, the command surface is present but direct execution returns a fail-closed provider-not-implemented error without calling providers, loading credentials, uploading evidence, or writing result artifacts. Future subscription-style execution must use a configured local runner identifier or local stdio surface; it must not accept free-form shell commands or automate a SaaS web UI. Future API-style execution must read token values only from named environment variables, never from CLI arguments, committed files, package artifacts, workflow files, reports, receipts, `.env` auto-loading, or persistent local storage.
 
 Execution may send only bounded package and prompt content allowed by the disclosure policy. By default, it must not transfer raw screenshots, trace contents, raw DOM, console payloads, network payloads, sourceData values, report bodies, cookies, storage state, existing browser profile data, or raw review artifacts. API execution must record that an API call occurred and which bounded evidence classes were sent, but it must not store raw provider responses. Runner/provider output is normalized into `agent_advisory_result` and remains untrusted advisory data.
 

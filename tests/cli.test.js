@@ -312,6 +312,7 @@ test('schema commands expose machine-readable contracts', async () => {
     ['agent_request_status', '../schemas/agent-request-status.schema.json'],
     ['agent_request_detail', '../schemas/agent-request-detail.schema.json'],
     ['agent_workflow', '../schemas/agent-workflow.schema.json'],
+    ['agent_execution', '../schemas/agent-execution.schema.json'],
     ['agent_advisory_result', '../schemas/agent-advisory-result.schema.json'],
     ['agent_disclosure_policy', '../schemas/agent-disclosure-policy.schema.json']
   ];
@@ -661,6 +662,117 @@ test('agent package, ingest, and report stay local and advisory-only', async () 
   const workflowReportText = await readFile(path.join(cwd, '.browser-debug', 'reports', 'agent-workflow-report-fixed.md'), 'utf8');
   assert.match(workflowReportText, /Agent Workflow Report/);
   assert.match(workflowReportText, /Existing deterministic review findings/);
+
+  const executionPlan = await executeCli([
+    'agent',
+    'execution',
+    'plan',
+    '--package',
+    '.browser-debug/agent-packages/agent-package-fixed/packet.json',
+    '--surface',
+    'local-subscription-agent',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'agent-execution-fixed'
+  });
+  assert.equal(executionPlan.exitCode, 0);
+  const executionPlanBody = JSON.parse(executionPlan.stdout);
+  assert.equal(executionPlanBody.command, 'agent execution plan');
+  assert.equal(executionPlanBody.data.agent_execution.status, 'planned');
+  assert.equal(executionPlanBody.data.agent_execution.execution_path, '.browser-debug/agent-executions/agent-execution-fixed/execution.json');
+  assert.equal(executionPlanBody.data.agent_execution.steps.plan.no_network, true);
+  assert.equal(executionPlanBody.data.agent_execution.steps.execution.provider_adapter_required, true);
+  assert.equal(executionPlanBody.data.agent_execution.api_call_performed, false);
+  assert.equal(executionPlanBody.data.agent_execution.external_evidence_transfer, false);
+  assert.equal(executionPlanBody.data.agent_execution.credential_values_recorded, false);
+  assert.equal(executionPlanBody.data.agent_execution.raw_provider_response_stored, false);
+  assert.equal(executionPlanBody.data.agent_execution.mcp_execution_exposed, false);
+  assert.equal(executionPlanBody.artifacts.some((artifact) => artifact.type === 'agent_execution'), true);
+  const executionFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agent-executions', 'agent-execution-fixed', 'execution.json'), 'utf8'));
+  assert.equal(executionFile.dashboard_handoff.status_command, 'browser-debug agent execution status --execution .browser-debug/agent-executions/agent-execution-fixed/execution.json --json');
+
+  const executionStatus = await executeCli([
+    'agent',
+    'execution',
+    'status',
+    '--execution',
+    '.browser-debug/agent-executions/agent-execution-fixed/execution.json',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(executionStatus.exitCode, 0);
+  const executionStatusBody = JSON.parse(executionStatus.stdout);
+  assert.equal(executionStatusBody.command, 'agent execution status');
+  assert.equal(executionStatusBody.data.agent_execution_status.status, 'planned');
+  assert.equal(executionStatusBody.data.agent_execution_status.existing_review_mutated, false);
+
+  const executionIndex = await executeCli([
+    'agent',
+    'execution',
+    'list',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(executionIndex.exitCode, 0);
+  const executionIndexBody = JSON.parse(executionIndex.stdout);
+  assert.equal(executionIndexBody.command, 'agent execution list');
+  assert.equal(executionIndexBody.data.summary.total, 1);
+  assert.equal(executionIndexBody.data.summary.planned, 1);
+  assert.equal(executionIndexBody.data.summary.api_call_performed, false);
+  assert.equal(executionIndexBody.data.summary.mcp_execution_exposed, false);
+
+  const executionRunWithoutFlag = await executeCli([
+    'agent',
+    'execution',
+    'run',
+    '--package',
+    '.browser-debug/agent-packages/agent-package-fixed/packet.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'local-runner',
+    '--model',
+    'local-agent',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(executionRunWithoutFlag.exitCode, 2);
+  const executionRunWithoutFlagBody = JSON.parse(executionRunWithoutFlag.stdout);
+  assert.equal(executionRunWithoutFlagBody.errors[0].code, 'MISSING_REQUIRED_OPTION');
+  assert.equal(executionRunWithoutFlagBody.errors[0].details.option, 'execute');
+
+  const executionRun = await executeCli([
+    'agent',
+    'execution',
+    'run',
+    '--package',
+    '.browser-debug/agent-packages/agent-package-fixed/packet.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'local-runner',
+    '--model',
+    'local-agent',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(executionRun.exitCode, 1);
+  const executionRunBody = JSON.parse(executionRun.stdout);
+  assert.equal(executionRunBody.command, 'agent execution run');
+  assert.equal(executionRunBody.errors[0].code, 'AGENT_EXECUTION_PROVIDER_NOT_IMPLEMENTED');
+  assert.equal(executionRunBody.errors[0].details.api_call_performed, false);
+  assert.equal(executionRunBody.errors[0].details.credential_values_recorded, false);
 
   await writeFile(
     path.join(cwd, '.browser-debug', 'agent-results', 'agent-result-other.json'),

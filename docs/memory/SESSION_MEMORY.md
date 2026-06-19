@@ -186,3 +186,14 @@ commit: 1af1fcd Document agent execution integration plan
 
 親リポジトリは変更していません。次回は「前回の `1af1fcd` から Phase 29a を進めてください」または「push/PR/main CI まで進めてください」でスムーズに続けられます。
 ````
+
+## 2026-06-19 Phase 29 Agent Execution Foundation Slice
+
+- Implemented the first Phase 29 runtime foundation slice for `agent_execution` without enabling direct provider execution.
+- Added `src/agent-execution.js`, `agent execution plan/status/list`, `agent execution run` parser/API surface with explicit `--execute` enforcement and fail-closed provider-not-implemented behavior.
+- Added `agent_execution` schema registry/file parity and package API exports.
+- Fixed product-local gate evidence source validation so documented `product.design_system.*` evidence rows can be recorded under their canonical source id.
+- Dry-run execution plans write local metadata and receipts under `.browser-debug/agent-executions/` and `.browser-debug/receipts/`.
+- Preserved existing `agent_workflow` status semantics, deterministic review findings, metrics, existing action plans, release readiness, resource guard behavior, artifact cleanup behavior, and MCP allowlist boundaries.
+- Verification so far: `node --check src/agent-execution.js`, `node --check src/cli.js`, `node --check src/parser.js`, `npm test`, `./tools/check_product_structure.sh`, `./tools/check_product_docs.sh`, `./tools/check_product_security.sh`, `./tools/check_product_design_system.sh`, `./tools/product-gate`, and `npm run release:check`.
+- Next implementation slice: provider-runner isolation with a dedicated provider adapter registry and deterministic fake provider coverage before any real local runner or API provider execution.
