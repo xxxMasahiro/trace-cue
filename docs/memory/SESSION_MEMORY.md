@@ -159,6 +159,15 @@ Read AGENTS.MD and docs/workflow/HANDOFF.md, confirm the current state, then res
 - `browser-debug agent requests show --package <path> --agent-result <path> --json` selects a matching workspace-relative imported result and rejects mismatched result/package pairs.
 - The implementation remains read-only, local-first, and advisory-only. It does not write artifacts, launch browsers, call provider APIs, upload evidence, store credentials, expose MCP agent execution, mutate review artifacts, or change deterministic review findings, metrics, existing action plans, or release readiness.
 
+## 2026-06-19 Phase 31 MCP Profile Gating Handoff
+
+- Phase 31 is complete for launch-selected MCP profiles.
+- No-profile `browser-debug-mcp` and the packaged `.mcp.json` keep current compatibility by resolving to the `full` profile.
+- `browser-debug-mcp --profile safe` exposes no-browser/no-delete/no-provider tools for doctor, schema, target validation, resource status, and artifact planning.
+- `browser-debug-mcp --profile admin` is explicit but remains equivalent to `full` in this phase; it does not expose cleanup execution, agent/API execution, daemon/session control, shell tools, HTTP/socket transport, external upload, provider credentials, profile reuse, or arbitrary process control.
+- The reusable profile registry lives in `src/mcp-profiles.js`, and package API exports include `DEFAULT_MCP_PROFILE`, `MCP_PROFILES`, `getMcpTools`, and `resolveMcpProfile`.
+- MCP `@file` structured input is workspace-confined and rejects absolute paths, parent traversal, symlink escapes, non-regular files, and oversized files. Normal CLI `@file` behavior is unchanged outside MCP-restricted contexts.
+
 ## 2026-06-19 Phase 28 Agent Workflow Status Handoff
 
 - Phase 28 is complete for local agent workflow status output.

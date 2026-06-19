@@ -40,6 +40,7 @@
     { "path": "src/cli.js", "role": "manifest" },
     { "path": "src/daemon.js", "role": "manifest" },
     { "path": "src/daemon-worker.js", "role": "manifest" },
+    { "path": "src/mcp-profiles.js", "role": "manifest" },
     { "path": "src/page-evidence.js", "role": "manifest" },
     { "path": "src/observe.js", "role": "manifest" },
     { "path": "src/sessions.js", "role": "manifest" },

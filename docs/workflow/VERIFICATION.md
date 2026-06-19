@@ -2,7 +2,7 @@
 
 ## Verification Scope
 
-Current verification checks repository structure, document synchronization, security defaults, review/MCP/plugin local boundaries, CI configuration, design-system placeholders, product operation mode, local MVP runtime behavior, review platform behavior, dogfood target workflow behavior, no-browser target manifest validation, no-browser resource status preflight, review resource guard behavior, daemon lifecycle guards, artifact usage planning, explicit artifact-root cleanup receipts, local agent advisory package/request-status/request-detail/workflow/ingest/report behavior, local agent execution plan/run/status/list behavior, deterministic fake provider execution, configured local runner callback execution, env-only generic API adapter behavior, expected-route execution, route-budget coverage accounting, page expectation coverage, rendered-state findings, manifest suggestions, opt-in content UX advisory behavior, selector-scoped advisory contracts, required user-question advisory checks, dedicated content UX handoff output, page-level content UX handoff, manifest-authoring suggestions, review brief/rubric evaluation, local artifact indexes, local review-quality signals, browser smoke coverage, Phase 29 agent execution boundaries, and Phase 30 packed install release-hardening boundaries.
+Current verification checks repository structure, document synchronization, security defaults, review/MCP/plugin local boundaries, MCP profile gating, MCP-only file-input confinement, CI configuration, design-system placeholders, product operation mode, local MVP runtime behavior, review platform behavior, dogfood target workflow behavior, no-browser target manifest validation, no-browser resource status preflight, review resource guard behavior, daemon lifecycle guards, artifact usage planning, explicit artifact-root cleanup receipts, local agent advisory package/request-status/request-detail/workflow/ingest/report behavior, local agent execution plan/run/status/list behavior, deterministic fake provider execution, configured local runner callback execution, env-only generic API adapter behavior, expected-route execution, route-budget coverage accounting, page expectation coverage, rendered-state findings, manifest suggestions, opt-in content UX advisory behavior, selector-scoped advisory contracts, required user-question advisory checks, dedicated content UX handoff output, page-level content UX handoff, manifest-authoring suggestions, review brief/rubric evaluation, local artifact indexes, local review-quality signals, browser smoke coverage, Phase 29 agent execution boundaries, Phase 30 packed install release-hardening boundaries, and Phase 31 MCP profile boundaries.
 
 ## Product-Local Commands
 
@@ -67,6 +67,8 @@ Phase 29 adds no-browser coverage for `agent execution plan/run/status/list`, dr
 
 Phase 30 adds packed install smoke coverage for the `npm pack` tarball from a temporary install layout. It verifies packaged CLI entrypoints, package API imports, MCP stdio `tools/list`, schema/template/plugin file presence, selected workflow security docs, `doctor`, `schema list`, and no-browser `target validate` without publication, registry install, package rename, license change, external upload, credential storage, or marketplace mutation.
 
+Phase 31 adds no-browser coverage for MCP `safe`, `full`, and `admin` profile resolution, default/full compatibility, launch metadata, out-of-profile tool rejection, invalid profile rejection, packed-install profile API exports, and MCP-only workspace-confined `@file` input rejection. Browser smoke tests are not required for Phase 31 unless browser runtime behavior changes.
+
 ```bash
 node ./bin/browser-debug.js resource status --json
 node ./bin/browser-debug.js resource artifacts plan --json
@@ -97,7 +99,8 @@ node ./bin/browser-debug.js review --url http://127.0.0.1:3000/ --resource-guard
 node ./bin/browser-debug.js review --target .browser-debug/targets/<id>.json --report --timeout 15000 --json
 node ./bin/browser-debug.js schema list --json
 node ./bin/browser-debug.js schema get --name review --json
-node ./bin/browser-debug.js mcp serve --json
+node ./bin/browser-debug.js mcp serve --profile safe --json
+node ./bin/browser-debug-mcp.js --profile safe
 ```
 
 Optional acceptance checks against local application control surfaces should run only when their local URLs are provided and listening.

@@ -16,6 +16,7 @@ const VALUE_OPTIONS = new Set([
   'name',
   'older-than',
   'package',
+  'profile',
   'provider',
   'region',
   'resource-guard',
@@ -702,7 +703,7 @@ function parseMcp(args, globals) {
       details: { subcommands: ['serve'] }
     });
   }
-  return parseNoArgCommand('mcp serve', args.slice(1), globals);
+  return parseOptionalOptions('mcp serve', args.slice(1), globals);
 }
 
 function parseRequiredOptions(command, args, globals, requiredOptions) {

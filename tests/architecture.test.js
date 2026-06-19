@@ -25,6 +25,7 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'src/resource-status.js',
     'src/review.js',
     'src/mcp.js',
+    'src/mcp-profiles.js',
     'src/api.js',
     'src/target.js',
     'src/sessions.js',
@@ -98,8 +99,9 @@ test('review platform keeps local-first and manifest-driven boundaries', async (
   const review = await readText('src/review.js');
   const contentUxAdvisory = await readText('src/content-ux-advisory.js');
   const mcp = await readText('src/mcp.js');
+  const mcpProfiles = await readText('src/mcp-profiles.js');
   const target = await readText('src/target.js');
-  const combined = `${review}\n${contentUxAdvisory}\n${mcp}\n${target}`;
+  const combined = `${review}\n${contentUxAdvisory}\n${mcp}\n${mcpProfiles}\n${target}`;
 
   assert.doesNotMatch(combined, /127\.0\.0\.1:517[34]|Control Center|FrameCue|ai-driven-development-lesson/);
   assert.doesNotMatch(combined, /launchPersistentContext|userDataDir|storageState/);
@@ -159,7 +161,7 @@ test('resource guard and artifact cleanup keep explicit local boundaries', async
 test('agent advisory layer keeps local handoff and import boundaries', async () => {
   const agent = await readText('src/agent.js');
   const agentExecution = await readText('src/agent-execution.js');
-  const mcp = await readText('src/mcp.js');
+  const mcp = `${await readText('src/mcp.js')}\n${await readText('src/mcp-profiles.js')}`;
   const combinedAgent = `${agent}\n${agentExecution}`;
 
   assert.doesNotMatch(combinedAgent, /from 'playwright'|import\('playwright'\)/);
@@ -181,7 +183,7 @@ test('agent execution provider calls stay in the dedicated adapter boundary', as
   const agent = await readText('src/agent.js');
   const agentExecution = await readText('src/agent-execution.js');
   const providers = await readText('src/agent-execution-providers.js');
-  const mcp = await readText('src/mcp.js');
+  const mcp = `${await readText('src/mcp.js')}\n${await readText('src/mcp-profiles.js')}`;
 
   assert.doesNotMatch(`${agent}\n${agentExecution}`, /\bfetch\s*\(|XMLHttpRequest|curl|wget/);
   assert.match(providers, /\bfetchImpl\b/);

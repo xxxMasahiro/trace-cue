@@ -1,122 +1,26 @@
 import { executeCli } from './cli.js';
 import { PACKAGE_VERSION } from './constants.js';
+import {
+  DEFAULT_MCP_PROFILE,
+  MCP_PROFILES,
+  getMcpTools,
+  mcpProfileMetadata,
+  mcpToolToCliArgs,
+  resolveMcpProfile,
+  resolveMcpTool
+} from './mcp-profiles.js';
 
-export const MCP_TOOLS = Object.freeze([
-  {
-    name: 'browser_debug_doctor',
-    description: 'Run Browser Debug CLI doctor and return the standard JSON envelope.',
-    inputSchema: { type: 'object', additionalProperties: false, properties: {} }
-  },
-  {
-    name: 'browser_debug_observe',
-    description: 'Observe one approved URL with local Playwright evidence.',
-    inputSchema: {
-      type: 'object',
-      required: ['url'],
-      additionalProperties: false,
-      properties: {
-        url: { type: 'string' },
-        screenshot: { type: 'boolean' },
-        trace: { type: 'boolean' },
-        timeout: { type: 'string' }
-      }
-    }
-  },
-  {
-    name: 'browser_debug_review',
-    description: 'Run a deterministic local browser review for one URL.',
-    inputSchema: {
-      type: 'object',
-      required: ['url'],
-      additionalProperties: false,
-      properties: {
-        url: { type: 'string' },
-        viewport: { type: 'string' },
-        screenshot: { type: 'boolean' },
-        report: { type: 'boolean' },
-        timeout: { type: 'string' }
-      }
-    }
-  },
-  {
-    name: 'browser_debug_target_init',
-    description: 'Create a local target manifest artifact for manifest-driven review.',
-    inputSchema: {
-      type: 'object',
-      required: ['url'],
-      additionalProperties: false,
-      properties: {
-        url: { type: 'string' },
-        name: { type: 'string' },
-        viewport: { type: 'string' },
-        maxRoutes: { type: 'number' },
-        timeout: { type: 'string' }
-      }
-    }
-  },
-  {
-    name: 'browser_debug_target_validate',
-    description: 'Validate a local target manifest without launching a browser.',
-    inputSchema: {
-      type: 'object',
-      required: ['target'],
-      additionalProperties: false,
-      properties: {
-        target: { type: 'string' }
-      }
-    }
-  },
-  {
-    name: 'browser_debug_resource_status',
-    description: 'Report local memory, swap, cgroup, and pressure signals without launching a browser.',
-    inputSchema: { type: 'object', additionalProperties: false, properties: {} }
-  },
-  {
-    name: 'browser_debug_resource_artifacts_plan',
-    description: 'Report local Browser Debug CLI artifact size and cleanup candidates without deleting files.',
-    inputSchema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        maxBytes: { type: 'string' },
-        olderThan: { type: 'string' }
-      }
-    }
-  },
-  {
-    name: 'browser_debug_review_target',
-    description: 'Run a deterministic local browser review for a target manifest.',
-    inputSchema: {
-      type: 'object',
-      required: ['target'],
-      additionalProperties: false,
-      properties: {
-        target: { type: 'string' },
-        report: { type: 'boolean' },
-        timeout: { type: 'string' }
-      }
-    }
-  },
-  {
-    name: 'browser_debug_schema_list',
-    description: 'List machine-readable Browser Debug CLI schemas.',
-    inputSchema: { type: 'object', additionalProperties: false, properties: {} }
-  },
-  {
-    name: 'browser_debug_schema_get',
-    description: 'Get one machine-readable Browser Debug CLI schema.',
-    inputSchema: {
-      type: 'object',
-      required: ['name'],
-      additionalProperties: false,
-      properties: { name: { type: 'string' } }
-    }
-  }
-]);
+export { DEFAULT_MCP_PROFILE, MCP_PROFILES, getMcpTools, mcpProfileMetadata, resolveMcpProfile };
+
+export const MCP_TOOLS = Object.freeze(getMcpTools(DEFAULT_MCP_PROFILE));
 
 export async function handleMcpRequest(request, context = {}) {
   if (!request || typeof request !== 'object') {
     return response(null, null, errorObject(-32600, 'Invalid Request'));
+  }
+  const profile = resolveMcpProfile(context.mcpProfile, context.env);
+  if (!profile.ok) {
+    return response(request.id, null, errorObject(-32602, profile.message));
   }
   if (request.method === 'initialize') {
     return response(request.id, {
@@ -127,16 +31,20 @@ export async function handleMcpRequest(request, context = {}) {
       },
       capabilities: {
         tools: {}
-      }
+      },
+      metadata: mcpProfileMetadata(profile.profile)
     });
   }
   if (request.method === 'tools/list') {
-    return response(request.id, { tools: MCP_TOOLS });
+    return response(request.id, {
+      tools: getMcpTools(profile.profile),
+      profile: mcpProfileMetadata(profile.profile)
+    });
   }
   if (request.method === 'tools/call') {
     const toolName = request.params?.name;
     const args = request.params?.arguments ?? {};
-    const result = await callTool(toolName, args, context);
+    const result = await callTool(profile.profile, toolName, args, context);
     if (!result.ok) {
       return response(request.id, null, errorObject(-32602, result.message));
     }
@@ -162,83 +70,46 @@ export async function runMcpStdio(context = {}) {
   }
 }
 
-async function callTool(name, args, context) {
-  if (!MCP_TOOLS.some((tool) => tool.name === name)) {
-    return { ok: false, message: `Unknown tool: ${name}` };
+async function callTool(profile, name, args, context) {
+  const resolved = resolveMcpTool(profile, name);
+  if (!resolved.ok) {
+    return { ok: false, message: resolved.message };
   }
-  const cliArgs = toolToCliArgs(name, args);
-  const result = await executeCli(cliArgs, context);
+  const cliArgs = mcpToolToCliArgs(resolved.tool, args);
+  const result = await executeCli(cliArgs, {
+    ...context,
+    mcpProfile: resolved.profile,
+    restrictWorkspaceInputs: true
+  });
   return { ok: true, envelope: result.envelope };
 }
 
-function toolToCliArgs(name, args) {
-  if (name === 'browser_debug_doctor') {
-    return ['doctor', '--json'];
-  }
-  if (name === 'browser_debug_observe') {
-    return withCommonOptions(['observe', '--url', args.url], args);
-  }
-  if (name === 'browser_debug_review') {
-    return withCommonOptions(['review', '--url', args.url], args);
-  }
-  if (name === 'browser_debug_target_init') {
-    const output = withCommonOptions(['target', 'init', '--url', args.url], args);
-    if (args.name) {
-      output.splice(-1, 0, '--name', String(args.name));
+export function parseMcpServerArgs(args = [], env = {}) {
+  let profileInput = env.BROWSER_DEBUG_MCP_PROFILE;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--profile') {
+      if (!args[index + 1]) {
+        return { ok: false, message: '--profile requires a value.' };
+      }
+      profileInput = args[index + 1];
+      index += 1;
+      continue;
     }
-    if (args.maxRoutes !== undefined) {
-      output.splice(-1, 0, '--max-routes', String(args.maxRoutes));
+    if (arg.startsWith('--profile=')) {
+      profileInput = arg.slice('--profile='.length);
+      continue;
     }
-    return output;
-  }
-  if (name === 'browser_debug_target_validate') {
-    return ['target', 'validate', '--target', args.target, '--json'];
-  }
-  if (name === 'browser_debug_resource_status') {
-    return ['resource', 'status', '--json'];
-  }
-  if (name === 'browser_debug_resource_artifacts_plan') {
-    const output = ['resource', 'artifacts', 'plan'];
-    if (args.maxBytes !== undefined) {
-      output.push('--max-bytes', String(args.maxBytes));
+    if (arg === '--help' || arg === '-h') {
+      return { ok: true, help: true };
     }
-    if (args.olderThan !== undefined) {
-      output.push('--older-than', String(args.olderThan));
-    }
-    output.push('--json');
-    return output;
+    return { ok: false, message: `Unsupported browser-debug-mcp argument: ${arg}` };
   }
-  if (name === 'browser_debug_review_target') {
-    return withCommonOptions(['review', '--target', args.target], args);
+  const profile = resolveMcpProfile(profileInput, env);
+  if (!profile.ok) {
+    return { ok: false, message: profile.message };
   }
-  if (name === 'browser_debug_schema_list') {
-    return ['schema', 'list', '--json'];
-  }
-  if (name === 'browser_debug_schema_get') {
-    return ['schema', 'get', '--name', args.name, '--json'];
-  }
-  return ['doctor', '--json'];
-}
-
-function withCommonOptions(base, args) {
-  const output = [...base];
-  if (args.viewport) {
-    output.push('--viewport', String(args.viewport));
-  }
-  if (args.timeout) {
-    output.push('--timeout', String(args.timeout));
-  }
-  if (args.screenshot) {
-    output.push('--screenshot');
-  }
-  if (args.trace) {
-    output.push('--trace');
-  }
-  if (args.report) {
-    output.push('--report');
-  }
-  output.push('--json');
-  return output;
+  return { ok: true, profile: profile.profile };
 }
 
 function response(id, result, error = undefined) {

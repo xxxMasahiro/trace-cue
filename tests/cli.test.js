@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { executeCli } from '../src/cli.js';
@@ -1677,6 +1677,7 @@ test('target validate checks edited manifests without launching a browser', asyn
 
 test('MCP adapter exposes a local allowlisted tool surface', async () => {
   const listed = await handleMcpRequest({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+  assert.equal(listed.result.profile.name, 'full');
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_review'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_target_init'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_target_validate'), true);
@@ -1684,6 +1685,57 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_resource_artifacts_plan'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_review_target'), true);
   assert.equal(listed.result.tools.some((tool) => /shell|cleanup/i.test(tool.name)), false);
+  assert.equal(listed.result.tools.every((tool) => tool.effects.shellUsed === false), true);
+
+  const safeListed = await handleMcpRequest({ jsonrpc: '2.0', id: 11, method: 'tools/list' }, { mcpProfile: 'safe' });
+  const safeToolNames = safeListed.result.tools.map((tool) => tool.name);
+  assert.equal(safeListed.result.profile.name, 'safe');
+  assert.equal(safeToolNames.includes('browser_debug_target_validate'), true);
+  assert.equal(safeToolNames.includes('browser_debug_resource_status'), true);
+  assert.equal(safeToolNames.includes('browser_debug_resource_artifacts_plan'), true);
+  assert.equal(safeToolNames.includes('browser_debug_review'), false);
+  assert.equal(safeToolNames.includes('browser_debug_observe'), false);
+  assert.equal(safeToolNames.includes('browser_debug_target_init'), false);
+  assert.equal(safeToolNames.includes('browser_debug_review_target'), false);
+  assert.equal(safeListed.result.tools.every((tool) => tool.effects.browserLaunched === false), true);
+  assert.equal(safeListed.result.tools.every((tool) => tool.effects.deletesFiles === false), true);
+  assert.equal(safeListed.result.tools.every((tool) => tool.effects.providerCall === false), true);
+
+  const adminListed = await handleMcpRequest({ jsonrpc: '2.0', id: 12, method: 'tools/list' }, { mcpProfile: 'admin' });
+  assert.equal(adminListed.result.profile.name, 'admin');
+  assert.deepEqual(
+    adminListed.result.tools.map((tool) => tool.name),
+    listed.result.tools.map((tool) => tool.name)
+  );
+
+  const invalidProfile = await handleMcpRequest({ jsonrpc: '2.0', id: 13, method: 'tools/list' }, { mcpProfile: 'wide-open' });
+  assert.equal(invalidProfile.error.code, -32602);
+  assert.match(invalidProfile.error.message, /Unsupported MCP profile/);
+
+  const blockedByProfile = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 14,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_review',
+      arguments: { url: 'https://example.test/' }
+    }
+  }, { mcpProfile: 'safe', now: fixedNow });
+  assert.equal(blockedByProfile.error.code, -32602);
+  assert.match(blockedByProfile.error.message, /not available for MCP profile safe/);
+
+  const mcpInfoParsed = parseCliArgs(['mcp', 'serve', '--profile', 'safe', '--json']);
+  assert.equal(mcpInfoParsed.ok, true);
+  assert.equal(mcpInfoParsed.options.profile, 'safe');
+
+  const mcpInfo = await executeCli(['mcp', 'serve', '--profile', 'safe', '--json'], { now: fixedNow });
+  assert.equal(mcpInfo.exitCode, 0);
+  const mcpInfoBody = JSON.parse(mcpInfo.stdout);
+  assert.equal(mcpInfoBody.data.adapter.profile.name, 'safe');
+
+  const invalidMcpInfo = await executeCli(['mcp', 'serve', '--profile', 'wide-open', '--json'], { now: fixedNow });
+  assert.equal(invalidMcpInfo.exitCode, 1);
+  assert.equal(JSON.parse(invalidMcpInfo.stdout).errors[0].code, 'INVALID_MCP_PROFILE');
 
   const schema = await handleMcpRequest({
     jsonrpc: '2.0',
@@ -1751,6 +1803,66 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(validated.result.structuredContent.command, 'target validate');
   assert.equal(validated.result.structuredContent.data.target_manifest.status, 'valid');
   assert.equal(validated.result.structuredContent.data.boundary.browser_launched, false);
+
+  const confinedRoot = await mkdtemp(path.join(tmpdir(), 'browser-debug-mcp-confine-'));
+  const workspace = path.join(confinedRoot, 'workspace');
+  await mkdir(workspace);
+  await writeFile(path.join(workspace, '.gitignore'), '.browser-debug/\n', 'utf8');
+  const manifest = {
+    schema_version: '0.1.0',
+    name: 'MCP confinement fixture',
+    baseUrl: 'https://example.test/',
+    scope: { sameOrigin: true, allowedHosts: ['example.test'] },
+    seeds: ['/'],
+    expectedRoutes: ['/'],
+    viewportMatrix: [{ name: 'desktop', width: 1280, height: 720 }],
+    actionPolicy: { click: 'navigation_only', forms: 'skip', destructive: 'skip', external: 'skip' },
+    budgets: { maxRoutes: 1, maxActionsPerRoute: 0 },
+    artifacts: { screenshot: false, trace: false, report: false },
+    masks: [],
+    regions: [],
+    pages: [],
+    localContentUxAdvisory: { enabled: false }
+  };
+  await writeFile(path.join(workspace, 'target.json'), JSON.stringify(manifest), 'utf8');
+  const outsideManifest = path.join(confinedRoot, 'outside-target.json');
+  await writeFile(outsideManifest, JSON.stringify(manifest), 'utf8');
+  await symlink(outsideManifest, path.join(workspace, 'linked-target.json'));
+
+  const safeValidated = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 15,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_target_validate',
+      arguments: { target: 'target.json' }
+    }
+  }, { cwd: workspace, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(safeValidated.result.structuredContent.status, 'ok');
+
+  const traversalBlocked = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 16,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_target_validate',
+      arguments: { target: '../outside-target.json' }
+    }
+  }, { cwd: workspace, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(traversalBlocked.result.isError, true);
+  assert.equal(traversalBlocked.result.structuredContent.errors[0].code, 'INPUT_FILE_OUTSIDE_WORKSPACE');
+
+  const symlinkBlocked = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 17,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_target_validate',
+      arguments: { target: 'linked-target.json' }
+    }
+  }, { cwd: workspace, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(symlinkBlocked.result.isError, true);
+  assert.equal(symlinkBlocked.result.structuredContent.errors[0].code, 'INPUT_FILE_OUTSIDE_WORKSPACE');
 });
 
 test('daemon commands parse and return deterministic JSON envelopes', async () => {
