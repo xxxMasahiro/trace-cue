@@ -34,6 +34,7 @@ async function main() {
     await assertFile(packageDir, 'bin/browser-debug.js');
     await assertFile(packageDir, 'bin/browser-debug-mcp.js');
     await assertFile(packageDir, 'src/api.js');
+    await assertFile(packageDir, 'src/mcp-profiles.js');
     await assertFile(packageDir, 'schemas/agent-execution.schema.json');
     await assertFile(packageDir, 'schemas/review.schema.json');
     await assertFile(packageDir, 'templates/review-target-manifest.json');
@@ -66,8 +67,14 @@ async function main() {
     const api = await import(pathToFileURL(apiPath));
     assert.equal(typeof api.executeCli, 'function');
     assert.equal(typeof api.runTargetValidate, 'function');
+    assert.equal(typeof api.getMcpTools, 'function');
+    assert.equal(typeof api.resolveMcpProfile, 'function');
     assert.equal(api.schemaNames().includes('agent_execution'), true);
     assert.equal(api.MCP_TOOLS.some((tool) => tool.name === 'browser_debug_review_target'), true);
+    assert.equal(api.DEFAULT_MCP_PROFILE, 'full');
+    assert.equal(api.resolveMcpProfile('safe').ok, true);
+    assert.equal(api.getMcpTools('safe').some((tool) => tool.name === 'browser_debug_review'), false);
+    assert.equal(api.getMcpTools('full').some((tool) => tool.name === 'browser_debug_review'), true);
 
     const doctor = await api.executeCli(['doctor', '--json'], { cwd: installRoot });
     assert.equal(doctor.exitCode, 0);
@@ -99,8 +106,17 @@ async function main() {
     assert.equal(validateBody.data.boundary.external_upload, false);
 
     const mcpBody = await api.handleMcpRequest({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { cwd: installRoot });
+    assert.equal(mcpBody.result.profile.name, 'full');
     assert.equal(mcpBody.result.tools.some((tool) => tool.name === 'browser_debug_target_validate'), true);
     assert.equal(mcpBody.result.tools.some((tool) => /agent execution/i.test(tool.name)), false);
+
+    const safeMcpBody = await api.handleMcpRequest(
+      { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+      { cwd: installRoot, mcpProfile: 'safe' }
+    );
+    assert.equal(safeMcpBody.result.profile.name, 'safe');
+    assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_target_validate'), true);
+    assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_review_target'), false);
 
     const binLink = await lstat(path.join(binDir, 'browser-debug'));
     assert.equal(binLink.isSymbolicLink(), true);

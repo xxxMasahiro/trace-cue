@@ -28,6 +28,7 @@ import { runReview } from './review.js';
 import { schemaListResult, schemaResult } from './schema-registry.js';
 import { runSupervisor } from './supervisor.js';
 import { runTargetInit, runTargetValidate } from './target.js';
+import { mcpProfileMetadata, resolveMcpProfile } from './mcp-profiles.js';
 import {
   buildReport,
   closeSession,
@@ -246,7 +247,11 @@ export async function executeCli(argv, context = {}) {
     }
 
     if (parsed.command === 'mcp serve') {
-      return runtimeResult(parsed.command, mcpServeInfo(), parsed.json, now);
+      const mcpInfo = mcpServeInfo(parsed.options);
+      if (mcpInfo.status === 'error') {
+        return runtimeResult(parsed.command, mcpInfo, parsed.json, now, 2);
+      }
+      return runtimeResult(parsed.command, mcpInfo, parsed.json, now);
     }
 
     return notImplemented(parsed.command, parsed.json, now);
@@ -522,7 +527,7 @@ function usageText(topic) {
   }
 
   if (topic === 'mcp') {
-    return `Usage: ${CLI_NAME} mcp serve [--json]`;
+    return `Usage: ${CLI_NAME} mcp serve [--profile safe|full|admin] [--json]`;
   }
 
   if (topic === 'session start') {
@@ -553,7 +558,7 @@ function usageText(topic) {
     '  review --target <manifest> --json',
     '  schema list --json',
     '  schema get --name <schema> --json',
-    '  mcp serve --json',
+    '  mcp serve --profile safe --json',
     '',
     'Global options:',
     '  --json',
@@ -562,7 +567,26 @@ function usageText(topic) {
   ].join('\n');
 }
 
-function mcpServeInfo() {
+function mcpServeInfo(options = {}) {
+  const profile = resolveMcpProfile(options.profile);
+  if (!profile.ok) {
+    return {
+      status: 'error',
+      data: {
+        adapter: {
+          transport: 'stdio',
+          local_only: true,
+          external_channel: false,
+          shell_tools: false,
+          cleanup_tools: false,
+          executable: 'browser-debug-mcp'
+        }
+      },
+      warnings: [],
+      errors: [{ code: 'INVALID_MCP_PROFILE', message: profile.message, details: { profile: options.profile } }],
+      artifacts: []
+    };
+  }
   return {
     status: 'ok',
     data: {
@@ -572,7 +596,8 @@ function mcpServeInfo() {
         external_channel: false,
         shell_tools: false,
         cleanup_tools: false,
-        executable: 'browser-debug-mcp'
+        executable: 'browser-debug-mcp',
+        profile: mcpProfileMetadata(profile.profile)
       }
     },
     warnings: [],

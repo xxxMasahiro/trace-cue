@@ -382,7 +382,21 @@ const schemas = Object.freeze({
     properties: {
       name: { type: 'string' },
       description: { type: 'string' },
-      inputSchema: { type: 'object' }
+      inputSchema: { type: 'object' },
+      minimumProfile: { type: 'string', enum: ['safe', 'full', 'admin'] },
+      effects: {
+        type: 'object',
+        properties: {
+          browserLaunched: { type: 'boolean' },
+          writesArtifacts: { type: 'boolean' },
+          deletesFiles: { type: 'boolean' },
+          providerCall: { type: 'boolean' },
+          shellUsed: { type: 'boolean' },
+          externalListener: { type: 'boolean' },
+          externalUpload: { type: 'boolean' }
+        },
+        additionalProperties: false
+      }
     },
     additionalProperties: true
   })

@@ -42,6 +42,7 @@ for rel in \
   src/daemon.js \
   src/daemon-worker.js \
   src/mcp.js \
+  src/mcp-profiles.js \
   src/page-evidence.js \
   src/observe.js \
   src/review.js \

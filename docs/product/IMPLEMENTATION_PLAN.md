@@ -800,6 +800,42 @@ Phase 30 hardens the local package release path without publishing, renaming the
 - Verification must include `npm test`, `npm run test:pack`, `npm run test:pack-install`, `npm run release:check`, `./tools/product-gate`, and `git diff --check`.
 - Browser smoke tests are required only if browser runtime behavior changes; Phase 30 does not change Playwright runtime behavior.
 
+### Phase 31: MCP Profile Gating
+
+Phase 31 turns the local stdio MCP adapter from one fixed allowlist into a launch-selected profile surface. It preserves existing no-argument MCP behavior for compatibility, keeps the CLI/core contract as the source of truth, and adds explicit lower-risk and future-admin profiles without adding HTTP/socket transport, shell tools, cleanup execution, agent execution, external upload, credential handling, profile reuse, or provider SDK behavior.
+
+#### Phase 31a: Profile Contract and Documentation
+
+- Completed: documented three MCP profiles: `safe`, `full`, and `admin`.
+- Completed: kept no-profile `browser-debug-mcp` and `.mcp.json` behavior compatible with the current adapter by resolving to the `full` profile.
+- Completed: recommended `safe` for low-trust or discovery-only MCP clients because it exposes no-browser/no-delete/no-provider tools only.
+- Completed: defined `admin` as an explicit reserved local-maintenance profile for this phase, without exposing cleanup execution, provider execution, daemon/session control, shell, HTTP/socket listeners, or arbitrary process control.
+- Completed: recorded that profile selection happens at server launch or trusted adapter context, not per MCP request.
+
+#### Phase 31b: Reusable MCP Profile Registry
+
+- Completed: added a data-driven MCP profile registry that owns tool metadata, profile membership, CLI argument mapping, and conservative effect metadata.
+- Completed: kept `MCP_TOOLS` exported as the compatibility `full` tool list while adding API helpers such as `MCP_PROFILES`, `resolveMcpProfile`, and `getMcpTools`.
+- Completed: kept MCP tools thin over existing CLI commands and core functions instead of creating profile-specific runtime branches.
+
+#### Phase 31c: Launch-Time Profile Selection and Input Confinement
+
+- Completed: added `browser-debug-mcp --profile safe|full|admin` plus `BROWSER_DEBUG_MCP_PROFILE` context support.
+- Completed: added `browser-debug mcp serve --profile <profile> --json` metadata so humans and agents can inspect the configured adapter surface without starting stdio.
+- Completed: made `tools/list` and `tools/call` fail closed for invalid profiles and out-of-profile tools.
+- Completed: enabled MCP-only workspace confinement for `@file` structured inputs, including rejecting absolute paths, parent traversal, symlink escapes, non-regular files, and oversized files. Normal CLI `@file` behavior remains unchanged.
+
+#### Phase 31d: Verification and Packaging
+
+- Completed: added no-browser tests for profile membership, profile rejection, out-of-profile calls, MCP metadata output, and MCP-only file input confinement.
+- Completed: extended packed install smoke coverage so installed packages expose the profile helpers and enforce safe/full profile behavior.
+- Completed: updated product manifests, repository index, plugin-facing skill, README, changelog, security, release, verification, task tracker, and handoff with the profile boundary.
+
+#### Phase 31 Verification Plan
+
+- Verification must include `npm test`, `npm run test:pack`, `npm run test:pack-install`, `npm run release:check`, `./tools/product-gate`, and `git diff --check`.
+- Browser smoke tests are required only if browser runtime behavior changes; Phase 31 changes MCP adapter gating and no-browser input confinement only.
+
 ## Verification Method
 
 - `./tools/product-gate`
@@ -840,6 +876,7 @@ Phase 30 hardens the local package release path without publishing, renaming the
 - Phase 27 checks cover local agent request detail output, selected-result matching, request detail schema parity, no artifact writes, no browser launch, no provider API calls, no automatic upload, no credential storage, no MCP agent execution, and no review artifact mutation.
 - Phase 28 checks cover local agent workflow creation, workflow status recomputation, workflow index aggregation, workflow report output, workflow schema parity, local workflow receipts, no browser launch, no provider API calls, no automatic upload, no credential storage, no MCP agent execution, no external evidence transfer, and no review artifact mutation.
 - Phase 30 checks cover the packed tarball install layout, packaged CLI entrypoints, package API imports, MCP stdio tool listing, schema/template/plugin file presence, selected workflow security docs, and no-publish local release boundaries.
+- Phase 31 checks cover MCP profile registry behavior, safe/full/admin launch selection, out-of-profile tool rejection, compatibility `MCP_TOOLS` exports, packed-install API profile helpers, and MCP-only workspace-confined `@file` handling without changing normal CLI behavior.
 - Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, external listener creation, arbitrary shell execution, unapproved upload paths, host cache/swap mutation, and cleanup outside the configured artifact root.
 
 ## Recovery Path

@@ -35,7 +35,16 @@ export {
   normalizeContentUxAdvisoryConfig
 } from './content-ux-advisory.js';
 export { listSchemas, getSchema, schemaNames } from './schema-registry.js';
-export { MCP_TOOLS, handleMcpRequest, runMcpStdio } from './mcp.js';
+export {
+  DEFAULT_MCP_PROFILE,
+  MCP_PROFILES,
+  MCP_TOOLS,
+  getMcpTools,
+  handleMcpRequest,
+  parseMcpServerArgs,
+  resolveMcpProfile,
+  runMcpStdio
+} from './mcp.js';
 export {
   CLI_NAME,
   DEFAULT_ARTIFACT_ROOT,

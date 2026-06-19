@@ -89,6 +89,10 @@ The review platform must:
 - Keep `resource_guard` local and additive; default advisory mode must not change review findings, `metrics.finding_count`, existing `action_plan`, or `quality_signals.release_readiness`, and fail-critical mode must stop only browser-heavy work.
 - Keep `resource artifacts plan` local and no-delete; it may report usage and cleanup candidates but must not mutate files.
 - Keep `resource artifacts cleanup --execute` scoped to the configured artifact root, regular files, and local receipts; it must not be exposed as an MCP cleanup tool.
+- Keep MCP profile selection fail-closed and launch-scoped. The no-profile/default MCP adapter may preserve current `full` compatibility, but low-trust clients should use `--profile safe`.
+- Keep the MCP `safe` profile no-browser, no-delete, no-provider, no-shell, and no external-listener by construction.
+- Keep the MCP `admin` profile explicit and reserved for local-maintenance expansion; it must not bypass cleanup receipts, explicit execution gates, local-only boundaries, or separate security review requirements.
+- Keep MCP structured `@file` input workspace-confined. MCP callers must not be able to read absolute paths, parent-traversal paths, symlink escapes, non-regular files, or oversized files through target manifests or other structured input.
 - Keep `agent package` scoped to existing local review artifact indexes and metadata-only artifact references; it must not copy raw screenshots, trace contents, raw DOM, console payloads, network payloads, sourceData values, or report bodies into transfer-ready output by default.
 - Keep `agent requests list` and `agent requests show` read-only over local package/result metadata; they must not write artifacts, launch browsers, execute agents, call providers, upload evidence, store credentials, mutate review artifacts, or expose MCP agent execution.
 - Keep `agent workflow create` scoped to local package metadata and `.browser-debug/agent-workflows/` plus receipt artifacts; it must not launch browsers, execute agents, call providers, upload evidence, store credentials, mutate review artifacts, or expose MCP agent execution.
