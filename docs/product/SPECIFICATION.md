@@ -73,6 +73,7 @@ browser-debug mcp serve [--profile safe|full|admin]
 browser-debug mcp serve --transport http --profile safe --host 127.0.0.1 --port <port>
 browser-debug mcp config [--client generic|codex] [--profile safe|full|admin] --json
 browser-debug mcp config --transport http --profile safe --host 127.0.0.1 --port <port> [--endpoint /mcp] [--token-env BROWSER_DEBUG_MCP_HTTP_TOKEN] --json
+browser-debug mcp capabilities [--profile safe|full|admin|all] [--scope all|profiles|excluded] --json
 ```
 
 The MVP implementation order is:
@@ -129,6 +130,7 @@ Implemented behavior:
 - `browser-debug-mcp --transport http --profile safe --host 127.0.0.1 --port <port>` starts an explicit safe HTTP MCP endpoint. It binds only to loopback hosts, requires a bearer token from `BROWSER_DEBUG_MCP_HTTP_TOKEN` by default, validates loopback Host and Origin headers, limits request bodies, accepts one JSON-RPC object per POST, and uses the same safe-profile allowlist as stdio. It does not expose `full` or `admin` over HTTP.
 - `browser-debug mcp config --json` emits reusable stdio MCP client configuration without launching a server, writing files, or reading credentials. Generated client config defaults to the `safe` profile; the packaged `.mcp.json` remains compatibility `full`.
 - `browser-debug mcp config --transport http --profile safe --port <port> --json` emits token-free launch and client-connection metadata for the explicit safe HTTP MCP endpoint, including the URL, token environment variable name, authorization header placeholder, protocol version, body limit, and safe-profile boundaries.
+- `browser-debug mcp capabilities --json` emits a read-only MCP capability policy report with profile tool surfaces, transport support, the current admin policy, explicit excluded operations, and boundary flags. It does not launch a server, write files, read token values, store credentials, or enable write/execute operations.
 - MCP profile selection happens at server launch or trusted adapter context, not per MCP request. `tools/list` and `tools/call` fail closed for invalid profiles or out-of-profile tool names.
 - MCP `@file` structured input is workspace-confined. Absolute paths, parent traversal, symlink escapes, non-regular files, and oversized files are rejected for MCP requests. Normal CLI `@file` behavior is unchanged outside MCP-restricted contexts.
 - Product identity metadata is explicit and reusable. The current package name, CLI bin name, MCP bin name, MCP server name, plugin name, display name, repository URL, and packaged skill path remain unchanged, but tests, package dry-run checks, and packed-install smoke derive expectations from the identity contract so a future approved rename can be implemented predictably.
@@ -485,7 +487,15 @@ The MCP client configuration helper:
 - Does not launch a listener, mutate files, contact the network, read token values, print token values, or create credentials.
 - Reports `token_env` and placeholder authorization header syntax only.
 
-The `safe` profile is no-browser, no-delete, no-provider, no-shell, and no-external-listener in its tool effects. It includes no-browser discovery, schema, target validation, resource status, artifact planning, and read-only local agent advisory/status inspection. The `full` profile remains a stdio compatibility profile for local observe/review/target workflows. The `admin` profile remains explicit and reserved for future local maintenance but does not currently add write/execute powers.
+The MCP capability policy helper:
+
+- Is launched through `browser-debug mcp capabilities --json`.
+- Can filter output by `--profile safe|full|admin|all` and `--scope all|profiles|excluded`.
+- Reports supported transports, launch-selected profile surfaces, the current admin policy, and excluded operations.
+- Records that `admin` is currently equivalent to `full` and that write/execute tools remain unexposed.
+- Does not launch a listener, mutate files, contact the network, read token values, print token values, create credentials, or broaden MCP permissions.
+
+The `safe` profile is no-browser, no-delete, no-provider, no-shell, and no-external-listener in its tool effects. It includes no-browser discovery, schema, target validation, resource status, artifact planning, read-only local agent advisory/status inspection, and MCP capability policy inspection. The `full` profile remains a stdio compatibility profile for local observe/review/target workflows. The `admin` profile remains explicit and reserved for future local maintenance but does not currently add write/execute powers.
 
 MCP does not expose artifact cleanup execution, package generation, ingest, report writing, workflow creation, execution planning, `agent execution run`, provider/API execution, daemon/session control, arbitrary shell execution, browser profile reuse, storage-state persistence, OAuth, external upload, credential handling, or gate mutation. HTTP transport does not expose `full` or `admin`.
 

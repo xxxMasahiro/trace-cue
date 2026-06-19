@@ -1785,6 +1785,7 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_requests_list'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_workflow_status'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_execution_status'), true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_mcp_capabilities'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_review_target'), true);
   assert.equal(listed.result.tools.some((tool) => /agent_execution_run|cleanup_execute|provider_execute/i.test(tool.name)), false);
   assert.equal(listed.result.tools.some((tool) => /shell|cleanup/i.test(tool.name)), false);
@@ -1800,6 +1801,7 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(safeToolNames.includes('browser_debug_agent_requests_show'), true);
   assert.equal(safeToolNames.includes('browser_debug_agent_workflow_index'), true);
   assert.equal(safeToolNames.includes('browser_debug_agent_execution_list'), true);
+  assert.equal(safeToolNames.includes('browser_debug_mcp_capabilities'), true);
   assert.equal(safeToolNames.includes('browser_debug_review'), false);
   assert.equal(safeToolNames.includes('browser_debug_observe'), false);
   assert.equal(safeToolNames.includes('browser_debug_target_init'), false);
@@ -1860,6 +1862,50 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(stdioConfigBody.data.config.boundary.token_values_emitted, false);
   assert.equal(stdioConfigBody.data.config.boundary.cleanup_execution, false);
   assert.equal(stdioConfigBody.data.config.boundary.provider_api_execution, false);
+
+  const mcpCapabilitiesParsed = parseCliArgs(['mcp', 'capabilities', '--profile', 'admin', '--scope', 'excluded', '--json']);
+  assert.equal(mcpCapabilitiesParsed.ok, true);
+  assert.equal(mcpCapabilitiesParsed.command, 'mcp capabilities');
+  assert.equal(mcpCapabilitiesParsed.options.profile, 'admin');
+  assert.equal(mcpCapabilitiesParsed.options.scope, 'excluded');
+
+  const mcpCapabilities = await executeCli(['mcp', 'capabilities', '--profile', 'admin', '--scope', 'excluded', '--json'], { now: fixedNow });
+  assert.equal(mcpCapabilities.exitCode, 0);
+  const mcpCapabilitiesBody = JSON.parse(mcpCapabilities.stdout);
+  const excludedOperationIds = mcpCapabilitiesBody.data.capabilities.excluded_operations.map((operation) => operation.id);
+  assert.equal(mcpCapabilitiesBody.command, 'mcp capabilities');
+  assert.equal(mcpCapabilitiesBody.data.capabilities.scope, 'excluded');
+  assert.equal(mcpCapabilitiesBody.data.capabilities.profiles.length, 0);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.transports.length, 0);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.admin_policy.currently_equivalent_to_full, true);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.admin_policy.write_execute_tools_exposed, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.admin_policy.cleanup_execution_exposed, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.admin_policy.agent_execution_run_exposed, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.admin_policy.provider_api_execution_exposed, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.admin_policy.shell_tools_exposed, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.boundaries.cleanup_execution, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.boundaries.agent_execution_run, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.boundaries.provider_api_execution, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.boundaries.arbitrary_shell, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.boundaries.http_full_or_admin, false);
+  assert.deepEqual(mcpCapabilitiesBody.data.capabilities.excluded_operations.map((operation) => operation.mcp_admin), excludedOperationIds.map(() => false));
+  assert.ok(excludedOperationIds.includes('agent_execution_run'));
+  assert.ok(excludedOperationIds.includes('resource_artifacts_cleanup_execute'));
+  assert.ok(excludedOperationIds.includes('provider_api_execution'));
+  assert.ok(excludedOperationIds.includes('arbitrary_shell'));
+  assert.ok(excludedOperationIds.includes('http_full_admin_socket_remote'));
+
+  const safeProfileCapabilities = await executeCli(['mcp', 'capabilities', '--profile', 'safe', '--scope', 'profiles', '--json'], { now: fixedNow });
+  assert.equal(safeProfileCapabilities.exitCode, 0);
+  const safeProfileCapabilitiesBody = JSON.parse(safeProfileCapabilities.stdout);
+  assert.deepEqual(safeProfileCapabilitiesBody.data.capabilities.profiles.map((profile) => profile.name), ['safe']);
+  assert.equal(safeProfileCapabilitiesBody.data.capabilities.excluded_operations.length, 0);
+  assert.equal(safeProfileCapabilitiesBody.data.capabilities.profiles[0].tools.some((tool) => tool.name === 'browser_debug_mcp_capabilities'), true);
+  assert.equal(safeProfileCapabilitiesBody.data.capabilities.profiles[0].tools.some((tool) => tool.name === 'browser_debug_review'), false);
+
+  const invalidCapabilities = await executeCli(['mcp', 'capabilities', '--scope', 'wide-open', '--json'], { now: fixedNow });
+  assert.equal(invalidCapabilities.exitCode, 1);
+  assert.equal(JSON.parse(invalidCapabilities.stdout).errors[0].code, 'INVALID_MCP_CAPABILITY_SCOPE');
 
   const httpInfoParsed = parseCliArgs([
     'mcp',
@@ -1984,6 +2030,21 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   }, { cwd: artifactCwd, now: fixedNow });
   assert.equal(artifactPlan.result.structuredContent.command, 'resource artifacts plan');
   assert.equal(artifactPlan.result.structuredContent.data.boundary.cache_deleted, false);
+
+  const capabilityPolicy = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 7,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_mcp_capabilities',
+      arguments: { profile: 'admin', scope: 'excluded' }
+    }
+  }, { mcpProfile: 'safe', now: fixedNow });
+  assert.equal(capabilityPolicy.result.structuredContent.command, 'mcp capabilities');
+  assert.equal(capabilityPolicy.result.structuredContent.status, 'ok');
+  assert.equal(capabilityPolicy.result.structuredContent.data.capabilities.admin_policy.write_execute_tools_exposed, false);
+  assert.equal(capabilityPolicy.result.structuredContent.data.capabilities.excluded_operations.some((operation) => operation.id === 'agent_execution_run'), true);
+  assert.equal(capabilityPolicy.result.structuredContent.data.capabilities.excluded_operations.every((operation) => operation.mcp_admin === false), true);
 
   const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-mcp-target-'));
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');

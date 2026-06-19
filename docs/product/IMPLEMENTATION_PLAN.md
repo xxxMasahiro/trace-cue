@@ -946,13 +946,36 @@ Phase 35 makes the safe HTTP MCP foundation easier to adopt from external reposi
 - Update README, plugin skill guidance, security, verification, package, and workflow docs with the new client configuration path.
 - Keep HTTP `full` or `admin`, socket transport, remote HTTP listeners, shell tools, cleanup execution, provider/API execution, `agent execution run`, package generation, ingest, report writing, workflow creation, execution planning, credential handling, external upload, and profile reuse out of scope.
 
-### Phase 36: Future Admin MCP Local Write/Execute Review
+### Phase 36: MCP Capability Policy Report
 
-Phase 36 is not implemented in Phase 35. If approved later, it should decide whether any write-producing local advisory operations belong in `admin` MCP. Candidate operations must be reviewed one at a time with explicit receipts, local scope, tests, and failure-safe behavior. Cleanup execution, provider/API execution, `agent execution run`, shell tools, daemon/session control, and credential-bearing flows remain excluded until separately approved.
+Phase 36 implements a read-only MCP capability policy report so users and agents can inspect the current safe/full/admin profile boundaries without reverse-engineering the repository. It does not approve any write or execute operation for MCP.
+
+#### Phase 36a: Policy Report Core
+
+- Completed: added `src/mcp-capabilities.js` as a pure no-side-effect report builder over the existing MCP profile, transport, and product identity contracts.
+- Completed: added `browser-debug mcp capabilities --json` with `--profile safe|full|admin|all` and `--scope all|profiles|excluded` filtering.
+- Completed: recorded explicit excluded operations for cleanup execution, package/ingest/report writing, workflow creation/report writing, execution planning, `agent execution run`, daemon/session control, provider/API execution, arbitrary shell, socket transport, remote HTTP listeners, and HTTP `full` or `admin`.
+- Completed: recorded that `admin` is currently equivalent to `full` and that write/execute tools are not exposed.
+
+#### Phase 36b: MCP, API, and Package Reuse
+
+- Completed: exposed `browser_debug_mcp_capabilities` through safe/full/admin MCP profiles because the tool is read-only and does not launch browsers, write artifacts, delete files, call providers, upload evidence, execute shell commands, or open listeners.
+- Completed: exported the capability report helper and policy version through the package API.
+- Completed: extended packed-install smoke coverage so installed packages expose the source file, API helper, CLI command, and MCP tool.
+
+#### Phase 36c: Documentation and Boundaries
+
+- Completed: synchronized requirements, specification, implementation plan, security, verification, release, README, plugin skill, manifests, task tracker, handoff, AGENTS, changelog, and session memory with the read-only capability policy boundary.
+- Completed: kept cleanup execution, provider/API execution, `agent execution run`, shell tools, daemon/session control, credential handling, HTTP `full` or `admin`, socket transport, and remote listeners out of MCP.
+
+#### Phase 36 Verification Plan
+
+- Verification must include `node --check` on changed runtime and test files, `npm test`, `npm run test:pack`, `npm run test:pack-install`, `npm run release:check`, `./tools/product-gate`, and `git diff --check`.
+- Browser smoke tests are not required for Phase 36 unless browser runtime behavior changes; Phase 36 changes no-browser MCP policy reporting, package smoke checks, and documentation only.
 
 ### Phase 37: Future Transport Expansion Review
 
-Phase 37 is not implemented in Phase 35. If approved later, it should decide whether socket transport, remote HTTP binding, streaming HTTP behavior, or broader MCP profiles over HTTP are necessary. Any such expansion requires a security design, authentication and origin policy, operational documentation, and tests before implementation.
+Phase 37 is not implemented in Phase 36. If approved later, it should decide whether socket transport, remote HTTP binding, streaming HTTP behavior, or broader MCP profiles over HTTP are necessary. Any such expansion requires a security design, authentication and origin policy, operational documentation, and tests before implementation.
 
 ## Verification Method
 

@@ -13,6 +13,7 @@ const SAFE_PROFILE_TOOLS = Object.freeze([
   'browser_debug_agent_workflow_index',
   'browser_debug_agent_execution_status',
   'browser_debug_agent_execution_list',
+  'browser_debug_mcp_capabilities',
   'browser_debug_schema_list',
   'browser_debug_schema_get'
 ]);
@@ -32,6 +33,7 @@ const FULL_PROFILE_TOOLS = Object.freeze([
   'browser_debug_agent_workflow_index',
   'browser_debug_agent_execution_status',
   'browser_debug_agent_execution_list',
+  'browser_debug_mcp_capabilities',
   'browser_debug_review_target',
   'browser_debug_schema_list',
   'browser_debug_schema_get'
@@ -326,6 +328,24 @@ const TOOL_REGISTRY = Object.freeze([
     },
     effects: effects({ browserLaunched: true, writesArtifacts: true }),
     toCliArgs: (args) => withCommonOptions(['review', '--target', args.target], args)
+  },
+  {
+    name: 'browser_debug_mcp_capabilities',
+    minimumProfile: 'safe',
+    description: 'Inspect MCP profile, transport, and admin write/execute exposure policy without changing state.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        profile: { type: 'string' },
+        scope: { type: 'string' }
+      }
+    },
+    effects: effects({ browserLaunched: false, writesArtifacts: false }),
+    toCliArgs: (args) => withOptionalOptions(['mcp', 'capabilities'], args, {
+      profile: '--profile',
+      scope: '--scope'
+    })
   },
   {
     name: 'browser_debug_schema_list',

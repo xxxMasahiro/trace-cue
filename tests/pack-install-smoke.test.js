@@ -42,6 +42,7 @@ async function main() {
     await assertFile(packageDir, normalizePackagePath(PRODUCT_IDENTITY.cliBinPath));
     await assertFile(packageDir, normalizePackagePath(PRODUCT_IDENTITY.mcpBinPath));
     await assertFile(packageDir, 'src/api.js');
+    await assertFile(packageDir, 'src/mcp-capabilities.js');
     await assertFile(packageDir, 'src/mcp-client-config.js');
     await assertFile(packageDir, 'src/mcp-http-transport.js');
     await assertFile(packageDir, 'src/mcp-transport-policy.js');
@@ -88,6 +89,8 @@ async function main() {
     assert.equal(typeof api.getMcpTools, 'function');
     assert.equal(typeof api.resolveMcpProfile, 'function');
     assert.equal(typeof api.startMcpHttpServer, 'function');
+    assert.equal(typeof api.buildMcpCapabilityReport, 'function');
+    assert.equal(api.MCP_CAPABILITY_POLICY_VERSION, '1.0.0');
     assert.equal(typeof api.buildMcpClientConfig, 'function');
     assert.equal(typeof api.resolveMcpTransportConfig, 'function');
     assert.equal(api.schemaNames().includes('agent_execution'), true);
@@ -103,8 +106,14 @@ async function main() {
     assert.equal(httpClientConfig.config.launch.env[mcpHttpTokenEnv], '<set-16-or-more-character-token>');
     assert.equal(JSON.stringify(httpClientConfig).includes('secret'), false);
     assert.equal(api.resolveMcpProfile('safe').ok, true);
+    assert.equal(api.getMcpTools('safe').some((tool) => tool.name === 'browser_debug_mcp_capabilities'), true);
     assert.equal(api.getMcpTools('safe').some((tool) => tool.name === 'browser_debug_review'), false);
     assert.equal(api.getMcpTools('full').some((tool) => tool.name === 'browser_debug_review'), true);
+    const capabilityReport = api.buildMcpCapabilityReport({ profile: 'admin', scope: 'excluded' });
+    assert.equal(capabilityReport.ok, true);
+    assert.equal(capabilityReport.report.admin_policy.write_execute_tools_exposed, false);
+    assert.equal(capabilityReport.report.excluded_operations.some((operation) => operation.id === 'agent_execution_run'), true);
+    assert.equal(capabilityReport.report.excluded_operations.every((operation) => operation.mcp_admin === false), true);
 
     const initialized = await api.handleMcpRequest(
       { jsonrpc: '2.0', id: 0, method: 'initialize' },
@@ -189,7 +198,29 @@ async function main() {
     assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_target_validate'), true);
     assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_agent_requests_show'), true);
     assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_agent_execution_list'), true);
+    assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_mcp_capabilities'), true);
     assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_review_target'), false);
+
+    const capabilityCli = await api.executeCli(
+      ['mcp', 'capabilities', '--profile', 'admin', '--scope', 'excluded', '--json'],
+      { cwd: installRoot }
+    );
+    assert.equal(capabilityCli.exitCode, 0);
+    const capabilityCliBody = JSON.parse(capabilityCli.stdout);
+    assert.equal(capabilityCliBody.data.capabilities.admin_policy.agent_execution_run_exposed, false);
+    assert.equal(capabilityCliBody.data.capabilities.excluded_operations.some((operation) => operation.id === 'resource_artifacts_cleanup_execute'), true);
+
+    const capabilityTool = await api.handleMcpRequest({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'browser_debug_mcp_capabilities',
+        arguments: { profile: 'admin', scope: 'excluded' }
+      }
+    }, { cwd: installRoot, mcpProfile: 'safe' });
+    assert.equal(capabilityTool.result.structuredContent.command, 'mcp capabilities');
+    assert.equal(capabilityTool.result.structuredContent.data.capabilities.admin_policy.write_execute_tools_exposed, false);
 
     const binLink = await lstat(path.join(binDir, PRODUCT_IDENTITY.cliBinName));
     assert.equal(binLink.isSymbolicLink(), true);
