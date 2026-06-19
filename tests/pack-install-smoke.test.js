@@ -130,7 +130,10 @@ async function main() {
     const mcpBody = await api.handleMcpRequest({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { cwd: installRoot });
     assert.equal(mcpBody.result.profile.name, 'full');
     assert.equal(mcpBody.result.tools.some((tool) => tool.name === 'browser_debug_target_validate'), true);
-    assert.equal(mcpBody.result.tools.some((tool) => /agent execution/i.test(tool.name)), false);
+    assert.equal(mcpBody.result.tools.some((tool) => tool.name === 'browser_debug_agent_requests_list'), true);
+    assert.equal(mcpBody.result.tools.some((tool) => tool.name === 'browser_debug_agent_workflow_status'), true);
+    assert.equal(mcpBody.result.tools.some((tool) => tool.name === 'browser_debug_agent_execution_status'), true);
+    assert.equal(mcpBody.result.tools.some((tool) => /agent_execution_run|cleanup_execute|provider_execute/i.test(tool.name)), false);
 
     const safeMcpBody = await api.handleMcpRequest(
       { jsonrpc: '2.0', id: 2, method: 'tools/list' },
@@ -138,6 +141,8 @@ async function main() {
     );
     assert.equal(safeMcpBody.result.profile.name, 'safe');
     assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_target_validate'), true);
+    assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_agent_requests_show'), true);
+    assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_agent_execution_list'), true);
     assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_review_target'), false);
 
     const binLink = await lstat(path.join(binDir, PRODUCT_IDENTITY.cliBinName));

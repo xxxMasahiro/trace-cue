@@ -182,7 +182,12 @@ test('agent advisory layer keeps local handoff and import boundaries', async () 
   assert.match(combinedAgent, /raw_artifact_content_included:\s*false/);
   assert.match(combinedAgent, /external_evidence_transfer:\s*false/);
   assert.match(agentExecution, /mcp_execution_exposed:\s*false/);
-  assert.doesNotMatch(mcp, /browser_debug_agent|agent package|agent ingest|agent report|agent execution/);
+  assert.match(mcp, /browser_debug_agent_requests_list/);
+  assert.match(mcp, /browser_debug_agent_workflow_status/);
+  assert.doesNotMatch(
+    mcp,
+    /browser_debug_agent_package|browser_debug_agent_ingest|browser_debug_agent_report|browser_debug_agent_workflow_create|browser_debug_agent_workflow_report|browser_debug_agent_execution_plan|browser_debug_agent_execution_run/
+  );
 });
 
 test('agent execution provider calls stay in the dedicated adapter boundary', async () => {
@@ -201,7 +206,8 @@ test('agent execution provider calls stay in the dedicated adapter boundary', as
   assert.match(providers, /raw_provider_response_stored:\s*false/);
   assert.match(providers, /credential_values_recorded:\s*false/);
   assert.match(providers, /free_form_shell_input_accepted:\s*false/);
-  assert.doesNotMatch(mcp, /agent execution|browser_debug_agent/);
+  assert.match(mcp, /browser_debug_agent_execution_status/);
+  assert.doesNotMatch(mcp, /browser_debug_agent_execution_plan|browser_debug_agent_execution_run|provider_execute/);
 });
 
 test('packaged target templates stay domain-neutral', async () => {

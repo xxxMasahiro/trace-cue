@@ -864,6 +864,33 @@ Phase 32 prepares the package, plugin, MCP, and test surfaces for a future repos
 - Verification must include `npm test`, `npm run test:pack`, `npm run test:pack-install`, `npm run release:check`, `./tools/product-gate`, and `git diff --check`.
 - Browser smoke tests are required only if browser runtime behavior changes; Phase 32 changes metadata, package smoke wiring, and no-browser tests only.
 
+### Phase 33: MCP Read-Only Agent Status Surface
+
+Phase 33 expands the local stdio MCP adapter with read-only local advisory/status tools that already exist in the CLI. It keeps `safe` no-browser, no-delete, no-provider, no-shell, and no-external-listener. It does not expose agent execution run, provider/API execution, artifact cleanup execution, workflow creation, package generation, ingest, report writing, daemon/session control, HTTP/socket transport, external upload, credential handling, or arbitrary process control.
+
+#### Phase 33a: Scope and Boundary Documentation
+
+- Completed: documented that MCP can read local agent surfaces, request status/detail, workflow status/index, and execution status/list through the same CLI/core contracts.
+- Completed: kept write-producing advisory commands such as package generation, ingest, reports, workflow creation, and execution planning out of the MCP read-only slice.
+- Completed: kept `agent execution run`, cleanup execution, provider/API execution, shell tools, daemon/session control, and HTTP/socket transport out of every MCP profile.
+
+#### Phase 33b: Reusable MCP Tool Mapping
+
+- Completed: added MCP tool definitions for `agent surfaces list`, `agent requests list`, `agent requests show`, `agent workflow status`, `agent workflow index`, `agent execution status`, and `agent execution list`.
+- Completed: exposed the new tools through `safe`, `full`, and `admin` because they do not launch browsers, delete files, call providers, upload evidence, execute shell commands, or open external listeners.
+- Completed: kept each MCP tool as a thin adapter over existing CLI arguments, preserving workspace-confined `@file` input handling where file paths are accepted.
+
+#### Phase 33c: Verification and Packaging
+
+- Completed: added no-browser tests for tool membership, safe-profile availability, status/detail calls, and continued non-exposure of execution run, cleanup execution, shell, and provider tools.
+- Completed: extended packed-install smoke coverage so installed packages expose the read-only MCP agent status tools.
+- Completed: updated product manifests, README, changelog, security, release, verification, task tracker, handoff, and session memory with the MCP read-only agent status boundary.
+
+#### Phase 33 Verification Plan
+
+- Verification must include `npm test`, `npm run test:pack`, `npm run test:pack-install`, `npm run release:check`, `./tools/product-gate`, and `git diff --check`.
+- Browser smoke tests are required only if browser runtime behavior changes; Phase 33 changes MCP adapter mapping and no-browser tests only.
+
 ## Verification Method
 
 - `./tools/product-gate`
@@ -906,6 +933,7 @@ Phase 32 prepares the package, plugin, MCP, and test surfaces for a future repos
 - Phase 30 checks cover the packed tarball install layout, packaged CLI entrypoints, package API imports, MCP stdio tool listing, schema/template/plugin file presence, selected workflow security docs, and no-publish local release boundaries.
 - Phase 31 checks cover MCP profile registry behavior, safe/full/admin launch selection, out-of-profile tool rejection, compatibility `MCP_TOOLS` exports, packed-install API profile helpers, and MCP-only workspace-confined `@file` handling without changing normal CLI behavior.
 - Phase 32 checks cover product identity metadata, package/plugin/MCP name alignment, identity-derived package dry-run paths, derived packed-install tarball paths, package API identity exports, and unchanged current names before any approved rename.
+- Phase 33 checks cover MCP read-only agent surfaces, request status/detail, workflow status/index, execution status/list, safe-profile availability, packed-install exposure, and continued non-exposure of execution run, cleanup execution, provider/API execution, shell tools, HTTP/socket transport, and write-producing advisory tools.
 - Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, external listener creation, arbitrary shell execution, unapproved upload paths, host cache/swap mutation, and cleanup outside the configured artifact root.
 
 ## Recovery Path

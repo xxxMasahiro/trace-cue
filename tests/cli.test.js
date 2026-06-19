@@ -740,6 +740,94 @@ test('agent package, ingest, and report stay local and advisory-only', async () 
   assert.equal(executionIndexBody.data.summary.api_call_performed, false);
   assert.equal(executionIndexBody.data.summary.mcp_execution_exposed, false);
 
+  const mcpSurfaces = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 30,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_surfaces_list',
+      arguments: {}
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpSurfaces.result.structuredContent.command, 'agent surfaces list');
+  assert.equal(mcpSurfaces.result.structuredContent.data.boundary.api_call_performed, false);
+
+  const mcpRequestsList = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 31,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_requests_list',
+      arguments: { package: '.browser-debug/agent-packages/agent-package-fixed/packet.json' }
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpRequestsList.result.structuredContent.command, 'agent requests list');
+  assert.equal(mcpRequestsList.result.structuredContent.data.summary.total, 1);
+
+  const mcpRequestShow = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 32,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_requests_show',
+      arguments: {
+        package: '.browser-debug/agent-packages/agent-package-fixed/packet.json',
+        agentResult: '.browser-debug/agent-results/agent-result-fixed.json'
+      }
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpRequestShow.result.structuredContent.command, 'agent requests show');
+  assert.equal(mcpRequestShow.result.structuredContent.data.agent_request_detail.status, 'advisory_imported');
+  assert.deepEqual(mcpRequestShow.result.structuredContent.artifacts, []);
+
+  const mcpWorkflowStatus = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 33,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_workflow_status',
+      arguments: { workflow: '.browser-debug/agent-workflows/agent-workflow-fixed/workflow.json' }
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpWorkflowStatus.result.structuredContent.command, 'agent workflow status');
+  assert.equal(mcpWorkflowStatus.result.structuredContent.data.agent_workflow_status.status, 'advisory_imported');
+
+  const mcpWorkflowIndex = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 34,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_workflow_index',
+      arguments: {}
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpWorkflowIndex.result.structuredContent.command, 'agent workflow index');
+  assert.equal(mcpWorkflowIndex.result.structuredContent.data.summary.report_pending, 1);
+
+  const mcpExecutionStatus = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 35,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_execution_status',
+      arguments: { execution: '.browser-debug/agent-executions/agent-execution-fixed/execution.json' }
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpExecutionStatus.result.structuredContent.command, 'agent execution status');
+  assert.equal(mcpExecutionStatus.result.structuredContent.data.agent_execution_status.status, 'planned');
+
+  const mcpExecutionList = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 36,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_execution_list',
+      arguments: {}
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpExecutionList.result.structuredContent.command, 'agent execution list');
+  assert.equal(mcpExecutionList.result.structuredContent.data.summary.planned, 1);
+
   const executionRunWithoutFlag = await executeCli([
     'agent',
     'execution',
@@ -1692,7 +1780,12 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_target_validate'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_resource_status'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_resource_artifacts_plan'), true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_surfaces_list'), true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_requests_list'), true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_workflow_status'), true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_execution_status'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_review_target'), true);
+  assert.equal(listed.result.tools.some((tool) => /agent_execution_run|cleanup_execute|provider_execute/i.test(tool.name)), false);
   assert.equal(listed.result.tools.some((tool) => /shell|cleanup/i.test(tool.name)), false);
   assert.equal(listed.result.tools.every((tool) => tool.effects.shellUsed === false), true);
 
@@ -1702,10 +1795,15 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(safeToolNames.includes('browser_debug_target_validate'), true);
   assert.equal(safeToolNames.includes('browser_debug_resource_status'), true);
   assert.equal(safeToolNames.includes('browser_debug_resource_artifacts_plan'), true);
+  assert.equal(safeToolNames.includes('browser_debug_agent_surfaces_list'), true);
+  assert.equal(safeToolNames.includes('browser_debug_agent_requests_show'), true);
+  assert.equal(safeToolNames.includes('browser_debug_agent_workflow_index'), true);
+  assert.equal(safeToolNames.includes('browser_debug_agent_execution_list'), true);
   assert.equal(safeToolNames.includes('browser_debug_review'), false);
   assert.equal(safeToolNames.includes('browser_debug_observe'), false);
   assert.equal(safeToolNames.includes('browser_debug_target_init'), false);
   assert.equal(safeToolNames.includes('browser_debug_review_target'), false);
+  assert.equal(safeToolNames.some((name) => /agent_execution_run|cleanup_execute|provider_execute/i.test(name)), false);
   assert.equal(safeListed.result.tools.every((tool) => tool.effects.browserLaunched === false), true);
   assert.equal(safeListed.result.tools.every((tool) => tool.effects.deletesFiles === false), true);
   assert.equal(safeListed.result.tools.every((tool) => tool.effects.providerCall === false), true);
