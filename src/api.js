@@ -48,10 +48,23 @@ export {
   MCP_TOOLS,
   getMcpTools,
   handleMcpRequest,
+  mcpServerInfo,
   parseMcpServerArgs,
   resolveMcpProfile,
   runMcpStdio
 } from './mcp.js';
+export { createMcpHttpServer, runMcpHttp, startMcpHttpServer } from './mcp-http-transport.js';
+export {
+  MCP_HTTP_DEFAULT_BODY_LIMIT_BYTES,
+  MCP_HTTP_DEFAULT_ENDPOINT,
+  MCP_HTTP_DEFAULT_HOST,
+  MCP_HTTP_DEFAULT_PORT,
+  MCP_HTTP_DEFAULT_PROFILE,
+  MCP_HTTP_DEFAULT_TOKEN_ENV,
+  MCP_HTTP_PROTOCOL_VERSION,
+  publicMcpTransportMetadata,
+  resolveMcpTransportConfig
+} from './mcp-transport-policy.js';
 export {
   CLI_NAME,
   DEFAULT_ARTIFACT_ROOT,

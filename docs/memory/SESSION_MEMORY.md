@@ -226,3 +226,21 @@ commit: 1af1fcd Document agent execution integration plan
 - Added no-browser and packed-install coverage for package/plugin/MCP/API identity alignment and unchanged current names.
 - Updated product manifests, repository index, implementation plan, specification, security/release/verification docs, README, changelog, task tracker, handoff, and AGENTS current phase for the rename-readiness boundary.
 - Phase 32 remains local-first and additive. Future package rename, repository rename, CLI rename, MCP server rename, plugin rename, public package naming, license change, marketplace registration, npm publication, or external evidence transfer still requires explicit approval.
+
+## 2026-06-20 Phase 33 MCP Read-Only Agent Status
+
+- Completed Phase 33 MCP read-only agent status without exposing package generation, ingest, report writing, workflow creation, execution planning, `agent execution run`, cleanup execution, provider/API execution, shell tools, daemon/session control, HTTP/socket transport, external upload, credential handling, or gate mutation.
+- Added safe/full/admin MCP tools for local agent surfaces, request status/detail, workflow status/index, and execution status/list by reusing the existing CLI/core command contracts.
+- Preserved the `safe` profile as no-browser, no-delete, no-provider, no-shell, and no-external-listener.
+- Added no-browser MCP coverage for tool listing, safe-profile availability, status/detail calls, packed-install exposure, and continued non-exposure of execution run, cleanup execution, provider/API execution, shell tools, HTTP/socket transport, and write-producing advisory tools.
+- Updated product manifests, implementation plan, specification, security/release/verification docs, README, changelog, task tracker, handoff, and AGENTS current phase for the MCP read-only agent status boundary.
+
+## 2026-06-20 Phase 34 Safe HTTP MCP Foundation
+
+- Completed Phase 34 safe HTTP MCP foundation without exposing HTTP `full` or `admin`, socket transport, remote HTTP listeners, cleanup execution, provider/API execution, `agent execution run`, shell tools, external upload, profile reuse, credential storage, or gate mutation through MCP.
+- Added `src/mcp-transport-policy.js` and `src/mcp-http-transport.js` for explicit `browser-debug-mcp --transport http --profile safe` operation.
+- HTTP MCP transport is loopback-only, bearer-token gated by `BROWSER_DEBUG_MCP_HTTP_TOKEN` by default, Host/Origin validated, request-size bounded, safe-profile-only, and isolated from review, resource, agent, provider, cleanup, daemon, and browser runtime modules.
+- Extended `browser-debug mcp serve --json`, `browser-debug-mcp` help, parser options, and package API exports for transport metadata and embedding.
+- Added no-browser tests for HTTP metadata, safe-profile-only startup, loopback enforcement, token enforcement, Origin rejection, method rejection, body-size limits, and safe tool listing.
+- Added packed-install and architecture/security coverage for HTTP transport files and package API exports.
+- Synchronized README integration modes, product requirements/specification/implementation plan, security, verification, release, changelog, manifests, task tracker, handoff, AGENTS current phase, plugin skill, and identity migration runbook.

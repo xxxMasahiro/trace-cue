@@ -40,7 +40,9 @@
     { "path": "src/cli.js", "role": "manifest" },
     { "path": "src/daemon.js", "role": "manifest" },
     { "path": "src/daemon-worker.js", "role": "manifest" },
+    { "path": "src/mcp-http-transport.js", "role": "manifest" },
     { "path": "src/mcp-profiles.js", "role": "manifest" },
+    { "path": "src/mcp-transport-policy.js", "role": "manifest" },
     { "path": "src/page-evidence.js", "role": "manifest" },
     { "path": "src/product-identity.js", "role": "manifest" },
     { "path": "src/observe.js", "role": "manifest" },
@@ -57,6 +59,7 @@
     { "path": "docs/product/IMPLEMENTATION_PLAN.md", "role": "product_doc" },
     { "path": "docs/workflow/TASK_TRACKER.md", "role": "workflow_doc" },
     { "path": "docs/workflow/HANDOFF.md", "role": "workflow_doc" },
+    { "path": "docs/workflow/IDENTITY_MIGRATION.md", "role": "workflow_doc" },
     { "path": "docs/workflow/RELEASE.md", "role": "workflow_doc" },
     { "path": "ops/CI_MANIFEST.tsv", "role": "ci_config" },
     { "path": "ops/PRODUCT_MANIFEST.tsv", "role": "manifest" }

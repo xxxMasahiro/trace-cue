@@ -19,7 +19,7 @@
   "interface": {
     "displayName": "Browser Debug CLI",
     "shortDescription": "Run local browser observation and UI review from Codex.",
-    "longDescription": "Browser Debug CLI provides local-first Playwright observation, target-manifest review, deterministic findings, action plans, and a stdio MCP adapter without external upload or browser profile reuse.",
+    "longDescription": "Browser Debug CLI provides local-first Playwright observation, target-manifest review, deterministic findings, action plans, and a stdio MCP adapter without external upload or browser profile reuse. The packaged MCP config preserves the compatibility full profile; low-trust clients should launch browser-debug-mcp with --profile safe.",
     "developerName": "Browser Debug CLI Maintainers",
     "category": "Developer Tools",
     "capabilities": [

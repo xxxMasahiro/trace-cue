@@ -27,7 +27,9 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Keep secrets, cookies, storage state, and existing browser profiles out of committed artifacts.
 - Keep the design agent-independent: Codex, other agents, scripts, or humans should all be able to use the same CLI.
 - Prepare for OSS distribution through local Git, GitHub publication with `gh`, CI, and npm packaging in later phases.
-- Prepare a CLI-first review platform that can later expose the same review core through an MCP stdio adapter without making MCP the required runtime.
+- Prepare a CLI-first review platform that exposes the same review core through MCP adapters without making MCP the required runtime.
+- Preserve three usable integration paths: the CLI for any shell, human, or agent; MCP stdio for MCP clients; and a Codex plugin wrapper for skill/MCP discovery.
+- Provide an explicit safe HTTP MCP endpoint for local MCP-compatible tooling that cannot use stdio, while keeping it loopback-only, bearer-token gated, and limited to safe no-browser/read-only tools.
 - Support evidence-backed UI review findings for browser health, layout integrity, interaction quality, accessibility basics, and mock fidelity.
 - Support generic target manifests so site review can cover local applications and dashboards without hard-coded product-specific branches.
 - Treat manifest `expectedRoutes` as reviewable local targets so known app routes can be covered even when route discovery cannot find them from anchors or navigation candidates.
@@ -75,6 +77,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Do not read arbitrary source-data files or remote source-data URLs from target manifests in the local content UX advisory layer.
 - Do not mutate system memory cache, configure swap, delete artifacts automatically, kill arbitrary processes, or perform privileged host cleanup from the local resource status preflight or guard.
 - Do not expose artifact cleanup execution through MCP; MCP may report local artifact usage but must not delete files.
+- Do not expose HTTP `full` or `admin`, remote HTTP listeners, socket transports, shell tools, cleanup execution, package generation, ingest, report writing, workflow creation, execution planning, `agent execution run`, provider/API execution, or credential handling through MCP without a separate approved phase.
 - Do not treat local agent advisory output as deterministic findings, release approval, or a replacement for owner judgment.
 - Do not run provider APIs, upload evidence, store credentials, or expose agent/API execution through MCP as part of the local agent advisory handoff layer.
 - Do not let agent execution mutate review `findings`, `metrics.finding_count`, existing `action_plan`, `quality_signals.release_readiness`, resource guard output, artifact cleanup behavior, or existing `agent_workflow` status meanings.
@@ -144,7 +147,8 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Review outputs include `action_plan`, `review_advisory`, and `quality_signals` objects for developer handoff while keeping subjective or model-like judgment out of deterministic gates.
 - Review outputs include local `evidence_summary` data and `artifact_index` metadata so agents can evaluate expected UI state and hand developers a bounded artifact bundle.
 - Target review can emit `local_content_ux_advisory`, `content_ux_findings`, `content_ux_action_plan`, `content_ux_readiness`, `content_ux_page_handoff`, `content_ux_manifest_authoring`, and `quality_signals.content_ux` only when the target manifest explicitly enables `localContentUxAdvisory.enabled=true`.
-- The repository includes local plugin metadata, local MCP configuration, and a plugin-facing skill without adding marketplace registration, npm publication, external upload, credential handling, or HTTP/socket MCP transport.
+- The repository includes local plugin metadata, local MCP configuration, and a plugin-facing skill without adding marketplace registration, npm publication, external upload, credential handling, or an HTTP default in the packaged MCP config.
+- `browser-debug-mcp --transport http --profile safe --host 127.0.0.1 --port <port>` starts only a local safe HTTP MCP endpoint. It requires a bearer token, validates loopback Host and Origin headers, and does not expose browser-launching, write-producing, cleanup, provider/API, shell, `full`, or `admin` tools.
 
 ## Phase 29 Agent Execution Criteria
 
@@ -186,7 +190,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Completed: target review emits separate `content_ux_page_handoff` and `content_ux_manifest_authoring` outputs for page-level triage and manifest authoring guidance.
 - Completed: target review emits separate `content_ux_review_brief` and `content_ux_rubric_evaluation` outputs for manifest-declared audience, page roles, decision needs, and rubric criteria.
 - Completed: mock comparison is optional and conservative; dimension mismatches, missing baselines, or unsupported images produce `inconclusive` review metrics rather than false pass/fail certainty.
-- Completed: MCP support is implemented as a thin local stdio adapter over the same core, not as a separate product runtime, network service, or default dependency.
+- Completed: MCP support is implemented as thin adapters over the same core, not as a separate product runtime or default dependency. Stdio remains the compatibility default, and HTTP is explicit, loopback-only, token-gated, and safe-profile-only.
 - Completed: model or vision review remains outside deterministic local review checks and has not been implemented.
 
 ## Plugin and Dogfood Readiness Criteria
@@ -200,8 +204,8 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Completed: reusable target manifest templates include a generic status-dashboard content UX advisory example without adding runtime product-specific branches.
 - Completed: target review can emit a Markdown report with action plan and local advisory sections.
 - Completed: Markdown reports include quality signal summaries so developers can triage local review output without reading raw JSON first.
-- Completed: MCP tool allowlists include target manifest initialization, target manifest validation, and target review without adding shell, cleanup execution, HTTP/socket, external upload, or profile-reuse tools.
-- Completed: MCP tool allowlists include local resource status preflight without adding shell, cleanup execution, HTTP/socket, external upload, profile-reuse, or privileged host mutation tools.
+- Completed: MCP tool allowlists include target manifest initialization, target manifest validation, and target review without adding shell, cleanup execution, socket transport, remote HTTP listener, external upload, or profile-reuse tools.
+- Completed: MCP tool allowlists include local resource status preflight without adding shell, cleanup execution, socket transport, remote HTTP listener, external upload, profile-reuse, or privileged host mutation tools.
 - Completed: MCP tool allowlists include local artifact usage planning without exposing artifact cleanup execution.
 - Completed: local agent advisory handoff commands create bounded task packages, list and inspect request state, import advisory results, and render separate reports without direct API calls, automatic upload, credential storage, MCP agent execution, or deterministic gate changes.
 - Completed: `.codex-plugin/plugin.json`, `.mcp.json`, and `skills/browser-debug-review/SKILL.md` define a local plugin bundle over the existing CLI/MCP surface.

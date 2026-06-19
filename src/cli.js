@@ -29,7 +29,8 @@ import { runReview } from './review.js';
 import { schemaListResult, schemaResult } from './schema-registry.js';
 import { runSupervisor } from './supervisor.js';
 import { runTargetInit, runTargetValidate } from './target.js';
-import { mcpProfileMetadata, resolveMcpProfile } from './mcp-profiles.js';
+import { mcpProfileMetadata } from './mcp-profiles.js';
+import { mcpServerInfo } from './mcp.js';
 import {
   buildReport,
   closeSession,
@@ -569,13 +570,13 @@ function usageText(topic) {
 }
 
 function mcpServeInfo(options = {}) {
-  const profile = resolveMcpProfile(options.profile);
-  if (!profile.ok) {
+  const info = mcpServerInfo(normalizeMcpServeOptions(options));
+  if (!info.ok) {
     return {
       status: 'error',
       data: {
         adapter: {
-          transport: 'stdio',
+          transport: options.transport ?? 'stdio',
           local_only: true,
           external_channel: false,
           shell_tools: false,
@@ -584,7 +585,7 @@ function mcpServeInfo(options = {}) {
         }
       },
       warnings: [],
-      errors: [{ code: 'INVALID_MCP_PROFILE', message: profile.message, details: { profile: options.profile } }],
+      errors: [{ code: info.code ?? 'INVALID_MCP_TRANSPORT', message: info.message, details: { profile: options.profile, transport: options.transport } }],
       artifacts: []
     };
   }
@@ -592,17 +593,28 @@ function mcpServeInfo(options = {}) {
     status: 'ok',
     data: {
       adapter: {
-        transport: 'stdio',
-        local_only: true,
+        ...info.metadata,
         external_channel: false,
         shell_tools: false,
         cleanup_tools: false,
         executable: PRODUCT_IDENTITY.mcpBinName,
-        profile: mcpProfileMetadata(profile.profile)
+        profile: mcpProfileMetadata(info.metadata.profile)
       }
     },
     warnings: [],
     errors: [],
     artifacts: []
+  };
+}
+
+function normalizeMcpServeOptions(options = {}) {
+  return {
+    transport: options.transport,
+    profile: options.profile,
+    host: options.host,
+    port: options.port,
+    endpoint: options.endpoint,
+    tokenEnv: options['token-env'] ?? options.tokenEnv,
+    bodyLimit: options['body-limit'] ?? options.bodyLimit
   };
 }

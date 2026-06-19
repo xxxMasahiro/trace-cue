@@ -4,6 +4,7 @@ import { access, mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/pr
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { executeCli } from '../src/cli.js';
+import { startMcpHttpServer } from '../src/mcp-http-transport.js';
 import { handleMcpRequest } from '../src/mcp.js';
 import { runObserve } from '../src/observe.js';
 import { parseCliArgs } from '../src/parser.js';
@@ -739,6 +740,94 @@ test('agent package, ingest, and report stay local and advisory-only', async () 
   assert.equal(executionIndexBody.data.summary.planned, 1);
   assert.equal(executionIndexBody.data.summary.api_call_performed, false);
   assert.equal(executionIndexBody.data.summary.mcp_execution_exposed, false);
+
+  const mcpSurfaces = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 30,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_surfaces_list',
+      arguments: {}
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpSurfaces.result.structuredContent.command, 'agent surfaces list');
+  assert.equal(mcpSurfaces.result.structuredContent.data.boundary.api_call_performed, false);
+
+  const mcpRequestsList = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 31,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_requests_list',
+      arguments: { package: '.browser-debug/agent-packages/agent-package-fixed/packet.json' }
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpRequestsList.result.structuredContent.command, 'agent requests list');
+  assert.equal(mcpRequestsList.result.structuredContent.data.summary.total, 1);
+
+  const mcpRequestShow = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 32,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_requests_show',
+      arguments: {
+        package: '.browser-debug/agent-packages/agent-package-fixed/packet.json',
+        agentResult: '.browser-debug/agent-results/agent-result-fixed.json'
+      }
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpRequestShow.result.structuredContent.command, 'agent requests show');
+  assert.equal(mcpRequestShow.result.structuredContent.data.agent_request_detail.status, 'advisory_imported');
+  assert.deepEqual(mcpRequestShow.result.structuredContent.artifacts, []);
+
+  const mcpWorkflowStatus = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 33,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_workflow_status',
+      arguments: { workflow: '.browser-debug/agent-workflows/agent-workflow-fixed/workflow.json' }
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpWorkflowStatus.result.structuredContent.command, 'agent workflow status');
+  assert.equal(mcpWorkflowStatus.result.structuredContent.data.agent_workflow_status.status, 'advisory_imported');
+
+  const mcpWorkflowIndex = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 34,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_workflow_index',
+      arguments: {}
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpWorkflowIndex.result.structuredContent.command, 'agent workflow index');
+  assert.equal(mcpWorkflowIndex.result.structuredContent.data.summary.report_pending, 1);
+
+  const mcpExecutionStatus = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 35,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_execution_status',
+      arguments: { execution: '.browser-debug/agent-executions/agent-execution-fixed/execution.json' }
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpExecutionStatus.result.structuredContent.command, 'agent execution status');
+  assert.equal(mcpExecutionStatus.result.structuredContent.data.agent_execution_status.status, 'planned');
+
+  const mcpExecutionList = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 36,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_agent_execution_list',
+      arguments: {}
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpExecutionList.result.structuredContent.command, 'agent execution list');
+  assert.equal(mcpExecutionList.result.structuredContent.data.summary.planned, 1);
 
   const executionRunWithoutFlag = await executeCli([
     'agent',
@@ -1692,7 +1781,12 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_target_validate'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_resource_status'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_resource_artifacts_plan'), true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_surfaces_list'), true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_requests_list'), true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_workflow_status'), true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_execution_status'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_review_target'), true);
+  assert.equal(listed.result.tools.some((tool) => /agent_execution_run|cleanup_execute|provider_execute/i.test(tool.name)), false);
   assert.equal(listed.result.tools.some((tool) => /shell|cleanup/i.test(tool.name)), false);
   assert.equal(listed.result.tools.every((tool) => tool.effects.shellUsed === false), true);
 
@@ -1702,10 +1796,15 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(safeToolNames.includes('browser_debug_target_validate'), true);
   assert.equal(safeToolNames.includes('browser_debug_resource_status'), true);
   assert.equal(safeToolNames.includes('browser_debug_resource_artifacts_plan'), true);
+  assert.equal(safeToolNames.includes('browser_debug_agent_surfaces_list'), true);
+  assert.equal(safeToolNames.includes('browser_debug_agent_requests_show'), true);
+  assert.equal(safeToolNames.includes('browser_debug_agent_workflow_index'), true);
+  assert.equal(safeToolNames.includes('browser_debug_agent_execution_list'), true);
   assert.equal(safeToolNames.includes('browser_debug_review'), false);
   assert.equal(safeToolNames.includes('browser_debug_observe'), false);
   assert.equal(safeToolNames.includes('browser_debug_target_init'), false);
   assert.equal(safeToolNames.includes('browser_debug_review_target'), false);
+  assert.equal(safeToolNames.some((name) => /agent_execution_run|cleanup_execute|provider_execute/i.test(name)), false);
   assert.equal(safeListed.result.tools.every((tool) => tool.effects.browserLaunched === false), true);
   assert.equal(safeListed.result.tools.every((tool) => tool.effects.deletesFiles === false), true);
   assert.equal(safeListed.result.tools.every((tool) => tool.effects.providerCall === false), true);
@@ -1741,6 +1840,50 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(mcpInfo.exitCode, 0);
   const mcpInfoBody = JSON.parse(mcpInfo.stdout);
   assert.equal(mcpInfoBody.data.adapter.profile.name, 'safe');
+
+  const httpInfoParsed = parseCliArgs([
+    'mcp',
+    'serve',
+    '--transport',
+    'http',
+    '--profile',
+    'safe',
+    '--host',
+    '127.0.0.1',
+    '--port',
+    '0',
+    '--token-env',
+    'BROWSER_DEBUG_MCP_HTTP_TOKEN',
+    '--json'
+  ]);
+  assert.equal(httpInfoParsed.ok, true);
+  assert.equal(httpInfoParsed.options.transport, 'http');
+  assert.equal(httpInfoParsed.options.profile, 'safe');
+
+  const httpInfo = await executeCli([
+    'mcp',
+    'serve',
+    '--transport',
+    'http',
+    '--profile',
+    'safe',
+    '--host',
+    '127.0.0.1',
+    '--port',
+    '0',
+    '--json'
+  ], { now: fixedNow });
+  assert.equal(httpInfo.exitCode, 0);
+  const httpInfoBody = JSON.parse(httpInfo.stdout);
+  assert.equal(httpInfoBody.data.adapter.transport, 'http');
+  assert.equal(httpInfoBody.data.adapter.profile.name, 'safe');
+  assert.equal(httpInfoBody.data.adapter.auth_required, true);
+  assert.equal(httpInfoBody.data.adapter.token_env, 'BROWSER_DEBUG_MCP_HTTP_TOKEN');
+  assert.equal(httpInfoBody.data.adapter.external_channel, false);
+
+  const httpFullInfo = await executeCli(['mcp', 'serve', '--transport', 'http', '--profile', 'full', '--json'], { now: fixedNow });
+  assert.equal(httpFullInfo.exitCode, 1);
+  assert.equal(JSON.parse(httpFullInfo.stdout).errors[0].code, 'HTTP_MCP_PROFILE_REJECTED');
 
   const invalidMcpInfo = await executeCli(['mcp', 'serve', '--profile', 'wide-open', '--json'], { now: fixedNow });
   assert.equal(invalidMcpInfo.exitCode, 1);
@@ -1872,6 +2015,98 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   }, { cwd: workspace, mcpProfile: 'safe', now: fixedNow });
   assert.equal(symlinkBlocked.result.isError, true);
   assert.equal(symlinkBlocked.result.structuredContent.errors[0].code, 'INPUT_FILE_OUTSIDE_WORKSPACE');
+});
+
+test('HTTP MCP transport is loopback, token-gated, and safe-profile only', async () => {
+  const token = '0123456789abcdef';
+  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-http-mcp-'));
+  await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
+
+  const started = await startMcpHttpServer({ port: 0 }, {
+    cwd,
+    now: fixedNow,
+    env: { BROWSER_DEBUG_MCP_HTTP_TOKEN: token }
+  });
+  try {
+    assert.equal(started.metadata.profile, 'safe');
+    assert.equal(started.metadata.auth_required, true);
+    assert.equal(started.metadata.external_channel, false);
+
+    const listed = await fetch(started.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        Origin: 'http://127.0.0.1'
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
+    });
+    assert.equal(listed.status, 200);
+    const listedBody = await listed.json();
+    const toolNames = listedBody.result.tools.map((tool) => tool.name);
+    assert.equal(listedBody.result.profile.name, 'safe');
+    assert.equal(toolNames.includes('browser_debug_resource_status'), true);
+    assert.equal(toolNames.includes('browser_debug_agent_execution_list'), true);
+    assert.equal(toolNames.includes('browser_debug_review'), false);
+    assert.equal(toolNames.includes('browser_debug_observe'), false);
+
+    const missingAuth = await fetch(started.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })
+    });
+    assert.equal(missingAuth.status, 401);
+    assert.doesNotMatch(await missingAuth.text(), new RegExp(token));
+
+    const invalidOrigin = await fetch(started.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        Origin: 'https://example.invalid'
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list' })
+    });
+    assert.equal(invalidOrigin.status, 403);
+
+    const getResponse = await fetch(started.url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(getResponse.status, 405);
+  } finally {
+    await new Promise((resolve) => started.server.close(resolve));
+  }
+
+  await assert.rejects(
+    startMcpHttpServer({ profile: 'full', port: 0 }, {
+      env: { BROWSER_DEBUG_MCP_HTTP_TOKEN: token }
+    }),
+    /safe profile/
+  );
+  await assert.rejects(
+    startMcpHttpServer({ host: '0.0.0.0', port: 0 }, {
+      env: { BROWSER_DEBUG_MCP_HTTP_TOKEN: token }
+    }),
+    /loopback host/
+  );
+
+  const limited = await startMcpHttpServer({ port: 0, bodyLimit: 32 }, {
+    env: { BROWSER_DEBUG_MCP_HTTP_TOKEN: token }
+  });
+  try {
+    const oversized = await fetch(limited.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/list', padding: 'x'.repeat(64) })
+    });
+    assert.equal(oversized.status, 413);
+  } finally {
+    await new Promise((resolve) => limited.server.close(resolve));
+  }
 });
 
 test('daemon commands parse and return deterministic JSON envelopes', async () => {

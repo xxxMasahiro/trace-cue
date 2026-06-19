@@ -24,7 +24,9 @@ product.resource_artifacts	optional	all	all	src/resource-artifacts.js	source	fil
 product.observe	optional	all	all	src/observe.js	source	file_nonempty	workflow	Playwright-backed one-shot observation runtime.
 product.review	optional	all	all	src/review.js	source	file_nonempty	workflow	Playwright-backed deterministic review, quality signals, target manifest, coverage, and mock metrics runtime.
 product.content_ux_advisory	optional	all	all	src/content-ux-advisory.js	source	file_nonempty	workflow	Pure local content UX advisory helper for manifest opt-in source-to-screen contracts, page handoff, manifest-authoring suggestions, review brief, rubric evaluation, and dedicated handoff output.
-product.mcp_profiles	optional	all	all	src/mcp-profiles.js	source	file_nonempty	workflow	Reusable MCP profile registry for safe, full, and admin stdio adapter tool surfaces.
+product.mcp_profiles	optional	all	all	src/mcp-profiles.js	source	file_nonempty	workflow	Reusable MCP profile registry for safe, full, and admin stdio adapter tool surfaces, including read-only local agent status inspection.
+product.mcp_transport_policy	optional	all	all	src/mcp-transport-policy.js	source	file_nonempty	workflow	Reusable MCP transport policy for stdio compatibility and explicit safe loopback HTTP transport.
+product.mcp_http_transport	optional	all	all	src/mcp-http-transport.js	source	file_nonempty	workflow	Isolated safe-profile-only loopback HTTP MCP transport over the existing MCP core.
 product.identity	optional	all	all	src/product-identity.js	source	file_nonempty	workflow	Reusable package, CLI, MCP, plugin, and repository identity metadata for rename-readiness checks.
 product.schema_registry	optional	all	all	src/schema-registry.js	source	file_nonempty	workflow	Machine-readable schema registry for CLI and adapter contracts.
 product.sessions	optional	all	all	src/sessions.js	source	file_nonempty	workflow	Local session, action, report, and spec runtime.
@@ -51,4 +53,5 @@ product.requirements	required	all	all	docs/product/REQUIREMENTS.md	doc	file_none
 product.specification	required	all	all	docs/product/SPECIFICATION.md	doc	file_nonempty	workflow	Canonical specification.
 product.plan	required	all	all	docs/product/IMPLEMENTATION_PLAN.md	doc	file_nonempty	workflow	Canonical implementation plan.
 product.release_policy	optional	all	all	docs/workflow/RELEASE.md	doc	file_nonempty	workflow	Local release readiness checklist and publication blockers.
+product.identity_migration	optional	all	all	docs/workflow/IDENTITY_MIGRATION.md	doc	file_nonempty	workflow	Runbook for approved future package, repository, CLI, MCP, and plugin identity migrations.
 product.ci_check	optional	all	all	tools/check_product_ci.sh	custom	file_nonempty	workflow	Product-local CI workflow validation without remote execution.

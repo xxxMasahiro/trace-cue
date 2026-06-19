@@ -9,6 +9,7 @@ import {
   resolveMcpProfile,
   resolveMcpTool
 } from './mcp-profiles.js';
+import { publicMcpTransportMetadata, resolveMcpTransportConfig } from './mcp-transport-policy.js';
 import { PRODUCT_IDENTITY, productIdentitySummary } from './product-identity.js';
 
 export { DEFAULT_MCP_PROFILE, MCP_PROFILES, getMcpTools, mcpProfileMetadata, resolveMcpProfile };
@@ -91,19 +92,20 @@ async function callTool(profile, name, args, context) {
 }
 
 export function parseMcpServerArgs(args = [], env = {}) {
-  let profileInput = env.BROWSER_DEBUG_MCP_PROFILE;
+  const options = {};
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === '--profile') {
+    if (arg === '--profile' || arg === '--transport' || arg === '--host' || arg === '--port' || arg === '--endpoint' || arg === '--token-env' || arg === '--body-limit') {
       if (!args[index + 1]) {
-        return { ok: false, message: '--profile requires a value.' };
+        return { ok: false, message: `${arg} requires a value.` };
       }
-      profileInput = args[index + 1];
+      setServerArg(options, arg.slice(2), args[index + 1]);
       index += 1;
       continue;
     }
-    if (arg.startsWith('--profile=')) {
-      profileInput = arg.slice('--profile='.length);
+    if (arg.startsWith('--profile=') || arg.startsWith('--transport=') || arg.startsWith('--host=') || arg.startsWith('--port=') || arg.startsWith('--endpoint=') || arg.startsWith('--token-env=') || arg.startsWith('--body-limit=')) {
+      const [key, ...valueParts] = arg.slice(2).split('=');
+      setServerArg(options, key, valueParts.join('='));
       continue;
     }
     if (arg === '--help' || arg === '-h') {
@@ -111,11 +113,31 @@ export function parseMcpServerArgs(args = [], env = {}) {
     }
     return { ok: false, message: `Unsupported browser-debug-mcp argument: ${arg}` };
   }
-  const profile = resolveMcpProfile(profileInput, env);
-  if (!profile.ok) {
-    return { ok: false, message: profile.message };
+  const resolved = resolveMcpTransportConfig(options, env);
+  if (!resolved.ok) {
+    return { ok: false, message: resolved.message, code: resolved.code };
   }
-  return { ok: true, profile: profile.profile };
+  return { ok: true, ...resolved.config, metadata: publicMcpTransportMetadata(resolved.config) };
+}
+
+export function mcpServerInfo(options = {}, env = {}) {
+  const resolved = resolveMcpTransportConfig(options, env, { requireToken: false, includeToken: false });
+  if (!resolved.ok) {
+    return { ok: false, code: resolved.code, message: resolved.message };
+  }
+  return { ok: true, metadata: publicMcpTransportMetadata(resolved.config), config: resolved.config };
+}
+
+function setServerArg(options, key, value) {
+  if (key === 'token-env') {
+    options.tokenEnv = value;
+    return;
+  }
+  if (key === 'body-limit') {
+    options.bodyLimit = value;
+    return;
+  }
+  options[key] = value;
 }
 
 function response(id, result, error = undefined) {

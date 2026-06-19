@@ -6,6 +6,13 @@ const SAFE_PROFILE_TOOLS = Object.freeze([
   'browser_debug_target_validate',
   'browser_debug_resource_status',
   'browser_debug_resource_artifacts_plan',
+  'browser_debug_agent_surfaces_list',
+  'browser_debug_agent_requests_list',
+  'browser_debug_agent_requests_show',
+  'browser_debug_agent_workflow_status',
+  'browser_debug_agent_workflow_index',
+  'browser_debug_agent_execution_status',
+  'browser_debug_agent_execution_list',
   'browser_debug_schema_list',
   'browser_debug_schema_get'
 ]);
@@ -18,6 +25,13 @@ const FULL_PROFILE_TOOLS = Object.freeze([
   'browser_debug_target_validate',
   'browser_debug_resource_status',
   'browser_debug_resource_artifacts_plan',
+  'browser_debug_agent_surfaces_list',
+  'browser_debug_agent_requests_list',
+  'browser_debug_agent_requests_show',
+  'browser_debug_agent_workflow_status',
+  'browser_debug_agent_workflow_index',
+  'browser_debug_agent_execution_status',
+  'browser_debug_agent_execution_list',
   'browser_debug_review_target',
   'browser_debug_schema_list',
   'browser_debug_schema_get'
@@ -188,6 +202,115 @@ const TOOL_REGISTRY = Object.freeze([
     }
   },
   {
+    name: 'browser_debug_agent_surfaces_list',
+    minimumProfile: 'safe',
+    description: 'List local agent advisory surfaces without launching a browser or calling providers.',
+    inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    effects: effects({ browserLaunched: false, writesArtifacts: false }),
+    toCliArgs: () => ['agent', 'surfaces', 'list', '--json']
+  },
+  {
+    name: 'browser_debug_agent_requests_list',
+    minimumProfile: 'safe',
+    description: 'List local agent advisory package/request status without writing artifacts.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        package: { type: 'string' },
+        artifactRoot: { type: 'string' }
+      }
+    },
+    effects: effects({ browserLaunched: false, writesArtifacts: false }),
+    toCliArgs: (args) => withOptionalOptions(['agent', 'requests', 'list'], args, {
+      package: '--package',
+      artifactRoot: '--artifact-root'
+    })
+  },
+  {
+    name: 'browser_debug_agent_requests_show',
+    minimumProfile: 'safe',
+    description: 'Show one local agent advisory request detail without writing artifacts.',
+    inputSchema: {
+      type: 'object',
+      required: ['package'],
+      additionalProperties: false,
+      properties: {
+        package: { type: 'string' },
+        agentResult: { type: 'string' },
+        artifactRoot: { type: 'string' }
+      }
+    },
+    effects: effects({ browserLaunched: false, writesArtifacts: false }),
+    toCliArgs: (args) => withOptionalOptions(['agent', 'requests', 'show'], args, {
+      package: '--package',
+      agentResult: '--agent-result',
+      artifactRoot: '--artifact-root'
+    })
+  },
+  {
+    name: 'browser_debug_agent_workflow_status',
+    minimumProfile: 'safe',
+    description: 'Read local agent workflow status without writing artifacts or calling providers.',
+    inputSchema: {
+      type: 'object',
+      required: ['workflow'],
+      additionalProperties: false,
+      properties: {
+        workflow: { type: 'string' }
+      }
+    },
+    effects: effects({ browserLaunched: false, writesArtifacts: false }),
+    toCliArgs: (args) => ['agent', 'workflow', 'status', '--workflow', args.workflow, '--json']
+  },
+  {
+    name: 'browser_debug_agent_workflow_index',
+    minimumProfile: 'safe',
+    description: 'Index local agent workflows without writing artifacts or calling providers.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        artifactRoot: { type: 'string' }
+      }
+    },
+    effects: effects({ browserLaunched: false, writesArtifacts: false }),
+    toCliArgs: (args) => withOptionalOptions(['agent', 'workflow', 'index'], args, {
+      artifactRoot: '--artifact-root'
+    })
+  },
+  {
+    name: 'browser_debug_agent_execution_status',
+    minimumProfile: 'safe',
+    description: 'Read local agent execution status without executing providers.',
+    inputSchema: {
+      type: 'object',
+      required: ['execution'],
+      additionalProperties: false,
+      properties: {
+        execution: { type: 'string' }
+      }
+    },
+    effects: effects({ browserLaunched: false, writesArtifacts: false, providerCall: false }),
+    toCliArgs: (args) => ['agent', 'execution', 'status', '--execution', args.execution, '--json']
+  },
+  {
+    name: 'browser_debug_agent_execution_list',
+    minimumProfile: 'safe',
+    description: 'List local agent execution metadata without executing providers.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        artifactRoot: { type: 'string' }
+      }
+    },
+    effects: effects({ browserLaunched: false, writesArtifacts: false, providerCall: false }),
+    toCliArgs: (args) => withOptionalOptions(['agent', 'execution', 'list'], args, {
+      artifactRoot: '--artifact-root'
+    })
+  },
+  {
     name: 'browser_debug_review_target',
     minimumProfile: 'full',
     description: 'Run a deterministic local browser review for a target manifest.',
@@ -329,6 +452,17 @@ function withCommonOptions(base, args) {
   }
   if (args.report) {
     output.push('--report');
+  }
+  output.push('--json');
+  return output;
+}
+
+function withOptionalOptions(base, args, optionMap) {
+  const output = [...base];
+  for (const [key, flag] of Object.entries(optionMap)) {
+    if (args[key] !== undefined) {
+      output.push(flag, String(args[key]));
+    }
   }
   output.push('--json');
   return output;
