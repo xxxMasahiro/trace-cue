@@ -29,6 +29,7 @@ import { runReview } from './review.js';
 import { schemaListResult, schemaResult } from './schema-registry.js';
 import { runSupervisor } from './supervisor.js';
 import { runTargetInit, runTargetValidate } from './target.js';
+import { buildMcpCapabilityReport } from './mcp-capabilities.js';
 import { buildMcpClientConfig } from './mcp-client-config.js';
 import { mcpProfileMetadata } from './mcp-profiles.js';
 import { mcpServerInfo } from './mcp.js';
@@ -260,6 +261,11 @@ export async function executeCli(argv, context = {}) {
     if (parsed.command === 'mcp config') {
       const mcpConfig = mcpConfigInfo(parsed.options, context.env ?? process.env);
       return runtimeResult(parsed.command, mcpConfig, parsed.json, now);
+    }
+
+    if (parsed.command === 'mcp capabilities') {
+      const mcpCapabilities = mcpCapabilitiesInfo(parsed.options);
+      return runtimeResult(parsed.command, mcpCapabilities, parsed.json, now);
     }
 
     return notImplemented(parsed.command, parsed.json, now);
@@ -538,7 +544,8 @@ function usageText(topic) {
     return [
       `Usage: ${CLI_NAME} mcp serve [--profile safe|full|admin] [--json]`,
       `       ${CLI_NAME} mcp config [--client generic|codex] [--profile safe|full|admin] [--json]`,
-      `       ${CLI_NAME} mcp config --transport http --profile safe --host 127.0.0.1 --port <port> [--json]`
+      `       ${CLI_NAME} mcp config --transport http --profile safe --host 127.0.0.1 --port <port> [--json]`,
+      `       ${CLI_NAME} mcp capabilities [--profile safe|full|admin|all] [--scope all|profiles|excluded] [--json]`
     ].join('\n');
   }
 
@@ -572,6 +579,7 @@ function usageText(topic) {
     '  schema get --name <schema> --json',
     '  mcp serve --profile safe --json',
     '  mcp config --profile safe --json',
+    '  mcp capabilities --json',
     '',
     'Global options:',
     '  --json',
@@ -670,5 +678,36 @@ function normalizeMcpConfigOptions(options = {}) {
     tokenEnv: options['token-env'] ?? options.tokenEnv,
     bodyLimit: options['body-limit'] ?? options.bodyLimit,
     client: options.client
+  };
+}
+
+function mcpCapabilitiesInfo(options = {}) {
+  const report = buildMcpCapabilityReport({
+    profile: options.profile,
+    scope: options.scope
+  });
+  if (!report.ok) {
+    return {
+      status: 'error',
+      data: {
+        capabilities: {
+          server_started: false,
+          config_file_written: false,
+          write_execute_tools_exposed: false
+        }
+      },
+      warnings: [],
+      errors: [{ code: report.code ?? 'INVALID_MCP_CAPABILITIES', message: report.message, details: { profile: options.profile, scope: options.scope } }],
+      artifacts: []
+    };
+  }
+  return {
+    status: 'ok',
+    data: {
+      capabilities: report.report
+    },
+    warnings: [],
+    errors: [],
+    artifacts: []
   };
 }

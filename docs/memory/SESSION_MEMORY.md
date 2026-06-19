@@ -254,3 +254,12 @@ commit: 1af1fcd Document agent execution integration plan
 - Added no-browser tests for `mcp config`, HTTP `full` rejection, token non-disclosure, and no-listener boundaries.
 - Added packed-install smoke coverage for the installed HTTP MCP handler `initialize` path without binding a port.
 - Synchronized README, plugin skill, product docs, workflow docs, manifests, task tracker, handoff, AGENTS current phase, release notes, verification, and security docs.
+
+## 2026-06-20 Phase 36 MCP Capability Policy
+
+- Added read-only `browser-debug mcp capabilities --json` output for MCP profile, transport, admin policy, and excluded-operation inspection.
+- Added `src/mcp-capabilities.js` and package API exports for the no-side-effect policy report.
+- Exposed `browser_debug_mcp_capabilities` through safe/full/admin MCP profiles because it does not launch browsers, write artifacts, delete files, call providers, upload evidence, execute shell commands, or open listeners.
+- The report records that `admin` is currently equivalent to `full` and that cleanup execution, package/ingest/report writing, workflow creation/report writing, execution planning, `agent execution run`, daemon/session control, provider/API execution, arbitrary shell, socket transport, remote HTTP listeners, and HTTP `full` or `admin` remain excluded from MCP.
+- Added no-browser, architecture, and packed-install smoke coverage for CLI/API/MCP policy reporting.
+- Synchronized README, plugin skill, product docs, workflow docs, manifests, task tracker, handoff, AGENTS current phase, changelog, release notes, verification, and security docs.

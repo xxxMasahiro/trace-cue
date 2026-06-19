@@ -2,7 +2,7 @@
 
 ## Verification Scope
 
-Current verification checks repository structure, document synchronization, security defaults, review/MCP/plugin local boundaries, MCP profile gating, MCP-only file-input confinement, MCP read-only agent status tools, MCP safe HTTP transport boundaries, token-free MCP client configuration output, product identity alignment, CI configuration, design-system placeholders, product operation mode, local MVP runtime behavior, review platform behavior, dogfood target workflow behavior, no-browser target manifest validation, no-browser resource status preflight, review resource guard behavior, daemon lifecycle guards, artifact usage planning, explicit artifact-root cleanup receipts, local agent advisory package/request-status/request-detail/workflow/ingest/report behavior, local agent execution plan/run/status/list behavior, deterministic fake provider execution, configured local runner callback execution, env-only generic API adapter behavior, expected-route execution, route-budget coverage accounting, page expectation coverage, rendered-state findings, manifest suggestions, opt-in content UX advisory behavior, selector-scoped advisory contracts, required user-question advisory checks, dedicated content UX handoff output, page-level content UX handoff, manifest-authoring suggestions, review brief/rubric evaluation, local artifact indexes, local review-quality signals, browser smoke coverage, Phase 29 agent execution boundaries, Phase 30 packed install release-hardening boundaries, Phase 31 MCP profile boundaries, Phase 32 rename-readiness boundaries, Phase 33 MCP read-only agent status boundaries, Phase 34 safe HTTP MCP foundation boundaries, and Phase 35 HTTP MCP integration-hardening boundaries.
+Current verification checks repository structure, document synchronization, security defaults, review/MCP/plugin local boundaries, MCP profile gating, MCP-only file-input confinement, MCP read-only agent status tools, MCP safe HTTP transport boundaries, token-free MCP client configuration output, read-only MCP capability policy output, product identity alignment, CI configuration, design-system placeholders, product operation mode, local MVP runtime behavior, review platform behavior, dogfood target workflow behavior, no-browser target manifest validation, no-browser resource status preflight, review resource guard behavior, daemon lifecycle guards, artifact usage planning, explicit artifact-root cleanup receipts, local agent advisory package/request-status/request-detail/workflow/ingest/report behavior, local agent execution plan/run/status/list behavior, deterministic fake provider execution, configured local runner callback execution, env-only generic API adapter behavior, expected-route execution, route-budget coverage accounting, page expectation coverage, rendered-state findings, manifest suggestions, opt-in content UX advisory behavior, selector-scoped advisory contracts, required user-question advisory checks, dedicated content UX handoff output, page-level content UX handoff, manifest-authoring suggestions, review brief/rubric evaluation, local artifact indexes, local review-quality signals, browser smoke coverage, Phase 29 agent execution boundaries, Phase 30 packed install release-hardening boundaries, Phase 31 MCP profile boundaries, Phase 32 rename-readiness boundaries, Phase 33 MCP read-only agent status boundaries, Phase 34 safe HTTP MCP foundation boundaries, Phase 35 HTTP MCP integration-hardening boundaries, and Phase 36 MCP capability policy boundaries.
 
 ## Product-Local Commands
 
@@ -109,6 +109,7 @@ node ./bin/browser-debug.js mcp serve --profile safe --json
 node ./bin/browser-debug.js mcp serve --transport http --profile safe --host 127.0.0.1 --port 0 --json
 node ./bin/browser-debug.js mcp config --profile safe --json
 node ./bin/browser-debug.js mcp config --transport http --profile safe --host 127.0.0.1 --port 8765 --json
+node ./bin/browser-debug.js mcp capabilities --profile admin --scope excluded --json
 node ./bin/browser-debug-mcp.js --profile safe
 BROWSER_DEBUG_MCP_HTTP_TOKEN=<token> node ./bin/browser-debug-mcp.js --transport http --profile safe --host 127.0.0.1 --port 8765
 ```
@@ -269,6 +270,14 @@ Optional acceptance checks against local application servers may run only when t
 - No-browser tests verify generated config defaults to safe profile, emits no token values, provides reusable stdio and safe HTTP metadata, and rejects HTTP `full` or `admin`.
 - Packed install smoke creates the installed package API safe HTTP handler and completes an authenticated `initialize` request without binding a port.
 - Architecture tests verify MCP client configuration helpers do not import `node:http`, call `createServer`, or call `listen`.
+
+## Phase 36 MCP Capability Policy Checks
+
+- No-browser tests cover `browser-debug mcp capabilities --profile admin --scope excluded --json` and verify admin write/execute, cleanup execution, provider/API execution, `agent execution run`, shell, daemon/session, and HTTP `full` or `admin` boundaries remain false.
+- No-browser tests verify `browser-debug mcp capabilities --profile safe --scope profiles --json` reports the safe profile without exposing browser-launching review tools.
+- MCP adapter tests expose `browser_debug_mcp_capabilities` through the safe profile and confirm the tool returns the same read-only policy report.
+- Architecture tests verify the capability policy helper does not import `node:http`, call `createServer`, or call `listen`.
+- Packed install smoke verifies the source file, package API exports, CLI command, and MCP tool remain available from the installed package layout without publishing.
 
 ## Release Readiness Checks
 

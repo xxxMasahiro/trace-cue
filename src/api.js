@@ -35,6 +35,11 @@ export {
   normalizeContentUxAdvisoryConfig
 } from './content-ux-advisory.js';
 export {
+  MCP_CAPABILITY_DEFAULT_SCOPE,
+  MCP_CAPABILITY_POLICY_VERSION,
+  buildMcpCapabilityReport
+} from './mcp-capabilities.js';
+export {
   MCP_CONFIG_DEFAULT_CLIENT,
   MCP_HTTP_DEFAULT_CLIENT_PORT,
   buildMcpClientConfig

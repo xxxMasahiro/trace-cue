@@ -26,6 +26,7 @@ const VALUE_OPTIONS = new Set([
   'region',
   'resource-guard',
   'review-index',
+  'scope',
   'session',
   'surface',
   'target',
@@ -703,11 +704,11 @@ function parseMcp(args, globals) {
     return { ok: true, command: 'help', json: globals.json, options: { topic: 'mcp' } };
   }
   const subcommand = args[0];
-  if (subcommand !== 'serve' && subcommand !== 'config') {
+  if (subcommand !== 'serve' && subcommand !== 'config' && subcommand !== 'capabilities') {
     return parseError('mcp', globals.json, {
       code: subcommand ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
       message: subcommand ? `Unknown mcp subcommand: ${subcommand}` : 'mcp requires a subcommand.',
-      details: { subcommands: ['serve', 'config'] }
+      details: { subcommands: ['serve', 'config', 'capabilities'] }
     });
   }
   return parseOptionalOptions(`mcp ${subcommand}`, args.slice(1), globals);
@@ -926,6 +927,7 @@ function plannedCommands() {
     'schema list',
     'schema get',
     'mcp serve',
-    'mcp config'
+    'mcp config',
+    'mcp capabilities'
   ];
 }

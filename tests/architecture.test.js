@@ -26,6 +26,7 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'src/resource-status.js',
     'src/review.js',
     'src/mcp.js',
+    'src/mcp-capabilities.js',
     'src/mcp-client-config.js',
     'src/mcp-http-transport.js',
     'src/mcp-profiles.js',
@@ -109,9 +110,10 @@ test('review platform keeps local-first and manifest-driven boundaries', async (
   const review = await readText('src/review.js');
   const contentUxAdvisory = await readText('src/content-ux-advisory.js');
   const mcp = await readText('src/mcp.js');
+  const mcpCapabilities = await readText('src/mcp-capabilities.js');
   const mcpProfiles = await readText('src/mcp-profiles.js');
   const target = await readText('src/target.js');
-  const combined = `${review}\n${contentUxAdvisory}\n${mcp}\n${mcpProfiles}\n${target}`;
+  const combined = `${review}\n${contentUxAdvisory}\n${mcp}\n${mcpCapabilities}\n${mcpProfiles}\n${target}`;
 
   assert.doesNotMatch(combined, /127\.0\.0\.1:517[34]|Control Center|FrameCue|ai-driven-development-lesson/);
   assert.doesNotMatch(combined, /launchPersistentContext|userDataDir|storageState/);
@@ -259,6 +261,7 @@ test('HTTP MCP listener stays isolated to the approved transport module', async 
   const httpTransport = await readText('src/mcp-http-transport.js');
   const policy = await readText('src/mcp-transport-policy.js');
   const clientConfig = await readText('src/mcp-client-config.js');
+  const capabilities = await readText('src/mcp-capabilities.js');
   const core = await readText('src/mcp.js');
   const profiles = await readText('src/mcp-profiles.js');
   const review = await readText('src/review.js');
@@ -275,7 +278,7 @@ test('HTTP MCP listener stays isolated to the approved transport module', async 
   assert.match(policy, /HTTP_MCP_TOKEN_REQUIRED/);
   assert.match(policy, /HTTP_MCP_HOST_REJECTED/);
 
-  for (const content of [policy, clientConfig, core, profiles, review, resourceStatus, agent, agentExecution]) {
+  for (const content of [policy, clientConfig, capabilities, core, profiles, review, resourceStatus, agent, agentExecution]) {
     assert.doesNotMatch(content, /from 'node:http'|createServer|\.listen\(/);
   }
   assert.doesNotMatch(httpTransport, /WebSocket|EventSource|node:child_process|execFile|spawn\(|provider_execute|cleanup_execute|agent_execution_run/);
