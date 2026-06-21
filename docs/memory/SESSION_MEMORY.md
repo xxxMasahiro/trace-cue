@@ -280,3 +280,11 @@ commit: 1af1fcd Document agent execution integration plan
 - Added `local_checkout` metadata to generated stdio and safe HTTP MCP config output, including the current package root, absolute MCP bin path, `node` launch command, stdio `mcpServers`, and safe HTTP launch metadata.
 - Preserved installed-bin `launch`, `client_connection`, and `mcpServers` output for compatibility.
 - Added no-browser and packed-install smoke assertions for local-checkout metadata without starting listeners, writing config files, reading credentials, emitting token values, expanding MCP permissions, publishing, or renaming identities.
+
+## 2026-06-21 Phase 39 Consumer Runtime Readiness Guidance
+
+- Recorded the external-repository dogfood lesson that Browser Debug CLI connection can be healthy while the reviewed app is missing its own local API/backend runtime.
+- Added target runtime-readiness guidance to `docs/workflow/CONSUMER_USAGE.md`, README, and the plugin-facing skill.
+- Documented that frontend-only dev servers can correctly produce `needs_attention` or browser-health findings when required API/backend endpoints are absent.
+- Kept app-specific startup commands, API base environment variables, degraded-mode expectations, and acceptance notes in the consumer repository rather than Browser Debug CLI runtime branches.
+- Added no-browser architecture assertions for generic packaged guidance without consumer-specific product names or local user paths.

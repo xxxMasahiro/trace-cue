@@ -33,6 +33,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Provide machine-readable MCP client configuration output so humans, agents, and external repositories can connect through stdio or explicit safe HTTP without reverse-engineering package internals.
 - Provide machine-readable MCP capability policy output so humans, agents, and external repositories can see which profiles, transports, and admin write/execute exclusions are currently in force without starting a server or inspecting source files.
 - Provide a packaged external-repository usage guide so humans, shell-based agents, MCP-capable agents, and Codex users can choose CLI, MCP stdio, safe HTTP MCP, or plugin connection modes without source inspection.
+- Document target runtime readiness for consumer repositories so frontend-only dev-server reviews, missing API/backend services, API base configuration gaps, and intentional degraded modes can be distinguished without adding app-specific runtime code.
 - Support evidence-backed UI review findings for browser health, layout integrity, interaction quality, accessibility basics, and mock fidelity.
 - Support generic target manifests so site review can cover local applications and dashboards without hard-coded product-specific branches.
 - Treat manifest `expectedRoutes` as reviewable local targets so known app routes can be covered even when route discovery cannot find them from anchors or navigation candidates.
@@ -83,6 +84,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Do not expose HTTP `full` or `admin`, remote HTTP listeners, socket transports, shell tools, cleanup execution, package generation, ingest, report writing, workflow creation, execution planning, `agent execution run`, provider/API execution, or credential handling through MCP without a separate approved phase.
 - Do not emit bearer token values, credentials, local secrets, raw environment values, or external upload configuration from MCP client configuration helpers.
 - Do not treat an MCP capability policy report or the `admin` profile name as permission to expose write, delete, provider/API, shell, daemon/session, or credential-bearing tools.
+- Do not hide consumer application API/backend startup failures through Browser Debug CLI runtime branches; document target runtime prerequisites in the consumer repository instead.
 - Do not treat local agent advisory output as deterministic findings, release approval, or a replacement for owner judgment.
 - Do not run provider APIs, upload evidence, store credentials, or expose agent/API execution through MCP as part of the local agent advisory handoff layer.
 - Do not let agent execution mutate review `findings`, `metrics.finding_count`, existing `action_plan`, `quality_signals.release_readiness`, resource guard output, artifact cleanup behavior, or existing `agent_workflow` status meanings.
@@ -157,7 +159,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - `browser-debug mcp config --json` returns reusable client configuration for stdio MCP without launching a server, mutating files, or requiring repository-specific source inspection. It includes installed-bin metadata and local-checkout metadata for unpublished package use.
 - `browser-debug mcp config --transport http --profile safe --port <port> --json` returns launch and client-connection metadata for the explicit safe HTTP MCP endpoint without printing token values. It includes a local-checkout launch block for the current package entrypoint when `browser-debug-mcp` is not on PATH.
 - `browser-debug mcp capabilities --profile safe|full|admin|all --scope all|profiles|excluded --json` returns the current MCP profile, transport, and admin exclusion policy without launching a server, mutating files, reading credentials, or enabling write/execute tools.
-- `docs/workflow/CONSUMER_USAGE.md` is packaged with the local tarball and documents external-repository CLI, MCP stdio, safe HTTP MCP, and Codex plugin connection flows without requiring source-code inspection.
+- `docs/workflow/CONSUMER_USAGE.md` is packaged with the local tarball and documents external-repository CLI, MCP stdio, safe HTTP MCP, Codex plugin connection flows, and target runtime readiness checks without requiring source-code inspection.
 
 ## Phase 37 External Repository Usage Criteria
 
@@ -165,8 +167,17 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Document that the current working directory should be the consumer repository when review artifacts and target manifests belong there.
 - Document CLI, MCP stdio, safe HTTP MCP, and Codex plugin as connection modes over the same core rather than unrelated products.
 - Document the practical capability differences between CLI, MCP `safe`, MCP `full`, MCP `admin`, safe HTTP MCP, and the Codex plugin.
+- Document that consumer reviews depend on the target app's full local runtime, and that missing API/backend services can correctly surface as browser-health findings or `needs_attention`.
 - Keep the guide generic, local-first, token-free, credential-free, and free of consumer-specific paths or product names.
 - Keep package smoke coverage proving the guide is included in the local tarball without publishing.
+
+## Phase 39 Consumer Runtime Readiness Criteria
+
+- Clarify that Browser Debug CLI can be connected correctly while the reviewed app is still missing its own backend/API runtime.
+- Document that frontend-only dev servers may produce valid `needs_attention` or browser-health findings when required local API endpoints are absent.
+- Keep app-specific startup commands, API base environment variables, degraded-mode expectations, and acceptance notes in the consumer repository.
+- Keep Browser Debug CLI runtime generic; do not add product-specific branches for missing consumer backend state.
+- Add no-browser architecture coverage proving the packaged consumer guide keeps runtime-readiness guidance generic and free of consumer-specific paths or product names.
 
 ## Phase 35 HTTP MCP Integration Hardening Criteria
 

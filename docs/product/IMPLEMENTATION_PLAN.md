@@ -1014,6 +1014,27 @@ Phase 37 makes Browser Debug CLI easier to use from external repositories withou
 - Verification must include `node --check` on changed runtime/test files, focused external-repository dogfood for `mcp config`, `npm test`, `npm run test:pack`, `npm run test:pack-install`, `npm run release:check`, `./tools/product-gate`, and `git diff --check`.
 - Browser smoke tests are not required for Phase 38 unless browser runtime behavior changes; Phase 38 changes no-browser MCP configuration metadata, documentation, and package smoke coverage only.
 
+### Phase 39: Consumer Runtime Readiness Guidance
+
+Phase 39 records the external-repository dogfood lesson that Browser Debug CLI can connect correctly while the target application is missing its own local API/backend runtime. It keeps Browser Debug CLI generic and moves app-specific startup prerequisites to the consumer repository.
+
+#### Phase 39a: Packaged Guide Update
+
+- Completed: added a target runtime readiness section to the packaged consumer guide.
+- Completed: documented that frontend-only dev servers can produce valid `needs_attention` or browser-health findings when required API/backend endpoints are absent.
+- Completed: documented that app-specific startup commands, API base environment variables, degraded-mode expectations, and acceptance notes belong in the consumer repository.
+
+#### Phase 39b: Skill, README, and Product Sync
+
+- Completed: updated README and the plugin-facing review skill so agents check the target app's full local runtime before interpreting review findings as connection failures.
+- Completed: synchronized requirements, specification, implementation plan, security, verification, task tracker, handoff, AGENTS, changelog, and memory with the consumer runtime-readiness boundary.
+- Completed: kept the change documentation-only and did not expand runtime commands, MCP permissions, transports, publication state, marketplace state, or identity names.
+
+#### Phase 39 Verification Plan
+
+- Verification must include `node --check` on changed test files, `npm test`, `npm run test:pack`, `npm run test:pack-install`, `npm run release:check`, `./tools/product-gate`, and `git diff --check`.
+- Browser smoke tests are not required for Phase 39 unless browser runtime behavior changes; Phase 39 changes documentation and no-browser architecture coverage only.
+
 ## Verification Method
 
 - `./tools/product-gate`
@@ -1059,6 +1080,7 @@ Phase 37 makes Browser Debug CLI easier to use from external repositories withou
 - Phase 33 checks cover MCP read-only agent surfaces, request status/detail, workflow status/index, execution status/list, safe-profile availability, packed-install exposure, and continued non-exposure of execution run, cleanup execution, provider/API execution, shell tools, HTTP/socket transport, and write-producing advisory tools.
 - Phase 34 checks cover HTTP MCP safe transport policy, loopback bind enforcement, bearer-token enforcement, Host and Origin validation, body-size limits, safe-profile-only tools, CLI metadata, packed-install API exports, and architecture/security isolation for the approved listener module.
 - Phase 35/38 checks cover token-free MCP client configuration output, installed-bin and local-checkout stdio and safe HTTP client setup metadata, safe-profile defaulting, HTTP full/admin rejection, packed-install HTTP MCP initialize smoke coverage, and unchanged non-exposure of execution, cleanup, provider/API, shell, socket, remote HTTP, and credential-bearing tools.
+- Phase 39 checks cover packaged consumer runtime-readiness guidance, frontend-only dev-server/API prerequisite wording, and continued absence of consumer-specific product names or local user paths.
 - Security checks should be extended to guard against `launchPersistentContext`, `userDataDir`, storage-state persistence, unapproved external listener creation, arbitrary shell execution, unapproved upload paths, host cache/swap mutation, and cleanup outside the configured artifact root.
 
 ## Recovery Path

@@ -129,3 +129,10 @@ as the source of truth and make MCP a thin stdio adapter over the same core.
   mutation.
 - Model/API calls, profile reuse, OAuth, external upload, and destructive
   cleanup remain opt-in or approval-bound.
+
+## 2026-06-21 Phase 39 Consumer Runtime Readiness Guidance
+
+- Consumer repositories should treat Browser Debug CLI as advisory tooling over the app state they actually serve.
+- If a frontend-only dev server is running without the required local API/backend, API 404s and `needs_attention` can be valid target runtime findings rather than Browser Debug CLI connection failures.
+- Consumer-specific startup prerequisites, API base environment variables, degraded-mode expectations, and acceptance notes belong in the consumer repository target manifest or nearby docs.
+- Browser Debug CLI should stay generic and must not add runtime branches for a specific consumer app's backend/API startup shape.
