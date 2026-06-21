@@ -1,15 +1,15 @@
 {
-  "name": "browser-debug-cli",
+  "name": "trace-cue",
   "version": "0.0.0",
-  "description": "Local-first Playwright browser debugging and UI review tools for Codex.",
+  "description": "Local-first visual evidence and UI review tools for Codex.",
   "author": {
-    "name": "Browser Debug CLI Maintainers"
+    "name": "TraceCue Maintainers"
   },
-  "repository": "https://github.com/xxxMasahiro/browser-debug-cli",
+  "repository": "https://github.com/xxxMasahiro/trace-cue",
   "license": "UNLICENSED",
   "keywords": [
     "playwright",
-    "browser-debugging",
+    "visual-review",
     "ui-review",
     "mcp",
     "cli"
@@ -17,10 +17,10 @@
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "Browser Debug CLI",
-    "shortDescription": "Run local browser observation and UI review from Codex.",
-    "longDescription": "Browser Debug CLI provides local-first Playwright observation, target-manifest review, deterministic findings, action plans, and a stdio MCP adapter without external upload or browser profile reuse. The packaged MCP config preserves the compatibility full profile; low-trust clients should launch browser-debug-mcp with --profile safe.",
-    "developerName": "Browser Debug CLI Maintainers",
+    "displayName": "TraceCue",
+    "shortDescription": "Run local visual evidence capture and UI review from Codex.",
+    "longDescription": "TraceCue provides local-first Playwright observation, target-manifest review, deterministic findings, action plans, and a stdio MCP adapter without external upload or browser profile reuse. The packaged MCP config preserves the compatibility full profile; low-trust clients should launch trace-cue-mcp with --profile safe.",
+    "developerName": "TraceCue Maintainers",
     "category": "Developer Tools",
     "capabilities": [
       "MCP",
@@ -28,7 +28,7 @@
       "Local Review"
     ],
     "defaultPrompt": [
-      "Review this local app with Browser Debug CLI.",
+      "Review this local app with TraceCue.",
       "Create a target manifest for this app.",
       "Inspect UI findings and suggest fixes."
     ],

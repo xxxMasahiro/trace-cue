@@ -1,6 +1,6 @@
 ---
 name: product-security
-description: Product-local security rules for Browser Debug CLI.
+description: Product-local security rules for TraceCue.
 ---
 
 # Product Security

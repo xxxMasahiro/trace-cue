@@ -1,9 +1,11 @@
+import path from 'node:path';
 import {
   artifactObject,
   artifactRelPath,
   writeJsonArtifact
 } from './artifacts.js';
 import { redact, redactUrl, truncateText } from './redaction.js';
+import { createVisualEvidenceArtifact } from './visual-evidence.js';
 
 const DEFAULT_MAX_CONSOLE_MESSAGES = 30;
 const DEFAULT_MAX_FAILED_REQUESTS = 30;
@@ -101,6 +103,55 @@ export async function writePageObservation({
       path: observationRel,
       description
     })
+  };
+}
+
+export async function writePageScreenshotEvidence({
+  root,
+  artifactRoot,
+  id,
+  now,
+  page,
+  description = 'Full-page screenshot captured from an ephemeral context.',
+  route = null,
+  viewport = null,
+  sourceKind = 'browser_screenshot',
+  capture = {}
+}) {
+  const screenshotRel = artifactRelPath(artifactRoot, 'screenshots', `${id}.png`);
+  const screenshotPath = path.join(root, 'screenshots', `${id}.png`);
+  const screenshotResult = await page.screenshot({ path: screenshotPath, fullPage: true });
+  const buffer = Buffer.isBuffer(screenshotResult) ? screenshotResult : Buffer.alloc(0);
+  const screenshotArtifact = artifactObject({
+    type: 'screenshot',
+    path: screenshotRel,
+    description
+  });
+  const visualEvidence = await createVisualEvidenceArtifact({
+    id,
+    root,
+    artifactRoot,
+    sourceKind,
+    sourcePath: redactUrl(route ?? page.url()),
+    artifactPath: screenshotRel,
+    buffer,
+    purpose: 'browser_visual_evidence',
+    route: redactUrl(route ?? page.url()),
+    viewport,
+    capture: {
+      mode: 'full_page',
+      tool: 'playwright',
+      created_at: toIsoString(now),
+      ...capture
+    },
+    createdAt: now
+  });
+  return {
+    screenshotPath,
+    screenshotArtifact,
+    visualEvidence: visualEvidence.data,
+    visualEvidenceArtifact: visualEvidence.artifact,
+    artifacts: [screenshotArtifact, visualEvidence.artifact]
   };
 }
 

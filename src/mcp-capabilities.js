@@ -76,6 +76,62 @@ const EXCLUDED_OPERATIONS = Object.freeze([
     futureReview: 'Requires explicit external-service, credential, and evidence-disclosure approval before MCP exposure.'
   }),
   excludedOperation({
+    id: 'visual_review_result_preparation',
+    command: 'visual review prepare',
+    category: 'visual_review_preparation',
+    cli: true,
+    reason: 'Writes local metadata-only preparation artifacts for future visual review results and is not exposed through MCP in this phase.',
+    futureReview: 'Requires a separate MCP planning approval, receipt parity, and continued no-provider/no-transfer enforcement before exposure.'
+  }),
+  excludedOperation({
+    id: 'desktop_review_provider_preparation_plan',
+    command: 'visual review plan --capture-handoff',
+    category: 'desktop_review_provider_preparation',
+    cli: true,
+    reason: 'Reads caller-declared desktop capture handoff metadata that can reference sensitive desktop content and remains CLI/API-only in this phase.',
+    futureReview: 'Requires owner-review semantics, no raw-pixel transfer guarantees, and MCP read exposure approval before any MCP tool is added.'
+  }),
+  excludedOperation({
+    id: 'visual_review_run',
+    command: 'visual review run --execute',
+    category: 'visual_provider_execution',
+    cli: true,
+    reason: 'Runs visual review provider adapters from preparation metadata and writes local advisory artifacts; MCP exposure is intentionally excluded.',
+    futureReview: 'Requires dedicated MCP planning approval, receipt parity, credential boundary review, and continued no-raw-pixel enforcement before exposure.'
+  }),
+  excludedOperation({
+    id: 'visual_review_aggregation',
+    command: 'visual review aggregate',
+    category: 'visual_review_aggregation',
+    cli: true,
+    reason: 'Aggregates existing local visual review result metadata and untrusted advisory findings; MCP exposure remains excluded until read-only attribution and bounding gates are reviewed.',
+    futureReview: 'Requires no-artifact-write, no-provider-call, no-raw-pixel, untrusted-output bounding, and source-attribution tests before any MCP read exposure.'
+  }),
+  excludedOperation({
+    id: 'capture_handoff_file_read',
+    command: 'capture handoff --image',
+    category: 'desktop_capture_metadata',
+    cli: true,
+    reason: 'Reads existing workspace image bytes for metadata and can reference sensitive desktop content.',
+    futureReview: 'Requires workspace-confined file input policy, owner review, and no raw-pixel JSON guarantees before MCP exposure.'
+  }),
+  excludedOperation({
+    id: 'screen_window_capture_execution',
+    command: 'screen/window/desktop app capture execution',
+    category: 'desktop_capture_execution',
+    cli: false,
+    reason: 'Screen, window, and desktop app capture execution is not implemented in this planning phase.',
+    futureReview: 'Requires owner-initiated capture, selected surface constraints, local artifact receipts, raw-pixel JSON exclusion, and separate MCP execution approval before exposure.'
+  }),
+  excludedOperation({
+    id: 'visual_provider_execution',
+    command: 'raw-pixel visual provider execution',
+    category: 'visual_provider_execution',
+    cli: false,
+    reason: 'Raw-pixel visual provider execution is not available through CLI or MCP in this phase.',
+    futureReview: 'Requires explicit image-transfer approval, size/type/reference caps, transfer receipts, and separate MCP execution approval before exposure.'
+  }),
+  excludedOperation({
     id: 'arbitrary_shell',
     command: 'arbitrary shell execution',
     category: 'shell',
@@ -208,6 +264,10 @@ function adminPolicy() {
     cleanup_execution_exposed: false,
     agent_execution_run_exposed: false,
     provider_api_execution_exposed: false,
+    visual_provider_execution_exposed: false,
+    visual_review_run_exposed: false,
+    visual_review_result_preparation_exposed: false,
+    visual_review_aggregation_exposed: false,
     shell_tools_exposed: false,
     daemon_session_control_exposed: false,
     credential_handling_exposed: false,
@@ -221,6 +281,12 @@ function boundarySummary() {
     cleanup_execution: false,
     agent_execution_run: false,
     provider_api_execution: false,
+    visual_provider_execution: false,
+    visual_review_run: false,
+    visual_review_dashboard_read_only: true,
+    visual_review_result_preparation: false,
+    visual_review_aggregation: false,
+    raw_image_transfer: false,
     arbitrary_shell: false,
     socket_transport: false,
     remote_http_listener: false,
@@ -236,8 +302,8 @@ function boundarySummary() {
 function nextSteps() {
   return [
     'Use this report to inspect current MCP tool/profile exposure before configuring a client.',
-    'Keep write, delete, provider/API, shell, daemon/session, and credential-bearing operations on the CLI unless a later phase approves one operation at a time.',
-    'Use browser-debug mcp config for token-free client setup metadata.'
+    'Keep write, delete, provider/API, visual review execution, shell, daemon/session, and credential-bearing operations on the CLI unless a later phase approves one operation at a time.',
+    'Use trace-cue mcp config for token-free client setup metadata.'
   ];
 }
 

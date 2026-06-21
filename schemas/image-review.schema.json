@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/image-review.schema.json",
+  "title": "TraceCue Image Review",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "status",
+    "review",
+    "image_review",
+    "findings",
+    "metrics",
+    "environment",
+    "boundary"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "passed",
+        "needs_attention"
+      ]
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "review": {
+      "type": "object"
+    },
+    "image_review": {
+      "type": "object"
+    },
+    "findings": {
+      "type": "array"
+    },
+    "metrics": {
+      "type": "object"
+    },
+    "quality_signals": {
+      "type": "object"
+    },
+    "evidence_summary": {
+      "type": "object"
+    },
+    "environment": {
+      "type": "object"
+    },
+    "boundary": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}

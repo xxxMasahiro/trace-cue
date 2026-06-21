@@ -3,7 +3,7 @@
 ## Verbatim English Handoff Text
 
 ```text
-Continue from /home/masahiro/projects/agent-toolbox/browser-debug-cli.
+Continue from the current TraceCue checkout root.
 Read AGENTS.MD and docs/workflow/HANDOFF.md, confirm the current state, then resume.
 ```
 
@@ -288,3 +288,109 @@ commit: 1af1fcd Document agent execution integration plan
 - Documented that frontend-only dev servers can correctly produce `needs_attention` or browser-health findings when required API/backend endpoints are absent.
 - Kept app-specific startup commands, API base environment variables, degraded-mode expectations, and acceptance notes in the consumer repository rather than Browser Debug CLI runtime branches.
 - Added no-browser architecture assertions for generic packaged guidance without consumer-specific product names or local user paths.
+
+## Phase 40 TraceCue Identity Migration
+
+- Canonical product identity is TraceCue / `trace-cue` / `trace-cue-mcp`.
+- Legacy `browser-debug` and `browser-debug-mcp` aliases remain supported for existing users.
+- The default artifact root remains `.browser-debug/` for compatibility; `.trace-cue/` is reserved as a future artifact root, not the current default.
+- The local checkout root may still use the current `browser-debug-cli` directory name until the approved physical workspace rename is performed.
+
+## Phase 41 Visual Evidence Core
+
+- Added a local visual evidence metadata core under `src/visual-evidence.js`.
+- Added the `visual_evidence` schema and package/API exports.
+- Visual evidence records are metadata-only, local-first, provider-free, MCP-execution-free, and stored under the existing `.browser-debug/visual-evidence/` artifact root. Existing `observe`, `review`, and `supervise` screenshot paths keep their `screenshot` artifacts and additionally emit `visual_evidence` metadata artifacts.
+
+## 2026-06-21 Phase 42 Visual Review Provider Policy
+
+- Phase 42 is complete for planning-only visual review provider policy metadata.
+- Added `src/visual-review-provider-policy.js`, `schemas/visual-review-provider-policy.schema.json`, package API exports, schema registry coverage, and packed-install verification.
+- `agent execution plan` records now include `visual_review_provider_policy` with raw pixels, raw DOM, trace content, console payloads, network payloads, report bodies, credential values, raw provider responses, provider execution authorization, external evidence transfer authorization, and MCP execution all defaulting false.
+- `agent execution run` remains unchanged and still requires a prior plan plus explicit `--execute`.
+- MCP remains non-executing for provider/API, visual provider execution, cleanup execution, shell, daemon/session control, HTTP full/admin, socket transport, and remote listeners.
+- Verification passed: `npm test`, `npm run test:browser`, `npm run test:pack`, `npm run test:pack-install`, `./tools/product-gate`, `npm run release:check`, and `git diff --check`.
+
+## 2026-06-21 Phase 43 Standalone Image Review
+
+- Phase 43 is complete for no-browser standalone image review.
+- Added `src/image-review.js`, `schemas/image-review.schema.json`, parser/CLI/API wiring, schema registry coverage, no-browser tests, architecture checks, and packed-install coverage.
+- `trace-cue review --image <workspace-file> --json` reads only workspace-relative regular image files through the visual evidence core, writes `reviews/<id>.json`, `review-artifacts/<id>.json`, and `visual-evidence/<id>.json`, and can write a bounded Markdown report with `--report`.
+- The mode rejects URL/data URI/stdin/`@file`/absolute/parent-traversal image inputs and rejects provider, model, or execute options.
+- No browser launch, provider call, external upload, raw pixel JSON embedding, credential read, MCP execution expansion, or existing URL/target review behavior change was introduced.
+
+## 2026-06-21 Phase 44 Visual Review Result Preparation
+
+- Completed Phase 44 local visual review result preparation without provider execution, raw pixel transfer, external upload, MCP exposure, or deterministic review mutation.
+- Added `trace-cue visual review prepare --review-index <review-artifact-index> --json` for metadata-only preparation artifacts and receipts under `.browser-debug/visual-review-results/` and `.browser-debug/receipts/`.
+- Added `visual_review_result_preparation` and future `visual_review_result` schemas, package API exports, no-browser tests, architecture boundaries, MCP capability exclusion reporting, and packed-install coverage.
+- The implementation reads review artifact indexes and visual evidence metadata only; it does not read raw screenshot/image bytes, report bodies, DOM payloads, trace contents, console payloads, network payloads, credentials, or environment values.
+
+## 2026-06-21 Phase 45 CLI Visual Review Execution
+
+- Completed Phase 45 CLI-only visual review execution from Phase 44 preparation artifacts.
+- Added `trace-cue visual review run --preparation <path> --surface <id> --provider <id> --model <id> --execute --json`, plus `visual review status` and `visual review list` for local execution artifacts.
+- The implementation validates metadata-only preparation artifacts, runs fake/local/API provider adapters with no raw pixel reads or transfer, normalizes untrusted advisory output into `visual_review_result`, and writes `visual_review_execution` status and receipts.
+- MCP exposure remains disabled for visual review execution, raw provider responses and credential values are not stored, existing reviews and release gates are not mutated, and raw-pixel visual provider execution remains a separate future design.
+
+## 2026-06-21 Phase 46 Visual Review Dashboard Integration
+
+- Completed a read-only visual review dashboard slice.
+- Added `trace-cue visual review dashboard --json`, `src/visual-review-dashboard.js`, `schemas/visual-review-dashboard.schema.json`, API exports, schema registry wiring, and safe MCP exposure through `browser_debug_visual_review_dashboard`.
+- The dashboard reads local visual review preparation, execution, and result metadata only. It writes no artifacts, executes no providers, reads no raw pixels, exposes no MCP execution, mutates no existing reviews, and changes no gates.
+- Added no-browser, architecture, schema, MCP, packed-install, product-manifest, security-manifest, README, skill, verification, handoff, task-tracker, and changelog synchronization for Phase 46.
+
+## 2026-06-21 Phase 47 MCP Execution Gate Policy
+
+- Added read-only MCP execution gate policy reporting with `trace-cue mcp execution gates --json`, `src/mcp-execution-gates.js`, `schemas/mcp-execution-gates.schema.json`, API exports, schema registry wiring, and safe MCP exposure through `browser_debug_mcp_execution_gates`.
+- The report covers future MCP gate requirements for visual review preparation, visual review execution, agent execution planning/run, and artifact cleanup execution while keeping current MCP write/execute exposure disabled.
+- The implementation writes no artifacts, deletes no files, executes no providers, reads no credentials, reads no raw pixels, changes no MCP permissions, mutates no reviews, and changes no gates.
+
+## 2026-06-21 Phase 48 Screen and Window Capture Planning
+
+- Added read-only capture planning with `trace-cue capture plan --json`, `src/capture-plan.js`, `schemas/capture-plan.schema.json`, API exports, schema registry wiring, and safe MCP exposure through `browser_debug_capture_plan`.
+- The report covers screen, window, and desktop app capture gates while keeping capture execution disabled.
+- The implementation captures no pixels, writes no artifacts, enumerates no windows or processes, calls no providers, transfers no evidence, exposes no MCP execution, mutates no reviews, and changes no gates.
+
+## 2026-06-21 Phase 49 Existing Workspace Image Capture Metadata Handoff
+
+- Added CLI/API-only capture metadata handoff with `trace-cue capture handoff --image <workspace-image> --source <screen|window|desktop-app> --json`, `src/capture-handoff.js`, `schemas/capture-handoff.schema.json`, API exports, and schema registry wiring.
+- The handoff reads only workspace-confined existing image files for metadata and labels them as screen, window, or desktop app capture evidence.
+- The implementation performs no OS capture, writes no artifacts, exposes no MCP tool, embeds no raw pixels in JSON, calls no providers, transfers no evidence, mutates no reviews, and changes no gates.
+
+## 2026-06-21 Phase 50 Desktop Review Provider-Preparation Planning
+
+- Added CLI/API-only desktop review provider-preparation planning with `trace-cue visual review plan --capture-handoff <workspace-json|-> --json`, `src/desktop-review-provider-preparation-plan.js`, `schemas/desktop-review-provider-preparation-plan.schema.json`, API exports, and schema registry wiring.
+- The planner reads capture handoff JSON metadata only and reports future local review and provider-preparation readiness for screen, window, and desktop app evidence.
+- The implementation rereads no image bytes, writes no artifacts, exposes no MCP tool, calls no providers, transfers no evidence, mutates no reviews, and changes no gates.
+
+## 2026-06-22 Phase 51-55 Desktop Review and Visual Aggregation
+
+- Added `review --image <workspace-image> --capture-handoff <workspace-json|-> --json` so caller-declared screen, window, and desktop app capture handoff metadata can be path/hash-verified before image review provenance reaches visual evidence metadata.
+- Added shared capture handoff contract normalization helpers, stdin support for `--capture-handoff -` in CLI bin shims, API exports, no-browser tests, and package smoke coverage.
+- Added read-only `visual review aggregate --preparation <workspace-json> --json`, `src/visual-review-aggregation.js`, `schemas/visual-review-aggregation.schema.json`, API exports, schema registry wiring, source-attributed finding aggregation, conflict reporting, malformed artifact warnings, and MCP non-exposure reporting.
+- Desktop image review still performs no OS capture, surface identity verification, provider calls, raw-pixel JSON embedding, external transfer, MCP execution, review mutation, or gate changes.
+- Visual aggregation writes no artifacts, runs no providers, reads no raw pixels, reads no credentials, stores no raw provider responses, exposes no MCP tool, mutates no reviews, and changes no gates.
+
+## 2026-06-22 Phase 56 Rename Readiness Audit
+
+- Added read-only `identity audit --json`, `src/identity-audit.js`, `schemas/identity-audit.schema.json`, parser/CLI/API wiring, schema registry coverage, and package smoke coverage.
+- The audit reports canonical and legacy repository identity, checkout-name readiness, origin-remote readiness, legacy alias compatibility, artifact-root migration boundaries, and legacy-alias removal boundaries.
+- Added `npm run test:rename-readiness` and `tools/check_rename_readiness.mjs` to guard physical checkout rename readiness without contacting remotes or mutating Git.
+- Added legacy and canonical MCP config entries so local checkout users can continue using `browser-debug-cli` while `trace-cue` becomes the canonical identity.
+- The implementation performs no shell execution, network contact, Git mutation, artifact writes, browser launch, provider execution, MCP execution, artifact-root migration, physical directory rename, remote repository rename, npm publication, or legacy alias removal.
+
+## 2026-06-22 Phase 57 Physical Checkout Rename
+
+- Moved the local repository directory from the legacy checkout name to `trace-cue`.
+- Updated identity audit readiness status so moved checkouts can report `physical_rename_complete_remote_rename_pending` when the local directory is canonical and the origin remote still points at the legacy GitHub repository.
+- Synchronized AGENTS, implementation plan, task tracker, handoff, release notes, and memory with the local filesystem rename.
+- The move changed no Git history, origin remote URL, package name, CLI alias, MCP alias, artifact root, npm publication state, marketplace state, license, provider behavior, MCP permissions, or external transfer policy.
+
+## 2026-06-22 Phase 58 Remote Repository Rename
+
+- Renamed the GitHub repository to `https://github.com/xxxMasahiro/trace-cue`.
+- Updated local `origin` to `https://github.com/xxxMasahiro/trace-cue.git`.
+- Updated product identity metadata and plugin metadata so the canonical repository URL is `https://github.com/xxxMasahiro/trace-cue`.
+- Kept the legacy `https://github.com/xxxMasahiro/browser-debug-cli` URL in legacy repository metadata for compatibility history.
+- The remote rename changed no package name, CLI alias, MCP alias, artifact root, npm publication state, marketplace state, license, provider behavior, MCP permissions, or external transfer policy.

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/desktop-review-provider-preparation-plan.schema.json",
+  "title": "TraceCue Desktop Review Provider Preparation Plan",
+  "type": "object",
+  "required": ["schema_version", "plan_version", "id", "status", "generated_at", "source", "media", "readiness", "provider_preparation", "disclosure_policy", "handoff_contract", "boundary"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "plan_version": { "type": "string" },
+    "id": { "type": "string" },
+    "status": { "enum": ["planned"] },
+    "generated_at": { "type": "string" },
+    "source": { "type": "object" },
+    "media": { "type": "object" },
+    "readiness": { "type": "object" },
+    "provider_preparation": { "type": "object" },
+    "disclosure_policy": { "type": "object" },
+    "handoff_contract": { "type": "object" },
+    "boundary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

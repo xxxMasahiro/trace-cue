@@ -4,7 +4,8 @@ export const MCP_HTTP_DEFAULT_PROFILE = 'safe';
 export const MCP_HTTP_DEFAULT_HOST = '127.0.0.1';
 export const MCP_HTTP_DEFAULT_PORT = 0;
 export const MCP_HTTP_DEFAULT_ENDPOINT = '/mcp';
-export const MCP_HTTP_DEFAULT_TOKEN_ENV = 'BROWSER_DEBUG_MCP_HTTP_TOKEN';
+export const MCP_HTTP_DEFAULT_TOKEN_ENV = 'TRACE_CUE_MCP_HTTP_TOKEN';
+export const MCP_HTTP_LEGACY_TOKEN_ENVS = Object.freeze(['BROWSER_DEBUG_MCP_HTTP_TOKEN']);
 export const MCP_HTTP_DEFAULT_BODY_LIMIT_BYTES = 1024 * 1024;
 export const MCP_HTTP_PROTOCOL_VERSION = '2025-06-18';
 
@@ -149,7 +150,7 @@ function resolveHttpConfig(options, env, settings) {
     };
   }
 
-  const token = env[tokenEnv];
+  const token = resolveHttpToken(env, tokenEnv);
   if (settings.requireToken !== false && (!token || String(token).length < 16)) {
     return {
       ok: false,
@@ -176,6 +177,20 @@ function resolveHttpConfig(options, env, settings) {
       cors_wildcard: false
     }
   };
+}
+
+function resolveHttpToken(env, tokenEnv) {
+  if (env[tokenEnv]) {
+    return env[tokenEnv];
+  }
+  if (tokenEnv === MCP_HTTP_DEFAULT_TOKEN_ENV) {
+    for (const legacyEnv of MCP_HTTP_LEGACY_TOKEN_ENVS) {
+      if (env[legacyEnv]) {
+        return env[legacyEnv];
+      }
+    }
+  }
+  return undefined;
 }
 
 function parseIntegerOption(value, label, bounds) {

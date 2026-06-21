@@ -5,14 +5,50 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { executeCli } from '../src/cli.js';
 import { startMcpHttpServer } from '../src/mcp-http-transport.js';
+import {
+  buildDesktopReviewProviderPreparationPlan,
+  desktopReviewProviderPreparationPlanBoundary
+} from '../src/desktop-review-provider-preparation-plan.js';
+import { runImageReview } from '../src/image-review.js';
+import { buildIdentityAudit, runIdentityAudit, normalizeRepositoryUrl } from '../src/identity-audit.js';
+import { runCaptureHandoff, captureHandoffBoundary } from '../src/capture-handoff.js';
+import { buildCapturePlan, capturePlanBoundary } from '../src/capture-plan.js';
+import {
+  runVisualReviewResultPreparation,
+  visualReviewResultPreparationBoundary
+} from '../src/visual-review-result-preparation.js';
+import {
+  runVisualReviewExecutionRun,
+  visualReviewExecutionBoundary
+} from '../src/visual-review-execution.js';
+import {
+  runVisualReviewDashboard,
+  visualReviewDashboardBoundary
+} from '../src/visual-review-dashboard.js';
+import {
+  runVisualReviewAggregation,
+  visualReviewAggregationBoundary
+} from '../src/visual-review-aggregation.js';
 import { handleMcpRequest } from '../src/mcp.js';
 import { runObserve } from '../src/observe.js';
 import { parseCliArgs } from '../src/parser.js';
-import { PRODUCT_IDENTITY } from '../src/product-identity.js';
+import { PRODUCT_IDENTITY, filesystemSafeName } from '../src/product-identity.js';
 import { redact, redactUrl } from '../src/redaction.js';
 import { classifyActionCandidate, normalizeTargetManifest, runReview } from '../src/review.js';
 import { buildLocalContentUxAdvisory } from '../src/content-ux-advisory.js';
 import { createTargetManifest } from '../src/target.js';
+import { ensureArtifactRoot } from '../src/artifacts.js';
+import {
+  createVisualEvidenceRecord,
+  imageMetadata,
+  readWorkspaceImageFile,
+  writeVisualEvidenceRecord
+} from '../src/visual-evidence.js';
+import {
+  buildVisualReviewProviderPolicy,
+  normalizeVisualReviewDisclosureMode,
+  visualReviewProviderBoundary
+} from '../src/visual-review-provider-policy.js';
 import {
   API_PROVIDER_CREDENTIAL_ENV,
   API_PROVIDER_ENDPOINT_ENV
@@ -43,6 +79,77 @@ test('doctor returns the JSON envelope without launching a browser', async () =>
   assert.equal(body.artifacts.length, 0);
   assert.deepEqual(body.errors, []);
   assert.equal(body.warnings[0].code, 'PLAYWRIGHT_NOT_INSTALLED');
+});
+
+test('identity audit reports current and future rename readiness without mutating Git', async () => {
+  const parsed = parseCliArgs(['identity', 'audit', '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'identity audit');
+
+  const result = await executeCli(['identity', 'audit', '--json'], {
+    now: fixedNow,
+    cwd: process.cwd(),
+    gitRemoteUrl: `${PRODUCT_IDENTITY.repositoryUrl}.git`
+  });
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'identity audit');
+  assert.equal(body.status, 'ok');
+  assert.equal(body.data.identity_audit.schema_version, '1.0.0');
+  assert.equal(body.data.identity_audit.identity.package_name, PRODUCT_IDENTITY.packageName);
+  assert.equal(body.data.identity_audit.repository.origin_matches_current_repository_url, true);
+  assert.equal(body.data.identity_audit.repository.origin_matches_future_repository_url, true);
+  assert.equal(body.data.identity_audit.repository.remote_rename_pending, false);
+  assert.equal(typeof body.data.identity_audit.readiness.physical_directory_rename_completed, 'boolean');
+  assert.equal(
+    [
+      'ready_for_physical_rename_check',
+      'physical_rename_complete_remote_rename_pending',
+      'identity_rename_complete'
+    ].includes(body.data.identity_audit.readiness.status),
+    true
+  );
+  assert.equal(body.data.identity_audit.compatibility.legacy_alias_removal_authorized, false);
+  assert.equal(body.data.identity_audit.compatibility.artifact_root_migration_authorized, false);
+  assert.equal(body.data.boundary.git_mutated, false);
+  assert.equal(body.data.boundary.remote_contact, false);
+  assert.equal(body.data.boundary.artifacts_written, false);
+  assert.equal(normalizeRepositoryUrl('git@github.com:xxxMasahiro/browser-debug-cli.git'), 'github.com/xxxMasahiro/browser-debug-cli');
+  assert.equal(normalizeRepositoryUrl('ssh://git@github.com/xxxMasahiro/browser-debug-cli.git'), 'github.com/xxxMasahiro/browser-debug-cli');
+  assert.equal(filesystemSafeName('@scope/trace cue'), 'scope-trace-cue');
+
+  const direct = await runIdentityAudit({}, {
+    cwd: process.cwd(),
+    gitRemoteUrl: PRODUCT_IDENTITY.futureRepositoryUrl
+  });
+  assert.equal(direct.data.identity_audit.repository.origin_matches_future_repository_url, true);
+
+  const fixtureParent = await mkdtemp(path.join(tmpdir(), 'trace-cue-identity-audit-'));
+  const legacyRoot = path.join(fixtureParent, PRODUCT_IDENTITY.legacyPackageNames[0]);
+  const futureRoot = path.join(fixtureParent, PRODUCT_IDENTITY.futureRepositoryName);
+  await mkdir(path.join(legacyRoot, '.git'), { recursive: true });
+  await mkdir(path.join(futureRoot, '.git'), { recursive: true });
+  await writeFile(path.join(legacyRoot, '.git', 'config'), `[remote "origin"]\n\turl = ${PRODUCT_IDENTITY.repositoryUrl}.git\n`, 'utf8');
+  await writeFile(path.join(futureRoot, '.git', 'config'), `[remote "origin"]\n\turl = ${PRODUCT_IDENTITY.legacyRepositoryUrls[0]}.git\n`, 'utf8');
+
+  const legacyRootAudit = await buildIdentityAudit({ cwd: legacyRoot });
+  assert.equal(legacyRootAudit.repository.physical_rename_pending, true);
+  assert.equal(legacyRootAudit.readiness.physical_directory_rename_safe_to_test, true);
+  assert.equal(legacyRootAudit.readiness.physical_directory_rename_completed, false);
+  assert.equal(legacyRootAudit.readiness.status, 'ready_for_physical_rename_check');
+
+  const futureRootAudit = await buildIdentityAudit({ cwd: futureRoot });
+  assert.equal(futureRootAudit.repository.physical_rename_pending, false);
+  assert.equal(futureRootAudit.readiness.physical_directory_rename_safe_to_test, false);
+  assert.equal(futureRootAudit.readiness.physical_directory_rename_completed, true);
+  assert.equal(futureRootAudit.readiness.status, 'physical_rename_complete_remote_rename_pending');
+
+  const completedAudit = await buildIdentityAudit({
+    cwd: futureRoot,
+    gitRemoteUrl: PRODUCT_IDENTITY.repositoryUrl
+  });
+  assert.equal(completedAudit.repository.remote_rename_pending, false);
+  assert.equal(completedAudit.readiness.status, 'identity_rename_complete');
 });
 
 test('resource status reports local memory boundaries without launching a browser', async () => {
@@ -283,6 +390,974 @@ test('review parses URL targets and returns a deterministic JSON envelope', asyn
   assert.equal(body.data.review.id, 'review-fixed');
 });
 
+test('visual evidence core records local image metadata without embedding pixels', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-visual-evidence-'));
+  const png = minimalPngBuffer(2, 3);
+  await writeFile(path.join(cwd, 'fixture.png'), png);
+  const loaded = await readWorkspaceImageFile({ cwd, inputPath: 'fixture.png' });
+  assert.equal(loaded.workspace_path, 'fixture.png');
+  assert.equal(loaded.media.format, 'png');
+  assert.equal(loaded.media.width, 2);
+  assert.equal(loaded.media.height, 3);
+  assert.equal(loaded.media.bytes, png.length);
+  assert.equal(loaded.media.sha256, imageMetadata(png).sha256);
+
+  const record = createVisualEvidenceRecord({
+    id: 'visual-fixed',
+    createdAt: fixedNow,
+    sourceKind: 'image_file',
+    sourcePath: loaded.workspace_path,
+    buffer: loaded.buffer,
+    labels: ['standalone_image']
+  });
+  assert.equal(record.boundary.local_only, true);
+  assert.equal(record.boundary.external_upload, false);
+  assert.equal(record.boundary.provider_call_performed, false);
+  assert.equal(record.boundary.raw_pixels_in_json, false);
+  assert.equal(JSON.stringify(record).includes(png.toString('base64')), false);
+  assert.equal(record.privacy.requires_owner_review_before_external_transfer, true);
+
+  const root = await ensureArtifactRoot(cwd);
+  record.boundary = {
+    ...record.boundary,
+    external_upload: true,
+    provider_call_performed: true,
+    binary_content_included: true,
+    mcp_execution_exposed: true
+  };
+  const written = await writeVisualEvidenceRecord({ id: 'visual-fixed', root, artifactRoot: '.browser-debug', record });
+  assert.equal(written.artifact.type, 'visual_evidence');
+  assert.equal(written.artifact.path, '.browser-debug/visual-evidence/visual-fixed.json');
+  const persisted = JSON.parse(await readFile(path.join(cwd, written.artifact.path), 'utf8'));
+  assert.equal(persisted.media.sha256, record.media.sha256);
+  assert.equal(persisted.boundary.external_upload, false);
+  assert.equal(persisted.boundary.provider_call_performed, false);
+  assert.equal(persisted.boundary.binary_content_included, false);
+  assert.equal(persisted.boundary.mcp_execution_exposed, false);
+
+  const outside = await mkdtemp(path.join(tmpdir(), 'trace-cue-visual-outside-'));
+  await writeFile(path.join(outside, 'outside.png'), png);
+  await assert.rejects(
+    () => readWorkspaceImageFile({ cwd, inputPath: path.relative(cwd, path.join(outside, 'outside.png')) }),
+    /must stay inside the current workspace/
+  );
+});
+
+test('visual review provider policy stays planning-only and strips raw image transfer by default', () => {
+  const policy = buildVisualReviewProviderPolicy({
+    disclosureMode: 'explicit_image_transfer',
+    agentPackage: {
+      packet: {
+        evidence_packet: {
+          artifacts: [
+            { type: 'visual_evidence', path: '.browser-debug/visual-evidence/visual-fixed.json', content_included: false },
+            { type: 'screenshot', path: '.browser-debug/screenshots/page.png', content_included: false }
+          ]
+        }
+      }
+    },
+    surface: { id: 'local-subscription-agent', kind: 'subscription_surface', transport: 'local_files' },
+    provider: { id: 'fake-agent', kind: 'local_runner', implemented: true },
+    model: { id: 'fake-model', selected: true }
+  });
+
+  assert.equal(policy.status, 'blocked_external_transfer_requires_owner_review');
+  assert.equal(policy.disclosure.raw_pixels_included, false);
+  assert.equal(policy.disclosure.external_evidence_transfer_authorized, false);
+  assert.equal(policy.disclosure.provider_execution_authorized, false);
+  assert.equal(policy.execution.provider_call_performed, false);
+  assert.equal(policy.execution.mcp_execution_exposed, false);
+  assert.equal(policy.visual_evidence.visual_evidence_reference_count, 1);
+  assert.equal(visualReviewProviderBoundary().future_execute_required, true);
+  assert.equal(normalizeVisualReviewDisclosureMode('local_reference'), 'local_reference');
+  assert.throws(() => normalizeVisualReviewDisclosureMode('raw_pixels'), /Unsupported visual review disclosure mode/);
+});
+
+test('standalone image review reads a workspace image without launching a browser or embedding pixels', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-image-review-'));
+  const png = minimalPngBuffer(120, 80);
+  await writeFile(path.join(cwd, 'screen.png'), png);
+
+  const parsed = parseCliArgs(['review', '--image', 'screen.png', '--report', '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'review');
+  assert.equal(parsed.options.image, 'screen.png');
+  assert.equal(parseCliArgs(['review', '--image', 'https://example.test/a.png', '--json']).ok, false);
+  assert.equal(parseCliArgs(['review', '--image', '../screen.png', '--json']).ok, false);
+  assert.equal(parseCliArgs(['review', '--image', 'screen.png', '--provider', 'fake-agent', '--json']).ok, false);
+
+  const result = await executeCli(['review', '--image', 'screen.png', '--report', '--json'], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'image-review-fixed'
+  });
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'review');
+  assert.equal(body.data.review.mode, 'image_file');
+  assert.equal(body.data.metrics.width, 120);
+  assert.equal(body.data.metrics.height, 80);
+  assert.equal(body.data.boundary.browser_launched, false);
+  assert.equal(body.data.boundary.provider_call_performed, false);
+  assert.equal(body.data.boundary.raw_pixels_in_json, false);
+  assert.equal(body.data.boundary.workspace_confined_input, true);
+  assert.equal(JSON.stringify(body.data).includes(png.toString('base64')), false);
+  assert.equal(body.artifacts.some((artifact) => artifact.type === 'image_review'), true);
+  assert.equal(body.artifacts.some((artifact) => artifact.type === 'visual_evidence'), true);
+  assert.equal(body.artifacts.some((artifact) => artifact.type === 'review_artifact_index'), true);
+  assert.equal(body.artifacts.some((artifact) => artifact.type === 'image_review_report'), true);
+
+  const imageReviewFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'reviews', 'image-review-fixed.json'), 'utf8'));
+  assert.equal(imageReviewFile.image_review.visual_evidence.boundary.provider_call_performed, false);
+  assert.equal(imageReviewFile.evidence_summary.binary_content_included, false);
+  assert.equal(imageReviewFile.artifact_index.evidence_classes.includes('visual evidence metadata'), true);
+  const imageReviewIndex = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'review-artifacts', 'image-review-fixed.json'), 'utf8'));
+  assert.equal(imageReviewIndex.mode, 'image_file');
+  assert.equal(imageReviewIndex.boundaries.provider_call_performed, false);
+
+  const direct = await runImageReview({ image: 'screen.png' }, {
+    cwd,
+    now: fixedNow,
+    createId: () => 'image-review-direct'
+  });
+  assert.equal(direct.status, 'ok');
+  assert.equal(direct.data.boundary.external_upload, false);
+});
+
+test('desktop image review preserves caller-declared desktop provenance through visual preparation', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-desktop-image-review-'));
+  const png = minimalPngBuffer(240, 160);
+  await writeFile(path.join(cwd, 'desktop.png'), png);
+
+  const handoff = await executeCli(['capture', 'handoff', '--image', 'desktop.png', '--source', 'desktop-app', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(handoff.exitCode, 0);
+  const handoffBody = JSON.parse(handoff.stdout);
+  await writeFile(path.join(cwd, 'handoff.json'), JSON.stringify(handoffBody, null, 2));
+
+  const parsed = parseCliArgs(['review', '--image', 'desktop.png', '--capture-handoff', 'handoff.json', '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.options['capture-handoff'], 'handoff.json');
+  assert.equal(parseCliArgs(['review', '--image', 'desktop.png', '--source', 'desktop-app', '--json']).ok, true);
+  assert.equal(parseCliArgs(['review', '--image', 'desktop.png', '--source', 'all', '--json']).ok, false);
+  assert.equal(parseCliArgs(['review', '--url', 'https://example.test', '--source', 'desktop-app', '--json']).ok, false);
+  assert.equal(parseCliArgs(['review', '--url', 'https://example.test', '--capture-handoff', 'handoff.json', '--json']).ok, false);
+
+  const review = await executeCli(['review', '--image', 'desktop.png', '--capture-handoff', 'handoff.json', '--json'], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'desktop-image-review-fixed'
+  });
+  assert.equal(review.exitCode, 0);
+  const reviewBody = JSON.parse(review.stdout);
+  assert.equal(reviewBody.data.review.mode, 'image_file');
+  assert.equal(reviewBody.data.review.source_kind, 'desktop_app_capture');
+  assert.equal(reviewBody.data.review.source_selection, 'desktop-app');
+  assert.equal(reviewBody.data.review.source_verified_by_trace_cue, false);
+  assert.equal(reviewBody.data.review.capture_handoff_id, handoffBody.data.capture_handoff.id);
+  assert.equal(reviewBody.data.image_review.source.kind, 'desktop_app_capture');
+  assert.equal(reviewBody.data.image_review.source.caller_declared_provenance, true);
+  assert.equal(reviewBody.data.image_review.capture_handoff.input_path, 'handoff.json');
+  assert.equal(reviewBody.data.image_review.capture_handoff.media_sha256_matched, true);
+  assert.equal(reviewBody.data.evidence_summary.capture_handoff_path, 'handoff.json');
+  assert.equal(typeof reviewBody.data.evidence_summary.capture_handoff_hash, 'string');
+  assert.equal(reviewBody.data.boundary.capture_handoff_json_read, true);
+  assert.equal(reviewBody.data.boundary.capture_handoff_media_sha256_matched, true);
+  assert.equal(reviewBody.data.boundary.capture_performed_by_trace_cue, false);
+  assert.equal(reviewBody.data.boundary.os_capture_api_used, false);
+  assert.equal(JSON.stringify(reviewBody.data).includes(png.toString('base64')), false);
+
+  const visualEvidence = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'visual-evidence', 'desktop-image-review-fixed.json'), 'utf8'));
+  assert.equal(visualEvidence.source.kind, 'desktop_app_capture');
+  assert.equal(visualEvidence.capture.handoff_id, handoffBody.data.capture_handoff.id);
+  assert.equal(visualEvidence.capture.media_sha256_matched, true);
+  assert.equal(visualEvidence.privacy.may_contain_desktop_content, true);
+  assert.equal(visualEvidence.boundary.raw_pixels_in_json, false);
+
+  const index = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'review-artifacts', 'desktop-image-review-fixed.json'), 'utf8'));
+  assert.match(index.rerun.command, /--capture-handoff handoff\.json/);
+  assert.equal(index.boundaries.source_verified_by_trace_cue, false);
+  assert.equal(index.boundaries.capture_handoff_json_read, true);
+  assert.equal(index.boundaries.capture_handoff_media_sha256_matched, true);
+  assert.equal(index.boundaries.provider_call_performed, false);
+
+  const preparation = await executeCli([
+    'visual',
+    'review',
+    'prepare',
+    '--review-index',
+    '.browser-debug/review-artifacts/desktop-image-review-fixed.json',
+    '--surface',
+    'desktop-app',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'desktop-visual-preparation-fixed'
+  });
+  assert.equal(preparation.exitCode, 0);
+  const preparationBody = JSON.parse(preparation.stdout);
+  assert.equal(preparationBody.data.visual_review_result_preparation.visual_evidence.references[0].source.kind, 'desktop_app_capture');
+  assert.equal(preparationBody.data.visual_review_result_preparation.visual_evidence.references[0].privacy.may_contain_desktop_content, true);
+  assert.equal(preparationBody.data.visual_review_result_preparation.provider_policy.execution.provider_call_performed, false);
+  assert.equal(preparationBody.data.visual_review_result_preparation.execution.mcp_execution_exposed, false);
+
+  const pathMismatch = {
+    ...handoffBody,
+    data: {
+      ...handoffBody.data,
+      capture_handoff: {
+        ...handoffBody.data.capture_handoff,
+        source: {
+          ...handoffBody.data.capture_handoff.source,
+          path: 'other.png'
+        }
+      }
+    }
+  };
+  await writeFile(path.join(cwd, 'path-mismatch.json'), JSON.stringify(pathMismatch, null, 2));
+  const mismatch = await executeCli(['review', '--image', 'desktop.png', '--capture-handoff', 'path-mismatch.json', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(mismatch.exitCode, 1);
+  assert.equal(JSON.parse(mismatch.stdout).errors[0].code, 'IMAGE_REVIEW_CAPTURE_HANDOFF_IMAGE_MISMATCH');
+
+  const hashMismatch = {
+    ...handoffBody,
+    data: {
+      ...handoffBody.data,
+      capture_handoff: {
+        ...handoffBody.data.capture_handoff,
+        media: {
+          ...handoffBody.data.capture_handoff.media,
+          sha256: '0'.repeat(64)
+        }
+      }
+    }
+  };
+  await writeFile(path.join(cwd, 'hash-mismatch.json'), JSON.stringify(hashMismatch, null, 2));
+  const badHash = await executeCli(['review', '--image', 'desktop.png', '--capture-handoff', 'hash-mismatch.json', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(badHash.exitCode, 1);
+  assert.equal(JSON.parse(badHash.stdout).errors[0].code, 'IMAGE_REVIEW_CAPTURE_HANDOFF_HASH_MISMATCH');
+});
+
+test('visual review prepare writes metadata-only result preparation without provider execution', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-visual-prepare-'));
+  const png = minimalPngBuffer(120, 80);
+  await writeFile(path.join(cwd, 'screen.png'), png);
+
+  const imageReview = await executeCli(['review', '--image', 'screen.png', '--json'], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'image-review-fixed'
+  });
+  assert.equal(imageReview.exitCode, 0);
+
+  const parsed = parseCliArgs([
+    'visual',
+    'review',
+    'prepare',
+    '--review-index',
+    '.browser-debug/review-artifacts/image-review-fixed.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--json'
+  ]);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'visual review prepare');
+  assert.equal(parseCliArgs(['visual', 'review', 'prepare', '--review-index', '.browser-debug/review-artifacts/image-review-fixed.json', '--execute', '--json']).ok, false);
+
+  const result = await executeCli([
+    'visual',
+    'review',
+    'prepare',
+    '--review-index',
+    '.browser-debug/review-artifacts/image-review-fixed.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'visual-review-preparation-fixed'
+  });
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'visual review prepare');
+  const preparation = body.data.visual_review_result_preparation;
+  assert.equal(preparation.status, 'prepared');
+  assert.equal(preparation.visual_evidence.metadata_only, true);
+  assert.equal(preparation.visual_evidence.readable_count, 1);
+  assert.equal(preparation.visual_evidence.references[0].media.width, 120);
+  assert.equal(preparation.disclosure_policy.raw_pixels_included, false);
+  assert.equal(preparation.disclosure_policy.raw_artifact_content_included, false);
+  assert.equal(preparation.provider_policy.execution.provider_call_performed, false);
+  assert.equal(preparation.execution.enabled, false);
+  assert.equal(preparation.execution.execute_supported, false);
+  assert.equal(preparation.execution.mcp_execution_exposed, false);
+  assert.equal(preparation.boundary.existing_review_mutated, false);
+  assert.equal(preparation.result_contract.required_output_schema, 'visual_review_result');
+  assert.equal(body.data.visual_review_result_template.status, 'not_run');
+  assert.equal(JSON.stringify(body.data).includes(png.toString('base64')), false);
+  assert.equal(body.artifacts.some((artifact) => artifact.type === 'visual_review_result_preparation'), true);
+  assert.equal(body.artifacts.some((artifact) => artifact.type === 'visual_review_result_preparation_receipt'), true);
+
+  const preparationFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'visual-review-preparation-fixed', 'preparation.json'), 'utf8'));
+  assert.equal(preparationFile.raw_pixels_included, false);
+  assert.equal(preparationFile.provider_call_performed, false);
+  const receiptFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'receipts', 'visual-review-preparation-fixed.json'), 'utf8'));
+  assert.equal(receiptFile.raw_pixels_included, false);
+  assert.equal(receiptFile.provider_call_performed, false);
+
+  const direct = await runVisualReviewResultPreparation({
+    'review-index': '.browser-debug/review-artifacts/image-review-fixed.json'
+  }, {
+    cwd,
+    now: fixedNow,
+    createId: () => 'visual-review-preparation-direct'
+  });
+  assert.equal(direct.status, 'ok');
+  assert.equal(direct.data.boundary.external_evidence_transfer, false);
+  assert.equal(visualReviewResultPreparationBoundary().mcp_execution_exposed, false);
+});
+
+test('visual review run executes metadata-only visual review providers and writes normalized results', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-visual-run-'));
+  const png = minimalPngBuffer(120, 80);
+  await writeFile(path.join(cwd, 'screen.png'), png);
+
+  const imageReview = await executeCli(['review', '--image', 'screen.png', '--json'], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'image-review-visual-run'
+  });
+  assert.equal(imageReview.exitCode, 0);
+
+  const preparation = await executeCli([
+    'visual',
+    'review',
+    'prepare',
+    '--review-index',
+    '.browser-debug/review-artifacts/image-review-visual-run.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'visual-review-preparation-run'
+  });
+  assert.equal(preparation.exitCode, 0);
+
+  const parsed = parseCliArgs([
+    'visual',
+    'review',
+    'run',
+    '--preparation',
+    '.browser-debug/visual-review-results/visual-review-preparation-run/preparation.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--execute',
+    '--json'
+  ]);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'visual review run');
+  assert.equal(parseCliArgs([
+    'visual',
+    'review',
+    'run',
+    '--preparation',
+    '.browser-debug/visual-review-results/visual-review-preparation-run/preparation.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--json'
+  ]).ok, false);
+
+  const run = await executeCli([
+    'visual',
+    'review',
+    'run',
+    '--preparation',
+    '.browser-debug/visual-review-results/visual-review-preparation-run/preparation.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => prefix === 'visual-review-execution' ? 'visual-review-execution-fixed' : 'visual-review-result-fixed'
+  });
+  assert.equal(run.exitCode, 0);
+  const body = JSON.parse(run.stdout);
+  assert.equal(body.command, 'visual review run');
+  assert.equal(body.data.visual_review_execution.status, 'completed');
+  assert.equal(body.data.visual_review_execution.result_path, '.browser-debug/visual-review-results/visual-review-execution-fixed/result.json');
+  assert.equal(body.data.visual_review_execution.provider_call_performed, true);
+  assert.equal(body.data.visual_review_execution.api_call_performed, false);
+  assert.equal(body.data.visual_review_execution.external_evidence_transfer, false);
+  assert.equal(body.data.visual_review_execution.raw_pixels_included, false);
+  assert.equal(body.data.visual_review_execution.raw_pixels_read, false);
+  assert.equal(body.data.visual_review_execution.raw_pixels_transferred, false);
+  assert.equal(body.data.visual_review_execution.raw_provider_response_stored, false);
+  assert.equal(body.data.visual_review_execution.existing_review_mutated, false);
+  assert.equal(body.data.visual_review_execution.mcp_execution_exposed, false);
+  assert.equal(body.data.visual_review_result.status, 'completed');
+  assert.equal(body.artifacts.some((artifact) => artifact.type === 'visual_review_result'), true);
+  assert.equal(body.artifacts.some((artifact) => artifact.type === 'visual_review_execution'), true);
+  assert.equal(JSON.stringify(body.data).includes(png.toString('base64')), false);
+
+  const resultFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'visual-review-execution-fixed', 'result.json'), 'utf8'));
+  assert.equal(resultFile.status, 'completed');
+  assert.equal(resultFile.visual_review_result.untrusted_model_output, true);
+  assert.equal(resultFile.boundary.raw_pixels_included, false);
+  assert.equal(resultFile.boundary.raw_provider_response_stored, false);
+  const executionFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'visual-review-execution-fixed', 'execution.json'), 'utf8'));
+  assert.equal(executionFile.dashboard_handoff.status_command, 'trace-cue visual review status --execution .browser-debug/visual-review-results/visual-review-execution-fixed/execution.json --json');
+  const receiptFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'receipts', 'visual-review-execution-fixed-visual-review-run.json'), 'utf8'));
+  assert.equal(receiptFile.raw_pixels_included, false);
+  assert.equal(receiptFile.raw_provider_response_stored, false);
+
+  const status = await executeCli([
+    'visual',
+    'review',
+    'status',
+    '--execution',
+    '.browser-debug/visual-review-results/visual-review-execution-fixed/execution.json',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(status.exitCode, 0);
+  assert.equal(JSON.parse(status.stdout).data.visual_review_execution_status.status, 'completed');
+
+  const list = await executeCli(['visual', 'review', 'list', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(list.exitCode, 0);
+  const listBody = JSON.parse(list.stdout);
+  assert.equal(listBody.data.summary.total, 1);
+  assert.equal(listBody.data.summary.completed, 1);
+  assert.equal(listBody.data.summary.raw_pixels_included, false);
+
+  const direct = await runVisualReviewExecutionRun({
+    preparation: '.browser-debug/visual-review-results/visual-review-preparation-run/preparation.json',
+    surface: 'local-subscription-agent',
+    provider: 'fake-agent',
+    model: 'fake-model',
+    execute: true
+  }, {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => prefix === 'visual-review-execution' ? 'visual-review-execution-direct' : 'visual-review-result-direct'
+  });
+  assert.equal(direct.status, 'ok');
+  assert.equal(direct.data.boundary.raw_pixels_transferred, false);
+  assert.equal(visualReviewExecutionBoundary().mcp_execution_exposed, false);
+});
+
+test('visual review aggregate combines local visual review results without provider calls or writes', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-visual-aggregate-'));
+  await mkdir(path.join(cwd, '.browser-debug', 'visual-review-results', 'prep'), { recursive: true });
+  await mkdir(path.join(cwd, '.browser-debug', 'visual-review-results', 'agent-a'), { recursive: true });
+  await mkdir(path.join(cwd, '.browser-debug', 'visual-review-results', 'agent-b'), { recursive: true });
+  await mkdir(path.join(cwd, '.browser-debug', 'visual-review-results', 'broken'), { recursive: true });
+
+  const preparation = {
+    schema_version: '0.1.0',
+    id: 'prep-aggregate',
+    status: 'prepared',
+    visual_evidence: { references: [] }
+  };
+  await writeFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'prep', 'preparation.json'), JSON.stringify(preparation, null, 2));
+
+  const baseResult = {
+    schema_version: '0.1.0',
+    status: 'needs_owner_review',
+    preparation_id: 'prep-aggregate',
+    preparation_path: '.browser-debug/visual-review-results/prep/preparation.json',
+    visual_review_result: {
+      summary: 'Visual review advisory only.'
+    },
+    boundary: {
+      provider_call_performed: true,
+      api_call_performed: false,
+      external_evidence_transfer: false,
+      raw_pixels_included: false,
+      raw_provider_response_stored: false
+    }
+  };
+  await writeFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'agent-a', 'result.json'), JSON.stringify({
+    ...baseResult,
+    id: 'result-a',
+    execution_id: 'agent-a',
+    provider: { id: 'fake-agent', kind: 'deterministic_fake' },
+    model: { id: 'model-a' },
+    advisory_findings: [{
+      id: 'finding-a',
+      category: 'layout_integrity',
+      severity: 'medium',
+      message: 'Primary action alignment needs owner review.',
+      recommendation: 'Review the primary action placement with the owner.'
+    }],
+    owner_decision_requests: [{
+      id: 'decision-a',
+      question: 'Should the primary action stay in this position?'
+    }]
+  }, null, 2));
+  await writeFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'agent-a', 'execution.json'), JSON.stringify({
+    id: 'agent-a',
+    status: 'completed'
+  }, null, 2));
+  await writeFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'agent-b', 'result.json'), JSON.stringify({
+    ...baseResult,
+    id: 'result-b',
+    execution_id: 'agent-b',
+    provider: { id: 'local-runner', kind: 'local_callback' },
+    model: { id: 'model-b' },
+    advisory_findings: [{
+      id: 'finding-b',
+      category: 'layout_integrity',
+      severity: 'high',
+      message: 'Primary action alignment needs owner review.',
+      recommendation: 'Review the primary action placement with the owner.'
+    }]
+  }, null, 2));
+  await writeFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'broken', 'result.json'), '{');
+
+  const parsed = parseCliArgs(['visual', 'review', 'aggregate', '--preparation', '.browser-debug/visual-review-results/prep/preparation.json', '--limit', '10', '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'visual review aggregate');
+  assert.equal(parseCliArgs(['visual', 'review', 'aggregate', '--preparation', '.browser-debug/visual-review-results/prep/preparation.json', '--execute', '--json']).ok, false);
+  assert.equal(parseCliArgs(['visual', 'review', 'aggregate', '--preparation', '.browser-debug/visual-review-results/prep/preparation.json', '--provider', 'fake-agent', '--json']).ok, false);
+
+  const result = await executeCli(['visual', 'review', 'aggregate', '--preparation', '.browser-debug/visual-review-results/prep/preparation.json', '--limit', '10', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'visual review aggregate');
+  const aggregation = body.data.visual_review_aggregation;
+  assert.equal(aggregation.status, 'completed');
+  assert.equal(aggregation.summary.result_count, 2);
+  assert.equal(aggregation.summary.review_agent_count, 2);
+  assert.equal(aggregation.summary.corroborated_finding_count, 1);
+  assert.equal(aggregation.summary.conflict_count, 1);
+  assert.equal(aggregation.aggregation_findings[0].status, 'corroborated');
+  assert.deepEqual(aggregation.aggregation_findings[0].source_severities, ['medium', 'high']);
+  assert.equal(aggregation.owner_decision_requests.length, 1);
+  assert.equal(aggregation.source_effects.provider_call_performed, true);
+  assert.equal(aggregation.boundary.provider_call_performed, false);
+  assert.equal(aggregation.boundary.writes_artifacts, false);
+  assert.equal(aggregation.boundary.raw_pixels_read, false);
+  assert.equal(aggregation.boundary.mcp_execution_exposed, false);
+  assert.deepEqual(body.artifacts, []);
+  assert.equal(JSON.stringify(body.data).includes('secret-provider-payload'), false);
+  assert.ok(body.warnings.some((warning) => warning.code === 'VISUAL_REVIEW_AGGREGATION_ARTIFACT_INVALID_JSON'));
+
+  const direct = await runVisualReviewAggregation({
+    preparation: '.browser-debug/visual-review-results/prep/preparation.json',
+    limit: 10
+  }, { cwd, now: fixedNow });
+  assert.equal(direct.status, 'ok');
+  assert.equal(direct.data.visual_review_aggregation.summary.result_count, 2);
+  assert.equal(visualReviewAggregationBoundary().mcp_execution_exposed, false);
+});
+
+test('visual review dashboard aggregates local visual review status without writes', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-visual-dashboard-'));
+  const png = minimalPngBuffer(120, 80);
+  await writeFile(path.join(cwd, 'screen.png'), png);
+
+  const imageReview = await executeCli(['review', '--image', 'screen.png', '--json'], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'image-review-dashboard'
+  });
+  assert.equal(imageReview.exitCode, 0);
+
+  const preparation = await executeCli([
+    'visual',
+    'review',
+    'prepare',
+    '--review-index',
+    '.browser-debug/review-artifacts/image-review-dashboard.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'visual-review-preparation-dashboard'
+  });
+  assert.equal(preparation.exitCode, 0);
+
+  const run = await executeCli([
+    'visual',
+    'review',
+    'run',
+    '--preparation',
+    '.browser-debug/visual-review-results/visual-review-preparation-dashboard/preparation.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => prefix === 'visual-review-execution' ? 'visual-review-execution-dashboard' : 'visual-review-result-dashboard'
+  });
+  assert.equal(run.exitCode, 0);
+
+  const parsed = parseCliArgs(['visual', 'review', 'dashboard', '--limit', '10', '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'visual review dashboard');
+
+  const dashboard = await executeCli(['visual', 'review', 'dashboard', '--limit', '10', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(dashboard.exitCode, 0);
+  const body = JSON.parse(dashboard.stdout);
+  assert.equal(body.command, 'visual review dashboard');
+  assert.equal(body.data.visual_review_dashboard.status, 'ready');
+  assert.equal(body.data.visual_review_dashboard.summary.preparation_count, 1);
+  assert.equal(body.data.visual_review_dashboard.summary.execution_count, 1);
+  assert.equal(body.data.visual_review_dashboard.summary.result_count, 1);
+  assert.equal(body.data.visual_review_dashboard.summary.provider_call_performed, true);
+  assert.equal(body.data.visual_review_dashboard.boundary.read_only, true);
+  assert.equal(body.data.visual_review_dashboard.boundary.writes_artifacts, false);
+  assert.equal(body.data.visual_review_dashboard.boundary.provider_call_performed, false);
+  assert.equal(body.data.visual_review_dashboard.boundary.raw_pixels_read, false);
+  assert.equal(body.data.visual_review_dashboard.control_center_handoff.mcp_tool, 'browser_debug_visual_review_dashboard');
+  assert.equal(body.data.visual_review_dashboard.gate_effect, 'none');
+  assert.deepEqual(body.artifacts, []);
+  assert.equal(JSON.stringify(body.data).includes(png.toString('base64')), false);
+
+  const direct = await runVisualReviewDashboard({}, { cwd, now: fixedNow });
+  assert.equal(direct.status, 'ok');
+  assert.equal(direct.data.visual_review_dashboard.status, 'ready');
+  assert.equal(direct.data.boundary.read_only, true);
+  assert.equal(visualReviewDashboardBoundary().mcp_write_execute_exposed, false);
+
+  const mcpDashboard = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 45,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_visual_review_dashboard',
+      arguments: { limit: 10 }
+    }
+  }, { cwd, mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpDashboard.result.structuredContent.command, 'visual review dashboard');
+  assert.equal(mcpDashboard.result.structuredContent.data.visual_review_dashboard.summary.execution_count, 1);
+  assert.equal(mcpDashboard.result.structuredContent.data.boundary.read_only, true);
+});
+
+test('visual review run blocks unsafe preparation states', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-visual-run-blocked-'));
+  await mkdir(path.join(cwd, '.browser-debug', 'visual-review-results', 'blocked'), { recursive: true });
+  await writeFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'blocked', 'preparation.json'), JSON.stringify({
+    schema_version: '0.1.0',
+    id: 'blocked-preparation',
+    status: 'blocked_missing_visual_evidence',
+    result_contract: { required_output_schema: 'visual_review_result' },
+    visual_evidence: { readable_count: 0, references: [] },
+    provider_policy: { surface: { id: 'local-subscription-agent' }, provider: { id: 'fake-agent' }, model: { id: 'fake-model' } },
+    disclosure_policy: { raw_pixels_included: false, raw_artifact_content_included: false },
+    boundary: {}
+  }, null, 2), 'utf8');
+
+  const blocked = await executeCli([
+    'visual',
+    'review',
+    'run',
+    '--preparation',
+    '.browser-debug/visual-review-results/blocked/preparation.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(blocked.exitCode, 1);
+  assert.equal(JSON.parse(blocked.stdout).errors[0].code, 'VISUAL_REVIEW_PREPARATION_NOT_RUNNABLE');
+
+  await writeFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'blocked', 'preparation.json'), JSON.stringify({
+    schema_version: '0.1.0',
+    id: 'unsafe-preparation',
+    status: 'prepared',
+    result_contract: { required_output_schema: 'visual_review_result' },
+    visual_evidence: { readable_count: 1, references: [{ path: '.browser-debug/visual-evidence/example.json' }] },
+    provider_policy: { surface: { id: 'local-subscription-agent' }, provider: { id: 'fake-agent' }, model: { id: 'fake-model' } },
+    disclosure_policy: { raw_pixels_included: true, raw_artifact_content_included: false },
+    boundary: {}
+  }, null, 2), 'utf8');
+
+  const unsafe = await executeCli([
+    'visual',
+    'review',
+    'run',
+    '--preparation',
+    '.browser-debug/visual-review-results/blocked/preparation.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(unsafe.exitCode, 1);
+  assert.equal(JSON.parse(unsafe.stdout).errors[0].code, 'VISUAL_REVIEW_PREPARATION_UNSUPPORTED_DISCLOSURE');
+});
+
+test('visual review run can use local and API providers without storing credentials or raw responses', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-visual-run-provider-'));
+  await mkdir(path.join(cwd, '.browser-debug', 'visual-review-results', 'prepared'), { recursive: true });
+  const preparation = {
+    schema_version: '0.1.0',
+    id: 'provider-preparation',
+    status: 'prepared',
+    result_contract: { required_output_schema: 'visual_review_result' },
+    visual_evidence: {
+      readable_count: 1,
+      references: [{
+        id: 'visual-evidence-1',
+        path: '.browser-debug/visual-evidence/visual-evidence-1.json',
+        media: { width: 100, height: 80, sha256: 'hash' }
+      }]
+    },
+    provider_policy: {
+      surface: { id: null },
+      provider: { id: null },
+      model: { id: null }
+    },
+    disclosure_policy: {
+      raw_pixels_included: false,
+      raw_artifact_content_included: false,
+      binary_content_included: false,
+      screenshot_binary_included: false,
+      raw_dom_included: false,
+      trace_content_included: false,
+      raw_console_payloads_included: false,
+      raw_network_payloads_included: false,
+      raw_report_body_included: false,
+      source_data_values_included: false
+    },
+    boundary: {}
+  };
+  await writeFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'prepared', 'preparation.json'), JSON.stringify(preparation, null, 2), 'utf8');
+
+  const localRun = await executeCli([
+    'visual',
+    'review',
+    'run',
+    '--preparation',
+    '.browser-debug/visual-review-results/prepared/preparation.json',
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'local-runner',
+    '--model',
+    'local-agent',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => prefix === 'visual-review-execution' ? 'visual-review-execution-local' : 'visual-review-result-local',
+    visualReviewLocalRunner: async ({ preparation_path: preparationPath }) => ({
+      summary: `Local visual review used ${preparationPath}.`,
+      advisory_findings: [{
+        id: 'visual-local-finding',
+        category: 'layout_integrity',
+        severity: 'medium',
+        message: 'Local visual review advisory.',
+        recommendation: 'Review the local visual advisory.'
+      }],
+      owner_decision_requests: []
+    })
+  });
+  assert.equal(localRun.exitCode, 0);
+  const localBody = JSON.parse(localRun.stdout);
+  assert.equal(localBody.data.visual_review_execution.provider_call_performed, true);
+  assert.equal(localBody.data.visual_review_execution.api_call_performed, false);
+  const localResult = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'visual-review-execution-local', 'result.json'), 'utf8'));
+  assert.equal(localResult.advisory_findings.length, 1);
+  assert.equal(localResult.status, 'needs_owner_review');
+
+  const apiMissing = await executeCli([
+    'visual',
+    'review',
+    'run',
+    '--preparation',
+    '.browser-debug/visual-review-results/prepared/preparation.json',
+    '--surface',
+    'generic-api-provider',
+    '--provider',
+    'generic-api-provider',
+    '--model',
+    'generic-model',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => prefix === 'visual-review-execution' ? 'visual-review-execution-api-missing' : 'visual-review-result-api-missing',
+    env: {}
+  });
+  assert.equal(apiMissing.exitCode, 1);
+  assert.equal(JSON.parse(apiMissing.stdout).errors[0].code, 'VISUAL_REVIEW_API_CONFIGURATION_MISSING');
+
+  const apiCalls = [];
+  const apiRun = await executeCli([
+    'visual',
+    'review',
+    'run',
+    '--preparation',
+    '.browser-debug/visual-review-results/prepared/preparation.json',
+    '--surface',
+    'generic-api-provider',
+    '--provider',
+    'generic-api-provider',
+    '--model',
+    'generic-model',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => prefix === 'visual-review-execution' ? 'visual-review-execution-api' : 'visual-review-result-api',
+    env: {
+      [API_PROVIDER_ENDPOINT_ENV]: 'https://provider.example.test/visual-review',
+      [API_PROVIDER_CREDENTIAL_ENV]: 'credential-value-for-test'
+    },
+    fetch: async (url, init) => {
+      apiCalls.push({ url, init, body: JSON.parse(init.body) });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          visual_review_result: {
+            summary: 'API visual review advisory.',
+            advisory_findings: [{
+              id: 'api-visual-finding',
+              category: 'visual_hierarchy',
+              severity: 'low',
+              message: 'API visual review advisory.',
+              recommendation: 'Review the API visual advisory.'
+            }],
+            owner_decision_requests: []
+          }
+        })
+      };
+    }
+  });
+  assert.equal(apiRun.exitCode, 0);
+  assert.equal(apiCalls.length, 1);
+  assert.equal(apiCalls[0].body.type, 'visual_review_request');
+  assert.equal(apiCalls[0].body.disclosure_policy.raw_pixels_included, false);
+  assert.equal(apiCalls[0].body.disclosure_policy.raw_artifact_content_included, false);
+  assert.equal(apiCalls[0].body.visual_evidence.references[0].content_included, false);
+  assert.match(apiCalls[0].init.headers.authorization, /^Bearer /);
+  const apiBody = JSON.parse(apiRun.stdout);
+  assert.equal(apiBody.data.visual_review_execution.api_call_performed, true);
+  assert.equal(apiBody.data.visual_review_execution.external_evidence_transfer, true);
+  assert.equal(apiBody.data.visual_review_execution.credential_values_recorded, false);
+  assert.equal(apiBody.data.visual_review_execution.raw_provider_response_stored, false);
+  const apiResultText = await readFile(path.join(cwd, '.browser-debug', 'visual-review-results', 'visual-review-execution-api', 'result.json'), 'utf8');
+  assert.equal(apiResultText.includes('credential-value-for-test'), false);
+});
+
+test('visual review prepare blocks indexes without visual evidence metadata', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-visual-prepare-empty-'));
+  await mkdir(path.join(cwd, '.browser-debug', 'review-artifacts'), { recursive: true });
+  await writeFile(path.join(cwd, '.browser-debug', 'review-artifacts', 'empty.json'), JSON.stringify({
+    schema_version: '0.1.0',
+    id: 'empty',
+    mode: 'image_file',
+    local_only: true,
+    artifact_root: '.browser-debug',
+    evidence_classes: [],
+    artifacts: [],
+    boundaries: {}
+  }, null, 2), 'utf8');
+
+  const result = await executeCli([
+    'visual',
+    'review',
+    'prepare',
+    '--review-index',
+    '.browser-debug/review-artifacts/empty.json',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'visual-review-preparation-empty'
+  });
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.data.visual_review_result_preparation.status, 'blocked_missing_visual_evidence');
+  assert.equal(body.data.visual_review_result_preparation.visual_evidence.readable_count, 0);
+  assert.equal(body.data.visual_review_result_preparation.execution.provider_call_performed, false);
+});
+
 test('schema commands expose machine-readable contracts', async () => {
   const listed = await executeCli(['schema', 'list', '--json'], { now: fixedNow });
   assert.equal(listed.exitCode, 0);
@@ -294,7 +1369,11 @@ test('schema commands expose machine-readable contracts', async () => {
   assert.equal(fetched.exitCode, 0);
   const fetchedBody = JSON.parse(fetched.stdout);
   assert.equal(fetchedBody.command, 'schema get');
-  assert.equal(fetchedBody.data.schema.title, 'Browser Debug CLI Review Finding');
+  assert.equal(fetchedBody.data.schema.title, 'TraceCue Review Finding');
+
+  const visualEvidence = await executeCli(['schema', 'get', '--name', 'visual_evidence', '--json'], { now: fixedNow });
+  assert.equal(visualEvidence.exitCode, 0);
+  assert.equal(JSON.parse(visualEvidence.stdout).data.schema.title, 'TraceCue Visual Evidence');
 
   const reviewSchemaFile = JSON.parse(await readFile(new URL('../schemas/review.schema.json', import.meta.url), 'utf8'));
   const reviewSchema = await executeCli(['schema', 'get', '--name', 'review', '--json'], { now: fixedNow });
@@ -313,6 +1392,18 @@ test('schema commands expose machine-readable contracts', async () => {
   );
 
   const agentSchemaPairs = [
+    ['capture_handoff', '../schemas/capture-handoff.schema.json'],
+    ['capture_plan', '../schemas/capture-plan.schema.json'],
+    ['identity_audit', '../schemas/identity-audit.schema.json'],
+    ['desktop_review_provider_preparation_plan', '../schemas/desktop-review-provider-preparation-plan.schema.json'],
+    ['image_review', '../schemas/image-review.schema.json'],
+    ['mcp_execution_gates', '../schemas/mcp-execution-gates.schema.json'],
+    ['visual_review_provider_policy', '../schemas/visual-review-provider-policy.schema.json'],
+    ['visual_review_result_preparation', '../schemas/visual-review-result-preparation.schema.json'],
+    ['visual_review_dashboard', '../schemas/visual-review-dashboard.schema.json'],
+    ['visual_review_execution', '../schemas/visual-review-execution.schema.json'],
+    ['visual_review_result', '../schemas/visual-review-result.schema.json'],
+    ['visual_review_aggregation', '../schemas/visual-review-aggregation.schema.json'],
     ['agent_surface', '../schemas/agent-surface.schema.json'],
     ['agent_task_package', '../schemas/agent-task-package.schema.json'],
     ['agent_request_status', '../schemas/agent-request-status.schema.json'],
@@ -364,7 +1455,7 @@ test('agent package, ingest, and report stay local and advisory-only', async () 
       viewports: ['desktop']
     },
     rerun: {
-      command: 'browser-debug review --target @target.json --json',
+      command: 'trace-cue review --target @target.json --json',
       guidance: ['Rerun after fixes.']
     },
     boundaries: {
@@ -487,7 +1578,7 @@ test('agent package, ingest, and report stay local and advisory-only', async () 
   assert.equal(workflowCreatedBody.data.agent_workflow.existing_review_mutated, false);
   assert.equal(workflowCreatedBody.artifacts.some((artifact) => artifact.type === 'agent_workflow'), true);
   const workflowFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agent-workflows', 'agent-workflow-fixed', 'workflow.json'), 'utf8'));
-  assert.equal(workflowFile.dashboard_handoff.status_command, 'browser-debug agent workflow status --workflow .browser-debug/agent-workflows/agent-workflow-fixed/workflow.json --json');
+  assert.equal(workflowFile.dashboard_handoff.status_command, 'trace-cue agent workflow status --workflow .browser-debug/agent-workflows/agent-workflow-fixed/workflow.json --json');
 
   const advisoryInput = JSON.stringify({
     agent_advisory_findings: [{
@@ -702,10 +1793,21 @@ test('agent package, ingest, and report stay local and advisory-only', async () 
   assert.equal(executionPlanBody.data.agent_execution.credential_values_recorded, false);
   assert.equal(executionPlanBody.data.agent_execution.raw_provider_response_stored, false);
   assert.equal(executionPlanBody.data.agent_execution.mcp_execution_exposed, false);
+  assert.equal(executionPlanBody.data.agent_execution.raw_pixels_included, false);
+  assert.equal(executionPlanBody.data.agent_execution.visual_review_provider_execution_authorized, false);
+  const visualReviewPolicy = executionPlanBody.data.agent_execution.visual_review_provider_policy;
+  assert.equal(visualReviewPolicy.status, 'planned');
+  assert.equal(visualReviewPolicy.disclosure.raw_pixels_included, false);
+  assert.equal(visualReviewPolicy.disclosure.provider_execution_authorized, false);
+  assert.equal(visualReviewPolicy.disclosure.external_evidence_transfer_authorized, false);
+  assert.equal(visualReviewPolicy.execution.provider_call_performed, false);
+  assert.equal(visualReviewPolicy.execution.mcp_execution_exposed, false);
   assert.equal(executionPlanBody.artifacts.some((artifact) => artifact.type === 'agent_execution'), true);
   const executionFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agent-executions', 'agent-execution-fixed', 'execution.json'), 'utf8'));
-  assert.equal(executionFile.dashboard_handoff.status_command, 'browser-debug agent execution status --execution .browser-debug/agent-executions/agent-execution-fixed/execution.json --json');
-  assert.equal(executionFile.dashboard_handoff.run_command, 'browser-debug agent execution run --execution .browser-debug/agent-executions/agent-execution-fixed/execution.json --package .browser-debug/agent-packages/agent-package-fixed/packet.json --surface local-subscription-agent --provider fake-agent --model fake-model --execute --json');
+  assert.equal(executionFile.visual_review_provider_policy.boundary.raw_pixels_included, false);
+  assert.equal(executionFile.visual_review_provider_policy.boundary.provider_execution_authorized, false);
+  assert.equal(executionFile.dashboard_handoff.status_command, 'trace-cue agent execution status --execution .browser-debug/agent-executions/agent-execution-fixed/execution.json --json');
+  assert.equal(executionFile.dashboard_handoff.run_command, 'trace-cue agent execution run --execution .browser-debug/agent-executions/agent-execution-fixed/execution.json --package .browser-debug/agent-packages/agent-package-fixed/packet.json --surface local-subscription-agent --provider fake-agent --model fake-model --execute --json');
 
   const executionStatus = await executeCli([
     'agent',
@@ -907,6 +2009,7 @@ test('agent package, ingest, and report stay local and advisory-only', async () 
   assert.equal(executionRunBody.data.agent_execution.credential_values_recorded, false);
   assert.equal(executionRunBody.data.agent_execution.raw_provider_response_stored, false);
   assert.equal(executionRunBody.data.agent_execution.mcp_execution_exposed, false);
+  assert.equal(Object.hasOwn(executionRunBody.data.agent_execution, 'visual_review_provider_policy'), false);
   assert.equal(executionRunBody.artifacts.some((artifact) => artifact.type === 'agent_advisory_result'), true);
   const fakeResult = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agent-results', 'agent-result-from-fake.json'), 'utf8'));
   assert.equal(fakeResult.agent_advisory.source, 'agent_execution');
@@ -1753,7 +2856,7 @@ test('target validate checks edited manifests without launching a browser', asyn
   assert.equal(body.data.boundary.profile_reuse, false);
   assert.equal(body.data.boundary.source_data_values_exposed, false);
   assert.equal(body.data.boundary.manifest_mutated, false);
-  assert.match(body.data.next_commands.review_json, /browser-debug review --target @/);
+  assert.match(body.data.next_commands.review_json, /trace-cue review --target @/);
   assert.doesNotMatch(result.stdout, /Current local run is healthy/);
 
   const invalid = await executeCli(['target', 'validate', '--target', '{"name":"missing base"}', '--json'], {
@@ -1763,6 +2866,267 @@ test('target validate checks edited manifests without launching a browser', asyn
   const invalidBody = JSON.parse(invalid.stdout);
   assert.equal(invalidBody.command, 'target validate');
   assert.equal(invalidBody.errors[0].code, 'TARGET_BASE_URL_REQUIRED');
+});
+
+test('capture handoff summarizes existing workspace images without writing artifacts', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-capture-handoff-'));
+  const png = minimalPngBuffer(320, 180);
+  await writeFile(path.join(cwd, 'desktop.png'), png);
+
+  const parsed = parseCliArgs(['capture', 'handoff', '--image', 'desktop.png', '--source', 'desktop-app', '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'capture handoff');
+  assert.equal(parsed.options.image, 'desktop.png');
+  assert.equal(parsed.options.source, 'desktop-app');
+
+  const result = await executeCli(['capture', 'handoff', '--image', 'desktop.png', '--source', 'desktop-app', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'capture handoff');
+  assert.equal(body.data.capture_handoff.status, 'metadata_only');
+  assert.equal(body.data.capture_handoff.source.kind, 'desktop_app_capture');
+  assert.equal(body.data.capture_handoff.source.capture_performed_by_trace_cue, false);
+  assert.equal(body.data.capture_handoff.source.source_verified_by_trace_cue, false);
+  assert.equal(body.data.capture_handoff.source.surface_identity_collected, false);
+  assert.equal(body.data.capture_handoff.media.width, 320);
+  assert.equal(body.data.capture_handoff.media.height, 180);
+  assert.equal(body.data.capture_handoff.boundary.existing_workspace_image_read, true);
+  assert.equal(body.data.capture_handoff.boundary.image_bytes_read_for_metadata, true);
+  assert.equal(body.data.capture_handoff.boundary.capture_performed, false);
+  assert.equal(body.data.capture_handoff.boundary.raw_pixels_in_json, false);
+  assert.equal(body.data.capture_handoff.boundary.writes_artifacts, false);
+  assert.equal(body.data.capture_handoff.boundary.mcp_permissions_changed, false);
+  assert.equal(body.data.capture_handoff.boundary.mcp_execution_exposed, false);
+  assert.deepEqual(body.artifacts, []);
+  assert.equal(JSON.stringify(body.data).includes(png.toString('base64')), false);
+  await assert.rejects(() => access(path.join(cwd, '.browser-debug')));
+
+  const direct = await runCaptureHandoff({ image: 'desktop.png', source: 'screen' }, { cwd, now: fixedNow });
+  assert.equal(direct.status, 'ok');
+  assert.equal(direct.data.capture_handoff.source.kind, 'screen_capture');
+  assert.equal(captureHandoffBoundary().artifact_created, false);
+
+  const invalidSource = await executeCli(['capture', 'handoff', '--image', 'desktop.png', '--source', 'camera', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(invalidSource.exitCode, 1);
+  assert.equal(JSON.parse(invalidSource.stdout).errors[0].code, 'INVALID_CAPTURE_HANDOFF_SOURCE');
+
+  const oversize = await executeCli(['capture', 'handoff', '--image', 'desktop.png', '--source', 'screen', '--max-bytes', '1', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(oversize.exitCode, 1);
+  assert.equal(JSON.parse(oversize.stdout).errors[0].code, 'VISUAL_EVIDENCE_INPUT_TOO_LARGE');
+
+  const allSource = parseCliArgs(['capture', 'handoff', '--image', 'desktop.png', '--source', 'all', '--json']);
+  assert.equal(allSource.ok, false);
+  assert.equal(allSource.error.code, 'INVALID_CAPTURE_HANDOFF_SOURCE');
+
+  for (const badImage of ['https://example.test/desktop.png', '../desktop.png', '@desktop.png', '-']) {
+    const parsedBadImage = parseCliArgs(['capture', 'handoff', '--image', badImage, '--source', 'screen', '--json']);
+    assert.equal(parsedBadImage.ok, false);
+    assert.equal(parsedBadImage.error.code, 'INVALID_CAPTURE_HANDOFF_IMAGE');
+  }
+
+  const provider = parseCliArgs(['capture', 'handoff', '--image', 'desktop.png', '--source', 'screen', '--provider', 'generic-api', '--json']);
+  assert.equal(provider.ok, false);
+  assert.equal(provider.error.code, 'UNSUPPORTED_CAPTURE_HANDOFF_OPTION');
+
+  const artifactRoot = parseCliArgs(['capture', 'handoff', '--image', 'desktop.png', '--source', 'screen', '--artifact-root', '.trace-cue', '--json']);
+  assert.equal(artifactRoot.ok, false);
+  assert.equal(artifactRoot.error.code, 'UNSUPPORTED_CAPTURE_HANDOFF_OPTION');
+});
+
+test('visual review plan prepares desktop review provider planning from capture handoff metadata only', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-desktop-review-plan-'));
+  const png = minimalPngBuffer(320, 180);
+  await writeFile(path.join(cwd, 'desktop.png'), png);
+
+  const handoffResult = await executeCli(['capture', 'handoff', '--image', 'desktop.png', '--source', 'desktop-app', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(handoffResult.exitCode, 0);
+  const handoffBody = JSON.parse(handoffResult.stdout);
+  assert.equal(handoffBody.data.capture_handoff.source.kind, 'desktop_app_capture');
+  await writeFile(path.join(cwd, 'handoff.json'), JSON.stringify(handoffBody, null, 2));
+
+  const parsed = parseCliArgs(['visual', 'review', 'plan', '--capture-handoff', 'handoff.json', '--surface', 'desktop-app', '--provider', 'manual', '--model', 'reviewer', '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'visual review plan');
+  assert.equal(parsed.options['capture-handoff'], 'handoff.json');
+
+  const result = await executeCli(['visual', 'review', 'plan', '--capture-handoff', 'handoff.json', '--surface', 'desktop-app', '--provider', 'manual', '--model', 'reviewer', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'visual review plan');
+  assert.equal(body.data.desktop_review_provider_preparation_plan.status, 'planned');
+  assert.equal(body.data.desktop_review_provider_preparation_plan.source.source_kind, 'desktop_app_capture');
+  assert.equal(body.data.desktop_review_provider_preparation_plan.source.workspace_image_path, 'desktop.png');
+  assert.equal(body.data.desktop_review_provider_preparation_plan.source.source_verified_by_trace_cue, false);
+  assert.equal(body.data.desktop_review_provider_preparation_plan.media.width, 320);
+  assert.equal(body.data.desktop_review_provider_preparation_plan.readiness.provider_preparation_artifact_created, false);
+  assert.equal(body.data.desktop_review_provider_preparation_plan.provider_preparation.planning_only, true);
+  assert.equal(body.data.desktop_review_provider_preparation_plan.provider_preparation.provider_call_performed, false);
+  assert.equal(body.data.desktop_review_provider_preparation_plan.disclosure_policy.image_bytes_read, false);
+  assert.equal(body.data.desktop_review_provider_preparation_plan.disclosure_policy.raw_pixels_in_json, false);
+  assert.equal(body.data.desktop_review_provider_preparation_plan.boundary.capture_handoff_json_read, true);
+  assert.equal(body.data.desktop_review_provider_preparation_plan.boundary.image_bytes_read, false);
+  assert.equal(body.data.desktop_review_provider_preparation_plan.boundary.writes_artifacts, false);
+  assert.equal(body.data.desktop_review_provider_preparation_plan.boundary.provider_call_performed, false);
+  assert.equal(body.data.desktop_review_provider_preparation_plan.boundary.mcp_execution_exposed, false);
+  assert.deepEqual(body.artifacts, []);
+  assert.equal(JSON.stringify(body.data).includes(png.toString('base64')), false);
+  await assert.rejects(() => access(path.join(cwd, '.browser-debug')));
+
+  const direct = await buildDesktopReviewProviderPreparationPlan({
+    'capture-handoff': JSON.stringify(handoffBody.data.capture_handoff),
+    surface: 'screen'
+  }, { cwd, now: fixedNow });
+  assert.equal(direct.status, 'ok');
+  assert.equal(direct.data.desktop_review_provider_preparation_plan.source.source_kind, 'desktop_app_capture');
+  assert.equal(desktopReviewProviderPreparationPlanBoundary().artifact_created, false);
+
+  const execute = parseCliArgs(['visual', 'review', 'plan', '--capture-handoff', 'handoff.json', '--execute', '--json']);
+  assert.equal(execute.ok, false);
+  assert.equal(execute.error.code, 'CONFLICTING_OPTIONS');
+
+  const image = parseCliArgs(['visual', 'review', 'plan', '--capture-handoff', 'handoff.json', '--image', 'desktop.png', '--json']);
+  assert.equal(image.ok, false);
+  assert.equal(image.error.code, 'UNSUPPORTED_VISUAL_REVIEW_PLAN_OPTION');
+
+  const unsafe = {
+    ...handoffBody.data.capture_handoff,
+    source: {
+      ...handoffBody.data.capture_handoff.source,
+      path: '../desktop.png'
+    }
+  };
+  await writeFile(path.join(cwd, 'unsafe-handoff.json'), JSON.stringify(unsafe, null, 2));
+  const unsafeResult = await executeCli(['visual', 'review', 'plan', '--capture-handoff', 'unsafe-handoff.json', '--json'], {
+    cwd,
+    now: fixedNow
+  });
+  assert.equal(unsafeResult.exitCode, 1);
+  assert.equal(JSON.parse(unsafeResult.stdout).errors[0].code, 'DESKTOP_REVIEW_PLAN_CAPTURE_HANDOFF_IMAGE_PATH_INVALID');
+});
+
+test('capture plan reports screen and window capture boundaries without capturing pixels', async () => {
+  const parsed = parseCliArgs(['capture', 'plan', '--source', 'window', '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'capture plan');
+  assert.equal(parsed.options.source, 'window');
+
+  const result = await executeCli(['capture', 'plan', '--source', 'window', '--json'], { now: fixedNow });
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'capture plan');
+  assert.equal(body.data.capture_plan.source_selection, 'window');
+  assert.equal(body.data.capture_plan.summary.capture_performed, false);
+  assert.equal(body.data.capture_plan.summary.raw_pixels_read, false);
+  assert.equal(body.data.capture_plan.summary.raw_pixels_written, false);
+  assert.equal(body.data.capture_plan.summary.raw_pixels_in_json, false);
+  assert.equal(body.data.capture_plan.summary.native_capture_dependency_loaded, false);
+  assert.equal(body.data.capture_plan.summary.mcp_execution_exposed, false);
+  assert.equal(body.data.capture_plan.sources.length, 1);
+  assert.equal(body.data.capture_plan.sources[0].source_kind, 'window_capture');
+  assert.equal(body.data.capture_plan.sources[0].mcp_capture_available, false);
+  assert.equal(body.data.capture_plan.sources[0].required_gates.some((gate) => gate.id === 'explicit_window_selection'), true);
+  assert.equal(body.data.boundary.read_only, true);
+  assert.equal(body.data.boundary.os_capture_api_used, false);
+  assert.equal(body.data.boundary.window_enumeration_performed, false);
+  assert.equal(body.data.boundary.native_capture_dependency_loaded, false);
+  assert.equal(body.data.boundary.requires_owner_review_before_capture, true);
+  assert.deepEqual(body.artifacts, []);
+
+  const direct = buildCapturePlan({ source: 'desktop-app' }, { now: fixedNow });
+  assert.equal(direct.ok, true);
+  assert.equal(direct.report.sources[0].source_kind, 'desktop_app_capture');
+  assert.equal(capturePlanBoundary().process_enumeration_performed, false);
+
+  const invalid = await executeCli(['capture', 'plan', '--source', 'camera', '--json'], { now: fixedNow });
+  assert.equal(invalid.exitCode, 1);
+  assert.equal(JSON.parse(invalid.stdout).errors[0].code, 'INVALID_CAPTURE_PLAN_SOURCE');
+
+  const execute = await executeCli(['capture', 'plan', '--execute', '--json'], { now: fixedNow });
+  assert.equal(execute.exitCode, 2);
+  assert.equal(JSON.parse(execute.stdout).errors[0].code, 'CONFLICTING_OPTIONS');
+
+  const provider = await executeCli(['capture', 'plan', '--provider', 'generic-api', '--json'], { now: fixedNow });
+  assert.equal(provider.exitCode, 2);
+  assert.equal(JSON.parse(provider.stdout).errors[0].code, 'UNSUPPORTED_CAPTURE_PLAN_OPTION');
+
+  const mcpPlan = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 48,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_capture_plan',
+      arguments: { source: 'screen' }
+    }
+  }, { mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpPlan.result.structuredContent.command, 'capture plan');
+  assert.equal(mcpPlan.result.structuredContent.data.capture_plan.source_selection, 'screen');
+  assert.equal(mcpPlan.result.structuredContent.data.boundary.mcp_execution_exposed, false);
+});
+
+test('MCP execution gates report required approval boundaries without exposing execution', async () => {
+  const parsed = parseCliArgs(['mcp', 'execution', 'gates', '--operation', 'visual_review_run', '--profile', 'admin', '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'mcp execution gates');
+  assert.equal(parsed.options.operation, 'visual_review_run');
+
+  const result = await executeCli(['mcp', 'execution', 'gates', '--operation', 'visual_review_run', '--profile', 'admin', '--json'], { now: fixedNow });
+  assert.equal(result.exitCode, 0);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.command, 'mcp execution gates');
+  assert.equal(body.data.execution_gates.operation_selection, 'visual_review_run');
+  assert.equal(body.data.execution_gates.summary.write_execute_tools_exposed, false);
+  assert.equal(body.data.execution_gates.summary.execution_ready_for_mcp, false);
+  assert.equal(body.data.execution_gates.operations.length, 1);
+  assert.equal(body.data.execution_gates.operations[0].current_mcp_exposure.admin, false);
+  assert.equal(body.data.execution_gates.operations[0].required_gates.some((gate) => gate.id === 'credential_boundary'), true);
+  assert.equal(body.data.boundary.read_only, true);
+  assert.equal(body.data.boundary.mcp_permissions_changed, false);
+  assert.deepEqual(body.artifacts, []);
+
+  const desktopPlanGate = await executeCli(['mcp', 'execution', 'gates', '--operation', 'desktop_review_provider_preparation_plan', '--json'], { now: fixedNow });
+  assert.equal(desktopPlanGate.exitCode, 0);
+  const desktopPlanGateBody = JSON.parse(desktopPlanGate.stdout);
+  assert.equal(desktopPlanGateBody.data.execution_gates.operations[0].current_mcp_exposure.safe, false);
+  assert.equal(desktopPlanGateBody.data.execution_gates.operations[0].required_gates.some((gate) => gate.id === 'no_raw_pixels'), true);
+
+  const aggregationGate = await executeCli(['mcp', 'execution', 'gates', '--operation', 'visual_review_aggregation', '--json'], { now: fixedNow });
+  assert.equal(aggregationGate.exitCode, 0);
+  const aggregationGateBody = JSON.parse(aggregationGate.stdout);
+  assert.equal(aggregationGateBody.data.execution_gates.operations[0].proposed_stage, 'read_exposure_gate_required');
+  assert.equal(aggregationGateBody.data.execution_gates.operations[0].current_mcp_exposure.admin, false);
+  assert.equal(aggregationGateBody.data.execution_gates.operations[0].required_gates.some((gate) => gate.id === 'source_attribution_required'), true);
+
+  const invalid = await executeCli(['mcp', 'execution', 'gates', '--operation', 'wide_open', '--json'], { now: fixedNow });
+  assert.equal(invalid.exitCode, 1);
+  assert.equal(JSON.parse(invalid.stdout).errors[0].code, 'INVALID_MCP_EXECUTION_GATE_OPERATION');
+
+  const mcpGate = await handleMcpRequest({
+    jsonrpc: '2.0',
+    id: 46,
+    method: 'tools/call',
+    params: {
+      name: 'browser_debug_mcp_execution_gates',
+      arguments: { operation: 'agent_execution_run', profile: 'admin' }
+    }
+  }, { mcpProfile: 'safe', now: fixedNow });
+  assert.equal(mcpGate.result.structuredContent.command, 'mcp execution gates');
+  assert.equal(mcpGate.result.structuredContent.data.execution_gates.operation_selection, 'agent_execution_run');
+  assert.equal(mcpGate.result.structuredContent.data.boundary.mcp_write_execute_exposed, false);
 });
 
 test('MCP adapter exposes a local allowlisted tool surface', async () => {
@@ -1785,9 +3149,11 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_requests_list'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_workflow_status'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_agent_execution_status'), true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_visual_review_dashboard'), true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_mcp_execution_gates'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_mcp_capabilities'), true);
   assert.equal(listed.result.tools.some((tool) => tool.name === 'browser_debug_review_target'), true);
-  assert.equal(listed.result.tools.some((tool) => /agent_execution_run|cleanup_execute|provider_execute/i.test(tool.name)), false);
+  assert.equal(listed.result.tools.some((tool) => /agent_execution_run|cleanup_execute|provider_execute|visual_review_prepare|visual_review_plan|visual_review_aggregate|desktop_review_provider|capture_handoff/i.test(tool.name)), false);
   assert.equal(listed.result.tools.some((tool) => /shell|cleanup/i.test(tool.name)), false);
   assert.equal(listed.result.tools.every((tool) => tool.effects.shellUsed === false), true);
 
@@ -1801,12 +3167,14 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(safeToolNames.includes('browser_debug_agent_requests_show'), true);
   assert.equal(safeToolNames.includes('browser_debug_agent_workflow_index'), true);
   assert.equal(safeToolNames.includes('browser_debug_agent_execution_list'), true);
+  assert.equal(safeToolNames.includes('browser_debug_visual_review_dashboard'), true);
+  assert.equal(safeToolNames.includes('browser_debug_mcp_execution_gates'), true);
   assert.equal(safeToolNames.includes('browser_debug_mcp_capabilities'), true);
   assert.equal(safeToolNames.includes('browser_debug_review'), false);
   assert.equal(safeToolNames.includes('browser_debug_observe'), false);
   assert.equal(safeToolNames.includes('browser_debug_target_init'), false);
   assert.equal(safeToolNames.includes('browser_debug_review_target'), false);
-  assert.equal(safeToolNames.some((name) => /agent_execution_run|cleanup_execute|provider_execute/i.test(name)), false);
+  assert.equal(safeToolNames.some((name) => /agent_execution_run|cleanup_execute|provider_execute|visual_review_prepare|visual_review_plan|visual_review_run|visual_review_aggregate|desktop_review_provider|capture_handoff/i.test(name)), false);
   assert.equal(safeListed.result.tools.every((tool) => tool.effects.browserLaunched === false), true);
   assert.equal(safeListed.result.tools.every((tool) => tool.effects.deletesFiles === false), true);
   assert.equal(safeListed.result.tools.every((tool) => tool.effects.providerCall === false), true);
@@ -1858,6 +3226,11 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(stdioConfigBody.data.config.launch.command, PRODUCT_IDENTITY.mcpBinName);
   assert.deepEqual(stdioConfigBody.data.config.launch.args, ['--profile', 'safe']);
   assert.equal(stdioConfigBody.data.config.mcpServers[PRODUCT_IDENTITY.mcpServerName].command, PRODUCT_IDENTITY.mcpBinName);
+  const legacyMcpServerName = PRODUCT_IDENTITY.legacyMcpServerNames[0];
+  const legacyMcpBin = PRODUCT_IDENTITY.legacyMcpBins[0];
+  assert.equal(stdioConfigBody.data.config.legacy_mcpServers[legacyMcpServerName].command, legacyMcpBin.name);
+  assert.deepEqual(stdioConfigBody.data.config.legacy_mcpServers[legacyMcpServerName].args, ['--profile', 'safe']);
+  assert.equal(stdioConfigBody.data.config.compatibility.legacy.mcp_bin_names[0], legacyMcpBin.name);
   const expectedLocalMcpBinPath = path.resolve(process.cwd(), PRODUCT_IDENTITY.mcpBinPath);
   assert.equal(stdioConfigBody.data.config.local_checkout.launch.command, process.execPath);
   assert.deepEqual(stdioConfigBody.data.config.local_checkout.launch.args, [expectedLocalMcpBinPath, '--profile', 'safe']);
@@ -1865,6 +3238,12 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.deepEqual(
     stdioConfigBody.data.config.local_checkout.mcpServers[PRODUCT_IDENTITY.mcpServerName].args,
     [expectedLocalMcpBinPath, '--profile', 'safe']
+  );
+  const expectedLegacyLocalMcpBinPath = path.resolve(process.cwd(), legacyMcpBin.path);
+  assert.equal(stdioConfigBody.data.config.local_checkout.legacy_mcpServers[legacyMcpServerName].command, process.execPath);
+  assert.deepEqual(
+    stdioConfigBody.data.config.local_checkout.legacy_mcpServers[legacyMcpServerName].args,
+    [expectedLegacyLocalMcpBinPath, '--profile', 'safe']
   );
   assert.equal(stdioConfigBody.data.config.local_checkout.boundary.config_file_written, false);
   assert.equal(stdioConfigBody.data.config.boundary.server_started, false);
@@ -1899,6 +3278,17 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(mcpCapabilitiesBody.data.capabilities.boundaries.http_full_or_admin, false);
   assert.deepEqual(mcpCapabilitiesBody.data.capabilities.excluded_operations.map((operation) => operation.mcp_admin), excludedOperationIds.map(() => false));
   assert.ok(excludedOperationIds.includes('agent_execution_run'));
+  assert.ok(excludedOperationIds.includes('visual_provider_execution'));
+  assert.ok(excludedOperationIds.includes('visual_review_run'));
+  assert.ok(excludedOperationIds.includes('visual_review_result_preparation'));
+  assert.ok(excludedOperationIds.includes('visual_review_aggregation'));
+  assert.equal(mcpCapabilitiesBody.data.capabilities.admin_policy.visual_review_run_exposed, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.admin_policy.visual_review_result_preparation_exposed, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.admin_policy.visual_review_aggregation_exposed, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.boundaries.visual_review_run, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.boundaries.visual_review_result_preparation, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.boundaries.visual_review_aggregation, false);
+  assert.equal(mcpCapabilitiesBody.data.capabilities.boundaries.raw_image_transfer, false);
   assert.ok(excludedOperationIds.includes('resource_artifacts_cleanup_execute'));
   assert.ok(excludedOperationIds.includes('provider_api_execution'));
   assert.ok(excludedOperationIds.includes('arbitrary_shell'));
@@ -1928,7 +3318,7 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
     '--port',
     '0',
     '--token-env',
-    'BROWSER_DEBUG_MCP_HTTP_TOKEN',
+    'TRACE_CUE_MCP_HTTP_TOKEN',
     '--json'
   ]);
   assert.equal(httpInfoParsed.ok, true);
@@ -1953,10 +3343,10 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
   assert.equal(httpInfoBody.data.adapter.transport, 'http');
   assert.equal(httpInfoBody.data.adapter.profile.name, 'safe');
   assert.equal(httpInfoBody.data.adapter.auth_required, true);
-  assert.equal(httpInfoBody.data.adapter.token_env, 'BROWSER_DEBUG_MCP_HTTP_TOKEN');
+  assert.equal(httpInfoBody.data.adapter.token_env, 'TRACE_CUE_MCP_HTTP_TOKEN');
   assert.equal(httpInfoBody.data.adapter.external_channel, false);
 
-  const mcpHttpTokenEnv = 'BROWSER_DEBUG_MCP_HTTP_TOKEN';
+  const mcpHttpTokenEnv = 'TRACE_CUE_MCP_HTTP_TOKEN';
   const httpConfig = await executeCli([
     'mcp',
     'config',
@@ -1969,7 +3359,7 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
     '--port',
     '8765',
     '--token-env',
-    'BROWSER_DEBUG_MCP_HTTP_TOKEN',
+    'TRACE_CUE_MCP_HTTP_TOKEN',
     '--json'
   ], { now: fixedNow, env: { [mcpHttpTokenEnv]: 'redaction-sentinel-value' } });
   assert.equal(httpConfig.exitCode, 0);
@@ -1993,12 +3383,15 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
     '--endpoint',
     '/mcp',
     '--token-env',
-    'BROWSER_DEBUG_MCP_HTTP_TOKEN'
+    'TRACE_CUE_MCP_HTTP_TOKEN'
   ]);
   assert.equal(httpConfigBody.data.config.local_checkout.launch.env[mcpHttpTokenEnv], '<set-16-or-more-character-token>');
   assert.equal(httpConfigBody.data.config.local_checkout.client_connection.url, 'http://127.0.0.1:8765/mcp');
   assert.equal(httpConfigBody.data.config.local_checkout.boundary.server_started, false);
-  assert.equal(httpConfigBody.data.config.metadata.token_env, 'BROWSER_DEBUG_MCP_HTTP_TOKEN');
+  assert.equal(httpConfigBody.data.config.metadata.token_env, 'TRACE_CUE_MCP_HTTP_TOKEN');
+  assert.deepEqual(httpConfigBody.data.config.metadata.legacy_token_envs, ['BROWSER_DEBUG_MCP_HTTP_TOKEN']);
+  assert.equal(httpConfigBody.data.config.legacy_launches[0].command, legacyMcpBin.name);
+  assert.equal(httpConfigBody.data.config.local_checkout.legacy_launches[0].bin_path, expectedLegacyLocalMcpBinPath);
   assert.equal(httpConfigBody.data.config.boundary.token_values_emitted, false);
   assert.equal(httpConfigBody.data.config.boundary.server_started, false);
   assert.equal(httpConfigBody.data.config.boundary.http_full_or_admin, false);
@@ -2165,7 +3558,7 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
 
 test('HTTP MCP transport is loopback, token-gated, and safe-profile only', async () => {
   const token = '0123456789abcdef';
-  const mcpHttpTokenEnv = 'BROWSER_DEBUG_MCP_HTTP_TOKEN';
+  const mcpHttpTokenEnv = 'TRACE_CUE_MCP_HTTP_TOKEN';
   const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-http-mcp-'));
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
 
@@ -2321,7 +3714,7 @@ test('daemon commands parse and return deterministic JSON envelopes', async () =
 });
 
 test('session start, act, report, and spec export use local artifacts', async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-cli-'));
+  const cwd = await mkdtemp(path.join(tmpdir(), `${filesystemSafeName(PRODUCT_IDENTITY.packageName)}-session-`));
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
 
   const context = {
@@ -2377,7 +3770,7 @@ test('session start, act, report, and spec export use local artifacts', async ()
   assert.equal(JSON.parse(exported.stdout).artifacts[0].type, 'spec');
 
   const report = await readFile(path.join(cwd, '.browser-debug', 'reports', 'session-fixed.md'), 'utf8');
-  assert.match(report, /Browser Debug Report: session-fixed/);
+  assert.match(report, /TraceCue Report: session-fixed/);
 });
 
 test('redaction removes common secrets and sensitive query params', () => {
@@ -2532,6 +3925,14 @@ function createFakeBrowser() {
   };
 }
 
+function minimalPngBuffer(width, height) {
+  const buffer = Buffer.alloc(24);
+  Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').copy(buffer, 0);
+  buffer.writeUInt32BE(width, 16);
+  buffer.writeUInt32BE(height, 20);
+  return buffer;
+}
+
 function createFakePage() {
   let currentUrl = 'about:blank';
   return {
@@ -2561,6 +3962,8 @@ function createFakePage() {
     url() {
       return currentUrl;
     },
-    async screenshot() {}
+    async screenshot() {
+      return minimalPngBuffer(1280, 720);
+    }
   };
 }

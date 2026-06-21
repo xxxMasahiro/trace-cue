@@ -1,12 +1,25 @@
 {
   "schema_version": "1.0.0",
-  "root_name": "browser-debug-cli",
+  "root_name": "trace-cue",
   "source": "external_product_repository",
   "default_expand_depth": 1,
   "excludes": [
-    { "pattern": "node_modules/", "reason": "dependency cache" },
-    { "pattern": ".browser-debug/", "reason": "local debug artifacts" },
-    { "pattern": ".env*", "reason": "secret-bearing configuration" }
+    {
+      "pattern": "node_modules/",
+      "reason": "dependency cache"
+    },
+    {
+      "pattern": ".browser-debug/",
+      "reason": "legacy local review artifacts"
+    },
+    {
+      "pattern": ".env*",
+      "reason": "secret-bearing configuration"
+    },
+    {
+      "pattern": ".trace-cue/",
+      "reason": "future local TraceCue artifacts"
+    }
   ],
   "roles": {
     "agent_entry": {
@@ -31,40 +44,384 @@
     }
   },
   "files": [
-    { "path": "AGENTS.MD", "role": "agent_entry" },
-    { "path": "CHANGELOG.md", "role": "workflow_doc" },
-    { "path": ".github/workflows/ci.yml", "role": "ci_config" },
-    { "path": "package.json", "role": "manifest" },
-    { "path": "package-lock.json", "role": "manifest" },
-    { "path": "bin/browser-debug.js", "role": "manifest" },
-    { "path": "src/cli.js", "role": "manifest" },
-    { "path": "src/daemon.js", "role": "manifest" },
-    { "path": "src/daemon-worker.js", "role": "manifest" },
-    { "path": "src/mcp-capabilities.js", "role": "manifest" },
-    { "path": "src/mcp-client-config.js", "role": "manifest" },
-    { "path": "src/mcp-http-transport.js", "role": "manifest" },
-    { "path": "src/mcp-profiles.js", "role": "manifest" },
-    { "path": "src/mcp-transport-policy.js", "role": "manifest" },
-    { "path": "src/page-evidence.js", "role": "manifest" },
-    { "path": "src/product-identity.js", "role": "manifest" },
-    { "path": "src/observe.js", "role": "manifest" },
-    { "path": "src/sessions.js", "role": "manifest" },
-    { "path": "src/supervisor.js", "role": "manifest" },
-    { "path": "tests/architecture.test.js", "role": "manifest" },
-    { "path": "tests/cli.test.js", "role": "manifest" },
-    { "path": "tests/browser-smoke.test.js", "role": "manifest" },
-    { "path": "tests/pack-install-smoke.test.js", "role": "manifest" },
-    { "path": "tools/pack-dry-run.mjs", "role": "manifest" },
-    { "path": "tools/pack-install-smoke.mjs", "role": "manifest" },
-    { "path": "docs/product/REQUIREMENTS.md", "role": "product_doc" },
-    { "path": "docs/product/SPECIFICATION.md", "role": "product_doc" },
-    { "path": "docs/product/IMPLEMENTATION_PLAN.md", "role": "product_doc" },
-    { "path": "docs/workflow/TASK_TRACKER.md", "role": "workflow_doc" },
-    { "path": "docs/workflow/HANDOFF.md", "role": "workflow_doc" },
-    { "path": "docs/workflow/CONSUMER_USAGE.md", "role": "workflow_doc" },
-    { "path": "docs/workflow/IDENTITY_MIGRATION.md", "role": "workflow_doc" },
-    { "path": "docs/workflow/RELEASE.md", "role": "workflow_doc" },
-    { "path": "ops/CI_MANIFEST.tsv", "role": "ci_config" },
-    { "path": "ops/PRODUCT_MANIFEST.tsv", "role": "manifest" }
-  ]
+    {
+      "path": "AGENTS.MD",
+      "role": "agent_entry"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "role": "workflow_doc"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "role": "ci_config"
+    },
+    {
+      "path": "package.json",
+      "role": "manifest"
+    },
+    {
+      "path": "package-lock.json",
+      "role": "manifest"
+    },
+    {
+      "path": "bin/browser-debug.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/cli.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/daemon.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/daemon-worker.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/mcp-capabilities.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/mcp-client-config.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/mcp-http-transport.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/mcp-profiles.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/mcp-transport-policy.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/page-evidence.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/product-identity.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/identity-audit.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/observe.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/sessions.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/supervisor.js",
+      "role": "manifest"
+    },
+    {
+      "path": "tests/architecture.test.js",
+      "role": "manifest"
+    },
+    {
+      "path": "tests/cli.test.js",
+      "role": "manifest"
+    },
+    {
+      "path": "tests/browser-smoke.test.js",
+      "role": "manifest"
+    },
+    {
+      "path": "tests/pack-install-smoke.test.js",
+      "role": "manifest"
+    },
+    {
+      "path": "tools/pack-dry-run.mjs",
+      "role": "manifest"
+    },
+    {
+      "path": "tools/pack-install-smoke.mjs",
+      "role": "manifest"
+    },
+    {
+      "path": "tools/check_rename_readiness.mjs",
+      "role": "manifest"
+    },
+    {
+      "path": "docs/product/REQUIREMENTS.md",
+      "role": "product_doc"
+    },
+    {
+      "path": "docs/product/SPECIFICATION.md",
+      "role": "product_doc"
+    },
+    {
+      "path": "docs/product/IMPLEMENTATION_PLAN.md",
+      "role": "product_doc"
+    },
+    {
+      "path": "docs/workflow/TASK_TRACKER.md",
+      "role": "workflow_doc"
+    },
+    {
+      "path": "docs/workflow/HANDOFF.md",
+      "role": "workflow_doc"
+    },
+    {
+      "path": "docs/workflow/CONSUMER_USAGE.md",
+      "role": "workflow_doc"
+    },
+    {
+      "path": "docs/workflow/IDENTITY_MIGRATION.md",
+      "role": "workflow_doc"
+    },
+    {
+      "path": "docs/workflow/RELEASE.md",
+      "role": "workflow_doc"
+    },
+    {
+      "path": "ops/CI_MANIFEST.tsv",
+      "role": "ci_config"
+    },
+    {
+      "path": "ops/PRODUCT_MANIFEST.tsv",
+      "role": "manifest"
+    },
+    {
+      "path": "bin/trace-cue.js",
+      "role": "manifest"
+    },
+    {
+      "path": "bin/trace-cue-mcp.js",
+      "role": "manifest"
+    },
+    {
+      "path": "skills/trace-cue-review/SKILL.md",
+      "role": "workflow_doc"
+    },
+    {
+      "path": "src/visual-review-result-preparation.js",
+      "role": "manifest"
+    },
+    {
+      "path": "schemas/visual-review-result-preparation.schema.json",
+      "role": "manifest"
+    },
+    {
+      "path": "schemas/visual-review-result.schema.json",
+      "role": "manifest"
+    }
+  ],
+  "phase_45": {
+    "status": "complete",
+    "feature": "CLI visual review execution",
+    "files": [
+      "src/visual-review-execution.js",
+      "schemas/visual-review-execution.schema.json"
+    ],
+    "boundaries": {
+      "raw_pixels_transferred": false,
+      "mcp_execution_exposed": false,
+      "existing_review_mutated": false
+    }
+  },
+  "phase_46": {
+    "status": "complete",
+    "feature": "Read-only visual review dashboard integration",
+    "files": [
+      "src/visual-review-dashboard.js",
+      "schemas/visual-review-dashboard.schema.json"
+    ],
+    "boundaries": {
+      "read_only": true,
+      "writes_artifacts": false,
+      "provider_call_performed": false,
+      "raw_pixels_read": false,
+      "mcp_execution_exposed": false,
+      "gate_effect": "none"
+    }
+  },
+  "phase_47": {
+    "status": "complete",
+    "feature": "Read-only MCP execution gate policy",
+    "files": [
+      "src/mcp-execution-gates.js",
+      "schemas/mcp-execution-gates.schema.json"
+    ],
+    "boundaries": {
+      "read_only": true,
+      "writes_artifacts": false,
+      "deletes_files": false,
+      "provider_call_performed": false,
+      "credential_values_read": false,
+      "raw_pixels_read": false,
+      "mcp_permissions_changed": false,
+      "mcp_write_execute_exposed": false,
+      "gate_effect": "none"
+    }
+  },
+  "phase_48": {
+    "status": "complete",
+    "feature": "Read-only screen/window capture planning",
+    "files": [
+      "src/capture-plan.js",
+      "schemas/capture-plan.schema.json"
+    ],
+    "boundaries": {
+      "read_only": true,
+      "planning_only": true,
+      "capture_performed": false,
+      "writes_artifacts": false,
+      "provider_call_performed": false,
+      "raw_pixels_read": false,
+      "mcp_execution_exposed": false,
+      "gate_effect": "none"
+    }
+  },
+  "phase_49": {
+    "status": "complete",
+    "feature": "Existing workspace image capture metadata handoff",
+    "files": [
+      "src/capture-handoff.js",
+      "schemas/capture-handoff.schema.json"
+    ],
+    "boundaries": {
+      "workspace_confined_input": true,
+      "existing_workspace_image_read": true,
+      "artifact_created": false,
+      "capture_performed": false,
+      "provider_call_performed": false,
+      "raw_pixels_in_json": false,
+      "mcp_execution_exposed": false,
+      "gate_effect": "none"
+    }
+  },
+  "phase_50": {
+    "status": "complete",
+    "feature": "Desktop review provider-preparation planning",
+    "files": [
+      "src/desktop-review-provider-preparation-plan.js",
+      "schemas/desktop-review-provider-preparation-plan.schema.json"
+    ],
+    "boundaries": {
+      "read_only": true,
+      "capture_handoff_json_read": true,
+      "image_bytes_read": false,
+      "artifact_created": false,
+      "provider_call_performed": false,
+      "external_evidence_transfer": false,
+      "raw_pixels_in_json": false,
+      "mcp_execution_exposed": false,
+      "gate_effect": "none"
+    }
+  },
+  "phase_51": {
+    "status": "complete",
+    "feature": "Desktop image review body",
+    "files": [
+      "src/image-review.js",
+      "src/capture-handoff.js",
+      "src/visual-evidence.js"
+    ],
+    "boundaries": {
+      "workspace_confined_input": true,
+      "capture_handoff_json_read": true,
+      "capture_performed_by_trace_cue": false,
+      "source_identity_verified_by_trace_cue": false,
+      "provider_call_performed": false,
+      "raw_pixels_in_json": false,
+      "mcp_execution_exposed": false,
+      "gate_effect": "none"
+    }
+  },
+  "phase_52": {
+    "status": "complete",
+    "feature": "Desktop review provider safety bridge",
+    "files": [
+      "bin/trace-cue.js",
+      "bin/browser-debug.js",
+      "src/parser.js",
+      "src/image-review.js"
+    ],
+    "boundaries": {
+      "capture_handoff_media_sha256_matched": true,
+      "capture_handoff_path_matched": true,
+      "provider_execution_authorized": false,
+      "external_evidence_transfer": false,
+      "mcp_execution_exposed": false,
+      "existing_review_mutated": false
+    }
+  },
+  "phase_53": {
+    "status": "complete",
+    "feature": "Read-only multi-agent visual review aggregation",
+    "files": [
+      "src/visual-review-aggregation.js",
+      "schemas/visual-review-aggregation.schema.json"
+    ],
+    "boundaries": {
+      "read_only": true,
+      "writes_artifacts": false,
+      "provider_call_performed": false,
+      "raw_pixels_read": false,
+      "raw_provider_response_stored": false,
+      "mcp_execution_exposed": false,
+      "gate_effect": "none"
+    }
+  },
+  "phase_54": {
+    "status": "complete",
+    "feature": "MCP visual review exposure reporting",
+    "files": [
+      "src/mcp-capabilities.js",
+      "src/mcp-execution-gates.js"
+    ],
+    "boundaries": {
+      "read_only": true,
+      "writes_artifacts": false,
+      "provider_call_performed": false,
+      "mcp_write_execute_exposed": false,
+      "mcp_permissions_changed": false
+    }
+  },
+  "phase_55": {
+    "status": "complete",
+    "feature": "Visual review aggregation hardening",
+    "files": [
+      "tests/architecture.test.js",
+      "tests/cli.test.js",
+      "tests/pack-install-smoke.test.js"
+    ],
+    "boundaries": {
+      "malformed_artifact_warning": true,
+      "source_attribution_required": true,
+      "untrusted_output_bounded": true,
+      "writes_artifacts": false,
+      "mcp_execution_exposed": false
+    }
+  },
+  "phase_56": {
+    "status": "complete",
+    "feature": "Rename readiness audit",
+    "files": [
+      "src/identity-audit.js",
+      "schemas/identity-audit.schema.json",
+      "tools/check_rename_readiness.mjs",
+      ".mcp.json",
+      ".codex-plugin/plugin.json"
+    ],
+    "boundaries": {
+      "read_only": true,
+      "git_mutated": false,
+      "remote_contact": false,
+      "writes_artifacts": false,
+      "legacy_alias_removal_authorized": false,
+      "artifact_root_migration_authorized": false
+    }
+  }
 }

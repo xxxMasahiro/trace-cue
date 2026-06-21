@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://browser-debug.local/schemas/envelope.schema.json",
-  "title": "Browser Debug CLI Envelope",
+  "$id": "https://trace-cue.local/schemas/envelope.schema.json",
+  "title": "TraceCue Envelope",
   "type": "object",
   "required": ["schema_version", "command", "status", "observed_at", "data", "warnings", "errors", "artifacts"],
   "properties": {

@@ -28,25 +28,42 @@ for rel in \
   .github/workflows/ci.yml \
   package.json \
   package-lock.json \
+  bin/trace-cue.js \
+  bin/trace-cue-mcp.js \
   bin/browser-debug.js \
   bin/browser-debug-mcp.js \
   schemas/artifact.schema.json \
-  schemas/envelope.schema.json \
-  schemas/finding.schema.json \
+	  schemas/capture-handoff.schema.json \
+	  schemas/capture-plan.schema.json \
+	  schemas/envelope.schema.json \
+	  schemas/finding.schema.json \
+	  schemas/identity-audit.schema.json \
+	  schemas/mcp-execution-gates.schema.json \
   schemas/mcp-tool.schema.json \
   schemas/review.schema.json \
   schemas/target-manifest.schema.json \
+  schemas/visual-review-result-preparation.schema.json \
+  schemas/visual-review-dashboard.schema.json \
+  schemas/visual-review-execution.schema.json \
+  schemas/visual-review-result.schema.json \
   src/api.js \
-  src/input.js \
+  src/capture-handoff.js \
+	  src/capture-plan.js \
+	  src/identity-audit.js \
+	  src/input.js \
   src/cli.js \
   src/daemon.js \
   src/daemon-worker.js \
   src/mcp.js \
+  src/mcp-execution-gates.js \
   src/mcp-profiles.js \
   src/page-evidence.js \
   src/product-identity.js \
   src/observe.js \
   src/review.js \
+  src/visual-review-result-preparation.js \
+  src/visual-review-execution.js \
+  src/visual-review-dashboard.js \
   src/schema-registry.js \
   src/sessions.js \
   src/supervisor.js \
@@ -80,6 +97,7 @@ for rel in \
   ops/SECURITY_MANIFEST.tsv \
   ops/EVIDENCE_DETAIL_MANIFEST.tsv \
   skills/product-development-workflow/SKILL.md \
+  skills/trace-cue-review/SKILL.md \
   skills/browser-debug-review/SKILL.md \
   skills/product-doc-sync/SKILL.md \
   skills/product-security/SKILL.md \
@@ -88,8 +106,9 @@ for rel in \
   tools/product-gate \
   tools/product-mode \
   tools/product-gate-evidence \
-  tools/pack-dry-run.mjs \
-  tools/pack-install-smoke.mjs \
+	  tools/pack-dry-run.mjs \
+	  tools/pack-install-smoke.mjs \
+	  tools/check_rename_readiness.mjs \
   tools/check_product_structure.sh \
   tools/check_product_docs.sh \
   tools/check_product_security.sh \

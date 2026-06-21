@@ -23,10 +23,83 @@ export {
   runAgentWorkflowStatus
 } from './agent.js';
 export { runObserve } from './observe.js';
+export {
+  CAPTURE_HANDOFF_SOURCE_IDS,
+  CAPTURE_HANDOFF_SOURCE_KINDS,
+  CAPTURE_HANDOFF_VERSION,
+  captureHandoffBoundary,
+  normalizeCaptureHandoffContract,
+  normalizeCaptureHandoffSource,
+  readCaptureHandoffJsonInput,
+  runCaptureHandoff
+} from './capture-handoff.js';
+export {
+  CAPTURE_PLAN_SOURCE_IDS,
+  CAPTURE_PLAN_VERSION,
+  buildCapturePlan,
+  capturePlanBoundary
+} from './capture-plan.js';
+export {
+  DESKTOP_REVIEW_PROVIDER_PREPARATION_PLAN_VERSION,
+  buildDesktopReviewProviderPreparationPlan,
+  desktopReviewProviderPreparationPlanBoundary,
+  normalizeCaptureHandoffForDesktopReview
+} from './desktop-review-provider-preparation-plan.js';
+export {
+  IMAGE_REVIEW_SOURCE_IDS,
+  imageReviewBoundary,
+  normalizeImageReviewSource,
+  runImageReview
+} from './image-review.js';
+export {
+  IDENTITY_AUDIT_VERSION,
+  buildIdentityAudit,
+  identityAuditBoundary,
+  normalizeRepositoryUrl,
+  runIdentityAudit
+} from './identity-audit.js';
+export {
+  runVisualReviewResultPreparation,
+  visualReviewResultContract,
+  visualReviewResultPreparationBoundary
+} from './visual-review-result-preparation.js';
+export {
+  runVisualReviewExecutionList,
+  runVisualReviewExecutionRun,
+  runVisualReviewExecutionStatus,
+  visualReviewExecutionBoundary
+} from './visual-review-execution.js';
+export {
+  runVisualReviewDashboard,
+  visualReviewDashboardBoundary
+} from './visual-review-dashboard.js';
+export {
+  runVisualReviewAggregation,
+  visualReviewAggregationBoundary
+} from './visual-review-aggregation.js';
 export { buildArtifactCleanupPlan, runResourceArtifactsCleanup, runResourceArtifactsPlan } from './resource-artifacts.js';
 export { createResourceGuard, normalizeResourceGuardMode, resourceGuardSummary } from './resource-guard.js';
 export { collectResourceStatus, parseMeminfoText, parsePressureText, runResourceStatus } from './resource-status.js';
 export { runReview } from './review.js';
+export {
+  DEFAULT_VISUAL_EVIDENCE_MAX_BYTES,
+  VISUAL_EVIDENCE_SOURCE_KINDS,
+  createVisualEvidenceArtifact,
+  createVisualEvidenceRecord,
+  imageMetadata,
+  readWorkspaceImageFile,
+  resolveWorkspaceFilePath,
+  sniffImageFormat,
+  visualEvidenceBoundary,
+  writeVisualEvidenceRecord
+} from './visual-evidence.js';
+export {
+  VISUAL_REVIEW_DISCLOSURE_MODES,
+  buildVisualReviewProviderPolicy,
+  normalizeVisualReviewDisclosureMode,
+  summarizeVisualDisclosureFromAgentPackage,
+  visualReviewProviderBoundary
+} from './visual-review-provider-policy.js';
 export { runSupervisor } from './supervisor.js';
 export { createTargetManifest, runTargetInit, runTargetValidate } from './target.js';
 export {
@@ -40,6 +113,12 @@ export {
   buildMcpCapabilityReport
 } from './mcp-capabilities.js';
 export {
+  MCP_EXECUTION_GATE_OPERATION_IDS,
+  MCP_EXECUTION_GATE_POLICY_VERSION,
+  buildMcpExecutionGateReport,
+  mcpExecutionGateBoundary
+} from './mcp-execution-gates.js';
+export {
   MCP_CONFIG_DEFAULT_CLIENT,
   MCP_HTTP_DEFAULT_CLIENT_PORT,
   buildMcpClientConfig
@@ -47,6 +126,8 @@ export {
 export { listSchemas, getSchema, schemaNames } from './schema-registry.js';
 export {
   PRODUCT_IDENTITY,
+  filesystemSafeName,
+  packageBinEntries,
   packageInstallDirectory,
   packageSchemaSpecifier,
   packageTarballFilename,

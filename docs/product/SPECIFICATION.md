@@ -2,7 +2,9 @@
 
 ## Product Shape
 
-Browser Debug CLI is planned as a Node.js CLI package backed by Playwright. It should be usable from any product repository and should not require the caller to run an MCP server.
+TraceCue is the canonical package, CLI, MCP server, and plugin identity. The legacy Browser Debug CLI name and `browser-debug`/`browser-debug-mcp` bins remain compatibility aliases in this migration slice.
+
+TraceCue is a Node.js CLI package backed by Playwright and local metadata tools. It should be usable from any product repository and should not require the caller to run an MCP server.
 
 The Phase 2a design baseline uses Node.js 20 or newer, ESM modules, and a local CLI binary named `browser-debug`. The final npm package name can still be confirmed during release planning, but runtime code should not depend on a scoped package name.
 
@@ -26,6 +28,17 @@ The Phase 2a design baseline uses Node.js 20 or newer, ESM modules, and a local 
 - Daemon lifecycle layer: adds optional local idle-timeout and max-lifetime shutdown guards to detached ephemeral browser workers.
 - Agent advisory layer: creates bounded local evidence packages from review artifact indexes, generates handoff prompts for local subscription agents, lists and inspects local request status from package/result artifacts, imports untrusted advisory JSON, and renders separate advisory reports without direct API calls, external upload, credential storage, or deterministic gate changes.
 - Agent execution layer: plans and runs subscription-style local agent or API-style provider execution from bounded agent packages through dedicated provider adapters, exposes status/list metadata, and normalizes output as advisory-only results without mutating deterministic review artifacts or existing workflow status semantics.
+- Visual evidence layer: records browser screenshots, standalone images, mock images, screen captures, window captures, and desktop app captures as metadata-only local evidence with dimensions, hashes, privacy flags, and artifact references but without raw pixel embedding or provider calls.
+- Visual review provider policy layer: adds planning-only disclosure metadata to `agent execution plan` records so future AI-assisted visual review provider work starts from explicit no-raw-pixel, no-provider-call, no-MCP-execution boundaries.
+- Visual review result preparation layer: turns existing review artifact indexes into metadata-only future visual review result contracts while reading only visual evidence metadata and keeping provider execution disabled.
+- Visual review execution layer: runs explicit CLI-only provider adapters from preparation artifacts, sends metadata/local references only, normalizes untrusted advisory output into visual review results, and keeps raw pixels, existing reviews, release gates, and MCP execution unchanged.
+- Visual review dashboard layer: aggregates local visual review preparation, execution, and result metadata for CLI, dashboards, and safe MCP clients without writing artifacts, calling providers, reading raw pixels, or changing gates.
+- MCP execution gate policy layer: reports required safety gates for future MCP write/execute expansion without changing current MCP permissions or running providers.
+- Capture planning layer: reports required safety gates for screen, window, and desktop app capture without calling OS capture APIs, writing artifacts, reading pixels, enumerating processes, or changing MCP execution permissions.
+- Capture handoff layer: reads an existing workspace image file for metadata and labels it as screen, window, or desktop app evidence without writing artifacts, exposing MCP tools, calling providers, or embedding raw pixels in JSON.
+- Desktop review provider-preparation planning layer: reads capture handoff JSON metadata only and reports future review/preparation readiness without rereading image bytes, writing artifacts, exposing MCP tools, calling providers, transferring evidence, or mutating existing reviews.
+- Standalone image review layer: reviews workspace-confined image files without launching a browser, embedding raw pixels in JSON, calling providers, uploading evidence, or changing MCP execution exposure.
+- Identity audit layer: reads local identity metadata and local Git configuration to report canonical repository URL, legacy repository URL, checkout name, legacy alias, artifact-root migration, and rename-readiness boundaries without mutating Git, contacting remotes, launching browsers, or writing artifacts.
 - Schema layer: defines stable JSON contracts for envelopes, artifacts, target manifests, findings, reports, and adapter I/O.
 - Adapter layer: keeps CLI as the source of truth and exposes the same core through MCP adapters. Stdio preserves the compatibility profile surface, while explicit HTTP transport is limited to safe-profile loopback requests.
 - Consumer usage guide: documents the external-repository connection flow for CLI, MCP stdio, safe HTTP MCP, and Codex plugin users without changing runtime permissions or requiring source inspection. It also documents target runtime readiness so missing consumer API/backend services are interpreted as target-state findings rather than Browser Debug CLI connection failures.
@@ -59,6 +72,15 @@ browser-debug agent execution plan --package <agent-package> --surface <surface-
 browser-debug agent execution run --execution <agent-execution> --package <agent-package> --surface <surface-id> --provider <provider-id> --model <model-id> --execute --json
 browser-debug agent execution status --execution <agent-execution> --json
 browser-debug agent execution list --json
+browser-debug visual review prepare --review-index <review-artifact-index> --json
+browser-debug visual review run --preparation <preparation> --surface <surface> --provider <provider> --model <model> --execute --json
+browser-debug visual review status --execution <visual-review-execution> --json
+browser-debug visual review list --json
+browser-debug visual review dashboard --json
+browser-debug identity audit --json
+browser-debug visual review plan --capture-handoff <workspace-json|-> --json
+browser-debug capture plan [--source screen|window|desktop-app|all] --json
+browser-debug capture handoff --image <workspace-image> --source screen|window|desktop-app --json
 browser-debug agent ingest --package <agent-package> --input <agent-result-json> --json
 browser-debug agent report --review-index <review-artifact-index> --agent-result <agent-result> --json
 browser-debug target init --url <url> --json
@@ -75,6 +97,7 @@ browser-debug mcp serve --transport http --profile safe --host 127.0.0.1 --port 
 browser-debug mcp config [--client generic|codex] [--profile safe|full|admin] --json
 browser-debug mcp config --transport http --profile safe --host 127.0.0.1 --port <port> [--endpoint /mcp] [--token-env BROWSER_DEBUG_MCP_HTTP_TOKEN] --json
 browser-debug mcp capabilities [--profile safe|full|admin|all] [--scope all|profiles|excluded] --json
+browser-debug mcp execution gates [--operation <id>|all] [--profile safe|full|admin|all] --json
 ```
 
 The MVP implementation order is:
@@ -87,7 +110,7 @@ The MVP implementation order is:
 
 ## Current Implemented Slice
 
-The repository now includes a private local Node.js package named `browser-debug-cli` with the `browser-debug` executable at `bin/browser-debug.js`. The implementation is ESM-only and uses Playwright as its browser runtime dependency.
+The repository now includes a private local Node.js package named `trace-cue` with the canonical `trace-cue` executable at `bin/trace-cue.js` and legacy `browser-debug` aliases. The implementation is ESM-only and uses Playwright as its browser runtime dependency.
 
 Implemented behavior:
 
@@ -136,6 +159,9 @@ Implemented behavior:
 - MCP profile selection happens at server launch or trusted adapter context, not per MCP request. `tools/list` and `tools/call` fail closed for invalid profiles or out-of-profile tool names.
 - MCP `@file` structured input is workspace-confined. Absolute paths, parent traversal, symlink escapes, non-regular files, and oversized files are rejected for MCP requests. Normal CLI `@file` behavior is unchanged outside MCP-restricted contexts.
 - Product identity metadata is explicit and reusable. The current package name, CLI bin name, MCP bin name, MCP server name, plugin name, display name, repository URL, and packaged skill path remain unchanged, but tests, package dry-run checks, and packed-install smoke derive expectations from the identity contract so a future approved rename can be implemented predictably.
+- Browser screenshot capture now writes additive `visual_evidence` metadata records next to existing screenshot artifacts. The metadata includes dimensions, hashes, source kind, privacy flags, and local artifact references only.
+- `agent execution plan` records now include `visual_review_provider_policy` planning metadata. This policy is not an execution path, never embeds raw pixels, never calls providers, never authorizes external evidence transfer, and remains excluded from MCP execution surfaces.
+- `visual review prepare --review-index <path>` reads an existing local review artifact index and referenced visual evidence metadata, then writes `.browser-debug/visual-review-results/<id>/preparation.json` plus a receipt. The command produces a future `visual_review_result` template and disclosure contract without reading raw screenshot/image bytes, calling providers, transferring evidence, exposing MCP execution, or mutating existing review artifacts.
 - `act --input -`, `supervise --input -`, `--action @file`, and `--actions @file` support shell-safe structured input while preserving inline JSON compatibility.
 - `npm test` runs deterministic no-browser tests, including headed/devtools launch-mode regression through an injected Playwright browser type and architecture regressions for generic runtime boundaries, shared page evidence helpers, local daemon boundaries, and local Node CLI packaging. `npm run test:browser` runs Playwright smoke tests for observation, screenshots/traces, click actions, form controls, keyboard input, scroll, wait, reports, spec export, supervised ordered actions, and local daemon start/status/stop.
 - `npm run test:pack` runs `npm pack --dry-run --json` with an identity-derived `/tmp` npm cache path to verify the package file set without publishing.
@@ -653,3 +679,43 @@ The current repository implements local CI configuration, local CI validation, r
 - Product-specific runtime branches for individual applications.
 - Persistent browser profile reuse, storage state, authentication automation, OAuth, webhooks, or credential storage.
 - Socket MCP server mode, remote HTTP MCP listeners, HTTP `full` or `admin` MCP profiles, MCP execution tools, or arbitrary shell execution.
+
+## Visual Evidence Core Contract
+
+Visual evidence records use the `visual_evidence` schema and are stored as metadata JSON under `.browser-debug/visual-evidence/`. A record contains the source kind, source path or artifact reference, media byte size, SHA-256 hash, media type, dimensions when detectable, labels, masks, regions, privacy flags, and boundary flags.
+
+The core recognizes browser screenshots, image files, mock images, screen captures, window captures, and desktop app captures as source kinds. Step 2 implements the shared metadata and path-confinement layer and attaches metadata-only records to existing browser screenshot capture paths. Later phases may add CLI image review, AI visual review, MCP planning, approved MCP execution, screen/window capture, desktop review, and multi-agent review on top of this shared core.
+
+The core is local-only. It does not embed raw pixels in JSON, call providers, upload evidence, store credentials, store raw provider responses, expose MCP execution, mutate existing review artifacts, or change deterministic review gates.
+
+## Phase 43 Standalone Image Review
+
+Standalone image review is implemented as `review --image <workspace-file> --json`. It is a no-browser mode that uses the visual evidence core to read a workspace-relative image file, records metadata-only visual evidence, writes an `image_review` result under `reviews/`, writes a review artifact index under `review-artifacts/`, and optionally writes a Markdown report. It performs deterministic evidence-quality checks only and does not claim aesthetic approval or human-equivalent visual judgment.
+
+## Phase 51 Desktop Image Review From Capture Handoff
+
+Desktop image review extends standalone image review with optional capture handoff verification:
+
+```text
+trace-cue capture handoff --image <workspace-image> --source screen|window|desktop-app --json > capture-handoff.json
+trace-cue review --image <workspace-image> --capture-handoff <workspace-json|-> --json
+trace-cue visual review prepare --review-index <review-artifact-index> --json
+```
+
+`review --image --capture-handoff` reads the handoff JSON, accepts full envelopes or inner `capture_handoff` objects, requires `status=metadata_only`, requires source kind `screen_capture`, `window_capture`, or `desktop_app_capture`, verifies `source.path` against the reviewed workspace image path, and verifies `media.sha256` against the reviewed image bytes. After those checks pass, the image review and visual evidence metadata record the caller-declared source kind, capture handoff id, handoff input path or input source, handoff hash, source path match, and media hash match.
+
+The command still does not perform OS capture, enumerate screens, enumerate windows, enumerate processes, launch a browser, call providers, transfer evidence, expose MCP execution, or claim human-equivalent visual judgment. The provenance remains caller-declared and `source_verified_by_trace_cue=false` until a separate approved capture execution phase exists.
+
+## Phase 53-55 Visual Review Aggregation
+
+`visual review aggregate --preparation <workspace-json> --json` is a read-only aggregation command over existing local visual review result artifacts:
+
+```text
+trace-cue visual review aggregate --preparation .browser-debug/visual-review-results/<id>/preparation.json --json
+```
+
+The command reads the selected preparation JSON and scans existing `.browser-debug/visual-review-results/*/result.json` records whose `preparation_id` or `preparation_path` matches that preparation. It optionally reads matching `execution.json` metadata. It returns `visual_review_aggregation` with source metadata, result and reviewer counts, source effects, reviewer summaries, source-attributed aggregation findings, conflict records, owner decision requests, the original query, `gate_effect=none`, and read-only boundary flags.
+
+Aggregation groups untrusted visual advisory findings deterministically by category, message, route, and viewport. A group is `corroborated` when more than one reviewer source reports it. Severity disagreements are preserved as conflicts that require owner review. Text fields are bounded, malformed artifacts are skipped with warnings, result scanning is limit-bound, and no raw provider response body is stored.
+
+Aggregation never writes artifacts, runs providers, reads raw pixels, reads credentials, mutates existing reviews, changes deterministic findings, changes release gates, or exposes a MCP tool. `mcp capabilities` and `mcp execution gates` report `visual_review_aggregation` as currently excluded from safe/full/admin MCP profiles until separate read-exposure gates are approved.

@@ -10,7 +10,7 @@ import {
   writeJsonArtifact,
   writeTextArtifact
 } from './artifacts.js';
-import { DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
+import { CLI_NAME, DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
 import { resolveJsonInput } from './input.js';
 import { redact, truncateText } from './redaction.js';
 
@@ -565,7 +565,7 @@ export async function runAgentPackage(options = {}, context = {}) {
       agent_disclosure_policy: packet.disclosure_policy,
       next_steps: {
         subscription_agent: `Ask the configured local agent to read ${packetRel} and ${promptRel}, then return agent_advisory_result JSON.`,
-        ingest_command: `browser-debug agent ingest --package ${packetRel} --input @agent-advisory-result.json --surface ${surface.id} --json`,
+        ingest_command: `${CLI_NAME} agent ingest --package ${packetRel} --input @agent-advisory-result.json --surface ${surface.id} --json`,
         api_provider: 'Direct API execution is approval-bound and not performed by this command.'
       },
       boundary: commonBoundary()
@@ -1014,7 +1014,7 @@ function requestStatusFromPackage(agentPackage, results) {
     existing_review_mutated: false,
     next_step: status === 'waiting_for_agent'
       ? `Ask the configured local agent to read ${agentPackage.package_path} and ${packet.prompt?.path ?? 'the generated prompt'}, then run agent ingest.`
-      : `Run browser-debug agent report --review-index ${packet.source?.review_artifact_index_path ?? '<review-index>'} --agent-result ${latest.result_path} --json.`
+      : `Run ${CLI_NAME} agent report --review-index ${packet.source?.review_artifact_index_path ?? '<review-index>'} --agent-result ${latest.result_path} --json.`
   };
 }
 
@@ -1101,10 +1101,10 @@ function buildAgentWorkflowRecord({
       package_path: requestStatus.package_path,
       prompt_path: requestStatus.prompt_path,
       agent_result_path: requestStatus.latest_result_path,
-      ingest_command: `browser-debug agent ingest --package ${requestStatus.package_path} --input @agent-advisory-result.json --json`,
+      ingest_command: `${CLI_NAME} agent ingest --package ${requestStatus.package_path} --input @agent-advisory-result.json --json`,
       report_command: reportCommand,
-      status_command: `browser-debug agent workflow status --workflow ${workflowPath} --json`,
-      index_command: 'browser-debug agent workflow index --json'
+      status_command: `${CLI_NAME} agent workflow status --workflow ${workflowPath} --json`,
+      index_command: `${CLI_NAME} agent workflow index --json`
     },
     request_status: requestStatus,
     request_detail: requestDetail,
@@ -1157,8 +1157,8 @@ function missingAgentWorkflowStatus({ workflow, workflowPath, reason, now }) {
       agent_result_path: null,
       ingest_command: null,
       report_command: null,
-      status_command: `browser-debug agent workflow status --workflow ${workflowPath} --json`,
-      index_command: 'browser-debug agent workflow index --json'
+      status_command: `${CLI_NAME} agent workflow status --workflow ${workflowPath} --json`,
+      index_command: `${CLI_NAME} agent workflow index --json`
     },
     request_status: null,
     request_detail: null,
@@ -1303,7 +1303,7 @@ function requestDetailFromPackage({ agentPackage, status, selectedResult }) {
       prompt_path: status.prompt_path,
       ingest_expected_schema: 'agent_advisory_result',
       report_command: selectedResult
-        ? `browser-debug agent report --review-index ${status.review_artifact_index_path ?? '<review-index>'} --agent-result ${selectedResult.result_path} --json`
+        ? `${CLI_NAME} agent report --review-index ${status.review_artifact_index_path ?? '<review-index>'} --agent-result ${selectedResult.result_path} --json`
         : null
     },
     gate_effect: 'none',
@@ -1451,7 +1451,7 @@ function buildPrompt({ id, task, surface, reviewIndex, evidenceClasses, artifact
     ? artifactRefs.map((artifact) => `- ${artifact.type}: ${artifact.path} (${artifact.content_included ? 'content included' : 'local reference only'})`)
     : ['- No artifact references were provided.'];
   return [
-    '# Browser Debug Agent Advisory Task',
+    '# TraceCue Agent Advisory Task',
     '',
     `Package id: ${id}`,
     `Task: ${task}`,
@@ -1492,7 +1492,7 @@ function renderAgentReport({ id, now, reviewIndex, reviewIndexPath, agentResult,
     : [];
   const decisions = Array.isArray(agentResult.owner_decision_requests) ? agentResult.owner_decision_requests : [];
   const lines = [
-    `# Browser Debug Agent Advisory Report: ${id}`,
+    `# TraceCue Agent Advisory Report: ${id}`,
     '',
     `- Generated at: ${now.toISOString()}`,
     `- Review artifact index: ${reviewIndexPath}`,
@@ -1545,7 +1545,7 @@ function renderAgentWorkflowReport({ id, now, workflowStatus }) {
   const steps = workflowStatus.steps ?? {};
   const advisorySummary = workflowStatus.request_detail?.agent_advisory_summary ?? null;
   const lines = [
-    `# Browser Debug Agent Workflow Report: ${id}`,
+    `# TraceCue Agent Workflow Report: ${id}`,
     '',
     `- Generated at: ${now.toISOString()}`,
     `- Workflow: ${workflowStatus.workflow_path}`,
@@ -1593,7 +1593,7 @@ function normalizeArtifactReferences(artifacts) {
     description: truncateText(artifact?.description ?? '', 500),
     local_reference: true,
     content_included: false,
-    sensitive_content_possible: ['screenshot', 'trace', 'observation', 'layout', 'report'].includes(artifact?.type)
+    sensitive_content_possible: ['screenshot', 'visual_evidence', 'trace', 'observation', 'layout', 'report'].includes(artifact?.type)
   }));
 }
 

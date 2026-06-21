@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://browser-debug.local/schemas/finding.schema.json",
-  "title": "Browser Debug CLI Review Finding",
+  "$id": "https://trace-cue.local/schemas/finding.schema.json",
+  "title": "TraceCue Review Finding",
   "type": "object",
   "required": ["id", "category", "severity", "confidence", "source", "message", "evidence", "artifacts", "repro"],
   "properties": {

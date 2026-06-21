@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://browser-debug.local/schemas/agent-workflow.schema.json",
-  "title": "Browser Debug CLI Agent Workflow",
+  "$id": "https://trace-cue.local/schemas/agent-workflow.schema.json",
+  "title": "TraceCue Agent Workflow",
   "type": "object",
   "required": [
     "schema_version",

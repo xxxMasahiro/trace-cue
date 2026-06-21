@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/visual-review-result-preparation.schema.json",
+  "title": "TraceCue Visual Review Result Preparation",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "status",
+    "source",
+    "visual_evidence",
+    "provider_policy",
+    "disclosure_policy",
+    "result_contract",
+    "execution",
+    "boundary"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "id": { "type": "string" },
+    "status": {
+      "enum": ["prepared", "blocked_missing_visual_evidence"]
+    },
+    "created_at": { "type": "string" },
+    "source": { "type": "object" },
+    "visual_evidence": { "type": "object" },
+    "provider_policy": { "type": "object" },
+    "disclosure_policy": { "type": "object" },
+    "result_contract": { "type": "object" },
+    "result_template": { "type": "object" },
+    "execution": { "type": "object" },
+    "dashboard_handoff": { "type": "object" },
+    "gate_effect": { "enum": ["none"] },
+    "browser_launched": { "type": "boolean" },
+    "provider_call_performed": { "type": "boolean" },
+    "api_call_performed": { "type": "boolean" },
+    "automatic_upload": { "type": "boolean" },
+    "external_evidence_transfer": { "type": "boolean" },
+    "raw_pixels_included": { "type": "boolean" },
+    "existing_review_mutated": { "type": "boolean" },
+    "mcp_execution_exposed": { "type": "boolean" },
+    "boundary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

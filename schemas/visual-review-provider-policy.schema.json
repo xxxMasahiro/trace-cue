@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/visual-review-provider-policy.schema.json",
+  "title": "TraceCue Visual Review Provider Policy",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "scope",
+    "status",
+    "disclosure_mode",
+    "visual_evidence",
+    "disclosure",
+    "execution",
+    "boundary"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "scope": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "blocked_external_transfer_requires_owner_review"
+      ]
+    },
+    "disclosure_mode": {
+      "enum": [
+        "metadata_only",
+        "local_reference",
+        "explicit_image_transfer"
+      ]
+    },
+    "provider": {
+      "type": "object"
+    },
+    "model": {
+      "type": "object"
+    },
+    "surface": {
+      "type": "object"
+    },
+    "visual_evidence": {
+      "type": "object"
+    },
+    "disclosure": {
+      "type": "object"
+    },
+    "execution": {
+      "type": "object"
+    },
+    "boundary": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}

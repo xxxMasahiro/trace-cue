@@ -21,8 +21,8 @@ const artifactProperties = {
 const schemas = Object.freeze({
   envelope: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/envelope.schema.json',
-    title: 'Browser Debug CLI Envelope',
+    $id: 'https://trace-cue.local/schemas/envelope.schema.json',
+    title: 'TraceCue Envelope',
     type: 'object',
     required: ['schema_version', 'command', 'status', 'observed_at', 'data', 'warnings', 'errors', 'artifacts'],
     properties: baseEnvelopeProperties,
@@ -30,17 +30,34 @@ const schemas = Object.freeze({
   }),
   artifact: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/artifact.schema.json',
-    title: 'Browser Debug CLI Artifact',
+    $id: 'https://trace-cue.local/schemas/artifact.schema.json',
+    title: 'TraceCue Artifact',
     type: 'object',
     required: ['schema_version', 'type', 'path', 'description'],
     properties: artifactProperties,
     additionalProperties: true
   }),
+  identity_audit: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/identity-audit.schema.json',
+    title: 'TraceCue Identity Audit',
+    type: 'object',
+    required: ['schema_version', 'identity', 'repository', 'compatibility', 'package', 'readiness', 'warnings'],
+    properties: {
+      schema_version: { type: 'string' },
+      identity: { type: 'object' },
+      repository: { type: 'object' },
+      compatibility: { type: 'object' },
+      package: { type: 'object' },
+      readiness: { type: 'object' },
+      warnings: { type: 'array' }
+    },
+    additionalProperties: true
+  }),
   finding: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/finding.schema.json',
-    title: 'Browser Debug CLI Review Finding',
+    $id: 'https://trace-cue.local/schemas/finding.schema.json',
+    title: 'TraceCue Review Finding',
     type: 'object',
     required: ['id', 'category', 'severity', 'confidence', 'source', 'message', 'evidence', 'artifacts', 'repro'],
     properties: {
@@ -77,8 +94,8 @@ const schemas = Object.freeze({
   }),
   target_manifest: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/target-manifest.schema.json',
-    title: 'Browser Debug CLI Target Manifest',
+    $id: 'https://trace-cue.local/schemas/target-manifest.schema.json',
+    title: 'TraceCue Target Manifest',
     type: 'object',
     required: ['baseUrl'],
     properties: {
@@ -101,10 +118,223 @@ const schemas = Object.freeze({
     },
     additionalProperties: true
   }),
+  visual_evidence: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/visual-evidence.schema.json',
+    title: 'TraceCue Visual Evidence',
+    type: 'object',
+    required: ['schema_version', 'id', 'created_at', 'source', 'media', 'privacy', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      id: { type: 'string' },
+      created_at: { type: 'string' },
+      purpose: { type: 'string' },
+      source: { type: 'object' },
+      media: { type: 'object' },
+      route: { type: ['string', 'null'] },
+      viewport: { type: ['object', 'null'] },
+      capture: { type: ['object', 'null'] },
+      masks: { type: 'array' },
+      regions: { type: 'array' },
+      labels: { type: 'array' },
+      privacy: { type: 'object' },
+      boundary: { type: 'object' }
+    },
+    additionalProperties: true
+  }),
+  visual_review_dashboard: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/visual-review-dashboard.schema.json',
+    title: 'TraceCue Visual Review Dashboard',
+    type: 'object',
+    required: ['schema_version', 'generated_at', 'status', 'summary', 'latest', 'preparations', 'executions', 'results', 'control_center_handoff', 'gate_effect', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      generated_at: { type: 'string' },
+      status: { enum: ['empty', 'prepared', 'ready', 'owner_review_recommended'] },
+      summary: { type: 'object' },
+      latest: { type: 'object' },
+      preparations: { type: 'array' },
+      executions: { type: 'array' },
+      results: { type: 'array' },
+      control_center_handoff: { type: 'object' },
+      query: { type: 'object' },
+      gate_effect: { enum: ['none'] },
+      boundary: { type: 'object' }
+    },
+    additionalProperties: true
+  }),
+  visual_review_provider_policy: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/visual-review-provider-policy.schema.json',
+    title: 'TraceCue Visual Review Provider Policy',
+    type: 'object',
+    required: ['schema_version', 'scope', 'status', 'disclosure_mode', 'visual_evidence', 'disclosure', 'execution', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      scope: { type: 'string' },
+      status: { enum: ['planned', 'blocked_external_transfer_requires_owner_review'] },
+      disclosure_mode: { enum: ['metadata_only', 'local_reference', 'explicit_image_transfer'] },
+      provider: { type: 'object' },
+      model: { type: 'object' },
+      surface: { type: 'object' },
+      visual_evidence: { type: 'object' },
+      disclosure: { type: 'object' },
+      execution: { type: 'object' },
+      boundary: { type: 'object' }
+    },
+    additionalProperties: true
+  }),
+  visual_review_result_preparation: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/visual-review-result-preparation.schema.json',
+    title: 'TraceCue Visual Review Result Preparation',
+    type: 'object',
+    required: ['schema_version', 'id', 'status', 'source', 'visual_evidence', 'provider_policy', 'disclosure_policy', 'result_contract', 'execution', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      id: { type: 'string' },
+      status: { enum: ['prepared', 'blocked_missing_visual_evidence'] },
+      created_at: { type: 'string' },
+      source: { type: 'object' },
+      visual_evidence: { type: 'object' },
+      provider_policy: { type: 'object' },
+      disclosure_policy: { type: 'object' },
+      result_contract: { type: 'object' },
+      result_template: { type: 'object' },
+      execution: { type: 'object' },
+      dashboard_handoff: { type: 'object' },
+      gate_effect: { enum: ['none'] },
+      browser_launched: { type: 'boolean' },
+      provider_call_performed: { type: 'boolean' },
+      api_call_performed: { type: 'boolean' },
+      automatic_upload: { type: 'boolean' },
+      external_evidence_transfer: { type: 'boolean' },
+      raw_pixels_included: { type: 'boolean' },
+      existing_review_mutated: { type: 'boolean' },
+      mcp_execution_exposed: { type: 'boolean' },
+      boundary: { type: 'object' }
+    },
+    additionalProperties: true
+  }),
+  visual_review_execution: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/visual-review-execution.schema.json',
+    title: 'TraceCue Visual Review Execution',
+    type: 'object',
+    required: ['schema_version', 'id', 'status', 'execution_path', 'preparation_path', 'surface', 'provider', 'model', 'steps', 'dashboard_handoff', 'gate_effect', 'api_call_performed', 'automatic_upload', 'existing_review_mutated', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      id: { type: 'string' },
+      status: { enum: ['completed', 'failed', 'blocked'] },
+      mode: { type: 'string' },
+      created_at: { type: 'string' },
+      evaluated_at: { type: 'string' },
+      completed_at: { type: ['string', 'null'] },
+      execution_path: { type: 'string' },
+      execution_receipt_path: { type: 'string' },
+      preparation_id: { type: ['string', 'null'] },
+      preparation_path: { type: 'string' },
+      preparation_hash: { type: 'string' },
+      result_path: { type: ['string', 'null'] },
+      latest_result_path: { type: ['string', 'null'] },
+      surface: { type: 'object' },
+      provider: { type: 'object' },
+      model: { type: 'object' },
+      provider_adapter: { type: 'object' },
+      steps: { type: 'object' },
+      dashboard_handoff: { type: 'object' },
+      disclosure_policy: { type: 'object' },
+      gate_effect: { enum: ['none'] },
+      provider_call_performed: { type: 'boolean' },
+      api_call_performed: { type: 'boolean' },
+      external_evidence_transfer: { type: 'boolean' },
+      automatic_upload: { type: 'boolean' },
+      credential_storage: { type: 'string' },
+      persistent_credential_storage: { type: 'boolean' },
+      credential_values_recorded: { type: 'boolean' },
+      raw_response_stored: { type: 'boolean' },
+      raw_provider_response_stored: { type: 'boolean' },
+      raw_pixels_included: { type: 'boolean' },
+      raw_pixels_read: { type: 'boolean' },
+      raw_pixels_transferred: { type: 'boolean' },
+      existing_review_mutated: { type: 'boolean' },
+      mcp_execution_exposed: { type: 'boolean' },
+      boundary: { type: 'object' }
+    },
+    additionalProperties: true
+  }),
+  visual_review_result: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/visual-review-result.schema.json',
+    title: 'TraceCue Visual Review Result',
+    type: 'object',
+    required: ['schema_version', 'id', 'status', 'preparation_id', 'visual_review_result', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      id: { type: 'string' },
+      status: { enum: ['not_run', 'completed', 'needs_owner_review', 'rejected'] },
+      preparation_id: { type: 'string' },
+      visual_review_result: { type: 'object' },
+      provider: { type: 'object' },
+      model: { type: 'object' },
+      advisory_findings: { type: 'array' },
+      owner_decision_requests: { type: 'array' },
+      evidence_refs: { type: 'array' },
+      gate_effect: { enum: ['none'] },
+      boundary: { type: 'object' }
+    },
+    additionalProperties: true
+  }),
+  visual_review_aggregation: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/visual-review-aggregation.schema.json',
+    title: 'TraceCue Visual Review Aggregation',
+    type: 'object',
+    required: ['schema_version', 'generated_at', 'status', 'source', 'summary', 'source_effects', 'review_agents', 'aggregation_findings', 'conflicts', 'owner_decision_requests', 'query', 'gate_effect', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      generated_at: { type: 'string' },
+      status: { enum: ['completed', 'no_results'] },
+      source: { type: 'object' },
+      summary: { type: 'object' },
+      source_effects: { type: 'object' },
+      review_agents: { type: 'array' },
+      aggregation_findings: { type: 'array' },
+      conflicts: { type: 'array' },
+      owner_decision_requests: { type: 'array' },
+      query: { type: 'object' },
+      gate_effect: { enum: ['none'] },
+      boundary: { type: 'object' }
+    },
+    additionalProperties: true
+  }),
+  image_review: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/image-review.schema.json',
+    title: 'TraceCue Image Review',
+    type: 'object',
+    required: ['schema_version', 'id', 'status', 'review', 'image_review', 'findings', 'metrics', 'environment', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      id: { type: 'string' },
+      status: { enum: ['passed', 'needs_attention'] },
+      created_at: { type: 'string' },
+      review: { type: 'object' },
+      image_review: { type: 'object' },
+      findings: { type: 'array' },
+      metrics: { type: 'object' },
+      quality_signals: { type: 'object' },
+      evidence_summary: { type: 'object' },
+      environment: { type: 'object' },
+      boundary: { type: 'object' }
+    },
+    additionalProperties: true
+  }),
   agent_surface: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/agent-surface.schema.json',
-    title: 'Browser Debug CLI Agent Surface',
+    $id: 'https://trace-cue.local/schemas/agent-surface.schema.json',
+    title: 'TraceCue Agent Surface',
     type: 'object',
     required: ['id', 'kind', 'transport', 'status', 'external_evidence_transfer', 'credential_mode', 'implemented'],
     properties: {
@@ -125,8 +355,8 @@ const schemas = Object.freeze({
   }),
   agent_task_package: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/agent-task-package.schema.json',
-    title: 'Browser Debug CLI Agent Task Package',
+    $id: 'https://trace-cue.local/schemas/agent-task-package.schema.json',
+    title: 'TraceCue Agent Task Package',
     type: 'object',
     required: ['schema_version', 'id', 'task', 'status', 'created_at', 'surface', 'source', 'disclosure_policy', 'evidence_packet', 'boundary'],
     properties: {
@@ -146,8 +376,8 @@ const schemas = Object.freeze({
   }),
   agent_request_status: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/agent-request-status.schema.json',
-    title: 'Browser Debug CLI Agent Request Status',
+    $id: 'https://trace-cue.local/schemas/agent-request-status.schema.json',
+    title: 'TraceCue Agent Request Status',
     type: 'object',
     required: ['schema_version', 'package_id', 'package_path', 'status', 'gate_effect', 'api_call_performed', 'automatic_upload', 'existing_review_mutated'],
     properties: {
@@ -177,8 +407,8 @@ const schemas = Object.freeze({
   }),
   agent_request_detail: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/agent-request-detail.schema.json',
-    title: 'Browser Debug CLI Agent Request Detail',
+    $id: 'https://trace-cue.local/schemas/agent-request-detail.schema.json',
+    title: 'TraceCue Agent Request Detail',
     type: 'object',
     required: ['schema_version', 'package_id', 'package_path', 'status', 'gate_effect', 'api_call_performed', 'automatic_upload', 'existing_review_mutated'],
     properties: {
@@ -208,8 +438,8 @@ const schemas = Object.freeze({
   }),
   agent_workflow: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/agent-workflow.schema.json',
-    title: 'Browser Debug CLI Agent Workflow',
+    $id: 'https://trace-cue.local/schemas/agent-workflow.schema.json',
+    title: 'TraceCue Agent Workflow',
     type: 'object',
     required: ['schema_version', 'id', 'status', 'workflow_path', 'package_path', 'steps', 'dashboard_handoff', 'provider_boundary', 'gate_effect', 'api_call_performed', 'automatic_upload', 'existing_review_mutated'],
     properties: {
@@ -251,8 +481,8 @@ const schemas = Object.freeze({
   }),
   agent_execution: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/agent-execution.schema.json',
-    title: 'Browser Debug CLI Agent Execution',
+    $id: 'https://trace-cue.local/schemas/agent-execution.schema.json',
+    title: 'TraceCue Agent Execution',
     type: 'object',
     required: ['schema_version', 'id', 'status', 'execution_path', 'package_path', 'surface', 'provider', 'model', 'steps', 'dashboard_handoff', 'gate_effect', 'api_call_performed', 'automatic_upload', 'existing_review_mutated'],
     properties: {
@@ -276,6 +506,9 @@ const schemas = Object.freeze({
       dashboard_status: { type: 'object' },
       disclosure_policy: { type: 'object' },
       provider_adapter: { type: 'object' },
+      visual_review_provider_policy: { type: 'object' },
+      raw_pixels_included: { type: 'boolean' },
+      visual_review_provider_execution_authorized: { type: 'boolean' },
       normalized_agent_result_path: { type: ['string', 'null'] },
       latest_result_path: { type: ['string', 'null'] },
       agent_result_path: { type: ['string', 'null'] },
@@ -297,8 +530,8 @@ const schemas = Object.freeze({
   }),
   agent_advisory_result: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/agent-advisory-result.schema.json',
-    title: 'Browser Debug CLI Agent Advisory Result',
+    $id: 'https://trace-cue.local/schemas/agent-advisory-result.schema.json',
+    title: 'TraceCue Agent Advisory Result',
     type: 'object',
     required: ['schema_version', 'id', 'agent_advisory', 'agent_advisory_findings', 'agent_advisory_action_plan', 'agent_advisory_readiness', 'boundary'],
     properties: {
@@ -319,8 +552,8 @@ const schemas = Object.freeze({
   }),
   agent_disclosure_policy: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/agent-disclosure-policy.schema.json',
-    title: 'Browser Debug CLI Agent Disclosure Policy',
+    $id: 'https://trace-cue.local/schemas/agent-disclosure-policy.schema.json',
+    title: 'TraceCue Agent Disclosure Policy',
     type: 'object',
     required: ['scope', 'raw_artifact_content_included', 'external_evidence_transfer', 'redaction_applied'],
     properties: {
@@ -333,6 +566,10 @@ const schemas = Object.freeze({
       network_payloads_included: { type: 'boolean' },
       source_data_values_included: { type: 'boolean' },
       local_artifact_paths_included: { type: 'boolean' },
+      visual_evidence_metadata_included: { type: 'boolean' },
+      raw_pixels_included: { type: 'boolean' },
+      future_execute_required: { type: 'boolean' },
+      provider_execution_authorized: { type: 'boolean' },
       external_evidence_transfer: { type: 'boolean' },
       requires_owner_review_before_external_transfer: { type: 'boolean' },
       redaction_applied: { type: 'boolean' }
@@ -341,8 +578,8 @@ const schemas = Object.freeze({
   }),
   review: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/review.schema.json',
-    title: 'Browser Debug CLI Review Result',
+    $id: 'https://trace-cue.local/schemas/review.schema.json',
+    title: 'TraceCue Review Result',
     type: 'object',
     required: ['review', 'findings', 'metrics', 'environment'],
     properties: {
@@ -373,10 +610,93 @@ const schemas = Object.freeze({
     },
     additionalProperties: true
   }),
+  capture_handoff: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/capture-handoff.schema.json',
+    title: 'TraceCue Capture Handoff',
+    type: 'object',
+    required: ['schema_version', 'handoff_version', 'id', 'status', 'generated_at', 'created_at', 'source', 'media', 'privacy', 'disclosure_policy', 'visual_evidence_contract', 'handoff', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      handoff_version: { type: 'string' },
+      id: { type: 'string' },
+      status: { type: 'string' },
+      generated_at: { type: 'string' },
+      created_at: { type: 'string' },
+      source: { type: 'object' },
+      media: { type: 'object' },
+      privacy: { type: 'object' },
+      disclosure_policy: { type: 'object' },
+      visual_evidence_contract: { type: 'object' },
+      handoff: { type: 'object' },
+      boundary: { type: 'object' }
+    },
+    additionalProperties: true
+  }),
+  desktop_review_provider_preparation_plan: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/desktop-review-provider-preparation-plan.schema.json',
+    title: 'TraceCue Desktop Review Provider Preparation Plan',
+    type: 'object',
+    required: ['schema_version', 'plan_version', 'id', 'status', 'generated_at', 'source', 'media', 'readiness', 'provider_preparation', 'disclosure_policy', 'handoff_contract', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      plan_version: { type: 'string' },
+      id: { type: 'string' },
+      status: { enum: ['planned'] },
+      generated_at: { type: 'string' },
+      source: { type: 'object' },
+      media: { type: 'object' },
+      readiness: { type: 'object' },
+      provider_preparation: { type: 'object' },
+      disclosure_policy: { type: 'object' },
+      handoff_contract: { type: 'object' },
+      boundary: { type: 'object' }
+    },
+    additionalProperties: true
+  }),
+  capture_plan: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/capture-plan.schema.json',
+    title: 'TraceCue Capture Plan',
+    type: 'object',
+    required: ['schema_version', 'plan_version', 'generated_at', 'source_selection', 'summary', 'sources', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      plan_version: { type: 'string' },
+      generated_at: { type: 'string' },
+      source_selection: { type: 'string' },
+      summary: { type: 'object' },
+      sources: { type: 'array' },
+      boundary: { type: 'object' },
+      next_steps: { type: 'array' }
+    },
+    additionalProperties: true
+  }),
+  mcp_execution_gates: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/mcp-execution-gates.schema.json',
+    title: 'TraceCue MCP Execution Gates',
+    type: 'object',
+    required: ['schema_version', 'policy_version', 'generated_at', 'server_name', 'profile_selection', 'operation_selection', 'summary', 'operations', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      policy_version: { type: 'string' },
+      generated_at: { type: 'string' },
+      server_name: { type: 'string' },
+      profile_selection: { type: 'string' },
+      operation_selection: { type: 'string' },
+      summary: { type: 'object' },
+      operations: { type: 'array' },
+      boundary: { type: 'object' },
+      next_steps: { type: 'array' }
+    },
+    additionalProperties: true
+  }),
   mcp_tool: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://browser-debug.local/schemas/mcp-tool.schema.json',
-    title: 'Browser Debug CLI MCP Tool Contract',
+    $id: 'https://trace-cue.local/schemas/mcp-tool.schema.json',
+    title: 'TraceCue MCP Tool Contract',
     type: 'object',
     required: ['name', 'description', 'inputSchema'],
     properties: {

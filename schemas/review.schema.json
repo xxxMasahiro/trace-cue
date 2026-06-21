@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://browser-debug.local/schemas/review.schema.json",
-  "title": "Browser Debug CLI Review Result",
+  "$id": "https://trace-cue.local/schemas/review.schema.json",
+  "title": "TraceCue Review Result",
   "type": "object",
   "required": ["review", "findings", "metrics", "environment"],
   "properties": {

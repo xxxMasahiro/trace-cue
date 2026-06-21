@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Browser Debug CLI is not released. The repository has local MVP runtime coverage, Phase 7 review-platform coverage, Phase 8 dogfood/plugin-readiness coverage, Phase 9 local review-quality coverage, Phase 10 route-readiness coverage, Phase 11 page-expectation and artifact-index coverage, Phase 12 rendered-state dogfood hardening coverage, Phase 14 content UX advisory coverage, Phase 15 content UX heuristic coverage, Phase 16 content UX handoff coverage, Phase 17 content UX practical handoff coverage, Phase 18 content UX review brief/rubric coverage, Phase 19 no-browser target manifest validation coverage, Phase 20 no-browser local resource status preflight coverage, Phase 21-24 local resource safety coverage, Phase 25 local agent advisory handoff coverage, Phase 26 local agent request status coverage, Phase 27 local agent request detail coverage, Phase 28 local agent workflow status coverage, Phase 29 agent execution adapter coverage, Phase 30 packed install smoke coverage, Phase 31 MCP profile-gating coverage, Phase 32 rename-readiness coverage, Phase 33 MCP read-only agent status coverage, Phase 34 safe HTTP MCP foundation coverage, Phase 35 HTTP MCP integration-hardening coverage, Phase 36 MCP capability policy coverage, Phase 37 packaged external-repository usage coverage, Phase 38 local-checkout MCP config coverage, Phase 39 consumer runtime-readiness guidance coverage, a public GitHub repository, remote `main` synchronization, passing GitHub Actions `main` CI, CI manifest validation, local package dry-run verification, and no-publish packed install verification.
+TraceCue is not released. The repository has local MVP runtime coverage, Phase 7 review-platform coverage, Phase 8 dogfood/plugin-readiness coverage, Phase 9 local review-quality coverage, Phase 10 route-readiness coverage, Phase 11 page-expectation and artifact-index coverage, Phase 12 rendered-state dogfood hardening coverage, Phase 14 content UX advisory coverage, Phase 15 content UX heuristic coverage, Phase 16 content UX handoff coverage, Phase 17 content UX practical handoff coverage, Phase 18 content UX review brief/rubric coverage, Phase 19 no-browser target manifest validation coverage, Phase 20 no-browser local resource status preflight coverage, Phase 21-24 local resource safety coverage, Phase 25 local agent advisory handoff coverage, Phase 26 local agent request status coverage, Phase 27 local agent request detail coverage, Phase 28 local agent workflow status coverage, Phase 29 agent execution adapter coverage, Phase 30 packed install smoke coverage, Phase 31 MCP profile-gating coverage, Phase 32 rename-readiness coverage, Phase 33 MCP read-only agent status coverage, Phase 34 safe HTTP MCP foundation coverage, Phase 35 HTTP MCP integration-hardening coverage, Phase 36 MCP capability policy coverage, Phase 37 packaged external-repository usage coverage, Phase 38 local-checkout MCP config coverage, Phase 39 consumer runtime-readiness guidance coverage, Phase 56 identity audit and rename-readiness coverage, a public GitHub repository, remote `main` synchronization, passing GitHub Actions `main` CI, CI manifest validation, local package dry-run verification, and no-publish packed install verification.
 
 ## Local Release Readiness Checks
 
@@ -10,6 +10,7 @@ Run these checks before any public release work is proposed:
 
 ```bash
 npm test
+npm run test:rename-readiness
 npm run test:browser
 npm run test:pack
 npm run test:pack-install
@@ -21,7 +22,7 @@ npm run release:check
 The package dry-run uses a `/tmp` npm cache and must not publish:
 
 ```bash
-npm pack --dry-run --json --cache /tmp/browser-debug-cli-npm-cache
+npm pack --dry-run --json --cache /tmp/trace-cue-npm-cache
 ```
 
 The packed install smoke uses a temporary install layout under `/tmp` and must not publish or install from the registry:
@@ -44,6 +45,7 @@ npm run test:pack-install
 - Treat Phase 30 packed install smoke as local release evidence only; it does not authorize npm publication, package rename, license change, npm token handling, marketplace registration, or external evidence transfer.
 - Treat Phase 31 MCP profiles as local stdio adapter selection only. `safe` lowers the MCP surface, `full` preserves compatibility, and `admin` is explicit but does not authorize cleanup execution, agent/API execution, HTTP `full` or `admin`, socket transport, shell tools, external upload, profile reuse, provider credentials, or arbitrary process control.
 - Treat Phase 32 rename readiness as alignment and verification only. It does not authorize package rename, repository rename, plugin rename, MCP server rename, public package naming, license change, marketplace registration, npm publication, or external evidence transfer.
+- Treat Phase 56 identity audit and rename-readiness as local inspection only. Treat Phase 57 physical checkout rename as a local filesystem move only. Treat Phase 58 remote repository rename as GitHub repository identity synchronization only. These phases do not authorize artifact-root migration, legacy alias removal, public package naming, license change, marketplace registration, npm publication, or external evidence transfer.
 - Treat Phase 33 MCP read-only agent status tools as local inspection only. They do not authorize package generation, ingest, report writing, workflow creation, execution planning, `agent execution run`, cleanup execution, provider/API execution, shell tools, external upload, socket transport, remote HTTP listener, HTTP `full` or `admin`, credential handling, or publication.
 - Treat Phase 34 safe HTTP MCP as a local transport foundation only. It does not authorize HTTP `full` or `admin`, socket transport, remote HTTP listeners, cleanup execution, provider/API execution, `agent execution run`, shell tools, external upload, profile reuse, credential storage, publication, or marketplace registration.
 - Treat Phase 35/38 MCP client configuration as token-free setup metadata and smoke coverage only. Local-checkout metadata helps unpublished checkouts connect without source inspection; it does not authorize credential storage, config-file mutation, server launch automation, HTTP `full` or `admin`, socket transport, remote HTTP listeners, cleanup execution, provider/API execution, `agent execution run`, shell tools, external upload, profile reuse, publication, or marketplace registration.

@@ -1,6 +1,6 @@
 import { mkdir, readdir, rm, lstat } from 'node:fs/promises';
 import path from 'node:path';
-import { DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
+import { CLI_NAME, DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
 import { artifactObject, artifactRelPath, createArtifactId, resolveArtifactRoot, writeJsonArtifact } from './artifacts.js';
 import { parseDurationMs } from './durations.js';
 import { redact, truncateText } from './redaction.js';
@@ -159,7 +159,7 @@ export async function buildArtifactCleanupPlan(options = {}, context = {}) {
     candidate_count: candidates.length,
     candidate_bytes: candidates.reduce((sum, candidate) => sum + candidate.size_bytes, 0),
     recommended_command: candidates.length > 0
-      ? `browser-debug resource artifacts cleanup --max-bytes ${maxBytes} --execute --json`
+      ? `${CLI_NAME} resource artifacts cleanup --max-bytes ${maxBytes} --execute --json`
       : null
   };
   return {
@@ -219,7 +219,7 @@ async function collectArtifactUsage(root, artifactRoot, { nowMs }) {
       by_top_level_directory: [...byTopLevel.values()].sort((left, right) => right.total_bytes - left.total_bytes),
       largest_files: sortedBySize.slice(0, 10).map(relativeCandidate),
       limitations: [
-        'Artifact usage is scoped to the configured Browser Debug CLI artifact root.',
+        'Artifact usage is scoped to the configured TraceCue artifact root.',
         'Symbolic links are counted as skipped entries and are not followed.'
       ]
     }
@@ -332,7 +332,7 @@ function warningsForArtifactUsage(summary, proposal) {
   }
   return [{
     code: 'ARTIFACT_CLEANUP_AVAILABLE',
-    message: 'Local Browser Debug CLI artifacts exceed the configured cleanup policy.',
+    message: 'Local TraceCue artifacts exceed the configured cleanup policy.',
     details: {
       artifact_root: summary.artifact_root,
       total_bytes: summary.total_bytes,

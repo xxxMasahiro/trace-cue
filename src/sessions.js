@@ -163,7 +163,7 @@ export async function buildReport(options = {}, context = {}) {
   const now = materializeNow(context.now);
   const reportRel = artifactRelPath(artifactRoot, 'reports', `${session.id}.md`);
   const content = [
-    `# Browser Debug Report: ${session.id}`,
+    `# TraceCue Report: ${session.id}`,
     '',
     `- Status: ${session.status}`,
     `- Current URL: ${session.current_url ?? 'none'}`,

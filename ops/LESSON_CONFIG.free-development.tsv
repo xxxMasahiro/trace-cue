@@ -1,6 +1,6 @@
 # key	value
 lesson_repo_name	ai-driven-development-lesson
-product_repo_name	browser-debug-cli
+product_repo_name	trace-cue
 project_root	$HOME/projects/agent-toolbox
 flow_file	lesson/LESSON_FLOW.tsv
 state_file	learning/LESSON_STATE.tsv

@@ -1,8 +1,32 @@
 # Changelog
 
+## Unreleased
+
+- Added Phase 58 remote repository rename completion by renaming the GitHub repository to `xxxMasahiro/trace-cue`, updating local `origin`, product identity metadata, plugin metadata, docs, tests, and preserving the legacy repository URL as compatibility history.
+- Added Phase 57 physical checkout rename completion by moving the local checkout directory to `trace-cue`, updating identity audit readiness status for moved checkouts, and preserving remotes, package identity, artifact roots, legacy aliases, npm state, marketplace state, and release boundaries.
+- Added Phase 56 rename-readiness audit with `identity audit --json`, `identity_audit` schema/API support, canonical/legacy repository URL separation, packaged MCP legacy server preservation, rename-readiness checks, CI/release wiring, and packed legacy bin smoke coverage.
+- Added Phase 55 multi-agent visual review aggregation hardening, including malformed artifact warnings, bounded scans, source attribution, conflict reporting, MCP non-exposure checks, docs, and packed-install smoke coverage.
+- Added Phase 54 MCP visual review exposure reporting for visual review aggregation without exposing a new MCP tool.
+- Added Phase 53 read-only visual review aggregation with `visual review aggregate --preparation`, `visual_review_aggregation` schema/API support, source-attributed advisory grouping, conflict reporting, and no-provider/no-write boundaries.
+- Added Phase 52 desktop review provider safety bridge by wiring `review --image --capture-handoff` into capture handoff verification and visual evidence provenance without provider execution.
+- Added Phase 51 desktop image review body support for caller-declared screen/window/desktop-app screenshot provenance through image review and visual preparation metadata.
+- Added Phase 50 desktop review provider-preparation planning, including `visual review plan --capture-handoff`, `desktop_review_provider_preparation_plan` schema/API support, MCP non-exposure policy entries, docs, and packed-install smoke coverage.
+- Added Phase 49 existing workspace image capture metadata handoff, including `capture_handoff` schema/API support, `capture handoff`, workspace-confined existing-image metadata boundaries, docs, and packed-install smoke coverage.
+- Added Phase 48 read-only screen/window capture planning, including `capture_plan` schema/API support, `capture plan`, safe MCP capture planning inspection, architecture boundaries, docs, and packed-install smoke coverage.
+- Added Phase 47 read-only MCP execution gate policy reporting, including `mcp_execution_gates` schema/API support, `mcp execution gates`, safe MCP gate inspection, architecture boundaries, docs, and packed-install smoke coverage.
+- Added Phase 46 read-only visual review dashboard integration, including `visual_review_dashboard` schema/API support, `visual review dashboard`, safe MCP dashboard inspection, architecture boundaries, docs, and packed-install smoke coverage.
+- Added Phase 45 CLI-only visual review execution from preparation artifacts, including visual_review_execution schema/API support, status/list commands, fake/local/API provider adapter coverage, metadata-only disclosure safeguards, MCP exclusion reporting, docs, and packed-install smoke coverage.
+
+
 All notable local development changes are tracked here before public release.
 
 ## Unreleased
+
+- Renamed the canonical product identity to TraceCue with `trace-cue` and `trace-cue-mcp` entrypoints while preserving legacy `browser-debug` and `browser-debug-mcp` aliases.
+- Added Phase 41 visual evidence metadata so browser screenshots, standalone images, screen captures, window captures, and desktop app captures can share a metadata-only local evidence record without embedding raw pixels, calling providers, exposing MCP execution, or mutating deterministic review output.
+- Added Phase 42 visual review provider policy planning on `agent execution plan` so future human-like visual review provider work has an explicit metadata-only disclosure boundary before any execution path is expanded.
+- Added Phase 43 standalone image review with `trace-cue review --image <workspace-file>` for workspace-confined, metadata-only image evidence without browser launch, provider calls, raw pixel JSON embedding, or MCP execution expansion.
+- Added Phase 44 local visual review result preparation with `trace-cue visual review prepare --review-index <review-artifact-index>` for metadata-only future AI visual review contracts without provider execution, raw pixel transfer, external upload, MCP exposure, or deterministic review mutation.
 
 - Added the local `browser-debug` CLI package scaffold.
 - Added deterministic JSON envelopes and CLI parsing.
@@ -84,7 +108,7 @@ All notable local development changes are tracked here before public release.
 - Added Phase 36 MCP capability policy output with `browser-debug mcp capabilities`, package API exports, MCP tool exposure through safe/full/admin, and packed-install smoke coverage without enabling cleanup execution, provider/API execution, `agent execution run`, shell tools, daemon/session control, credential handling, HTTP `full` or `admin`, socket transport, or remote listeners.
 - Added Phase 37 external-repository usage quickstart documentation with packaged `docs/workflow/CONSUMER_USAGE.md`, README/plugin skill routing, package file-set inclusion, and packed-install smoke coverage without changing runtime permissions, MCP permissions, publication, marketplace, or identity names.
 - Added Phase 38 local-checkout MCP config metadata so external repositories and agents can use generated `local_checkout.mcpServers` or `local_checkout.launch` when `browser-debug-mcp` is not installed on PATH, without changing MCP permissions, starting listeners, writing config files, exposing token values, publishing, or renaming identities.
-- Added Phase 39 consumer runtime-readiness guidance so external repositories can distinguish Browser Debug CLI connection success from missing target API/backend runtime, frontend-only dev-server limitations, API base configuration gaps, and valid `needs_attention` findings without adding consumer-specific runtime branches.
+- Added Phase 39 consumer runtime-readiness guidance so external repositories can distinguish TraceCue connection success from missing target API/backend runtime, frontend-only dev-server limitations, API base configuration gaps, and valid `needs_attention` findings without adding consumer-specific runtime branches.
 
 ## Release Status
 

@@ -2,12 +2,158 @@
 
 ## Preconditions
 
-- Work stays in `/home/masahiro/projects/agent-toolbox/browser-debug-cli`.
+- Work stays in the current TraceCue repository root confirmed with `pwd` and `git rev-parse --show-toplevel`; the local checkout directory is `trace-cue` after the approved physical rename flow.
 - The lesson repository remains the parent workflow source.
 - Phase 0 is documentation and scaffold only.
 - Runtime browser automation starts only after the scaffold and initial documents are verified.
 
 ## Phase Plan
+
+### Phase 58: Remote Repository Rename Completion
+
+Purpose: complete the GitHub repository rename to `xxxMasahiro/trace-cue` after the local checkout rename is stable. This phase updates local `origin`, product identity metadata, plugin metadata, docs, and tests so the canonical repository URL is current while the legacy GitHub URL remains recorded as compatibility history.
+
+Implementation order: verify the legacy GitHub repository exists and the target repository name is unused, rename the remote repository with `gh repo rename`, update local `origin`, update `src/product-identity.js`, plugin metadata, README, workflow docs, release docs, memory, tests, and manifests, then rerun identity audit, rename-readiness, no-browser tests, package checks, release checks, product gates, Japanese-doc scan, and fixed-path scans.
+
+Recovery: GitHub repository rename is remote state. GitHub normally redirects the legacy URL, but local callers should update their remotes to the canonical URL. This phase changes no package name, CLI alias, MCP alias, artifact root, npm publication state, marketplace state, license, MCP permissions, provider behavior, or external transfer policy.
+
+### Phase 57: Physical Checkout Rename Completion
+
+Purpose: complete the local workspace directory rename from the legacy checkout name to `trace-cue` after Phase 56 made the operation auditable. This phase keeps Git history, package names, CLI aliases, MCP aliases, artifact roots, and remotes unchanged while proving the moved checkout still passes identity and release checks.
+
+Implementation order: run `identity audit --json` and `npm run test:rename-readiness` in the legacy checkout, move the repository directory to the canonical checkout name, rerun `pwd`, `git rev-parse --show-toplevel`, `identity audit --json`, rename-readiness, no-browser tests, package checks, release checks, product gates, docs scans, and fixed-path scans, then synchronize workflow state.
+
+Recovery: the physical checkout rename is a local filesystem move only. If a caller still references the old path, update that caller-owned configuration or move the directory back. No Git commit, remote URL, package identity, artifact root, legacy alias, npm state, marketplace state, or license state is changed by the filesystem move itself.
+
+### Phase 56: Rename Readiness Audit
+
+Purpose: make physical checkout rename and later remote repository rename auditable before performing either rename. This phase adds read-only identity audit output, canonical/legacy repository URL separation, packaged MCP legacy server compatibility, filesystem-safe package temp names, packed legacy bin smoke coverage, and a local rename-readiness check.
+
+Implementation order: add `identity audit --json`, `identity_audit` schema/API support, canonical/legacy repository identity fields, `.mcp.json` canonical plus legacy server entries, MCP identity text cleanup, rename-readiness tooling, CI/release/product-gate wiring, package smoke coverage for canonical and legacy bins, docs/manifests sync, then run no-browser, rename-readiness, package, release, and product gates.
+
+Recovery: the audit is read-only and additive. Existing CLI, MCP tools, artifact roots, review flows, visual review flows, package privacy, release state, and legacy aliases remain unchanged; rollback is a standard Git revert of the Phase 56 slice.
+
+### Phase 55: Multi-Agent Visual Review Aggregation Hardening
+
+Purpose: harden local visual review aggregation before any MCP exposure. This phase keeps aggregation read-only while bounding result scans, malformed artifacts, oversized files, untrusted advisory text, source attribution, source-effect reporting, conflict reporting, and MCP non-exposure.
+
+Implementation order: add architecture and CLI coverage for malformed local result artifacts, limit-bound scans, source-attributed findings, severity conflicts, no raw-pixel reads, no provider calls, no writes, no MCP tools, package API exports, schema parity, docs, manifests, and product gates.
+
+Recovery: aggregation is read-only and additive. Existing review, preparation, execution, dashboard, MCP, and release behavior remain unchanged; rollback is a standard Git revert of the aggregation slice.
+
+### Phase 54: MCP Visual Review Execution Exposure Reporting
+
+Purpose: keep visual provider execution and aggregation out of MCP while making the boundary inspectable. This phase adds policy visibility for visual review aggregation and desktop image review handoff paths without adding MCP tools.
+
+Implementation order: update `mcp capabilities` excluded operations and `mcp execution gates` with `visual_review_aggregation`, keep safe/full/admin tool lists unchanged, add no-browser and packed-install assertions, then run product checks.
+
+Recovery: policy reporting is read-only and additive. Existing MCP profiles and transports remain unchanged.
+
+### Phase 53: Multi-Agent Visual Review Aggregation
+
+Purpose: let users combine multiple existing local visual review results for one preparation into deterministic advisory groups, conflicts, and owner decision requests without running providers or changing gates.
+
+Implementation order: add `src/visual-review-aggregation.js`, wire `visual review aggregate --preparation <workspace-json> --json`, register `visual_review_aggregation`, export package API helpers, keep MCP tool exposure disabled, add CLI/API/schema/architecture/packed-install coverage, synchronize docs and manifests, then run package, release, browser smoke, and product gates.
+
+Recovery: aggregation writes no artifacts and mutates no reviews. Existing visual review preparation/execution/dashboard artifacts remain valid.
+
+### Phase 52: Desktop Review Provider Safety Bridge
+
+Purpose: connect caller-declared capture handoff metadata to standalone image review and future visual review preparation without provider calls, raw-pixel transfer, OS capture, or MCP execution.
+
+Implementation order: reuse capture handoff contract normalization, allow `review --image --capture-handoff <workspace-json|->`, verify source path and media hash, propagate source kind into visual evidence metadata and preparation references, keep direct image review compatibility, update bin stdin handling for `--capture-handoff -`, then test parser, CLI, API, schemas, and package smoke.
+
+Recovery: the bridge is additive. Default `review --image <workspace-file>` remains `image_file`; handoff-specific provenance appears only when explicitly provided.
+
+### Phase 51: Desktop Image Review Body
+
+Purpose: make existing screenshots of screens, windows, and desktop app surfaces reviewable through the same image review, visual evidence, and visual preparation contracts used for browser screenshots and image files.
+
+Implementation order: extend image review source metadata, validate capture handoff path/hash consistency, store caller-declared provenance without claiming TraceCue captured or verified OS surfaces, preserve no-provider/no-transfer/no-MCP boundaries, update tests/docs/manifests, then run product checks.
+
+Recovery: standalone image review, URL review, target review, capture plan, capture handoff, visual preparation, visual execution, dashboard, MCP profiles, and release gates remain unchanged; rollback is a standard Git revert of Phase 51-52 additions.
+
+### Phase 50: Desktop Review Provider-Preparation Planning
+
+Purpose: let existing capture handoff metadata for screen, window, and desktop app images be reviewed before provider preparation artifacts or provider execution are created. This phase adds a read-only provider-preparation planning report from `capture handoff` JSON. It does not reread image bytes, call providers, write artifacts, expose MCP tools, execute capture, transfer evidence, or mutate existing reviews.
+
+Implementation order: add a pure desktop review provider-preparation planning module, wire `visual review plan --capture-handoff <workspace-json|-> --json`, register the `desktop_review_provider_preparation_plan` schema, expose package API helpers, keep MCP tool exposure disabled while listing the operation in capability/gate policy reports, add no-browser/architecture/schema/packed-install coverage, synchronize docs and manifests, then run package, release, browser smoke, and product gates.
+
+Recovery: the desktop provider-preparation plan is read-only and additive. Existing browser review, image review, capture handoff, capture plan, visual evidence, visual review preparation/execution/dashboard, MCP execution gates, schemas, and release gates remain unchanged; rollback is a standard Git revert of the Phase 50 slice.
+
+### Phase 49: Existing Workspace Image Capture Metadata Handoff
+
+Purpose: let existing workspace image files be represented as screen, window, or desktop app capture metadata without implementing OS capture. This phase adds a CLI/API/schema handoff for existing workspace image files only. It does not call OS capture APIs, enumerate windows or processes, write artifacts, expose MCP tools, call providers, transfer evidence, or embed raw pixels in JSON.
+
+Implementation order: add a workspace-confined capture handoff module, wire `capture handoff --image <workspace-image> --source <screen|window|desktop-app> --json`, register the `capture_handoff` schema, expose package API helpers, keep MCP tool exposure disabled, add no-browser/architecture/schema/packed-install coverage, synchronize docs and manifests, then run package, release, browser smoke, and product gates.
+
+Recovery: the existing-image handoff is CLI/API/schema-only and additive. Existing browser review, image review, capture plan, visual evidence, visual review preparation/execution/dashboard, MCP execution gates, schemas, and release gates remain unchanged; rollback is a standard Git revert of the Phase 49 slice.
+
+### Phase 48: Screen and Window Capture Planning
+
+Purpose: make screen, window, and desktop app capture reviewable before implementing OS capture execution. This phase adds a read-only capture planning report for screen, window, and desktop app evidence sources. It does not capture pixels, launch OS capture tools, enumerate processes, write artifacts, call providers, transfer evidence, expose capture execution through MCP, or change browser/image review behavior.
+
+Implementation order: add a pure capture planning module, wire `capture plan --json`, register the `capture_plan` schema, expose package API helpers, expose a safe read-only MCP planning tool, keep capture execution excluded, add no-browser/architecture/schema/packed-install coverage, synchronize docs and manifests, then run package, release, browser smoke, and product gates.
+
+Recovery: the plan report is read-only and additive. Existing browser review, image review, visual evidence, visual review preparation/execution/dashboard, MCP execution gates, schemas, and release gates remain unchanged; rollback is a standard Git revert of the Phase 48 slice.
+
+### Phase 47: MCP Execution Gate Policy
+
+Purpose: make future MCP write/execute expansion reviewable before it is implemented. This phase adds a read-only machine-readable gate report for visual review preparation, visual review execution, agent execution planning/run, and artifact cleanup execution. It does not expose any MCP write, delete, provider, credential, shell, daemon/session, or raw-pixel transfer tool.
+
+Implementation order: add a pure MCP execution-gate policy module, wire `mcp execution gates --json`, register the `mcp_execution_gates` schema, expose package API helpers, expose a safe read-only MCP tool, keep all write/execute operations excluded, add no-browser/architecture/schema/packed-install coverage, synchronize docs and manifests, then run package, release, browser smoke, and product gates.
+
+Recovery: the gate report is read-only and additive. Existing MCP profiles, safe HTTP transport, visual review dashboard, visual review execution, agent execution, cleanup, schemas, and release gates remain unchanged; rollback is a standard Git revert of the Phase 47 slice.
+
+### Phase 46: Visual Review Dashboard Integration
+
+Purpose: give control centers, humans, CLI users, and safe MCP clients a read-only dashboard view over local visual review preparation, execution, and result artifacts. The dashboard must not create artifacts, execute providers, read raw pixels, mutate existing reviews, or affect release gates.
+
+Implementation order: add a no-write dashboard module, wire `visual review dashboard --json`, expose package API helpers, register the `visual_review_dashboard` schema, expose the safe MCP read-only tool, keep preparation/run/provider execution excluded from MCP, add CLI/API/MCP/schema/architecture/packed-install coverage, synchronize docs and manifests, then run no-browser, browser, package, release, and product gates.
+
+Recovery: dashboard integration is additive and read-only. Existing URL review, target review, image review, visual review preparation/execution, agent execution, MCP profiles, artifact cleanup, and release gates remain unchanged; rollback is a standard Git revert of the dashboard slice.
+
+### Phase 44: Local Visual Review Result Preparation
+
+Purpose: prepare local, metadata-only visual review result contracts from existing review artifact indexes so future AI-assisted visual review can consume normalized evidence references without running providers, reading raw pixels, transferring evidence, exposing MCP execution, or changing deterministic review output.
+
+Implementation order: add a no-browser preparation module, wire `visual review prepare --review-index <path>`, register `visual_review_result_preparation` and future `visual_review_result` schemas, export package API helpers, keep review-index and visual-evidence metadata reads workspace-confined and size-limited, keep MCP profiles unchanged while capability policy lists the operation as excluded, add no-browser architecture/CLI/schema tests and packed-install coverage, synchronize docs, then run package, release, and product gates.
+
+Recovery: visual review result preparation is additive. Existing URL review, target review, standalone image review, agent package, agent execution run, MCP profiles, and review artifacts remain unchanged; rollback is a standard Git revert of the preparation slice.
+
+### Phase 43: Standalone Image Review
+
+Purpose: let users review an existing screenshot, generated mock image, or other workspace image file without launching a browser. This phase reuses the visual evidence core, writes metadata-only `image_review`, `review_artifact_index`, and `visual_evidence` artifacts, and keeps provider execution, raw pixel transfer, external upload, and MCP execution expansion out of scope.
+
+Implementation order: add a no-browser image review module, wire `review --image <path>`, add schema/API exports, keep inputs workspace-confined and size-limited through the visual evidence core, add no-browser architecture/schema/CLI tests, add packed-install coverage, synchronize docs, then run browser smoke only to confirm existing browser review remains intact.
+
+Recovery: standalone image review is additive. Existing URL review, target review, screenshot artifacts, agent workflows, and MCP profiles remain unchanged.
+
+### Phase 42: Visual Review Provider Policy Planning
+
+Purpose: add a planning-only disclosure policy for future AI-assisted visual review without creating a provider execution path, raw image transfer path, MCP execution tool, or deterministic review gate change. The policy is written into existing `agent execution plan` records so dashboards and agents can inspect visual-evidence disclosure readiness before any explicit execution phase is approved.
+
+Implementation order: add a pure policy builder, register the machine-readable schema, export package API helpers, wire the policy into dry-run execution plans only, keep provider calls inside the existing provider adapter boundary, keep MCP execution excluded, update tests and packaged smoke checks, then run no-browser, browser, package, release, and product gates.
+
+Recovery: because this is metadata-only and additive, rollback is a standard Git revert of the planning slice without artifact cleanup.
+
+### Phase 41: Visual Evidence Metadata Core
+
+Purpose: make screenshots, standalone image files, mock images, screen captures, window captures, and desktop app captures share one local visual evidence metadata contract. The contract records dimensions, format, byte size, hashes, labels, privacy flags, and artifact references while keeping raw pixels in local artifacts only.
+
+Implementation order: add a reusable visual evidence module, schema, artifact directory, API exports, browser screenshot wiring, sensitive artifact package handling, and focused no-browser/browser/pack tests.
+
+Recovery: existing screenshot artifacts remain unchanged, and visual evidence records are additive metadata under the ignored artifact root.
+
+### Phase 40: TraceCue Identity Migration
+
+Purpose: rename the canonical product identity from Browser Debug CLI to TraceCue without breaking existing local users. This phase changes package, bin, MCP server, plugin, product profile, consumer guidance, and release metadata through `src/product-identity.js`. It keeps `browser-debug`, `browser-debug-mcp`, existing `browser_debug_*` MCP tool names, and the current `.browser-debug/` artifact root as compatibility surfaces until a separate removal or artifact-root migration is approved.
+
+Proposal summary from xhigh review: do not perform a scattered bulk rename; make identity canonical-plus-alias, keep legacy command/env/artifact compatibility, avoid MCP permission expansion, and require package/plugin/MCP/API identity tests plus packed-install verification.
+
+Implementation order: update identity metadata, add canonical bin shims, update package/plugin/MCP manifests and product ops manifests, synchronize current docs, test legacy aliases, update security checks, then run `npm test`, package checks, product gate, and `git diff --check`.
+
+Recovery: because legacy bins and artifact root remain, rollback is a standard Git revert of the identity slice without artifact cleanup.
 
 ### Phase 0: Scaffold and Document Sync
 
@@ -42,7 +188,7 @@
 
 ### Phase 2b: GitHub Public Repository
 
-- Confirm public OSS repository name and owner. Completed with `xxxMasahiro/browser-debug-cli`.
+- Confirm public OSS repository name and owner. Completed with the original repository and later renamed to `xxxMasahiro/trace-cue`.
 - Use `gh auth status` and `gh repo create` only after approval. Completed after developer approval.
 - Push the initial branch. Completed by fast-forwarding local `main` and pushing `origin/main`.
 - Add remote-sync notes to the handoff. Completed.
@@ -838,7 +984,7 @@ Phase 31 turns the local stdio MCP adapter from one fixed allowlist into a launc
 
 ### Phase 32: Rename Readiness Without Renaming
 
-Phase 32 prepares the package, plugin, MCP, and test surfaces for a future repository or command rename without performing that rename. It preserves the current `browser-debug-cli`, `browser-debug`, `browser-debug-mcp`, Browser Debug CLI display name, private package state, license, MCP server name, plugin name, and GitHub repository URL. It makes rename-sensitive values explicit, reusable, and checked so a later approved rename can be made in one small contract-driven slice instead of scattered ad hoc edits.
+Phase 32 prepared the package, plugin, MCP, and test surfaces for a future repository or command rename without performing that rename. It preserved the then-current `browser-debug-cli`, `browser-debug`, `browser-debug-mcp`, Browser Debug CLI display name, private package state, license, MCP server name, plugin name, and GitHub repository URL. It made rename-sensitive values explicit, reusable, and checked so the later approved TraceCue rename could be made in small contract-driven slices instead of scattered ad hoc edits.
 
 #### Phase 32a: Identity Contract and Documentation
 
@@ -1107,3 +1253,11 @@ Phase 39 records the external-repository dogfood lesson that Browser Debug CLI c
 - Ask before adding provider SDKs, storing provider credentials, or exposing agent/API execution through MCP.
 - Ask before socket MCP server mode, remote HTTP MCP listeners, HTTP `full` or `admin` MCP profiles, remote control channels, persistent session storage, existing-browser-profile reuse, or authentication automation.
 - Ask before public API stabilization, npm package file-set changes intended for publication, package naming, license changes, or packed release promotion.
+
+## Phase 41 Visual Evidence Core
+
+- Step 2 adds a reusable local visual evidence core for browser screenshots, standalone images, future screen/window captures, and future desktop-app captures. Existing browser screenshot commands also emit additive metadata-only `visual_evidence` artifacts while preserving their existing `screenshot` artifacts.
+- The implementation must write metadata-only `visual_evidence` records under the existing ignored `.browser-debug/visual-evidence/` artifact root.
+- Visual evidence records include media hashes, dimensions when detectable, source kind, artifact paths, privacy flags, and explicit boundaries.
+- Visual evidence records must not embed raw pixels, call providers, upload evidence, mutate deterministic review results, expose MCP execution, or remove any legacy Browser Debug CLI aliases.
+- Verification must include schema parity, no-browser unit coverage, architecture boundary checks, package smoke checks, release checks, product gate, and `git diff --check`.

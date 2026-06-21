@@ -1,11 +1,11 @@
 ---
 name: product-development-workflow
-description: Product-local workflow for Browser Debug CLI development.
+description: Product-local workflow for TraceCue development.
 ---
 
 # Product Development Workflow
 
-Use this skill inside the Browser Debug CLI repository.
+Use this skill inside the TraceCue repository.
 
 ## Sequence
 

@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { handleMcpRequest } from './mcp.js';
+import { PRODUCT_IDENTITY } from './product-identity.js';
 import {
   MCP_HTTP_PROTOCOL_VERSION,
   isAllowedMcpHttpHost,
@@ -131,7 +132,7 @@ function validateHttpRequest(request, config) {
       ok: false,
       status: 401,
       message: 'HTTP MCP bearer token is missing or invalid.',
-      headers: { 'WWW-Authenticate': 'Bearer realm="browser-debug-mcp"' }
+      headers: { 'WWW-Authenticate': `Bearer realm="${PRODUCT_IDENTITY.mcpServerName}"` }
     };
   }
   return { ok: true };

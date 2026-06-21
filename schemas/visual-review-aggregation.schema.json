@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/visual-review-aggregation.schema.json",
+  "title": "TraceCue Visual Review Aggregation",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "status",
+    "source",
+    "summary",
+    "source_effects",
+    "review_agents",
+    "aggregation_findings",
+    "conflicts",
+    "owner_decision_requests",
+    "query",
+    "gate_effect",
+    "boundary"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "status": {
+      "enum": ["completed", "no_results"]
+    },
+    "source": { "type": "object" },
+    "summary": { "type": "object" },
+    "source_effects": { "type": "object" },
+    "review_agents": { "type": "array" },
+    "aggregation_findings": { "type": "array" },
+    "conflicts": { "type": "array" },
+    "owner_decision_requests": { "type": "array" },
+    "query": { "type": "object" },
+    "gate_effect": { "type": "string" },
+    "boundary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

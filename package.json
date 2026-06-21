@@ -1,10 +1,12 @@
 {
-  "name": "browser-debug-cli",
+  "name": "trace-cue",
   "version": "0.0.0",
   "private": true,
-  "description": "Local-first Playwright-based browser debugging CLI for humans and AI agents.",
+  "description": "Local-first visual evidence and review CLI for humans and AI agents.",
   "type": "module",
   "bin": {
+    "trace-cue": "./bin/trace-cue.js",
+    "trace-cue-mcp": "./bin/trace-cue-mcp.js",
     "browser-debug": "./bin/browser-debug.js",
     "browser-debug-mcp": "./bin/browser-debug-mcp.js"
   },
@@ -16,12 +18,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "doctor": "node ./bin/browser-debug.js doctor --json",
+    "doctor": "node ./bin/trace-cue.js doctor --json",
     "test": "node --test tests/architecture.test.js tests/cli.test.js",
-    "test:browser": "BROWSER_DEBUG_BROWSER_SMOKE=1 node --test tests/browser-smoke.test.js",
+    "test:browser": "TRACE_CUE_BROWSER_SMOKE=1 node --test tests/browser-smoke.test.js",
+    "test:rename-readiness": "node ./tools/check_rename_readiness.mjs",
     "test:pack": "node ./tools/pack-dry-run.mjs",
     "test:pack-install": "node ./tools/pack-install-smoke.mjs",
-    "release:check": "npm test && npm run test:pack && npm run test:pack-install"
+    "release:check": "npm test && npm run test:rename-readiness && npm run test:pack && npm run test:pack-install"
   },
   "files": [
     ".codex-plugin/",
@@ -30,21 +33,23 @@
     "src/",
     "schemas/",
     "templates/",
-    "skills/browser-debug-review/SKILL.md",
+    "skills/trace-cue-review/SKILL.md",
     "README.md",
     "CHANGELOG.md",
     "docs/workflow/CONSUMER_USAGE.md",
     "docs/workflow/IDENTITY_MIGRATION.md",
     "docs/workflow/SECURITY.md",
     "docs/workflow/RELEASE.md",
-    "docs/workflow/VERIFICATION.md"
+    "docs/workflow/VERIFICATION.md",
+    "skills/browser-debug-review/SKILL.md"
   ],
   "keywords": [
-    "browser-debugging",
+    "visual-review",
     "playwright",
     "cli",
     "ui-testing",
-    "agent-tools"
+    "agent-tools",
+    "mcp"
   ],
   "license": "UNLICENSED",
   "dependencies": {

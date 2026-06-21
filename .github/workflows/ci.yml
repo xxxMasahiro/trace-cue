@@ -36,6 +36,9 @@ jobs:
       - name: Run no-browser tests
         run: npm test
 
+      - name: Check rename readiness
+        run: npm run test:rename-readiness
+
       - name: Verify package file set
         run: npm run test:pack
 

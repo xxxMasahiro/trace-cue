@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://browser-debug.local/schemas/agent-surface.schema.json",
-  "title": "Browser Debug CLI Agent Surface",
+  "$id": "https://trace-cue.local/schemas/agent-surface.schema.json",
+  "title": "TraceCue Agent Surface",
   "type": "object",
   "required": [
     "id",

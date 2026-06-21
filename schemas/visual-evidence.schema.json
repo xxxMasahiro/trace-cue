@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/visual-evidence.schema.json",
+  "title": "TraceCue Visual Evidence",
+  "type": "object",
+  "required": ["schema_version", "id", "created_at", "source", "media", "privacy", "boundary"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "id": { "type": "string" },
+    "created_at": { "type": "string" },
+    "purpose": { "type": "string" },
+    "source": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "browser_screenshot",
+            "image_file",
+            "mock_image",
+            "screen_capture",
+            "window_capture",
+            "desktop_app_capture"
+          ]
+        },
+        "path": { "type": ["string", "null"] },
+        "artifact_path": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "media": {
+      "type": "object",
+      "required": ["bytes", "sha256", "format", "media_type", "width", "height", "dimensions_available"],
+      "properties": {
+        "bytes": { "type": "number" },
+        "sha256": { "type": "string" },
+        "format": { "type": "string" },
+        "media_type": { "type": "string" },
+        "width": { "type": ["number", "null"] },
+        "height": { "type": ["number", "null"] },
+        "dimensions_available": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "route": { "type": ["string", "null"] },
+    "viewport": { "type": ["object", "null"] },
+    "capture": { "type": ["object", "null"] },
+    "masks": { "type": "array" },
+    "regions": { "type": "array" },
+    "labels": { "type": "array" },
+    "privacy": {
+      "type": "object",
+      "required": ["may_contain_sensitive_content", "requires_owner_review_before_external_transfer"],
+      "properties": {
+        "may_contain_sensitive_content": { "type": "boolean" },
+        "may_contain_page_content": { "type": "boolean" },
+        "may_contain_desktop_content": { "type": "boolean" },
+        "requires_owner_review_before_external_transfer": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "boundary": {
+      "type": "object",
+      "required": [
+        "local_only",
+        "external_upload",
+        "provider_call_performed",
+        "automatic_upload",
+        "raw_pixels_in_json",
+        "binary_content_included",
+        "mcp_execution_exposed",
+        "existing_review_mutated"
+      ],
+      "properties": {
+        "local_only": { "type": "boolean" },
+        "external_upload": { "type": "boolean" },
+        "provider_call_performed": { "type": "boolean" },
+        "automatic_upload": { "type": "boolean" },
+        "raw_pixels_in_json": { "type": "boolean" },
+        "binary_content_included": { "type": "boolean" },
+        "raw_provider_response_stored": { "type": "boolean" },
+        "credential_values_recorded": { "type": "boolean" },
+        "mcp_execution_exposed": { "type": "boolean" },
+        "existing_review_mutated": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

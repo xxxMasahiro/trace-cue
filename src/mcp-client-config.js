@@ -7,6 +7,7 @@ import {
   MCP_HTTP_DEFAULT_HOST,
   MCP_HTTP_DEFAULT_PROFILE,
   MCP_HTTP_DEFAULT_TOKEN_ENV,
+  MCP_HTTP_LEGACY_TOKEN_ENVS,
   MCP_HTTP_PROTOCOL_VERSION,
   publicMcpTransportMetadata,
   resolveMcpTransportConfig
@@ -55,12 +56,14 @@ function buildStdioConfig(options, client, env) {
     command: PRODUCT_IDENTITY.mcpBinName,
     args
   };
+  const legacyMcpServers = buildLegacyInstalledMcpServers(args);
   const localCheckout = buildLocalCheckoutStdioConfig(args, options);
   return {
     ok: true,
     config: {
       client,
       server_name: PRODUCT_IDENTITY.mcpServerName,
+      legacy_server_names: PRODUCT_IDENTITY.legacyMcpServerNames,
       transport: 'stdio',
       profile: mcpProfileMetadata(profile.profile),
       launch: {
@@ -68,6 +71,7 @@ function buildStdioConfig(options, client, env) {
         args,
         env: {}
       },
+      legacy_launches: buildLegacyInstalledLaunches(args, {}),
       client_connection: {
         type: 'stdio',
         command: PRODUCT_IDENTITY.mcpBinName,
@@ -76,6 +80,7 @@ function buildStdioConfig(options, client, env) {
       mcpServers: {
         [PRODUCT_IDENTITY.mcpServerName]: serverConfig
       },
+      legacy_mcpServers: legacyMcpServers,
       local_checkout: localCheckout,
       metadata: publicMcpTransportMetadata({
         transport: 'stdio',
@@ -84,6 +89,7 @@ function buildStdioConfig(options, client, env) {
         external_listener: false,
         auth_required: false
       }),
+      compatibility: compatibilityMetadata(),
       boundary: integrationBoundary('stdio'),
       next_steps: stdioNextSteps(profile.profile)
     }
@@ -119,21 +125,22 @@ function buildHttpConfig(options, client, env) {
     config.tokenEnv
   ];
   const url = `http://${formatUrlHost(config.host)}:${config.port}${config.endpoint}`;
+  const tokenEnv = { [config.tokenEnv]: TOKEN_PLACEHOLDER };
   const localCheckout = buildLocalCheckoutHttpConfig(args, config, url, options);
   return {
     ok: true,
     config: {
       client,
       server_name: PRODUCT_IDENTITY.mcpServerName,
+      legacy_server_names: PRODUCT_IDENTITY.legacyMcpServerNames,
       transport: 'http',
       profile: mcpProfileMetadata(config.profile),
       launch: {
         command: PRODUCT_IDENTITY.mcpBinName,
         args,
-        env: {
-          [config.tokenEnv]: TOKEN_PLACEHOLDER
-        }
+        env: tokenEnv
       },
+      legacy_launches: buildLegacyInstalledLaunches(args, tokenEnv),
       client_connection: {
         type: 'streamable_http_subset',
         url,
@@ -145,7 +152,11 @@ function buildHttpConfig(options, client, env) {
         }
       },
       local_checkout: localCheckout,
-      metadata: publicMcpTransportMetadata(config),
+      metadata: {
+        ...publicMcpTransportMetadata(config),
+        legacy_token_envs: legacyTokenEnvsFor(config.tokenEnv)
+      },
+      compatibility: compatibilityMetadata(),
       boundary: integrationBoundary('http'),
       next_steps: httpNextSteps(config)
     }
@@ -174,7 +185,7 @@ function integrationBoundary(transport) {
 }
 
 function buildLocalCheckoutStdioConfig(args, options) {
-  const launch = buildLocalCheckoutLaunch(args, {}, options);
+  const launch = buildLocalCheckoutLaunch(args, {}, options, PRODUCT_IDENTITY.mcpBinPath);
   return {
     purpose: `Use this when ${PRODUCT_IDENTITY.mcpBinName} is not installed or not on PATH.`,
     package_root: launch.package_root,
@@ -184,6 +195,7 @@ function buildLocalCheckoutStdioConfig(args, options) {
       args: launch.args,
       env: launch.env
     },
+    legacy_launches: buildLocalCheckoutLegacyLaunches(args, {}, options),
     client_connection: {
       type: 'stdio',
       command: launch.command,
@@ -195,14 +207,16 @@ function buildLocalCheckoutStdioConfig(args, options) {
         args: launch.args
       }
     },
+    legacy_mcpServers: buildLegacyLocalCheckoutMcpServers(args, options),
     boundary: integrationBoundary('stdio')
   };
 }
 
 function buildLocalCheckoutHttpConfig(args, config, url, options) {
-  const launch = buildLocalCheckoutLaunch(args, {
+  const tokenEnv = {
     [config.tokenEnv]: TOKEN_PLACEHOLDER
-  }, options);
+  };
+  const launch = buildLocalCheckoutLaunch(args, tokenEnv, options, PRODUCT_IDENTITY.mcpBinPath);
   return {
     purpose: `Use this launch metadata when ${PRODUCT_IDENTITY.mcpBinName} is not installed or not on PATH.`,
     package_root: launch.package_root,
@@ -212,6 +226,7 @@ function buildLocalCheckoutHttpConfig(args, config, url, options) {
       args: launch.args,
       env: launch.env
     },
+    legacy_launches: buildLocalCheckoutLegacyLaunches(args, tokenEnv, options),
     client_connection: {
       type: 'streamable_http_subset',
       url,
@@ -226,9 +241,60 @@ function buildLocalCheckoutHttpConfig(args, config, url, options) {
   };
 }
 
-function buildLocalCheckoutLaunch(args, env, options) {
+function buildLegacyInstalledMcpServers(args) {
+  const entries = [];
+  for (const [index, legacyBin] of PRODUCT_IDENTITY.legacyMcpBins.entries()) {
+    entries.push([
+      PRODUCT_IDENTITY.legacyMcpServerNames[index] ?? legacyBin.name,
+      {
+        command: legacyBin.name,
+        args
+      }
+    ]);
+  }
+  return Object.fromEntries(entries);
+}
+
+function buildLegacyLocalCheckoutMcpServers(args, options) {
+  const entries = [];
+  for (const [index, legacyBin] of PRODUCT_IDENTITY.legacyMcpBins.entries()) {
+    const launch = buildLocalCheckoutLaunch(args, {}, options, legacyBin.path);
+    entries.push([
+      PRODUCT_IDENTITY.legacyMcpServerNames[index] ?? legacyBin.name,
+      {
+        command: launch.command,
+        args: launch.args
+      }
+    ]);
+  }
+  return Object.fromEntries(entries);
+}
+
+function buildLegacyInstalledLaunches(args, env) {
+  return PRODUCT_IDENTITY.legacyMcpBins.map((legacyBin, index) => ({
+    server_name: PRODUCT_IDENTITY.legacyMcpServerNames[index] ?? legacyBin.name,
+    command: legacyBin.name,
+    args,
+    env
+  }));
+}
+
+function buildLocalCheckoutLegacyLaunches(args, env, options) {
+  return PRODUCT_IDENTITY.legacyMcpBins.map((legacyBin, index) => {
+    const launch = buildLocalCheckoutLaunch(args, env, options, legacyBin.path);
+    return {
+      server_name: PRODUCT_IDENTITY.legacyMcpServerNames[index] ?? legacyBin.name,
+      command: launch.command,
+      args: launch.args,
+      env: launch.env,
+      bin_path: launch.bin_path
+    };
+  });
+}
+
+function buildLocalCheckoutLaunch(args, env, options, binPathValue) {
   const packageRoot = path.resolve(String(options.packageRoot ?? PACKAGE_ROOT));
-  const binPath = path.resolve(packageRoot, stripLeadingDotSlash(PRODUCT_IDENTITY.mcpBinPath));
+  const binPath = path.resolve(packageRoot, stripLeadingDotSlash(binPathValue));
   return {
     command: String(options.nodeCommand ?? process.execPath),
     args: [binPath, ...args],
@@ -238,9 +304,28 @@ function buildLocalCheckoutLaunch(args, env, options) {
   };
 }
 
+function compatibilityMetadata() {
+  return {
+    canonical: {
+      server_name: PRODUCT_IDENTITY.mcpServerName,
+      mcp_bin_name: PRODUCT_IDENTITY.mcpBinName
+    },
+    legacy: {
+      server_names: PRODUCT_IDENTITY.legacyMcpServerNames,
+      mcp_bin_names: PRODUCT_IDENTITY.legacyMcpBins.map((entry) => entry.name),
+      artifact_roots: PRODUCT_IDENTITY.legacyArtifactRoots
+    }
+  };
+}
+
+function legacyTokenEnvsFor(tokenEnv) {
+  return tokenEnv === MCP_HTTP_DEFAULT_TOKEN_ENV ? MCP_HTTP_LEGACY_TOKEN_ENVS : [];
+}
+
 function stdioNextSteps(profile) {
   return [
     `Add the mcpServers.${PRODUCT_IDENTITY.mcpServerName} object to the MCP client configuration.`,
+    `Existing clients that still use ${PRODUCT_IDENTITY.legacyMcpServerNames[0]} can copy config.legacy_mcpServers without changing tool permissions.`,
     `Use ${PRODUCT_IDENTITY.mcpBinName}${profile === DEFAULT_MCP_PROFILE ? '' : ` --profile ${profile}`} when the package bin is installed and on PATH.`,
     'Use config.local_checkout.mcpServers when connecting from a local checkout that is not on PATH.',
     'Use --profile safe for low-trust clients that only need no-browser, no-delete, no-provider tools.'
@@ -263,6 +348,7 @@ function httpNextSteps(config) {
       config.endpoint
     ].join(' ')}.`,
     'Use config.local_checkout.launch when connecting from a local checkout that is not on PATH.',
+    'Existing launchers may use config.legacy_launches or config.local_checkout.legacy_launches while migrating names.',
     'Configure the MCP client to POST JSON-RPC requests to the emitted URL with the bearer Authorization header.'
   ];
 }

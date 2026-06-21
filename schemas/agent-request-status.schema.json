@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://browser-debug.local/schemas/agent-request-status.schema.json",
-  "title": "Browser Debug CLI Agent Request Status",
+  "$id": "https://trace-cue.local/schemas/agent-request-status.schema.json",
+  "title": "TraceCue Agent Request Status",
   "type": "object",
   "required": [
     "schema_version",
