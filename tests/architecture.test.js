@@ -259,6 +259,10 @@ test('plugin metadata keeps local stdio MCP boundaries', async () => {
   assert.match(skill, /upload artifacts|external upload/i);
   assert.match(consumerUsage, /mcp config --profile safe --json/);
   assert.match(consumerUsage, /mcp capabilities --profile admin --scope excluded --json/);
+  assert.match(consumerUsage, /Target Runtime Readiness/);
+  assert.match(consumerUsage, /frontend-only dev server/);
+  assert.match(consumerUsage, /needs_attention/);
+  assert.match(consumerUsage, /API base/);
   assert.doesNotMatch(consumerUsage, /FrameCue|ai-driven-development-lesson|\/home\/masahiro\/projects/);
 });
 

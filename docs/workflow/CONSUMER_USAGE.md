@@ -24,6 +24,14 @@ node "$BROWSER_DEBUG_CLI" doctor --json
 
 The current working directory is the consumer repository, so generated `.browser-debug/` artifacts and target manifests are created there unless a command explicitly uses another path.
 
+## Target Runtime Readiness
+
+Browser Debug CLI reviews the target application exactly as it is served from the URL in the manifest. Before `review`, start the full local loopback runtime needed for the state under review.
+
+If a frontend-only dev server renders shell pages while the app's API or backend is absent, failed API requests such as `/api/...` 404s can correctly produce `needs_attention` results or browser-health findings. That means the review connection is working and the target runtime is incomplete for the requested review state.
+
+Keep app-specific startup prerequisites, API base environment variables, degraded-mode expectations, and acceptance notes in the consumer repository target manifest or nearby consumer docs. Do not add consumer-specific Browser Debug CLI runtime branches to hide missing backend or API state.
+
 ## CLI Quickstart
 
 Use CLI mode when a human, script, or agent can run shell commands.
@@ -101,5 +109,6 @@ node "$BROWSER_DEBUG_CLI" mcp capabilities --profile admin --scope excluded --js
 
 - If an agent says it does not know how to connect, run `mcp config --profile safe --json` and give it the generated client metadata. For local checkout use, point it to `config.local_checkout.mcpServers` for stdio or `config.local_checkout.launch` for safe HTTP.
 - If an agent wants to know what is excluded from MCP, run `mcp capabilities --profile admin --scope excluded --json`.
+- If review reports API 404s, failed requests, or `needs_attention` while the CLI, target manifest, and MCP setup validate, check the target app's full local runtime and API base settings before treating it as a Browser Debug CLI connection failure.
 - If browser review is slow or unstable, run `resource status --json`, lower route or viewport budgets, and rerun `target validate`.
 - If artifacts are large, run `resource artifacts plan --json` first. Use cleanup execution only from the CLI and only when artifact-root cleanup is intended.

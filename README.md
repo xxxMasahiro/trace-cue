@@ -60,6 +60,8 @@ node "$BROWSER_DEBUG_CLI" mcp capabilities --profile admin --scope excluded --js
 
 For CLI review, run `target init`, edit the target manifest in the consumer repository, run `target validate`, then run `review --target`. For MCP clients, use `mcp config` output instead of inspecting package files; generated output includes both installed-bin metadata and `local_checkout` metadata for unpublished checkout use. For Codex, the local plugin bundle is a discovery wrapper around the same CLI/MCP surfaces.
 
+Before browser review, run the target app's full local stack needed for the reviewed state. Frontend-only dev servers can correctly produce `needs_attention` or browser-health findings when required API/backend endpoints are not running.
+
 ## Local CLI
 
 ```bash
