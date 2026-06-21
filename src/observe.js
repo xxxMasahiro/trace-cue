@@ -12,7 +12,8 @@ import {
   collectPageState as collectPageStateFromPage,
   createPageEventBuffers,
   waitForNetworkIdle,
-  writePageObservation
+  writePageObservation,
+  writePageScreenshotEvidence
 } from './page-evidence.js';
 import { redact, truncateText } from './redaction.js';
 
@@ -114,13 +115,17 @@ export async function runObserve(options = {}, context = {}) {
     artifacts.push(observationResult.artifact);
 
     if (options.screenshot || context.forceScreenshot) {
-      const screenshotRel = artifactRelPath(artifactRootInput, 'screenshots', `${id}.png`);
-      await page.screenshot({ path: path.join(root, 'screenshots', `${id}.png`), fullPage: true });
-      artifacts.push(artifactObject({
-        type: 'screenshot',
-        path: screenshotRel,
-        description: 'Full-page screenshot captured from an ephemeral context.'
-      }));
+      const screenshotEvidence = await writePageScreenshotEvidence({
+        root,
+        artifactRoot: artifactRootInput,
+        id,
+        now,
+        page,
+        description: 'Full-page screenshot captured from an ephemeral context.',
+        route: page.url(),
+        viewport: observation.page?.viewport ?? null
+      });
+      artifacts.push(...screenshotEvidence.artifacts);
     }
 
     if (traceStarted) {

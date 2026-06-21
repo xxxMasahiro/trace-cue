@@ -1,11 +1,11 @@
 ---
 name: product-design-system
-description: Product-local design-system guidance for Browser Debug CLI reports.
+description: Product-local design-system guidance for TraceCue reports.
 ---
 
 # Product Design System
 
-Browser Debug CLI is primarily a command-line tool. Design-system files currently describe future report surfaces only.
+TraceCue is primarily a command-line tool. Design-system files currently describe future report surfaces only.
 
 Run:
 

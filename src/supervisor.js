@@ -16,7 +16,8 @@ import {
   attachPageObservers,
   createPageEventBuffers,
   waitForNetworkIdle,
-  writePageObservation
+  writePageObservation,
+  writePageScreenshotEvidence
 } from './page-evidence.js';
 import { resolveJsonInput } from './input.js';
 import { redact, truncateText } from './redaction.js';
@@ -164,13 +165,18 @@ export async function runSupervisor(options = {}, context = {}) {
     }
 
     if (options.screenshot || parsedActions.actions.some((action) => action.type === 'screenshot')) {
-      const screenshotRel = artifactRelPath(artifactRootInput, 'screenshots', `${id}.png`);
-      await page.screenshot({ path: path.join(root, 'screenshots', `${id}.png`), fullPage: true });
-      artifacts.push(artifactObject({
-        type: 'screenshot',
-        path: screenshotRel,
-        description: 'Final full-page screenshot captured from a supervised ephemeral context.'
-      }));
+      const screenshotEvidence = await writePageScreenshotEvidence({
+        root,
+        artifactRoot: artifactRootInput,
+        id,
+        now: materializeNow(context.now),
+        page,
+        description: 'Final full-page screenshot captured from a supervised ephemeral context.',
+        route: page.url(),
+        viewport: observations.at(-1)?.data?.page?.viewport ?? null,
+        capture: { supervised: true }
+      });
+      artifacts.push(...screenshotEvidence.artifacts);
     }
 
     if (traceStarted) {

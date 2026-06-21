@@ -111,7 +111,11 @@ export function parseMcpServerArgs(args = [], env = {}) {
     if (arg === '--help' || arg === '-h') {
       return { ok: true, help: true };
     }
-    return { ok: false, message: `Unsupported browser-debug-mcp argument: ${arg}` };
+    return {
+      ok: false,
+      message: `Unsupported ${PRODUCT_IDENTITY.mcpBinName} argument: ${arg}`,
+      details: { legacy_mcp_bin_names: PRODUCT_IDENTITY.legacyMcpBins.map((entry) => entry.name) }
+    };
   }
   const resolved = resolveMcpTransportConfig(options, env);
   if (!resolved.ok) {

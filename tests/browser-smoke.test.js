@@ -5,7 +5,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { executeCli } from '../src/cli.js';
 
-const runBrowserSmoke = process.env.BROWSER_DEBUG_BROWSER_SMOKE === '1';
+const runBrowserSmoke = process.env.TRACE_CUE_BROWSER_SMOKE === '1' || process.env.BROWSER_DEBUG_BROWSER_SMOKE === '1';
 
 test('observe captures a local file page with Playwright', { skip: !runBrowserSmoke }, async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-smoke-'));
@@ -47,13 +47,20 @@ test('observe captures a local file page with Playwright', { skip: !runBrowserSm
 
   const observation = body.artifacts.find((artifact) => artifact.type === 'observation');
   const screenshot = body.artifacts.find((artifact) => artifact.type === 'screenshot');
+  const visualEvidence = body.artifacts.find((artifact) => artifact.type === 'visual_evidence');
   const trace = body.artifacts.find((artifact) => artifact.type === 'trace');
   assert.ok(observation);
   assert.ok(screenshot);
+  assert.ok(visualEvidence);
   assert.ok(trace);
   await access(path.join(cwd, observation.path));
   await access(path.join(cwd, screenshot.path));
+  await access(path.join(cwd, visualEvidence.path));
   await access(path.join(cwd, trace.path));
+  const visualEvidenceJson = JSON.parse(await readFile(path.join(cwd, visualEvidence.path), 'utf8'));
+  assert.equal(visualEvidenceJson.boundary.raw_pixels_in_json, false);
+  assert.equal(visualEvidenceJson.boundary.provider_call_performed, false);
+  assert.equal(visualEvidenceJson.source.artifact_path, screenshot.path);
   assert.equal(body.warnings[0].code, 'TRACE_CONTAINS_PAGE_CONTENT');
 
   const observationJson = await readFile(path.join(cwd, observation.path), 'utf8');
@@ -360,7 +367,7 @@ test('review reports deterministic layout and browser-health findings', { skip: 
   assert.ok(body.data.findings.every((finding) => finding.priority));
   assert.ok(body.data.findings.some((finding) => finding.recommendation));
 
-  for (const type of ['review', 'layout', 'screenshot', 'report', 'mock_metrics']) {
+  for (const type of ['review', 'layout', 'screenshot', 'visual_evidence', 'report', 'mock_metrics']) {
     const artifact = body.artifacts.find((candidate) => candidate.type === type);
     assert.ok(artifact, `missing ${type} artifact`);
     await access(path.join(cwd, artifact.path));
@@ -369,6 +376,8 @@ test('review reports deterministic layout and browser-health findings', { skip: 
   const reportText = await readFile(path.join(cwd, report.path), 'utf8');
   assert.match(reportText, /Quality Signals/);
   assert.match(reportText, /Local release gate/);
+  assert.equal(body.data.visual_evidence.length, 1);
+  assert.equal(body.data.visual_evidence[0].boundary.raw_pixels_in_json, false);
 });
 
 test('review reports rendered-state evidence for media loading and empty data UI', { skip: !runBrowserSmoke }, async () => {

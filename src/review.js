@@ -14,7 +14,8 @@ import {
   attachPageObservers,
   createPageEventBuffers,
   waitForNetworkIdle,
-  writePageObservation
+  writePageObservation,
+  writePageScreenshotEvidence
 } from './page-evidence.js';
 import { normalizeTimeout, validateUrl } from './observe.js';
 import { resolveJsonInput } from './input.js';
@@ -26,6 +27,7 @@ import {
   normalizeContentUserQuestions
 } from './content-ux-advisory.js';
 import { createResourceGuard, normalizeResourceGuardMode, resourceGuardSummary } from './resource-guard.js';
+import { runImageReview } from './image-review.js';
 
 const DEFAULT_VIEWPORT = Object.freeze({ name: 'laptop', width: 1280, height: 720 });
 const VIEWPORTS = Object.freeze({
@@ -39,6 +41,9 @@ const DEFAULT_ROUTE_BUDGET = 20;
 const DEFAULT_FINDINGS_LIMIT = 200;
 
 export async function runReview(options = {}, context = {}) {
+  if (options.image) {
+    return runImageReview(options, context);
+  }
   if (options.target || options.input) {
     return runTargetReview(options, context);
   }
@@ -170,16 +175,22 @@ export async function runSingleUrlReview(options = {}, context = {}) {
 
     let screenshotArtifact = null;
     let screenshotPath = null;
+    let screenshotEvidence = null;
     if (options.screenshot || options.mock) {
-      const screenshotRel = artifactRelPath(artifactRootInput, 'screenshots', `${id}.png`);
-      screenshotPath = path.join(root, 'screenshots', `${id}.png`);
-      await page.screenshot({ path: screenshotPath, fullPage: true });
-      screenshotArtifact = artifactObject({
-        type: 'screenshot',
-        path: screenshotRel,
-        description: 'Full-page screenshot captured for local review evidence.'
+      screenshotEvidence = await writePageScreenshotEvidence({
+        root,
+        artifactRoot: artifactRootInput,
+        id,
+        now,
+        page,
+        description: 'Full-page screenshot captured for local review evidence.',
+        route: page.url(),
+        viewport,
+        capture: { review_id: id, command: 'review' }
       });
-      artifacts.push(screenshotArtifact);
+      screenshotArtifact = screenshotEvidence.screenshotArtifact;
+      screenshotPath = screenshotEvidence.screenshotPath;
+      artifacts.push(...screenshotEvidence.artifacts);
     }
 
     const findings = createFindings({
@@ -249,6 +260,14 @@ export async function runSingleUrlReview(options = {}, context = {}) {
       action_plan: actionPlan,
       review_advisory: reviewAdvisory,
       quality_signals: qualitySignals,
+      visual_evidence: screenshotEvidence ? [{
+        id: screenshotEvidence.visualEvidence.id,
+        path: screenshotEvidence.visualEvidenceArtifact.path,
+        source: screenshotEvidence.visualEvidence.source,
+        media: screenshotEvidence.visualEvidence.media,
+        privacy: screenshotEvidence.visualEvidence.privacy,
+        boundary: screenshotEvidence.visualEvidence.boundary
+      }] : [],
       resource_guard: resourceGuard.summary(),
       environment: {
         browser: {
@@ -3002,6 +3021,7 @@ async function writeReviewArtifactIndex({
     rerun,
     boundaries: {
       screenshots_may_contain_page_content: artifacts.some((artifact) => artifact.type === 'screenshot'),
+      visual_evidence_may_reference_sensitive_content: artifacts.some((artifact) => artifact.type === 'visual_evidence'),
       traces_may_contain_page_content: artifacts.some((artifact) => artifact.type === 'trace'),
       profile_reuse: false,
       credential_storage: false
@@ -3030,6 +3050,8 @@ function evidenceClassesForArtifacts(artifacts) {
       classes.add('accessibility basics');
     } else if (artifact.type === 'screenshot') {
       classes.add('screenshot');
+    } else if (artifact.type === 'visual_evidence') {
+      classes.add('visual evidence metadata');
     } else if (artifact.type === 'coverage') {
       classes.add('route coverage');
       classes.add('viewport coverage');

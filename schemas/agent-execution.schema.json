@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://browser-debug.local/schemas/agent-execution.schema.json",
-  "title": "Browser Debug CLI Agent Execution",
+  "$id": "https://trace-cue.local/schemas/agent-execution.schema.json",
+  "title": "TraceCue Agent Execution",
   "type": "object",
   "required": [
     "schema_version",
@@ -162,6 +162,15 @@
     },
     "boundary": {
       "type": "object"
+    },
+    "visual_review_provider_policy": {
+      "type": "object"
+    },
+    "raw_pixels_included": {
+      "type": "boolean"
+    },
+    "visual_review_provider_execution_authorized": {
+      "type": "boolean"
     }
   },
   "additionalProperties": true

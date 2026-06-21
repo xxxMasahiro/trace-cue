@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/visual-review-result.schema.json",
+  "title": "TraceCue Visual Review Result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "status",
+    "preparation_id",
+    "visual_review_result",
+    "boundary"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "id": { "type": "string" },
+    "status": {
+      "enum": ["not_run", "completed", "needs_owner_review", "rejected"]
+    },
+    "preparation_id": { "type": "string" },
+    "visual_review_result": { "type": "object" },
+    "provider": { "type": "object" },
+    "model": { "type": "object" },
+    "advisory_findings": { "type": "array" },
+    "owner_decision_requests": { "type": "array" },
+    "evidence_refs": { "type": "array" },
+    "gate_effect": { "enum": ["none"] },
+    "boundary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

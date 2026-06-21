@@ -4,15 +4,15 @@
   "menu_id": "free-development",
   "profile_scope": "product",
   "display_name": {
-    "ja": "Browser Debug CLI",
-    "en": "Browser Debug CLI"
+    "ja": "TraceCue",
+    "en": "TraceCue"
   },
   "description": {
-    "ja": "Agent-independent Playwright browser debugging CLI.",
-    "en": "Agent-independent Playwright browser debugging CLI."
+    "ja": "Agent-independent visual evidence and review CLI.",
+    "en": "Agent-independent visual evidence and review CLI."
   },
   "source": "learner_confirmed",
-  "confirmed_at": "2026-06-17T00:00:00Z",
+  "confirmed_at": "2026-06-21T00:00:00Z",
   "source_documents": [
     "docs/product/REQUIREMENTS.md",
     "docs/product/SPECIFICATION.md",

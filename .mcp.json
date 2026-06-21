@@ -1,5 +1,11 @@
 {
   "mcpServers": {
+    "trace-cue": {
+      "command": "node",
+      "args": [
+        "./bin/trace-cue-mcp.js"
+      ]
+    },
     "browser-debug-cli": {
       "command": "node",
       "args": [

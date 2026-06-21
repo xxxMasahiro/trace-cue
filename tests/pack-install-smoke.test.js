@@ -20,7 +20,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import {
   PRODUCT_IDENTITY,
+  filesystemSafeName,
   packageInstallDirectory,
+  packageBinEntries,
   packageSchemaSpecifier,
   packageTarballFilename
 } from '../src/product-identity.js';
@@ -41,14 +43,39 @@ async function main() {
 
     await assertFile(packageDir, normalizePackagePath(PRODUCT_IDENTITY.cliBinPath));
     await assertFile(packageDir, normalizePackagePath(PRODUCT_IDENTITY.mcpBinPath));
+    for (const binEntry of packageBinEntries()) {
+      await assertFile(packageDir, normalizePackagePath(binEntry.path));
+    }
     await assertFile(packageDir, 'src/api.js');
+    await assertFile(packageDir, 'src/image-review.js');
+    await assertFile(packageDir, 'src/capture-handoff.js');
+    await assertFile(packageDir, 'src/capture-plan.js');
+    await assertFile(packageDir, 'src/desktop-review-provider-preparation-plan.js');
     await assertFile(packageDir, 'src/mcp-capabilities.js');
+    await assertFile(packageDir, 'src/mcp-execution-gates.js');
     await assertFile(packageDir, 'src/mcp-client-config.js');
     await assertFile(packageDir, 'src/mcp-http-transport.js');
     await assertFile(packageDir, 'src/mcp-transport-policy.js');
     await assertFile(packageDir, 'src/product-identity.js');
     await assertFile(packageDir, 'src/mcp-profiles.js');
+    await assertFile(packageDir, 'src/visual-review-provider-policy.js');
+    await assertFile(packageDir, 'src/visual-review-result-preparation.js');
+    await assertFile(packageDir, 'src/visual-review-execution.js');
+    await assertFile(packageDir, 'src/visual-review-dashboard.js');
+    await assertFile(packageDir, 'src/visual-review-aggregation.js');
     await assertFile(packageDir, 'schemas/agent-execution.schema.json');
+    await assertFile(packageDir, 'schemas/capture-handoff.schema.json');
+    await assertFile(packageDir, 'schemas/capture-plan.schema.json');
+    await assertFile(packageDir, 'schemas/identity-audit.schema.json');
+    await assertFile(packageDir, 'schemas/desktop-review-provider-preparation-plan.schema.json');
+    await assertFile(packageDir, 'schemas/image-review.schema.json');
+    await assertFile(packageDir, 'schemas/mcp-execution-gates.schema.json');
+    await assertFile(packageDir, 'schemas/visual-review-provider-policy.schema.json');
+    await assertFile(packageDir, 'schemas/visual-review-result-preparation.schema.json');
+    await assertFile(packageDir, 'schemas/visual-review-dashboard.schema.json');
+    await assertFile(packageDir, 'schemas/visual-review-execution.schema.json');
+    await assertFile(packageDir, 'schemas/visual-review-result.schema.json');
+    await assertFile(packageDir, 'schemas/visual-review-aggregation.schema.json');
     await assertFile(packageDir, 'schemas/review.schema.json');
     await assertFile(packageDir, 'templates/review-target-manifest.json');
     await assertFile(packageDir, 'templates/status-dashboard-content-ux-target-manifest.json');
@@ -66,10 +93,14 @@ async function main() {
     assert.equal(packageJson.license, 'UNLICENSED');
     assert.equal(packageJson.bin[PRODUCT_IDENTITY.cliBinName], PRODUCT_IDENTITY.cliBinPath);
     assert.equal(packageJson.bin[PRODUCT_IDENTITY.mcpBinName], PRODUCT_IDENTITY.mcpBinPath);
+    for (const binEntry of packageBinEntries()) {
+      assert.equal(packageJson.bin[binEntry.name], binEntry.path);
+    }
 
     const browserDebugBin = await readFile(path.join(packageDir, normalizePackagePath(PRODUCT_IDENTITY.cliBinPath)), 'utf8');
     const browserDebugMcpBin = await readFile(path.join(packageDir, normalizePackagePath(PRODUCT_IDENTITY.mcpBinPath)), 'utf8');
     assert.match(browserDebugBin, /from '\.\.\/src\/cli\.js'/);
+    assert.match(browserDebugBin, /--capture-handoff/);
     assert.match(browserDebugMcpBin, /from '\.\.\/src\/mcp\.js'/);
     assert.match(browserDebugMcpBin, /from '\.\.\/src\/mcp-http-transport\.js'/);
     assert.equal(((await stat(path.join(packageDir, normalizePackagePath(PRODUCT_IDENTITY.cliBinPath)))).mode & 0o111) !== 0, true);
@@ -78,23 +109,102 @@ async function main() {
     const requireFromInstall = createRequire(path.join(installRoot, 'package.json'));
     const apiPath = requireFromInstall.resolve(PRODUCT_IDENTITY.packageName);
     const reviewSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('review'));
+    const visualEvidenceSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('visual-evidence'));
+    const captureHandoffSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('capture-handoff'));
+    const capturePlanSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('capture-plan'));
+    const identityAuditSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('identity-audit'));
+    const desktopReviewProviderPreparationPlanSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('desktop-review-provider-preparation-plan'));
+    const imageReviewSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('image-review'));
+    const mcpExecutionGatesSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('mcp-execution-gates'));
+    const visualReviewProviderPolicySchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('visual-review-provider-policy'));
+    const visualReviewResultPreparationSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('visual-review-result-preparation'));
+    const visualReviewDashboardSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('visual-review-dashboard'));
+    const visualReviewExecutionSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('visual-review-execution'));
+    const visualReviewResultSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('visual-review-result'));
+    const visualReviewAggregationSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('visual-review-aggregation'));
     assert.equal(path.normalize(apiPath), path.join(packageDir, 'src/api.js'));
     assert.equal(path.normalize(reviewSchemaPath), path.join(packageDir, 'schemas/review.schema.json'));
+    assert.equal(path.normalize(visualEvidenceSchemaPath), path.join(packageDir, 'schemas/visual-evidence.schema.json'));
+    assert.equal(path.normalize(captureHandoffSchemaPath), path.join(packageDir, 'schemas/capture-handoff.schema.json'));
+    assert.equal(path.normalize(capturePlanSchemaPath), path.join(packageDir, 'schemas/capture-plan.schema.json'));
+    assert.equal(path.normalize(identityAuditSchemaPath), path.join(packageDir, 'schemas/identity-audit.schema.json'));
+    assert.equal(path.normalize(desktopReviewProviderPreparationPlanSchemaPath), path.join(packageDir, 'schemas/desktop-review-provider-preparation-plan.schema.json'));
+    assert.equal(path.normalize(imageReviewSchemaPath), path.join(packageDir, 'schemas/image-review.schema.json'));
+    assert.equal(path.normalize(mcpExecutionGatesSchemaPath), path.join(packageDir, 'schemas/mcp-execution-gates.schema.json'));
+    assert.equal(path.normalize(visualReviewProviderPolicySchemaPath), path.join(packageDir, 'schemas/visual-review-provider-policy.schema.json'));
+    assert.equal(path.normalize(visualReviewResultPreparationSchemaPath), path.join(packageDir, 'schemas/visual-review-result-preparation.schema.json'));
+    assert.equal(path.normalize(visualReviewDashboardSchemaPath), path.join(packageDir, 'schemas/visual-review-dashboard.schema.json'));
+    assert.equal(path.normalize(visualReviewExecutionSchemaPath), path.join(packageDir, 'schemas/visual-review-execution.schema.json'));
+    assert.equal(path.normalize(visualReviewResultSchemaPath), path.join(packageDir, 'schemas/visual-review-result.schema.json'));
+    assert.equal(path.normalize(visualReviewAggregationSchemaPath), path.join(packageDir, 'schemas/visual-review-aggregation.schema.json'));
 
     const api = await import(pathToFileURL(apiPath));
     assert.equal(typeof api.executeCli, 'function');
+    assert.equal(typeof api.runImageReview, 'function');
     assert.equal(typeof api.runTargetValidate, 'function');
     assert.equal(api.PRODUCT_IDENTITY.packageName, PRODUCT_IDENTITY.packageName);
     assert.equal(api.PRODUCT_IDENTITY.cliBinName, PRODUCT_IDENTITY.cliBinName);
+    assert.equal(typeof api.packageBinEntries, 'function');
+    assert.equal(typeof api.filesystemSafeName, 'function');
     assert.equal(typeof api.packageTarballFilename, 'function');
     assert.equal(typeof api.getMcpTools, 'function');
     assert.equal(typeof api.resolveMcpProfile, 'function');
     assert.equal(typeof api.startMcpHttpServer, 'function');
+    assert.equal(typeof api.runCaptureHandoff, 'function');
+    assert.equal(typeof api.runIdentityAudit, 'function');
+    assert.equal(typeof api.normalizeRepositoryUrl, 'function');
+    assert.equal(api.normalizeRepositoryUrl('git@github.com:xxxMasahiro/browser-debug-cli.git'), 'github.com/xxxMasahiro/browser-debug-cli');
+    assert.equal(api.CAPTURE_HANDOFF_VERSION, '1.0.0');
+    assert.equal(Array.isArray(api.CAPTURE_HANDOFF_SOURCE_KINDS), true);
+    assert.equal(api.CAPTURE_HANDOFF_SOURCE_KINDS.includes('desktop_app_capture'), true);
+    assert.equal(typeof api.normalizeCaptureHandoffContract, 'function');
+    assert.equal(typeof api.readCaptureHandoffJsonInput, 'function');
+    assert.equal(Array.isArray(api.IMAGE_REVIEW_SOURCE_IDS), true);
+    assert.equal(api.IMAGE_REVIEW_SOURCE_IDS.includes('desktop-app'), true);
+    assert.equal(api.normalizeImageReviewSource('desktop-app').source_kind, 'desktop_app_capture');
+    assert.equal(typeof api.buildCapturePlan, 'function');
+    assert.equal(api.CAPTURE_PLAN_VERSION, '1.0.0');
+    assert.equal(typeof api.buildDesktopReviewProviderPreparationPlan, 'function');
+    assert.equal(api.DESKTOP_REVIEW_PROVIDER_PREPARATION_PLAN_VERSION, '1.0.0');
+    assert.equal(typeof api.desktopReviewProviderPreparationPlanBoundary, 'function');
     assert.equal(typeof api.buildMcpCapabilityReport, 'function');
     assert.equal(api.MCP_CAPABILITY_POLICY_VERSION, '1.0.0');
+    assert.equal(typeof api.buildMcpExecutionGateReport, 'function');
+    assert.equal(api.MCP_EXECUTION_GATE_POLICY_VERSION, '1.0.0');
     assert.equal(typeof api.buildMcpClientConfig, 'function');
     assert.equal(typeof api.resolveMcpTransportConfig, 'function');
+    assert.equal(typeof api.createVisualEvidenceRecord, 'function');
+    assert.equal(typeof api.writeVisualEvidenceRecord, 'function');
+    assert.equal(typeof api.buildVisualReviewProviderPolicy, 'function');
+    assert.equal(typeof api.visualReviewProviderBoundary, 'function');
+    assert.equal(typeof api.runVisualReviewResultPreparation, 'function');
+    assert.equal(typeof api.visualReviewResultPreparationBoundary, 'function');
+    assert.equal(typeof api.runVisualReviewExecutionRun, 'function');
+    assert.equal(typeof api.visualReviewExecutionBoundary, 'function');
+    assert.equal(typeof api.runVisualReviewDashboard, 'function');
+    assert.equal(typeof api.visualReviewDashboardBoundary, 'function');
+    assert.equal(typeof api.runVisualReviewAggregation, 'function');
+    assert.equal(typeof api.visualReviewAggregationBoundary, 'function');
     assert.equal(api.schemaNames().includes('agent_execution'), true);
+    assert.equal(api.schemaNames().includes('capture_handoff'), true);
+    assert.equal(api.schemaNames().includes('capture_plan'), true);
+    assert.equal(api.schemaNames().includes('identity_audit'), true);
+    assert.equal(api.schemaNames().includes('desktop_review_provider_preparation_plan'), true);
+    assert.equal(api.schemaNames().includes('image_review'), true);
+    assert.equal(api.schemaNames().includes('mcp_execution_gates'), true);
+    assert.equal(api.schemaNames().includes('visual_evidence'), true);
+    assert.equal(api.schemaNames().includes('visual_review_provider_policy'), true);
+    assert.equal(api.schemaNames().includes('visual_review_result_preparation'), true);
+    assert.equal(api.schemaNames().includes('visual_review_dashboard'), true);
+    assert.equal(api.schemaNames().includes('visual_review_execution'), true);
+    assert.equal(api.schemaNames().includes('visual_review_result'), true);
+    assert.equal(api.schemaNames().includes('visual_review_aggregation'), true);
+    assert.equal(api.MCP_TOOLS.some((tool) => tool.name === 'browser_debug_visual_review_dashboard'), true);
+    assert.equal(api.MCP_TOOLS.some((tool) => tool.name === 'browser_debug_capture_plan'), true);
+    assert.equal(api.MCP_TOOLS.some((tool) => tool.name === 'browser_debug_capture_handoff'), false);
+    assert.equal(api.MCP_TOOLS.some((tool) => tool.name === 'browser_debug_visual_review_plan'), false);
+    assert.equal(api.MCP_TOOLS.some((tool) => tool.name === 'browser_debug_visual_review_aggregate'), false);
+    assert.equal(api.MCP_TOOLS.some((tool) => tool.name === 'browser_debug_mcp_execution_gates'), true);
     assert.equal(api.MCP_TOOLS.some((tool) => tool.name === 'browser_debug_review_target'), true);
     assert.equal(api.DEFAULT_MCP_PROFILE, 'full');
     assert.equal(api.MCP_HTTP_DEFAULT_PROFILE, 'safe');
@@ -112,11 +222,17 @@ async function main() {
     assert.equal(httpClientConfig.config.local_checkout.launch.command, process.execPath);
     assert.equal(httpClientConfig.config.local_checkout.launch.args[0], installedMcpBinPath);
     assert.equal(httpClientConfig.config.local_checkout.client_connection.url, 'http://127.0.0.1:8765/mcp');
-    const mcpHttpTokenEnv = 'BROWSER_DEBUG_MCP_HTTP_TOKEN';
+    const mcpHttpTokenEnv = 'TRACE_CUE_MCP_HTTP_TOKEN';
     assert.equal(httpClientConfig.config.launch.env[mcpHttpTokenEnv], '<set-16-or-more-character-token>');
     assert.equal(httpClientConfig.config.local_checkout.launch.env[mcpHttpTokenEnv], '<set-16-or-more-character-token>');
     assert.equal(JSON.stringify(httpClientConfig).includes('secret'), false);
     assert.equal(api.resolveMcpProfile('safe').ok, true);
+    assert.equal(api.getMcpTools('safe').some((tool) => tool.name === 'browser_debug_visual_review_dashboard'), true);
+    assert.equal(api.getMcpTools('safe').some((tool) => tool.name === 'browser_debug_capture_plan'), true);
+    assert.equal(api.getMcpTools('safe').some((tool) => tool.name === 'browser_debug_capture_handoff'), false);
+    assert.equal(api.getMcpTools('safe').some((tool) => tool.name === 'browser_debug_visual_review_plan'), false);
+    assert.equal(api.getMcpTools('safe').some((tool) => tool.name === 'browser_debug_visual_review_aggregate'), false);
+    assert.equal(api.getMcpTools('safe').some((tool) => tool.name === 'browser_debug_mcp_execution_gates'), true);
     assert.equal(api.getMcpTools('safe').some((tool) => tool.name === 'browser_debug_mcp_capabilities'), true);
     assert.equal(api.getMcpTools('safe').some((tool) => tool.name === 'browser_debug_review'), false);
     assert.equal(api.getMcpTools('full').some((tool) => tool.name === 'browser_debug_review'), true);
@@ -124,6 +240,12 @@ async function main() {
     assert.equal(capabilityReport.ok, true);
     assert.equal(capabilityReport.report.admin_policy.write_execute_tools_exposed, false);
     assert.equal(capabilityReport.report.excluded_operations.some((operation) => operation.id === 'agent_execution_run'), true);
+    assert.equal(capabilityReport.report.excluded_operations.some((operation) => operation.id === 'visual_provider_execution'), true);
+    assert.equal(capabilityReport.report.excluded_operations.some((operation) => operation.id === 'visual_review_run'), true);
+    assert.equal(capabilityReport.report.excluded_operations.some((operation) => operation.id === 'visual_review_result_preparation'), true);
+    assert.equal(capabilityReport.report.excluded_operations.some((operation) => operation.id === 'visual_review_aggregation'), true);
+    assert.equal(capabilityReport.report.excluded_operations.some((operation) => operation.id === 'desktop_review_provider_preparation_plan'), true);
+    assert.equal(capabilityReport.report.boundaries.raw_image_transfer, false);
     assert.equal(capabilityReport.report.excluded_operations.every((operation) => operation.mcp_admin === false), true);
 
     const initialized = await api.handleMcpRequest(
@@ -179,6 +301,18 @@ async function main() {
     assert.ok(schemaNames.includes('review'));
     assert.ok(schemaNames.includes('target_manifest'));
     assert.ok(schemaNames.includes('agent_execution'));
+    assert.ok(schemaNames.includes('capture_handoff'));
+    assert.ok(schemaNames.includes('capture_plan'));
+    assert.ok(schemaNames.includes('desktop_review_provider_preparation_plan'));
+    assert.ok(schemaNames.includes('image_review'));
+    assert.ok(schemaNames.includes('mcp_execution_gates'));
+    assert.ok(schemaNames.includes('visual_evidence'));
+    assert.ok(schemaNames.includes('visual_review_provider_policy'));
+    assert.ok(schemaNames.includes('visual_review_result_preparation'));
+    assert.ok(schemaNames.includes('visual_review_dashboard'));
+    assert.ok(schemaNames.includes('visual_review_execution'));
+    assert.ok(schemaNames.includes('visual_review_result'));
+    assert.ok(schemaNames.includes('visual_review_aggregation'));
 
     const targetPath = path.join(installRoot, 'target.json');
     await writeFile(targetPath, JSON.stringify(targetManifestFixture(), null, 2), 'utf8');
@@ -235,6 +369,10 @@ async function main() {
 
     const binLink = await lstat(path.join(binDir, PRODUCT_IDENTITY.cliBinName));
     assert.equal(binLink.isSymbolicLink(), true);
+    for (const binEntry of packageBinEntries()) {
+      const linked = await lstat(path.join(binDir, binEntry.name));
+      assert.equal(linked.isSymbolicLink(), true);
+    }
     console.log('Packed install smoke passed.');
   } finally {
     if (process.env[PRODUCT_IDENTITY.packSmokeKeepEnv] !== '1') {
@@ -244,7 +382,7 @@ async function main() {
 }
 
 async function createPackedInstallLayout(tarballPath) {
-  const tempRoot = await mkdtemp(path.join(tmpdir(), `${PRODUCT_IDENTITY.packageName}-pack-install-`));
+  const tempRoot = await mkdtemp(path.join(tmpdir(), `${filesystemSafeName(PRODUCT_IDENTITY.packageName)}-pack-install-`));
   const installRoot = path.join(tempRoot, 'install');
   const nodeModules = path.join(installRoot, 'node_modules');
   const packageDir = packageInstallDirectory(nodeModules);
@@ -257,8 +395,9 @@ async function createPackedInstallLayout(tarballPath) {
   await extractPackageTarball(tarballPath, packageDir);
   await linkDependency(nodeModules, 'playwright');
   await linkDependency(nodeModules, 'playwright-core');
-  await linkBin(binDir, PRODUCT_IDENTITY.cliBinName, path.join(packageDir, normalizePackagePath(PRODUCT_IDENTITY.cliBinPath)));
-  await linkBin(binDir, PRODUCT_IDENTITY.mcpBinName, path.join(packageDir, normalizePackagePath(PRODUCT_IDENTITY.mcpBinPath)));
+  for (const binEntry of packageBinEntries()) {
+    await linkBin(binDir, binEntry.name, path.join(packageDir, normalizePackagePath(binEntry.path)));
+  }
 
   return { tempRoot, installRoot, packageDir, binDir };
 }

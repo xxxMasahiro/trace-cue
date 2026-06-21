@@ -4,13 +4,16 @@ const VALUE_OPTIONS = new Set([
   'agent-result',
   'artifact-root',
   'body-limit',
+  'capture-handoff',
   'client',
   'daemon',
   'endpoint',
   'execution',
   'host',
   'idle-timeout',
+  'image',
   'input',
+  'limit',
   'mask',
   'max-routes',
   'max-bytes',
@@ -19,14 +22,17 @@ const VALUE_OPTIONS = new Set([
   'model',
   'name',
   'older-than',
+  'operation',
   'package',
   'port',
+  'preparation',
   'profile',
   'provider',
   'region',
   'resource-guard',
   'review-index',
   'scope',
+  'source',
   'session',
   'surface',
   'target',
@@ -87,6 +93,12 @@ export function parseCliArgs(argv) {
       return parseResource(args, globals);
     case 'agent':
       return parseAgent(args, globals);
+    case 'visual':
+      return parseVisual(args, globals);
+    case 'identity':
+      return parseIdentity(args, globals);
+    case 'capture':
+      return parseCapture(args, globals);
     case 'target':
       return parseTarget(args, globals);
     case 'session':
@@ -363,6 +375,203 @@ function parseResourceArtifacts(args, globals) {
     });
   }
   return { ok: true, command: `resource artifacts ${subcommand}`, json: globals.json, options: parsed.options };
+}
+
+function parseCapture(args, globals) {
+  if (globals.help) {
+    return { ok: true, command: 'help', json: globals.json, options: { topic: 'capture' } };
+  }
+  const subcommand = args[0];
+  if (subcommand !== 'plan' && subcommand !== 'handoff') {
+    return parseError('capture', globals.json, {
+      code: subcommand ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: subcommand ? `Unknown capture subcommand: ${subcommand}` : 'capture requires a subcommand.',
+      details: { subcommands: ['plan', 'handoff'] }
+    });
+  }
+  if (subcommand === 'plan') {
+    const parsed = parseOptionalOptions('capture plan', args.slice(1), globals);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (parsed.options.execute) {
+      return parseError('capture plan', globals.json, {
+        code: 'CONFLICTING_OPTIONS',
+        message: 'capture plan is read-only and does not accept --execute.',
+        details: { option: 'execute' }
+      });
+    }
+    const disallowedOptions = ['provider', 'model', 'image', 'url', 'screenshot', 'trace'];
+    for (const option of disallowedOptions) {
+      if (parsed.options[option] !== undefined) {
+        return parseError('capture plan', globals.json, {
+          code: 'UNSUPPORTED_CAPTURE_PLAN_OPTION',
+          message: `capture plan does not accept --${option} because it is planning-only.`,
+          details: { option }
+        });
+      }
+    }
+    return parsed;
+  }
+  const parsed = parseRequiredOptions('capture handoff', args.slice(1), globals, ['image', 'source']);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  const imageError = validateImageInput(parsed.options.image, {});
+  if (imageError) {
+    return parseError('capture handoff', globals.json, {
+      code: 'INVALID_CAPTURE_HANDOFF_IMAGE',
+      message: imageError.message.replace('review --image', 'capture handoff --image'),
+      details: imageError.details
+    });
+  }
+  const disallowedOptions = ['execute', 'provider', 'model', 'url', 'target', 'input', 'artifact-root', 'screenshot', 'trace', 'report', 'mock', 'threshold'];
+  for (const option of disallowedOptions) {
+    if (parsed.options[option] !== undefined) {
+      return parseError('capture handoff', globals.json, {
+        code: option === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_CAPTURE_HANDOFF_OPTION',
+        message: `capture handoff does not accept --${option} because it only reads an existing workspace image for metadata.`,
+        details: { option }
+      });
+    }
+  }
+  if (parsed.options.source === 'all') {
+    return parseError('capture handoff', globals.json, {
+      code: 'INVALID_CAPTURE_HANDOFF_SOURCE',
+      message: 'capture handoff requires a concrete source: screen, window, or desktop-app.',
+      details: { source: parsed.options.source }
+    });
+  }
+  return parsed;
+}
+
+function parseVisual(args, globals) {
+  if (globals.help) {
+    const scope = args[0];
+    const action = args[1];
+    return {
+      ok: true,
+      command: 'help',
+      json: globals.json,
+      options: { topic: scope === 'review' && action ? `visual review ${action}` : 'visual' }
+    };
+  }
+  const scope = args[0];
+  const action = args[1];
+  if (scope !== 'review' || !['plan', 'prepare', 'run', 'execute', 'status', 'list', 'dashboard', 'aggregate'].includes(action)) {
+    return parseError('visual', globals.json, {
+      code: scope ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: scope ? 'Unknown visual subcommand: ' + [scope, action].filter(Boolean).join(' ') : 'visual requires a subcommand.',
+      details: { subcommands: ['review plan', 'review prepare', 'review run', 'review status', 'review list', 'review dashboard', 'review aggregate'] }
+    });
+  }
+  if (action === 'plan') {
+    const parsed = parseRequiredOptions('visual review plan', args.slice(2), globals, ['capture-handoff']);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (parsed.options.execute) {
+      return parseError('visual review plan', globals.json, {
+        code: 'CONFLICTING_OPTIONS',
+        message: 'visual review plan is read-only and does not accept --execute.',
+        details: { option: 'execute' }
+      });
+    }
+    const disallowedOptions = ['artifact-root', 'image', 'url', 'target', 'review-index', 'input', 'preparation', 'package', 'agent-result', 'screenshot', 'trace', 'report', 'mock', 'threshold', 'source'];
+    for (const option of disallowedOptions) {
+      if (parsed.options[option] !== undefined) {
+        return parseError('visual review plan', globals.json, {
+          code: 'UNSUPPORTED_VISUAL_REVIEW_PLAN_OPTION',
+          message: `visual review plan does not accept --${option} because it only reads capture handoff metadata.`,
+          details: { option }
+        });
+      }
+    }
+    return parsed;
+  }
+  if (action === 'prepare') {
+    const parsed = parseRequiredOptions('visual review prepare', args.slice(2), globals, ['review-index']);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (parsed.options.execute) {
+      return parseError('visual review prepare', globals.json, {
+        code: 'CONFLICTING_OPTIONS',
+        message: 'visual review prepare does not execute providers and does not accept --execute.',
+        details: { option: 'execute' }
+      });
+    }
+    return parsed;
+  }
+  if (action === 'aggregate') {
+    const parsed = parseRequiredOptions('visual review aggregate', args.slice(2), globals, ['preparation']);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (parsed.options.execute) {
+      return parseError('visual review aggregate', globals.json, {
+        code: 'CONFLICTING_OPTIONS',
+        message: 'visual review aggregate is read-only and does not accept --execute.',
+        details: { option: 'execute' }
+      });
+    }
+    const disallowedOptions = ['provider', 'model', 'surface', 'image', 'capture-handoff', 'review-index', 'url', 'target', 'input', 'report', 'screenshot', 'trace', 'mock', 'threshold'];
+    for (const option of disallowedOptions) {
+      if (parsed.options[option] !== undefined) {
+        return parseError('visual review aggregate', globals.json, {
+          code: 'UNSUPPORTED_VISUAL_REVIEW_AGGREGATE_OPTION',
+          message: `visual review aggregate does not accept --${option} because it only reads existing local visual review results.`,
+          details: { option }
+        });
+      }
+    }
+    return parsed;
+  }
+  if (action === 'run' || action === 'execute') {
+    const parsed = parseRequiredOptions('visual review run', args.slice(2), globals, ['preparation', 'surface', 'provider', 'model']);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (!parsed.options.execute) {
+      return parseError('visual review run', globals.json, {
+        code: 'MISSING_REQUIRED_OPTION',
+        message: 'visual review run requires --execute.',
+        details: { option: 'execute' }
+      });
+    }
+    return parsed;
+  }
+  if (action === 'status') {
+    return parseRequiredOptions('visual review status', args.slice(2), globals, ['execution']);
+  }
+  const command = action === 'dashboard' ? 'visual review dashboard' : 'visual review list';
+  const parsed = parseOptions(command, args.slice(2), globals.json);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (parsed.positionals.length > 0) {
+    return parseError(command, globals.json, {
+      code: 'UNEXPECTED_ARGUMENT',
+      message: command + ' does not accept positional arguments.',
+      details: { argument: parsed.positionals[0] }
+    });
+  }
+  return { ok: true, command, json: globals.json, options: parsed.options };
+}
+
+function parseIdentity(args, globals) {
+  if (globals.help) {
+    return { ok: true, command: 'help', json: globals.json, options: { topic: 'identity' } };
+  }
+  const subcommand = args[0];
+  if (subcommand !== 'audit') {
+    return parseError('identity', globals.json, {
+      code: subcommand ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: subcommand ? `Unknown identity subcommand: ${subcommand}` : 'identity requires a subcommand.',
+      details: { subcommands: ['audit'] }
+    });
+  }
+  return parseNoArgCommand('identity audit', args.slice(1), globals);
 }
 
 function parseAgent(args, globals) {
@@ -658,11 +867,19 @@ function parseReview(args, globals) {
       details: { argument: parsed.positionals[0] }
     });
   }
-  if (!parsed.options.url && !parsed.options.target && !parsed.options.input) {
+  const reviewInputs = ['url', 'target', 'input', 'image'].filter((key) => parsed.options[key]);
+  if (reviewInputs.length === 0) {
     return parseError('review', globals.json, {
       code: 'MISSING_REQUIRED_OPTION',
-      message: 'review requires --url <url>, --target <manifest>, or --input -.',
-      details: { options: ['url', 'target', 'input'] }
+      message: 'review requires --url <url>, --target <manifest>, --image <path>, or --input -.',
+      details: { options: ['url', 'target', 'image', 'input'] }
+    });
+  }
+  if (reviewInputs.length > 1) {
+    return parseError('review', globals.json, {
+      code: 'CONFLICTING_OPTIONS',
+      message: 'review accepts only one input source: --url, --target, --image, or --input -.',
+      details: { options: reviewInputs }
     });
   }
   if (parsed.options.url) {
@@ -671,7 +888,85 @@ function parseReview(args, globals) {
       return parseError('review', globals.json, urlError);
     }
   }
+  if (parsed.options.image) {
+    const imageError = validateImageInput(parsed.options.image, parsed.options);
+    if (imageError) {
+      return parseError('review', globals.json, imageError);
+    }
+    const imageSourceError = validateImageReviewSource(parsed.options.source);
+    if (imageSourceError) {
+      return parseError('review', globals.json, imageSourceError);
+    }
+  } else if (parsed.options['capture-handoff']) {
+    return parseError('review', globals.json, {
+      code: 'UNSUPPORTED_REVIEW_CAPTURE_HANDOFF_OPTION',
+      message: 'review --capture-handoff is only supported with review --image.',
+      details: { option: 'capture-handoff' }
+    });
+  } else if (parsed.options.source) {
+    return parseError('review', globals.json, {
+      code: 'UNSUPPORTED_REVIEW_SOURCE_OPTION',
+      message: 'review --source is only supported with review --image.',
+      details: { option: 'source' }
+    });
+  }
   return { ok: true, command: 'review', json: globals.json, options: parsed.options };
+}
+
+function validateImageInput(value, options) {
+  const image = String(value ?? '').trim();
+  if (!image || image === '-') {
+    return {
+      code: 'INVALID_IMAGE_INPUT',
+      message: 'review --image requires a workspace-relative image file path.',
+      details: { image: value }
+    };
+  }
+  if (image.startsWith('@')) {
+    return {
+      code: 'INVALID_IMAGE_INPUT',
+      message: 'review --image does not accept @file indirection.',
+      details: { image }
+    };
+  }
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/|[A-Za-z]:[\\/])/i.test(image) || image.includes('\0')) {
+    return {
+      code: 'INVALID_IMAGE_INPUT',
+      message: 'review --image must be a workspace-relative file path, not a URL, data URI, absolute path, or raw input stream.',
+      details: { image }
+    };
+  }
+  if (image.split(/[\\/]+/).includes('..')) {
+    return {
+      code: 'INVALID_IMAGE_INPUT',
+      message: 'review --image must not contain parent directory traversal.',
+      details: { image }
+    };
+  }
+  const disallowed = ['provider', 'model', 'execute'].filter((key) => options[key] !== undefined);
+  if (disallowed.length > 0) {
+    return {
+      code: 'CONFLICTING_OPTIONS',
+      message: 'review --image does not accept provider, model, or execute options.',
+      details: { options: disallowed }
+    };
+  }
+  return null;
+}
+
+function validateImageReviewSource(value) {
+  if (value === undefined) {
+    return null;
+  }
+  const source = String(value ?? '').trim();
+  if (['image', 'screen', 'window', 'desktop-app'].includes(source)) {
+    return null;
+  }
+  return {
+    code: 'INVALID_IMAGE_REVIEW_SOURCE',
+    message: 'review --image --source must be one of: image, screen, window, desktop-app.',
+    details: { source: value }
+  };
 }
 
 function parseSchema(args, globals) {
@@ -704,11 +999,21 @@ function parseMcp(args, globals) {
     return { ok: true, command: 'help', json: globals.json, options: { topic: 'mcp' } };
   }
   const subcommand = args[0];
+  if (subcommand === 'execution') {
+    if (args[1] !== 'gates') {
+      return parseError('mcp execution', globals.json, {
+        code: args[1] ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+        message: args[1] ? `Unknown mcp execution subcommand: ${args[1]}` : 'mcp execution requires a subcommand.',
+        details: { subcommands: ['gates'] }
+      });
+    }
+    return parseOptionalOptions('mcp execution gates', args.slice(2), globals);
+  }
   if (subcommand !== 'serve' && subcommand !== 'config' && subcommand !== 'capabilities') {
     return parseError('mcp', globals.json, {
       code: subcommand ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
       message: subcommand ? `Unknown mcp subcommand: ${subcommand}` : 'mcp requires a subcommand.',
-      details: { subcommands: ['serve', 'config', 'capabilities'] }
+      details: { subcommands: ['serve', 'config', 'capabilities', 'execution gates'] }
     });
   }
   return parseOptionalOptions(`mcp ${subcommand}`, args.slice(1), globals);
@@ -913,6 +1218,15 @@ function plannedCommands() {
     'agent execution run',
     'agent execution status',
     'agent execution list',
+    'visual review plan',
+    'visual review prepare',
+    'visual review run',
+    'visual review status',
+    'visual review list',
+    'visual review dashboard',
+    'identity audit',
+    'capture plan',
+    'capture handoff',
     'agent package',
     'agent ingest',
     'agent report',
@@ -928,6 +1242,7 @@ function plannedCommands() {
     'schema get',
     'mcp serve',
     'mcp config',
-    'mcp capabilities'
+    'mcp capabilities',
+    'mcp execution gates'
   ];
 }

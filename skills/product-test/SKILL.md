@@ -1,6 +1,6 @@
 ---
 name: product-test
-description: Product-local testing guidance for Browser Debug CLI.
+description: Product-local testing guidance for TraceCue.
 ---
 
 # Product Test

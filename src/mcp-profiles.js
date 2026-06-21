@@ -13,6 +13,9 @@ const SAFE_PROFILE_TOOLS = Object.freeze([
   'browser_debug_agent_workflow_index',
   'browser_debug_agent_execution_status',
   'browser_debug_agent_execution_list',
+  'browser_debug_visual_review_dashboard',
+  'browser_debug_capture_plan',
+  'browser_debug_mcp_execution_gates',
   'browser_debug_mcp_capabilities',
   'browser_debug_schema_list',
   'browser_debug_schema_get'
@@ -33,6 +36,9 @@ const FULL_PROFILE_TOOLS = Object.freeze([
   'browser_debug_agent_workflow_index',
   'browser_debug_agent_execution_status',
   'browser_debug_agent_execution_list',
+  'browser_debug_visual_review_dashboard',
+  'browser_debug_capture_plan',
+  'browser_debug_mcp_execution_gates',
   'browser_debug_mcp_capabilities',
   'browser_debug_review_target',
   'browser_debug_schema_list',
@@ -85,7 +91,7 @@ const TOOL_REGISTRY = Object.freeze([
   {
     name: 'browser_debug_doctor',
     minimumProfile: 'safe',
-    description: 'Run Browser Debug CLI doctor and return the standard JSON envelope.',
+    description: 'Run TraceCue doctor and return the standard JSON envelope.',
     inputSchema: { type: 'object', additionalProperties: false, properties: {} },
     effects: effects({ browserLaunched: false, writesArtifacts: false }),
     toCliArgs: () => ['doctor', '--json']
@@ -181,7 +187,7 @@ const TOOL_REGISTRY = Object.freeze([
   {
     name: 'browser_debug_resource_artifacts_plan',
     minimumProfile: 'safe',
-    description: 'Report local Browser Debug CLI artifact size and cleanup candidates without deleting files.',
+    description: 'Report local TraceCue artifact size and cleanup candidates without deleting files.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -313,6 +319,26 @@ const TOOL_REGISTRY = Object.freeze([
     })
   },
   {
+    name: 'browser_debug_visual_review_dashboard',
+    minimumProfile: 'safe',
+    description: 'Read local visual review preparation, execution, and result dashboard status without writing artifacts or executing providers.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        artifactRoot: { type: 'string' },
+        limit: { type: 'number' },
+        maxBytes: { type: 'string' }
+      }
+    },
+    effects: effects({ browserLaunched: false, writesArtifacts: false, providerCall: false }),
+    toCliArgs: (args) => withOptionalOptions(['visual', 'review', 'dashboard'], args, {
+      artifactRoot: '--artifact-root',
+      limit: '--limit',
+      maxBytes: '--max-bytes'
+    })
+  },
+  {
     name: 'browser_debug_review_target',
     minimumProfile: 'full',
     description: 'Run a deterministic local browser review for a target manifest.',
@@ -328,6 +354,40 @@ const TOOL_REGISTRY = Object.freeze([
     },
     effects: effects({ browserLaunched: true, writesArtifacts: true }),
     toCliArgs: (args) => withCommonOptions(['review', '--target', args.target], args)
+  },
+  {
+    name: 'browser_debug_capture_plan',
+    minimumProfile: 'safe',
+    description: 'Inspect read-only screen, window, and desktop app capture planning requirements without capturing pixels.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        source: { type: 'string' }
+      }
+    },
+    effects: effects({ browserLaunched: false, writesArtifacts: false, providerCall: false }),
+    toCliArgs: (args) => withOptionalOptions(['capture', 'plan'], args, {
+      source: '--source'
+    })
+  },
+  {
+    name: 'browser_debug_mcp_execution_gates',
+    minimumProfile: 'safe',
+    description: 'Inspect read-only MCP planning and execution gate requirements without changing MCP permissions or running providers.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        operation: { type: 'string' },
+        profile: { type: 'string' }
+      }
+    },
+    effects: effects({ browserLaunched: false, writesArtifacts: false, providerCall: false }),
+    toCliArgs: (args) => withOptionalOptions(['mcp', 'execution', 'gates'], args, {
+      operation: '--operation',
+      profile: '--profile'
+    })
   },
   {
     name: 'browser_debug_mcp_capabilities',
@@ -350,7 +410,7 @@ const TOOL_REGISTRY = Object.freeze([
   {
     name: 'browser_debug_schema_list',
     minimumProfile: 'safe',
-    description: 'List machine-readable Browser Debug CLI schemas.',
+    description: 'List machine-readable TraceCue schemas.',
     inputSchema: { type: 'object', additionalProperties: false, properties: {} },
     effects: effects({ browserLaunched: false, writesArtifacts: false }),
     toCliArgs: () => ['schema', 'list', '--json']
@@ -373,7 +433,7 @@ const TOOL_REGISTRY = Object.freeze([
 const TOOL_BY_NAME = new Map(TOOL_REGISTRY.map((tool) => [tool.name, tool]));
 
 export function resolveMcpProfile(value, env = {}) {
-  const profile = String(value || env.BROWSER_DEBUG_MCP_PROFILE || DEFAULT_MCP_PROFILE).trim();
+  const profile = String(value || env.TRACE_CUE_MCP_PROFILE || env.BROWSER_DEBUG_MCP_PROFILE || DEFAULT_MCP_PROFILE).trim();
   if (Object.hasOwn(MCP_PROFILES, profile)) {
     return { ok: true, profile, definition: MCP_PROFILES[profile] };
   }

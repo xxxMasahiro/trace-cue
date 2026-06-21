@@ -2,12 +2,13 @@
 
 ## Verification Scope
 
-Current verification checks repository structure, document synchronization, security defaults, review/MCP/plugin local boundaries, MCP profile gating, MCP-only file-input confinement, MCP read-only agent status tools, MCP safe HTTP transport boundaries, token-free installed-bin and local-checkout MCP client configuration output, read-only MCP capability policy output, packaged external-repository usage guidance, consumer runtime-readiness guidance, product identity alignment, CI configuration, design-system placeholders, product operation mode, local MVP runtime behavior, review platform behavior, dogfood target workflow behavior, no-browser target manifest validation, no-browser resource status preflight, review resource guard behavior, daemon lifecycle guards, artifact usage planning, explicit artifact-root cleanup receipts, local agent advisory package/request-status/request-detail/workflow/ingest/report behavior, local agent execution plan/run/status/list behavior, deterministic fake provider execution, configured local runner callback execution, env-only generic API adapter behavior, expected-route execution, route-budget coverage accounting, page expectation coverage, rendered-state findings, manifest suggestions, opt-in content UX advisory behavior, selector-scoped advisory contracts, required user-question advisory checks, dedicated content UX handoff output, page-level content UX handoff, manifest-authoring suggestions, review brief/rubric evaluation, local artifact indexes, local review-quality signals, browser smoke coverage, Phase 29 agent execution boundaries, Phase 30 packed install release-hardening boundaries, Phase 31 MCP profile boundaries, Phase 32 rename-readiness boundaries, Phase 33 MCP read-only agent status boundaries, Phase 34 safe HTTP MCP foundation boundaries, Phase 35/38 MCP integration-hardening boundaries, Phase 36 MCP capability policy boundaries, Phase 37 consumer usage boundaries, and Phase 39 consumer runtime-readiness boundaries.
+Current verification checks repository structure, document synchronization, security defaults, review/MCP/plugin local boundaries, MCP profile gating, MCP-only file-input confinement, MCP read-only agent status tools, MCP safe HTTP transport boundaries, token-free installed-bin and local-checkout MCP client configuration output, read-only MCP capability policy output, packaged external-repository usage guidance, consumer runtime-readiness guidance, product identity alignment, CI configuration, design-system placeholders, product operation mode, local MVP runtime behavior, review platform behavior, dogfood target workflow behavior, no-browser target manifest validation, no-browser resource status preflight, review resource guard behavior, daemon lifecycle guards, artifact usage planning, explicit artifact-root cleanup receipts, local agent advisory package/request-status/request-detail/workflow/ingest/report behavior, local agent execution plan/run/status/list behavior, deterministic fake provider execution, configured local runner callback execution, env-only generic API adapter behavior, expected-route execution, route-budget coverage accounting, page expectation coverage, rendered-state findings, manifest suggestions, opt-in content UX advisory behavior, selector-scoped advisory contracts, required user-question advisory checks, dedicated content UX handoff output, page-level content UX handoff, manifest-authoring suggestions, review brief/rubric evaluation, local artifact indexes, local review-quality signals, browser smoke coverage, Phase 29 agent execution boundaries, Phase 30 packed install release-hardening boundaries, Phase 31 MCP profile boundaries, Phase 32 rename-readiness boundaries, Phase 33 MCP read-only agent status boundaries, Phase 34 safe HTTP MCP foundation boundaries, Phase 35/38 MCP integration-hardening boundaries, Phase 36 MCP capability policy boundaries, Phase 37 consumer usage boundaries, Phase 39 consumer runtime-readiness boundaries, Phase 41 visual evidence metadata boundaries, Phase 42 visual review provider policy boundaries, Phase 43 standalone image review boundaries, Phase 44 visual review result preparation boundaries, Phase 45 visual review execution boundaries, Phase 46 visual review dashboard boundaries, Phase 47 MCP execution gate boundaries, Phase 48 capture planning boundaries, Phase 49 capture handoff boundaries, and Phase 50 desktop review provider-preparation planning boundaries.
 
 ## Product-Local Commands
 
 ```bash
 npm test
+npm run test:rename-readiness
 npm run test:browser
 npm run test:pack
 npm run test:pack-install
@@ -21,21 +22,22 @@ npm run release:check
 ./tools/product-gate
 ```
 
-`./tools/test_product_repository.sh` and `./tools/product-gate` run structure, docs, security, CI manifest, design-system, product mode, `npm test`, `npm run test:pack`, and `npm run test:pack-install` when `package.json` is present. `npm run test:browser` is intentionally separate because it launches local Chromium. `npm run release:check` is a no-publish convenience wrapper for no-browser, package dry-run, and packed install smoke checks.
+`./tools/test_product_repository.sh` and `./tools/product-gate` run structure, docs, security, CI manifest, design-system, product mode, `npm test`, `npm run test:rename-readiness`, `npm run test:pack`, and `npm run test:pack-install` when `package.json` is present. `npm run test:browser` is intentionally separate because it launches local Chromium. `npm run release:check` is a no-publish convenience wrapper for no-browser, rename-readiness, package dry-run, and packed install smoke checks.
 
 ## Lesson-Side Commands
 
 From `/home/masahiro/projects/ai-driven-development-lesson`:
 
 ```bash
-./tools/product-scaffold-check check --repo /home/masahiro/projects/agent-toolbox/browser-debug-cli --context free-development --product-type all --git-optional --ci-optional
-./tools/product-repository-authority status --repo /home/masahiro/projects/agent-toolbox/browser-debug-cli --context free-development --product-type all --git-optional --ci-optional
-./tools/check_workflow_pair_sync.sh --repo /home/masahiro/projects/agent-toolbox/browser-debug-cli
+PRODUCT_REPO_ROOT="$(git -C /path/to/current-trace-cue-checkout rev-parse --show-toplevel)"
+./tools/product-scaffold-check check --repo "$PRODUCT_REPO_ROOT" --context free-development --product-type all --git-optional --ci-optional
+./tools/product-repository-authority status --repo "$PRODUCT_REPO_ROOT" --context free-development --product-type all --git-optional --ci-optional
+./tools/check_workflow_pair_sync.sh --repo "$PRODUCT_REPO_ROOT"
 ```
 
 ## Current Runtime Checks
 
-The current implementation includes command parser tests, deterministic JSON error tests, `doctor` tests for environment, schema-versioning, and artifact-retention metadata, resource status tests for deterministic memory/cgroup/pressure fixtures and read-only boundaries, resource guard fail-critical tests, artifact plan/dry-run/execute receipt tests, agent surfaces/package/request-status/request-detail/workflow/ingest/report tests, agent execution plan/run/status/list tests for fake provider, configured local runner, missing API configuration, injected API transport, normalized advisory results, and dashboard status/list aggregation, review parser tests, schema command tests, schema registry/file parity tests, target init tests, target validate tests, target manifest tests, opt-in content UX advisory tests, selector-scoped binding tests, required user-question tests, dedicated content UX handoff tests, page handoff tests, manifest-authoring suggestion tests, review brief/rubric tests, action risk classification tests, MCP adapter allowlist tests, MCP safe HTTP transport tests, shell-safe action input tests, headed/devtools launch-mode tests, session/report/spec tests, daemon parser and lifecycle option tests, redaction tests, architecture regressions for generic runtime boundaries, shared evidence helpers, local daemon boundaries, resource status read-only boundaries, resource guard and artifact cleanup boundaries, agent advisory local handoff/workflow boundaries, agent execution provider adapter boundaries, content UX advisory purity, review/MCP/plugin security boundaries, local package dry-run verification, packed install smoke verification, and Playwright smoke tests for local file observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, reports, spec export, process-scoped supervision, daemon start/status/stop, deterministic review findings, action plans, local review advisory output, quality signals, rendered-state findings, mock metrics, target manifest review, target reports, manifest suggestions, content UX advisory opt-in invariance, selector-scoped content UX advisory, content UX Developer Handoff reports, content UX page handoff output, manifest-authoring output, content UX review brief/rubric output, route discovery, explicit expected-route execution, route-budget skip coverage, viewport execution, and coverage artifacts. Manual local checks can use:
+The current implementation includes command parser tests, deterministic JSON error tests, `doctor` tests for environment, schema-versioning, and artifact-retention metadata, resource status tests for deterministic memory/cgroup/pressure fixtures and read-only boundaries, resource guard fail-critical tests, artifact plan/dry-run/execute receipt tests, agent surfaces/package/request-status/request-detail/workflow/ingest/report tests, agent execution plan/run/status/list tests for fake provider, configured local runner, missing API configuration, injected API transport, normalized advisory results, and dashboard status/list aggregation, review parser tests, schema command tests, schema registry/file parity tests, target init tests, target validate tests, target manifest tests, opt-in content UX advisory tests, selector-scoped binding tests, required user-question tests, dedicated content UX handoff tests, page handoff tests, manifest-authoring suggestion tests, review brief/rubric tests, action risk classification tests, MCP adapter allowlist tests, MCP safe HTTP transport tests, shell-safe action input tests, headed/devtools launch-mode tests, session/report/spec tests, daemon parser and lifecycle option tests, redaction tests, architecture regressions for generic runtime boundaries, shared evidence helpers, local daemon boundaries, resource status read-only boundaries, resource guard and artifact cleanup boundaries, agent advisory local handoff/workflow boundaries, agent execution provider adapter boundaries, visual review result preparation boundaries, content UX advisory purity, review/MCP/plugin security boundaries, local package dry-run verification, packed install smoke verification, and Playwright smoke tests for local file observation, screenshot/trace artifacts, click actions, form controls, keyboard input, deterministic scroll, wait actions, reports, spec export, process-scoped supervision, daemon start/status/stop, deterministic review findings, action plans, local review advisory output, quality signals, rendered-state findings, mock metrics, target manifest review, target reports, manifest suggestions, content UX advisory opt-in invariance, selector-scoped content UX advisory, content UX Developer Handoff reports, content UX page handoff output, manifest-authoring output, content UX review brief/rubric output, route discovery, explicit expected-route execution, route-budget skip coverage, viewport execution, and coverage artifacts. Manual local checks can use:
 
 Phase 11 adds no-browser coverage for optional manifest page normalization and browser smoke coverage for page expectation checks, page-specific mock metrics, review artifact indexes, `coverage.pages`, and `quality_signals.page_expectations`.
 
@@ -79,43 +81,61 @@ Phase 37 adds no-browser and packed-install coverage for packaged external-repos
 
 Phase 39 adds no-browser architecture coverage for packaged consumer runtime-readiness guidance. Browser smoke tests are not required for Phase 39 unless browser runtime behavior changes.
 
+Phase 44 adds no-browser coverage for `visual review prepare`, metadata-only visual evidence preparation, future `visual_review_result` contract exposure, no-provider/no-transfer/no-MCP-execution boundaries, schema registry parity, API exports, MCP non-exposure, capability-policy exclusion reporting, and packed-install file/API/schema coverage. Browser smoke tests are not required for Phase 44 unless browser runtime behavior changes.
+
+Phase 46 adds no-browser coverage for `visual review dashboard`, read-only aggregation over preparation/execution/result metadata, API exports, schema parity, safe MCP tool exposure, architecture boundaries, and packed-install file/API/schema/MCP coverage. Browser smoke tests are not required for Phase 46 unless browser runtime behavior changes.
+
+Phase 47 adds no-browser coverage for `mcp execution gates`, read-only future MCP planning/execution gate reporting, API exports, schema parity, safe MCP tool exposure, architecture boundaries, and packed-install file/API/schema/MCP coverage. Browser smoke tests are not required for Phase 47 unless browser runtime behavior changes.
+
+Phase 48 adds no-browser coverage for `capture plan`, read-only screen/window/desktop app capture planning, API exports, schema parity, safe MCP tool exposure, architecture boundaries, and packed-install file/API/schema/MCP coverage. Browser smoke tests are not required for Phase 48 unless browser runtime behavior changes.
+
+Phase 49 adds no-browser coverage for `capture handoff`, workspace-confined existing-image metadata handoff, API exports, schema parity, MCP non-exposure, architecture boundaries, and packed-install file/API/schema coverage. Browser smoke tests are not required for Phase 49 unless browser runtime behavior changes.
+
+Phase 50 adds no-browser coverage for `visual review plan --capture-handoff`, capture handoff metadata-only planning, API exports, schema parity, MCP non-exposure, capability/gate reporting, architecture boundaries, and packed-install file/API/schema coverage. Browser smoke tests are not required for Phase 50 unless browser runtime behavior changes.
+
 ```bash
-node ./bin/browser-debug.js resource status --json
-node ./bin/browser-debug.js resource artifacts plan --json
-node ./bin/browser-debug.js resource artifacts cleanup --dry-run --json
-node ./bin/browser-debug.js agent surfaces list --json
-node ./bin/browser-debug.js agent package --review-index .browser-debug/review-artifacts/<id>.json --json
-node ./bin/browser-debug.js agent requests list --json
-node ./bin/browser-debug.js agent requests show --package .browser-debug/agent-packages/<id>/packet.json --json
-node ./bin/browser-debug.js agent workflow create --package .browser-debug/agent-packages/<id>/packet.json --json
-node ./bin/browser-debug.js agent workflow status --workflow .browser-debug/agent-workflows/<id>/workflow.json --json
-node ./bin/browser-debug.js agent workflow index --json
-node ./bin/browser-debug.js agent workflow report --workflow .browser-debug/agent-workflows/<id>/workflow.json --json
-node ./bin/browser-debug.js agent execution plan --package .browser-debug/agent-packages/<id>/packet.json --surface local-subscription-agent --provider fake-agent --model fake-model --json
-node ./bin/browser-debug.js agent execution run --execution .browser-debug/agent-executions/<id>/execution.json --package .browser-debug/agent-packages/<id>/packet.json --surface local-subscription-agent --provider fake-agent --model fake-model --execute --json
-node ./bin/browser-debug.js agent execution status --execution .browser-debug/agent-executions/<id>/execution.json --json
-node ./bin/browser-debug.js agent execution list --json
-node ./bin/browser-debug.js agent ingest --package .browser-debug/agent-packages/<id>/packet.json --input @agent-advisory-result.json --json
-node ./bin/browser-debug.js agent report --review-index .browser-debug/review-artifacts/<id>.json --agent-result .browser-debug/agent-results/<id>.json --json
-node ./bin/browser-debug.js observe --url http://127.0.0.1:3000/ --screenshot --trace --timeout 15000 --json
-node ./bin/browser-debug.js supervise --url http://127.0.0.1:3000/ --actions '[{"type":"observe"}]' --timeout 15000 --json
-node ./bin/browser-debug.js daemon start --url http://127.0.0.1:3000/ --timeout 15000 --json
-node ./bin/browser-debug.js daemon status --daemon <id> --json
-node ./bin/browser-debug.js daemon stop --daemon <id> --json
-node ./bin/browser-debug.js target init --url http://127.0.0.1:3000/ --json
-node ./bin/browser-debug.js target validate --target .browser-debug/targets/<id>.json --json
-node ./bin/browser-debug.js review --url http://127.0.0.1:3000/ --viewport mobile --screenshot --report --timeout 15000 --json
-node ./bin/browser-debug.js review --url http://127.0.0.1:3000/ --resource-guard fail-critical --timeout 15000 --json
-node ./bin/browser-debug.js review --target .browser-debug/targets/<id>.json --report --timeout 15000 --json
-node ./bin/browser-debug.js schema list --json
-node ./bin/browser-debug.js schema get --name review --json
-node ./bin/browser-debug.js mcp serve --profile safe --json
-node ./bin/browser-debug.js mcp serve --transport http --profile safe --host 127.0.0.1 --port 0 --json
-node ./bin/browser-debug.js mcp config --profile safe --json
-node ./bin/browser-debug.js mcp config --transport http --profile safe --host 127.0.0.1 --port 8765 --json
-node ./bin/browser-debug.js mcp capabilities --profile admin --scope excluded --json
-node ./bin/browser-debug-mcp.js --profile safe
-BROWSER_DEBUG_MCP_HTTP_TOKEN=<token> node ./bin/browser-debug-mcp.js --transport http --profile safe --host 127.0.0.1 --port 8765
+node ./bin/trace-cue.js resource status --json
+node ./bin/trace-cue.js resource artifacts plan --json
+node ./bin/trace-cue.js resource artifacts cleanup --dry-run --json
+node ./bin/trace-cue.js agent surfaces list --json
+node ./bin/trace-cue.js agent package --review-index .browser-debug/review-artifacts/<id>.json --json
+node ./bin/trace-cue.js agent requests list --json
+node ./bin/trace-cue.js agent requests show --package .browser-debug/agent-packages/<id>/packet.json --json
+node ./bin/trace-cue.js agent workflow create --package .browser-debug/agent-packages/<id>/packet.json --json
+node ./bin/trace-cue.js agent workflow status --workflow .browser-debug/agent-workflows/<id>/workflow.json --json
+node ./bin/trace-cue.js agent workflow index --json
+node ./bin/trace-cue.js agent workflow report --workflow .browser-debug/agent-workflows/<id>/workflow.json --json
+node ./bin/trace-cue.js agent execution plan --package .browser-debug/agent-packages/<id>/packet.json --surface local-subscription-agent --provider fake-agent --model fake-model --json
+node ./bin/trace-cue.js agent execution run --execution .browser-debug/agent-executions/<id>/execution.json --package .browser-debug/agent-packages/<id>/packet.json --surface local-subscription-agent --provider fake-agent --model fake-model --execute --json
+node ./bin/trace-cue.js agent execution status --execution .browser-debug/agent-executions/<id>/execution.json --json
+node ./bin/trace-cue.js agent execution list --json
+node ./bin/trace-cue.js visual review prepare --review-index .browser-debug/review-artifacts/<id>.json --json
+node ./bin/trace-cue.js visual review dashboard --json
+node ./bin/trace-cue.js agent ingest --package .browser-debug/agent-packages/<id>/packet.json --input @agent-advisory-result.json --json
+node ./bin/trace-cue.js agent report --review-index .browser-debug/review-artifacts/<id>.json --agent-result .browser-debug/agent-results/<id>.json --json
+node ./bin/trace-cue.js observe --url http://127.0.0.1:3000/ --screenshot --trace --timeout 15000 --json
+node ./bin/trace-cue.js supervise --url http://127.0.0.1:3000/ --actions '[{"type":"observe"}]' --timeout 15000 --json
+node ./bin/trace-cue.js daemon start --url http://127.0.0.1:3000/ --timeout 15000 --json
+node ./bin/trace-cue.js daemon status --daemon <id> --json
+node ./bin/trace-cue.js daemon stop --daemon <id> --json
+node ./bin/trace-cue.js target init --url http://127.0.0.1:3000/ --json
+node ./bin/trace-cue.js target validate --target .browser-debug/targets/<id>.json --json
+node ./bin/trace-cue.js review --url http://127.0.0.1:3000/ --viewport mobile --screenshot --report --timeout 15000 --json
+node ./bin/trace-cue.js review --url http://127.0.0.1:3000/ --resource-guard fail-critical --timeout 15000 --json
+node ./bin/trace-cue.js review --target .browser-debug/targets/<id>.json --report --timeout 15000 --json
+node ./bin/trace-cue.js schema list --json
+node ./bin/trace-cue.js schema get --name review --json
+node ./bin/trace-cue.js mcp serve --profile safe --json
+node ./bin/trace-cue.js mcp serve --transport http --profile safe --host 127.0.0.1 --port 0 --json
+node ./bin/trace-cue.js mcp config --profile safe --json
+node ./bin/trace-cue.js mcp config --transport http --profile safe --host 127.0.0.1 --port 8765 --json
+node ./bin/trace-cue.js mcp capabilities --profile admin --scope excluded --json
+node ./bin/trace-cue.js mcp execution gates --json
+node ./bin/trace-cue.js capture plan --json
+node ./bin/trace-cue.js capture handoff --image <workspace-image> --source screen --json
+node ./bin/trace-cue.js visual review plan --capture-handoff <capture-handoff-json> --json
+node ./bin/trace-cue-mcp.js --profile safe
+TRACE_CUE_MCP_HTTP_TOKEN=<token> node ./bin/trace-cue-mcp.js --transport http --profile safe --host 127.0.0.1 --port 8765
 ```
 
 Optional acceptance checks against local application control surfaces should run only when their local URLs are provided and listening.
@@ -255,7 +275,7 @@ Optional acceptance checks against local application servers may run only when t
 ## Phase 30 Packed Install Checks
 
 - `npm run test:pack-install` creates a temporary install layout from the packed tarball under `/tmp`.
-- The check verifies packaged `browser-debug` and `browser-debug-mcp` entrypoints, public package API imports, schema files, templates, plugin metadata, plugin skill, and selected workflow security docs.
+- The check verifies packaged `trace-cue`/`trace-cue-mcp` entrypoints, legacy `browser-debug`/`browser-debug-mcp` aliases, public package API imports, schema files, templates, plugin metadata, plugin skill, and selected workflow security docs.
 - The check runs `doctor`, `schema list`, `target validate`, API import, and MCP `tools/list` from the packed layout.
 - The check is local-only and does not publish, install from registry, change package naming, change license, upload evidence, store credentials, or mutate marketplace state.
 
@@ -283,6 +303,22 @@ Optional acceptance checks against local application servers may run only when t
 - MCP adapter tests expose `browser_debug_mcp_capabilities` through the safe profile and confirm the tool returns the same read-only policy report.
 - Architecture tests verify the capability policy helper does not import `node:http`, call `createServer`, or call `listen`.
 - Packed install smoke verifies the source file, package API exports, CLI command, and MCP tool remain available from the installed package layout without publishing.
+
+## Phase 51-52 Desktop Image Review Checks
+
+- No-browser tests cover `capture handoff --image`, `review --image --capture-handoff`, path mismatch errors, hash mismatch errors, and provenance propagation into visual evidence metadata.
+- No-browser tests verify `visual review prepare` preserves `desktop_app_capture` source kind from reviewed image evidence.
+- Parser tests verify `--capture-handoff` and `--source` are accepted only with `review --image`.
+- Boundary tests verify desktop image review does not perform OS capture, enumerate windows or processes, call providers, embed raw pixels in JSON, transfer evidence, expose MCP execution, or mutate browser review behavior.
+
+## Phase 53-55 Visual Review Aggregation Checks
+
+- No-browser tests cover `visual review aggregate --preparation`, source-attributed aggregation findings, corroborated findings, severity conflicts, owner decision requests, source effects, malformed artifact warnings, parser conflicts, and package API parity.
+- Architecture tests verify `src/visual-review-aggregation.js` is read-only, provider-free, raw-pixel-free, Playwright-free, shell-free, listener-free, and MCP-free.
+- Schema parity tests cover `visual_review_aggregation`.
+- MCP tests verify no `browser_debug_visual_review_aggregate` tool is exposed through safe/full/admin profiles.
+- MCP capability and execution gate tests report `visual_review_aggregation` as currently excluded and gated by no-artifact-write, no-provider-call, no-raw-pixel, untrusted-output-bounding, and source-attribution requirements.
+- Packed install smoke verifies the aggregation module, schema, package API exports, schema resolution, and MCP non-exposure from the installed layout.
 
 ## Release Readiness Checks
 

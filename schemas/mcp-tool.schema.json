@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://browser-debug.local/schemas/mcp-tool.schema.json",
-  "title": "Browser Debug CLI MCP Tool Contract",
+  "$id": "https://trace-cue.local/schemas/mcp-tool.schema.json",
+  "title": "TraceCue MCP Tool Contract",
   "type": "object",
   "required": ["name", "description", "inputSchema"],
   "properties": {

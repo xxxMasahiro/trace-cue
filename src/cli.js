@@ -18,8 +18,11 @@ import {
   runAgentWorkflowStatus
 } from './agent.js';
 import { daemonStatus, startDaemon, stopDaemon } from './daemon.js';
+import { buildDesktopReviewProviderPreparationPlan } from './desktop-review-provider-preparation-plan.js';
 import { runDoctor } from './doctor.js';
 import { createEnvelope, createErrorEnvelope, stringifyEnvelope } from './envelope.js';
+import { runImageReview } from './image-review.js';
+import { runIdentityAudit } from './identity-audit.js';
 import { runObserve } from './observe.js';
 import { parseCliArgs } from './parser.js';
 import { PRODUCT_IDENTITY } from './product-identity.js';
@@ -30,6 +33,17 @@ import { schemaListResult, schemaResult } from './schema-registry.js';
 import { runSupervisor } from './supervisor.js';
 import { runTargetInit, runTargetValidate } from './target.js';
 import { buildMcpCapabilityReport } from './mcp-capabilities.js';
+import { runCaptureHandoff } from './capture-handoff.js';
+import { buildCapturePlan } from './capture-plan.js';
+import { buildMcpExecutionGateReport } from './mcp-execution-gates.js';
+import { runVisualReviewResultPreparation } from './visual-review-result-preparation.js';
+import {
+  runVisualReviewExecutionList,
+  runVisualReviewExecutionRun,
+  runVisualReviewExecutionStatus
+} from './visual-review-execution.js';
+import { runVisualReviewDashboard } from './visual-review-dashboard.js';
+import { runVisualReviewAggregation } from './visual-review-aggregation.js';
 import { buildMcpClientConfig } from './mcp-client-config.js';
 import { mcpProfileMetadata } from './mcp-profiles.js';
 import { mcpServerInfo } from './mcp.js';
@@ -198,6 +212,47 @@ export async function executeCli(argv, context = {}) {
       return runtimeResult(parsed.command, await (context.agentExecutionListRunner ?? runAgentExecutionList)(parsed.options, context), parsed.json, now);
     }
 
+    if (parsed.command === 'visual review plan') {
+      return runtimeResult(parsed.command, await (context.desktopReviewProviderPreparationPlanRunner ?? buildDesktopReviewProviderPreparationPlan)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'visual review prepare') {
+      return runtimeResult(parsed.command, await (context.visualReviewResultPreparationRunner ?? runVisualReviewResultPreparation)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'visual review run') {
+      return runtimeResult(parsed.command, await (context.visualReviewExecutionRunRunner ?? runVisualReviewExecutionRun)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'visual review status') {
+      return runtimeResult(parsed.command, await (context.visualReviewExecutionStatusRunner ?? runVisualReviewExecutionStatus)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'visual review list') {
+      return runtimeResult(parsed.command, await (context.visualReviewExecutionListRunner ?? runVisualReviewExecutionList)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'visual review dashboard') {
+      return runtimeResult(parsed.command, await (context.visualReviewDashboardRunner ?? runVisualReviewDashboard)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'visual review aggregate') {
+      return runtimeResult(parsed.command, await (context.visualReviewAggregationRunner ?? runVisualReviewAggregation)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'identity audit') {
+      return runtimeResult(parsed.command, await (context.identityAuditRunner ?? runIdentityAudit)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'capture plan') {
+      const capturePlan = capturePlanInfo(parsed.options, { now });
+      return runtimeResult(parsed.command, capturePlan, parsed.json, now);
+    }
+
+    if (parsed.command === 'capture handoff') {
+      return runtimeResult(parsed.command, await (context.captureHandoffRunner ?? runCaptureHandoff)(parsed.options, context), parsed.json, now);
+    }
+
     if (parsed.command === 'agent package') {
       return runtimeResult(parsed.command, await (context.agentPackageRunner ?? runAgentPackage)(parsed.options, context), parsed.json, now);
     }
@@ -239,6 +294,9 @@ export async function executeCli(argv, context = {}) {
     }
 
     if (parsed.command === 'review') {
+      if (parsed.options.image) {
+        return runtimeResult(parsed.command, await (context.imageReviewRunner ?? runImageReview)(parsed.options, context), parsed.json, now);
+      }
       return runtimeResult(parsed.command, await (context.reviewRunner ?? runReview)(parsed.options, context), parsed.json, now);
     }
 
@@ -266,6 +324,11 @@ export async function executeCli(argv, context = {}) {
     if (parsed.command === 'mcp capabilities') {
       const mcpCapabilities = mcpCapabilitiesInfo(parsed.options);
       return runtimeResult(parsed.command, mcpCapabilities, parsed.json, now);
+    }
+
+    if (parsed.command === 'mcp execution gates') {
+      const mcpExecutionGates = mcpExecutionGatesInfo(parsed.options, { now });
+      return runtimeResult(parsed.command, mcpExecutionGates, parsed.json, now);
     }
 
     return notImplemented(parsed.command, parsed.json, now);
@@ -453,6 +516,47 @@ function usageText(topic) {
   }
 
   if (
+    topic === 'visual review plan'
+  ) {
+    return [
+      `Usage: ${CLI_NAME} visual review plan --capture-handoff <workspace-json|-> [--surface <id>] [--provider <id>] [--model <id>] [--json]`,
+      '',
+      'Plans desktop review provider preparation from capture handoff metadata only. It reads no image bytes, writes no artifacts, calls no providers, transfers no evidence, and exposes no MCP tool.'
+    ].join('\n');
+  }
+
+  if (topic === 'identity' || topic === 'identity audit') {
+    return [
+      `Usage: ${CLI_NAME} identity audit [--json]`,
+      '',
+      'Reports product identity, current checkout name, current origin remote, repository rename state, legacy alias compatibility, and artifact-root migration boundaries without mutating Git, contacting remotes, launching browsers, or writing artifacts.'
+    ].join('\n');
+  }
+
+  if (
+    topic === 'visual'
+    || topic === 'visual review'
+    || topic === 'visual review prepare'
+    || topic === 'visual review run'
+    || topic === 'visual review status'
+    || topic === 'visual review list'
+    || topic === 'visual review dashboard'
+    || topic === 'visual review aggregate'
+  ) {
+    return [
+      `Usage: ${CLI_NAME} visual review plan --capture-handoff <workspace-json|-> [--surface <id>] [--provider <id>] [--model <id>] [--json]`,
+      `       ${CLI_NAME} visual review prepare --review-index <review-artifact-index> [--surface <id>] [--provider <id>] [--model <id>] [--json]`,
+      `       ${CLI_NAME} visual review run --preparation <preparation> --surface <id> --provider <id> --model <id> --execute [--json]`,
+      `       ${CLI_NAME} visual review status --execution <visual-review-execution> [--json]`,
+      `       ${CLI_NAME} visual review list [--json]`,
+      `       ${CLI_NAME} visual review dashboard [--limit <n>] [--json]`,
+      `       ${CLI_NAME} visual review aggregate --preparation <preparation> [--limit <n>] [--json]`,
+      '',
+      'Plans desktop review provider preparation from capture handoff metadata, creates metadata-only preparation artifacts, runs explicit CLI visual review provider adapters against preparation metadata and local references, aggregates existing local visual review results, and reports read-only dashboard status. It does not read or transfer raw pixels, mutate existing reviews, or expose MCP execution.'
+    ].join('\n');
+  }
+
+  if (
     topic === 'agent'
     || topic === 'agent requests'
     || topic === 'agent requests list'
@@ -490,11 +594,14 @@ function usageText(topic) {
 
   if (topic === 'review') {
     return [
-      `Usage: ${CLI_NAME} review (--url <url> | --target <manifest> | --input -) [--json]`,
+      `Usage: ${CLI_NAME} review (--url <url> | --target <manifest> | --image <path> | --input -) [--json]`,
       '',
       'Options:',
       '  --url <url>              Absolute http, https, or file URL to review.',
       '  --target <manifest>      Target manifest path, @file, or inline JSON.',
+      '  --image <path>           Workspace-relative image file to review without launching a browser.',
+      '  --capture-handoff <json> Verify caller-declared screen/window/desktop-app provenance for --image.',
+      '  --source <id>            Caller-declared image source for --image: image, screen, window, or desktop-app.',
       '  --input -                Read a target manifest JSON from stdin when provided by the caller.',
       '  --viewport <name|WxH>    Viewport profile or explicit size. Default: laptop.',
       `  --artifact-root <path>   Local artifact root. Default: ${DEFAULT_ARTIFACT_ROOT}`,
@@ -540,12 +647,20 @@ function usageText(topic) {
     ].join('\n');
   }
 
+  if (topic === 'capture') {
+    return [
+      `Usage: ${CLI_NAME} capture plan [--source screen|window|desktop-app|all] [--json]`,
+      `       ${CLI_NAME} capture handoff --image <workspace-image> --source screen|window|desktop-app [--json]`
+    ].join('\n');
+  }
+
   if (topic === 'mcp') {
     return [
       `Usage: ${CLI_NAME} mcp serve [--profile safe|full|admin] [--json]`,
       `       ${CLI_NAME} mcp config [--client generic|codex] [--profile safe|full|admin] [--json]`,
       `       ${CLI_NAME} mcp config --transport http --profile safe --host 127.0.0.1 --port <port> [--json]`,
-      `       ${CLI_NAME} mcp capabilities [--profile safe|full|admin|all] [--scope all|profiles|excluded] [--json]`
+      `       ${CLI_NAME} mcp capabilities [--profile safe|full|admin|all] [--scope all|profiles|excluded] [--json]`,
+      `       ${CLI_NAME} mcp execution gates [--operation <id>|all] [--profile safe|full|admin|all] [--json]`
     ].join('\n');
   }
 
@@ -575,11 +690,19 @@ function usageText(topic) {
     '  spec export --session <id>',
     '  review --url <url> --json',
     '  review --target <manifest> --json',
+    '  review --image <path> --capture-handoff <path> --json',
+    '  visual review plan --capture-handoff <path> --json',
+    '  visual review dashboard --json',
+    '  visual review aggregate --preparation <path> --json',
+    '  identity audit --json',
+    '  capture plan --json',
+    '  capture handoff --image <path> --json',
     '  schema list --json',
     '  schema get --name <schema> --json',
     '  mcp serve --profile safe --json',
     '  mcp config --profile safe --json',
     '  mcp capabilities --json',
+    '  mcp execution gates --json',
     '',
     'Global options:',
     '  --json',
@@ -705,6 +828,63 @@ function mcpCapabilitiesInfo(options = {}) {
     status: 'ok',
     data: {
       capabilities: report.report
+    },
+    warnings: [],
+    errors: [],
+    artifacts: []
+  };
+}
+
+function mcpExecutionGatesInfo(options = {}, context = {}) {
+  const report = buildMcpExecutionGateReport({
+    operation: options.operation,
+    profile: options.profile
+  }, context);
+  if (!report.ok) {
+    return {
+      status: 'error',
+      data: {
+        execution_gates: {
+          write_execute_tools_exposed: false,
+          mcp_permissions_changed: false
+        }
+      },
+      warnings: [],
+      errors: [{ code: report.code ?? 'INVALID_MCP_EXECUTION_GATES', message: report.message, details: { operation: options.operation, profile: options.profile } }],
+      artifacts: []
+    };
+  }
+  return {
+    status: 'ok',
+    data: {
+      execution_gates: report.report,
+      boundary: report.report.boundary
+    },
+    warnings: [],
+    errors: [],
+    artifacts: []
+  };
+}
+
+function capturePlanInfo(options = {}, context = {}) {
+  const result = buildCapturePlan(options, context);
+  if (!result.ok) {
+    return {
+      status: 'error',
+      data: {
+        capture_plan: null,
+        boundary: null
+      },
+      warnings: [],
+      errors: [{ code: result.code, message: result.message }],
+      artifacts: []
+    };
+  }
+  return {
+    status: 'ok',
+    data: {
+      capture_plan: result.report,
+      boundary: result.report.boundary
     },
     warnings: [],
     errors: [],

@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Browser Debug CLI should make browser debugging reusable across repositories and AI agents. It should provide a local Playwright-based command surface that can observe a page, expose safe action candidates, run selected actions, and produce evidence for UI/UX and functional debugging.
+TraceCue is the canonical product identity. The legacy Browser Debug CLI name and `browser-debug` commands remain compatibility aliases during the migration.
+
+TraceCue should make visual evidence, browser debugging, and UI review reusable across repositories and AI agents. It should provide a local Playwright-based command surface that can observe a page, expose safe action candidates, run selected actions, and produce evidence for UI/UX and functional debugging.
 
 ## Users
 
@@ -33,6 +35,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Provide machine-readable MCP client configuration output so humans, agents, and external repositories can connect through stdio or explicit safe HTTP without reverse-engineering package internals.
 - Provide machine-readable MCP capability policy output so humans, agents, and external repositories can see which profiles, transports, and admin write/execute exclusions are currently in force without starting a server or inspecting source files.
 - Provide a packaged external-repository usage guide so humans, shell-based agents, MCP-capable agents, and Codex users can choose CLI, MCP stdio, safe HTTP MCP, or plugin connection modes without source inspection.
+- Provide a read-only identity audit and rename-readiness check so humans and agents can distinguish canonical repository URL, legacy repository URL, checkout name, legacy aliases, and artifact-root migration boundaries before and after repository rename work.
 - Document target runtime readiness for consumer repositories so frontend-only dev-server reviews, missing API/backend services, API base configuration gaps, and intentional degraded modes can be distinguished without adding app-specific runtime code.
 - Support evidence-backed UI review findings for browser health, layout integrity, interaction quality, accessibility basics, and mock fidelity.
 - Support generic target manifests so site review can cover local applications and dashboards without hard-coded product-specific branches.
@@ -63,6 +66,16 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Provide action plans, implementation-focused fix candidates, and local heuristic advisory signals that help developers decide what to fix first.
 - Provide structured local quality signals for visual hierarchy, rendered state, responsive layout, interaction affordance, accessibility structure, evidence completeness, local release readiness, and model-review boundaries.
 - Provide local plugin metadata so Codex can discover the CLI/MCP review workflow without making remote services mandatory.
+- Provide a shared visual evidence metadata contract for browser screenshots, standalone screenshots, generated mock images, screen captures, window captures, and desktop app captures without embedding raw pixels in JSON records.
+- Provide a planning-only visual review provider policy inside `agent execution plan` so future AI-assisted visual review can disclose raw-pixel, provider, external-transfer, credential, and MCP boundaries before any execution path is expanded.
+- Provide standalone image review for workspace-confined image files so existing screenshots, generated mock images, and manually captured UI images can enter the same local evidence workflow without browser launch or provider execution.
+- Provide local visual review result preparation so existing review artifact indexes can become metadata-only future AI visual review contracts without provider execution, raw pixel transfer, external upload, MCP exposure, or deterministic review mutation.
+- Provide explicit CLI visual review execution from preparation artifacts so AI or local-provider advisory output can be normalized as visual review results without raw pixel transfer, existing review mutation, release gate changes, raw provider response storage, or MCP exposure.
+- Provide a read-only visual review dashboard so local control centers, humans, CLI users, and safe MCP clients can inspect visual review preparation, execution, and result status without writing artifacts, running providers, reading raw pixels, or changing gates.
+- Provide a read-only MCP execution gate report so future MCP planning, provider execution, cleanup execution, and visual review execution can be reviewed against explicit safety gates before any write/execute tool is exposed.
+- Provide a read-only capture planning report so screen, window, and desktop app capture can be reviewed against local privacy, artifact, raw-pixel, and MCP execution boundaries before any OS capture implementation is added.
+- Provide a capture metadata handoff for existing workspace image files so they can be identified as screen, window, or desktop app evidence without OS capture, raw-pixel JSON embedding, provider calls, artifact writes, or MCP exposure.
+- Provide a desktop review provider-preparation planning report from capture handoff metadata so future provider preparation can be reviewed without rereading image bytes, writing artifacts, calling providers, transferring evidence, exposing MCP tools, or mutating existing reviews.
 
 ## Non-Goals
 
@@ -84,7 +97,7 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Do not expose HTTP `full` or `admin`, remote HTTP listeners, socket transports, shell tools, cleanup execution, package generation, ingest, report writing, workflow creation, execution planning, `agent execution run`, provider/API execution, or credential handling through MCP without a separate approved phase.
 - Do not emit bearer token values, credentials, local secrets, raw environment values, or external upload configuration from MCP client configuration helpers.
 - Do not treat an MCP capability policy report or the `admin` profile name as permission to expose write, delete, provider/API, shell, daemon/session, or credential-bearing tools.
-- Do not hide consumer application API/backend startup failures through Browser Debug CLI runtime branches; document target runtime prerequisites in the consumer repository instead.
+- Do not hide consumer application API/backend startup failures through TraceCue runtime branches; document target runtime prerequisites in the consumer repository instead.
 - Do not treat local agent advisory output as deterministic findings, release approval, or a replacement for owner judgment.
 - Do not run provider APIs, upload evidence, store credentials, or expose agent/API execution through MCP as part of the local agent advisory handoff layer.
 - Do not let agent execution mutate review `findings`, `metrics.finding_count`, existing `action_plan`, `quality_signals.release_readiness`, resource guard output, artifact cleanup behavior, or existing `agent_workflow` status meanings.
@@ -93,6 +106,11 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 - Do not upload or send raw screenshots, trace contents, raw DOM, console payloads, network payloads, sourceData values, report bodies, cookies, storage state, existing browser profile data, or raw review artifacts as part of default agent execution.
 - Do not store raw provider responses; only normalized advisory results and local receipts may be retained.
 - Do not expose `agent execution run` through MCP in the planned execution layer.
+- Do not treat visual evidence metadata, visual review result preparation artifacts, visual review execution artifacts, or artifact references as permission to transfer raw pixels, upload raw evidence, expose MCP execution, or store raw provider responses.
+- Do not treat visual review dashboard output as permission to run providers, write artifacts, mutate review state, transfer raw pixels, or change release gates.
+- Do not treat MCP execution gate reports as permission to expose MCP write, delete, provider, credential, shell, daemon/session, or raw-pixel transfer tools.
+- Do not treat capture planning reports as permission to capture screens, enumerate windows or processes, write image artifacts, read raw pixels, call providers, transfer evidence, or expose capture execution through MCP.
+- Do not treat capture metadata handoff as permission to capture screens, enumerate windows or processes, write artifacts, call providers, transfer evidence, expose MCP tools, or bypass workspace-confined image input checks.
 - Do not register a plugin marketplace entry, change the package license, choose a public package name, or publish to npm without explicit release approval.
 
 ## Success Criteria
@@ -270,3 +288,32 @@ Browser Debug CLI should make browser debugging reusable across repositories and
 
 - Final public npm package name and npm scope.
 - Release license and contribution policy.
+
+## Phase 41 Visual Evidence Core Criteria
+
+- TraceCue must support local metadata records for visual evidence from browser screenshots, image files, future screen captures, future window captures, and future desktop app captures.
+- Visual evidence metadata must remain local-first, artifact-root-confined, schema-versioned, and additive to existing review and agent workflows.
+- The current default artifact root remains `.browser-debug/` for compatibility; `.trace-cue/` remains a future migration option only.
+- Visual evidence metadata must not include raw image bytes, provider responses, credentials, cookies, storage state, or automatic external transfer.
+- Existing CLI aliases, MCP tool names, artifact roots, schema fields, and browser review behavior must continue to work without tradeoffs.
+
+## Phase 43 Standalone Image Review Criteria
+
+- `review --image <workspace-file> --json` reviews workspace-confined image files without launching a browser.
+- Standalone image review must reuse visual evidence metadata and write local review/index artifacts under the configured artifact root.
+- Standalone image review must not embed raw pixels in JSON, copy source images into packages, call providers, upload evidence, read credentials, expose MCP execution, or change existing URL/target review behavior.
+
+## Phase 51 Desktop Image Review Criteria
+
+- `review --image <workspace-file> --capture-handoff <workspace-json|-> --json` must accept existing screen, window, and desktop app screenshot handoff metadata.
+- The image review must verify that the handoff source path and SHA-256 media hash match the reviewed workspace image before propagating desktop provenance.
+- The output must keep source provenance caller-declared and must not claim TraceCue captured or verified the actual OS screen, window, or desktop app identity.
+- Desktop image review must remain no-browser, no-provider, no-raw-pixel JSON, no external transfer, no MCP execution, and additive to existing standalone image review.
+
+## Phase 53-55 Multi-Agent Visual Review Aggregation Criteria
+
+- `visual review aggregate --preparation <workspace-json> --json` must read existing local visual review result metadata for one preparation and aggregate advisory findings across reviewer outputs.
+- Aggregation must keep every advisory finding source-attributed to result, provider, model, and finding identifiers.
+- Aggregation must report corroborated findings, conflicts, owner decision requests, source effects, and read-only boundary flags.
+- Aggregation must treat provider output as untrusted advisory data, bound text and result counts, skip malformed or unsafe local artifacts with warnings, and avoid release gate changes.
+- Aggregation must not run providers, read raw pixels, write artifacts, mutate existing reviews, expose MCP tools, read credentials, or store raw provider responses.

@@ -1,6 +1,6 @@
 ---
 name: product-doc-sync
-description: Synchronize Browser Debug CLI product documents and workflow documents.
+description: Synchronize TraceCue product documents and workflow documents.
 ---
 
 # Product Doc Sync

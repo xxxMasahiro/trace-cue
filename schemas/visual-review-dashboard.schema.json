@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/visual-review-dashboard.schema.json",
+  "title": "TraceCue Visual Review Dashboard",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "status",
+    "summary",
+    "latest",
+    "preparations",
+    "executions",
+    "results",
+    "control_center_handoff",
+    "gate_effect",
+    "boundary"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "status": { "enum": ["empty", "prepared", "ready", "owner_review_recommended"] },
+    "summary": { "type": "object" },
+    "latest": { "type": "object" },
+    "preparations": { "type": "array" },
+    "executions": { "type": "array" },
+    "results": { "type": "array" },
+    "control_center_handoff": { "type": "object" },
+    "query": { "type": "object" },
+    "gate_effect": { "enum": ["none"] },
+    "boundary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

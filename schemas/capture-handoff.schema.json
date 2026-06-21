@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/capture-handoff.schema.json",
+  "title": "TraceCue Capture Handoff",
+  "type": "object",
+  "required": ["schema_version", "handoff_version", "id", "status", "generated_at", "created_at", "source", "media", "privacy", "disclosure_policy", "visual_evidence_contract", "handoff", "boundary"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "handoff_version": { "type": "string" },
+    "id": { "type": "string" },
+    "status": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "created_at": { "type": "string" },
+    "source": { "type": "object" },
+    "media": { "type": "object" },
+    "privacy": { "type": "object" },
+    "disclosure_policy": { "type": "object" },
+    "visual_evidence_contract": { "type": "object" },
+    "handoff": { "type": "object" },
+    "boundary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

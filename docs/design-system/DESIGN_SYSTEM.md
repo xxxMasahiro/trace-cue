@@ -1,6 +1,6 @@
 # DESIGN_SYSTEM.md
 
-Browser Debug CLI is primarily a command-line tool. The product may later generate HTML or Markdown reports, so this design-system placeholder records a small visual contract for future report surfaces.
+TraceCue is primarily a command-line tool. The product may later generate HTML or Markdown reports, so this design-system placeholder records a small visual contract for future report surfaces.
 
 ## Principles
 

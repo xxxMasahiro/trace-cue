@@ -13,7 +13,8 @@ import {
   executeAgentExecutionProvider,
   resolveAgentExecutionProvider
 } from './agent-execution-providers.js';
-import { DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
+import { buildVisualReviewProviderPolicy } from './visual-review-provider-policy.js';
+import { CLI_NAME, DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
 import { redact } from './redaction.js';
 
 const DEFAULT_LOCAL_PROVIDER = 'local-runner';
@@ -94,14 +95,14 @@ export async function runAgentExecutionRun(options = {}, context = {}) {
   if (!options.execute) {
     return errorResult('AGENT_EXECUTION_REQUIRES_EXECUTE', 'agent execution run requires explicit --execute.', {
       execute_required: true,
-      dry_run_command: `browser-debug agent execution plan --package ${options.package ?? '<agent-package>'} --surface ${options.surface ?? '<surface>'} --json`
+      dry_run_command: `${CLI_NAME} agent execution plan --package ${options.package ?? '<agent-package>'} --surface ${options.surface ?? '<surface>'} --json`
     });
   }
 
   if (!options.execution) {
     return errorResult('AGENT_EXECUTION_PLAN_REQUIRED', 'agent execution run requires --execution <agent-execution> from a prior dry-run plan.', {
       execution_required: true,
-      dry_run_command: `browser-debug agent execution plan --package ${options.package ?? '<agent-package>'} --surface ${options.surface ?? '<surface>'} --provider ${options.provider ?? '<provider>'} --model ${options.model ?? '<model>'} --json`
+      dry_run_command: `${CLI_NAME} agent execution plan --package ${options.package ?? '<agent-package>'} --surface ${options.surface ?? '<surface>'} --provider ${options.provider ?? '<provider>'} --model ${options.model ?? '<model>'} --json`
     });
   }
 
@@ -315,6 +316,12 @@ function buildExecutionRecord({
 }) {
   const packet = agentPackage.packet;
   const disclosurePolicy = packet.disclosure_policy ?? {};
+  const visualReviewProviderPolicy = buildVisualReviewProviderPolicy({
+    agentPackage,
+    surface,
+    provider,
+    model
+  });
   return redact({
     schema_version: SCHEMA_VERSION,
     id,
@@ -335,7 +342,9 @@ function buildExecutionRecord({
       plan: {
         status: 'completed',
         no_network: true,
-        browser_launched: false
+        browser_launched: false,
+        visual_review_provider_policy: 'completed',
+        raw_pixels_included: false
       },
       execution: {
         status: executeRequested ? 'blocked' : 'not_requested',
@@ -348,17 +357,17 @@ function buildExecutionRecord({
       },
       ingest: {
         status: 'pending',
-        command: `browser-debug agent ingest --package ${agentPackage.package_path} --input @agent-advisory-result.json --json`
+        command: `${CLI_NAME} agent ingest --package ${agentPackage.package_path} --input @agent-advisory-result.json --json`
       },
       report: {
         status: 'pending',
-        command: `browser-debug agent report --review-index ${packet.source?.review_artifact_index_path ?? '<review-index>'} --agent-result <agent-result> --json`
+        command: `${CLI_NAME} agent report --review-index ${packet.source?.review_artifact_index_path ?? '<review-index>'} --agent-result <agent-result> --json`
       }
     },
     dashboard_handoff: {
-      status_command: `browser-debug agent execution status --execution ${executionPath} --json`,
-      list_command: 'browser-debug agent execution list --json',
-      run_command: `browser-debug agent execution run --execution ${executionPath} --package ${agentPackage.package_path} --surface ${surface.id} --provider ${provider.id} --model ${model.id} --execute --json`,
+      status_command: `${CLI_NAME} agent execution status --execution ${executionPath} --json`,
+      list_command: `${CLI_NAME} agent execution list --json`,
+      run_command: `${CLI_NAME} agent execution run --execution ${executionPath} --package ${agentPackage.package_path} --surface ${surface.id} --provider ${provider.id} --model ${model.id} --execute --json`,
       agent_result_path: null,
       report_command: null,
       next_safe_action: 'Review the dry-run execution plan, then run the explicit execution command when the provider boundary is configured.'
@@ -369,6 +378,11 @@ function buildExecutionRecord({
       trace_content_included: Boolean(disclosurePolicy.trace_content_included),
       source_data_values_included: Boolean(disclosurePolicy.source_data_values_included),
       local_artifact_paths_included: Boolean(disclosurePolicy.local_artifact_paths_included),
+      visual_evidence_metadata_included: visualReviewProviderPolicy.disclosure.visual_evidence_metadata_included,
+      raw_pixels_included: false,
+      future_execute_required: true,
+      provider_execution_authorized: false,
+      requires_owner_review_before_external_transfer: true,
       external_evidence_transfer: false,
       bounded_prompt_disclosure_only: true
     },
@@ -383,6 +397,9 @@ function buildExecutionRecord({
     raw_provider_response_stored: false,
     existing_review_mutated: false,
     mcp_execution_exposed: false,
+    raw_pixels_included: false,
+    visual_review_provider_execution_authorized: false,
+    visual_review_provider_policy: visualReviewProviderPolicy,
     provider_adapter: {
       id: provider.id,
       kind: provider.kind,
@@ -419,6 +436,7 @@ function buildExecutionRunRecord({ plan, now, status, provider, model, providerR
     ...plan,
     status,
     mode: 'provider_run',
+    visual_review_provider_policy: undefined,
     updated_at: now.toISOString(),
     evaluated_at: now.toISOString(),
     completed_at: completed ? now.toISOString() : null,
@@ -455,7 +473,7 @@ function buildExecutionRunRecord({ plan, now, status, provider, model, providerR
       report: {
         status: completed ? 'pending' : 'blocked_waiting_for_execution',
         command: completed
-          ? `browser-debug agent report --review-index ${plan.review_artifact_index_path ?? '<review-index>'} --agent-result ${resultPath} --json`
+          ? `${CLI_NAME} agent report --review-index ${plan.review_artifact_index_path ?? '<review-index>'} --agent-result ${resultPath} --json`
           : plan.steps?.report?.command ?? null
       }
     },
@@ -464,7 +482,7 @@ function buildExecutionRunRecord({ plan, now, status, provider, model, providerR
       status_label: status,
       agent_result_path: resultPath,
       report_command: completed
-        ? `browser-debug agent report --review-index ${plan.review_artifact_index_path ?? '<review-index>'} --agent-result ${resultPath} --json`
+        ? `${CLI_NAME} agent report --review-index ${plan.review_artifact_index_path ?? '<review-index>'} --agent-result ${resultPath} --json`
         : null,
       next_safe_action: completed
         ? 'Review the normalized advisory result, then run the advisory report command when useful.'
@@ -706,7 +724,9 @@ function summarizeExecutions(executions) {
     credential_values_recorded: false,
     raw_provider_response_stored: false,
     existing_review_mutated: false,
-    mcp_execution_exposed: false
+    mcp_execution_exposed: false,
+    raw_pixels_included: false,
+    visual_review_provider_execution_authorized: false
   };
   for (const execution of executions) {
     if (Object.hasOwn(summary, execution.status)) {
@@ -776,7 +796,9 @@ function executionDashboardStatus({ status, resultPath, provider, apiCallPerform
     credential_values_recorded: false,
     raw_provider_response_stored: false,
     existing_review_mutated: false,
-    mcp_execution_exposed: false
+    mcp_execution_exposed: false,
+    raw_pixels_included: false,
+    visual_review_provider_execution_authorized: false
   };
 }
 
@@ -794,6 +816,8 @@ function executionBoundary(overrides = {}) {
     existing_review_mutated: false,
     mcp_execution_exposed: false,
     provider_adapter_implemented: false,
+    raw_pixels_included: false,
+    visual_review_provider_execution_authorized: false,
     shell_used: false,
     free_form_shell_input_accepted: false,
     ...overrides

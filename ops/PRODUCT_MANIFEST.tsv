@@ -7,8 +7,8 @@ product.plugin_manifest	optional	all	all	.codex-plugin/plugin.json	ops	file_none
 product.plugin_mcp	optional	all	all	.mcp.json	ops	file_nonempty	workflow	Local plugin MCP server configuration for the stdio adapter.
 product.ci_workflow	optional	all	all	.github/workflows/ci.yml	ci	file_nonempty	workflow	Local GitHub Actions workflow definition; not executed until a remote exists.
 product.ci_manifest	optional	all	all	ops/CI_MANIFEST.tsv	ops	file_nonempty	workflow	CI authority manifest for product-local workflow checks.
-product.cli_bin	optional	all	all	bin/browser-debug.js	source	file_nonempty	workflow	Local browser-debug executable entrypoint.
-product.mcp_bin	optional	all	all	bin/browser-debug-mcp.js	source	file_nonempty	workflow	Local stdio MCP adapter executable entrypoint.
+product.cli_bin	optional	all	all	bin/trace-cue.js	source	file_nonempty	workflow	Local trace-cue executable entrypoint.
+product.mcp_bin	optional	all	all	bin/trace-cue-mcp.js	source	file_nonempty	workflow	Local stdio MCP adapter executable entrypoint.
 product.source	required	all	all	src/cli.js	source	file_nonempty	workflow	CLI runtime entrypoint.
 product.public_api	optional	all	all	src/api.js	source	file_nonempty	workflow	Public local package API exports for reusable core functions.
 product.agent_advisory	optional	all	all	src/agent.js	source	file_nonempty	workflow	Local agent advisory package, ingest, report, and surface registry runtime.
@@ -44,7 +44,7 @@ product.agent_advisory_result_schema	optional	all	all	schemas/agent-advisory-res
 product.agent_disclosure_policy_schema	optional	all	all	schemas/agent-disclosure-policy.schema.json	doc	file_nonempty	workflow	Public schema for agent evidence disclosure policies.
 product.target_template	optional	all	all	templates/review-target-manifest.json	doc	file_nonempty	workflow	Reusable target manifest template for route and viewport review.
 product.status_dashboard_content_ux_template	optional	all	all	templates/status-dashboard-content-ux-target-manifest.json	doc	file_nonempty	workflow	Reusable manifest example for generic status-dashboard content UX advisory, review brief, and rubric review.
-product.plugin_skill	optional	all	all	skills/browser-debug-review/SKILL.md	doc	file_nonempty	workflow	Plugin-facing usage skill for local browser review workflows.
+product.plugin_skill	optional	all	all	skills/trace-cue-review/SKILL.md	doc	file_nonempty	workflow	Plugin-facing usage skill for local visual review workflows.
 product.consumer_usage	optional	all	all	docs/workflow/CONSUMER_USAGE.md	doc	file_nonempty	workflow	Packaged external repository usage guide for CLI, MCP stdio, safe HTTP MCP, and Codex plugin connection modes.
 product.architecture_test	optional	all	all	tests/architecture.test.js	test	file_nonempty	workflow	Architecture regression tests for reusable and generic runtime boundaries.
 product.test	required	all	all	tests/cli.test.js	test	file_nonempty	workflow	No-browser CLI parser, JSON output, and doctor tests.
@@ -58,3 +58,23 @@ product.plan	required	all	all	docs/product/IMPLEMENTATION_PLAN.md	doc	file_nonem
 product.release_policy	optional	all	all	docs/workflow/RELEASE.md	doc	file_nonempty	workflow	Local release readiness checklist and publication blockers.
 product.identity_migration	optional	all	all	docs/workflow/IDENTITY_MIGRATION.md	doc	file_nonempty	workflow	Runbook for approved future package, repository, CLI, MCP, and plugin identity migrations.
 product.ci_check	optional	all	all	tools/check_product_ci.sh	custom	file_nonempty	workflow	Product-local CI workflow validation without remote execution.
+product.visual_review_result_preparation	optional	all	all	src/visual-review-result-preparation.js	source	file_nonempty	workflow	Local metadata-only visual review result preparation runtime for future AI visual review contracts.
+product.visual_review_result_preparation_schema	optional	all	all	schemas/visual-review-result-preparation.schema.json	doc	file_nonempty	workflow	Public schema for local visual review result preparation output.
+product.visual_review_result_schema	optional	all	all	schemas/visual-review-result.schema.json	doc	file_nonempty	workflow	Public future schema for normalized visual review result output.
+product.visual_review_execution	optional	all	all	src/visual-review-execution.js	source	file_nonempty	workflow	CLI-only visual review execution runtime from preparation metadata.
+product.visual_review_execution_schema	optional	all	all	schemas/visual-review-execution.schema.json	doc	file_nonempty	workflow	Public schema for local visual review execution output.
+product.visual_review_dashboard	optional	all	all	src/visual-review-dashboard.js	source	file_nonempty	workflow	Read-only visual review dashboard aggregation over local preparation, execution, and result metadata.
+product.visual_review_dashboard_schema	optional	all	all	schemas/visual-review-dashboard.schema.json	doc	file_nonempty	workflow	Public schema for read-only visual review dashboard output.
+product.mcp_execution_gates	optional	all	all	src/mcp-execution-gates.js	source	file_nonempty	workflow	Read-only MCP planning and execution gate policy helper.
+product.mcp_execution_gates_schema	optional	all	all	schemas/mcp-execution-gates.schema.json	doc	file_nonempty	workflow	Public schema for MCP execution gate policy output.
+product.capture_plan	optional	all	all	src/capture-plan.js	source	file_nonempty	workflow	Read-only screen/window/desktop app capture planning helper.
+product.capture_plan_schema	optional	all	all	schemas/capture-plan.schema.json	doc	file_nonempty	workflow	Public schema for capture planning output.
+product.capture_handoff	optional	all	all	src/capture-handoff.js	source	file_nonempty	workflow	Workspace-confined existing image capture metadata handoff helper.
+product.capture_handoff_schema	optional	all	all	schemas/capture-handoff.schema.json	doc	file_nonempty	workflow	Public schema for capture handoff output.
+product.desktop_review_provider_preparation_plan	optional	all	all	src/desktop-review-provider-preparation-plan.js	source	file_nonempty	workflow	Read-only desktop review provider-preparation planning helper from capture handoff metadata.
+product.desktop_review_provider_preparation_plan_schema	optional	all	all	schemas/desktop-review-provider-preparation-plan.schema.json	doc	file_nonempty	workflow	Public schema for desktop review provider-preparation planning output.
+product.visual_review_aggregation	optional	all	all	src/visual-review-aggregation.js	source	file_nonempty	workflow	Read-only multi-agent visual review aggregation helper over local visual review result metadata.
+product.visual_review_aggregation_schema	optional	all	all	schemas/visual-review-aggregation.schema.json	doc	file_nonempty	workflow	Public schema for read-only visual review aggregation output.
+product.identity_audit	optional	all	all	src/identity-audit.js	source	file_nonempty	workflow	Read-only identity and rename-readiness audit helper over product metadata and local Git configuration.
+product.identity_audit_schema	optional	all	all	schemas/identity-audit.schema.json	doc	file_nonempty	workflow	Public schema for read-only identity audit output.
+product.rename_readiness_check	optional	all	all	tools/check_rename_readiness.mjs	custom	file_nonempty	workflow	Local rename-readiness check for identity metadata, canonical/legacy repository naming, and packaged MCP legacy compatibility.

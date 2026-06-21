@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import path from 'node:path';
 import { parseMcpServerArgs, runMcpStdio } from '../src/mcp.js';
 import { runMcpHttp } from '../src/mcp-http-transport.js';
 import { PRODUCT_IDENTITY } from '../src/product-identity.js';
@@ -9,11 +10,13 @@ if (!parsed.ok) {
   process.exit(2);
 }
 if (parsed.help) {
+  const invokedBinName = path.basename(process.argv[1] ?? PRODUCT_IDENTITY.legacyMcpBins[0]?.name ?? PRODUCT_IDENTITY.mcpBinName);
   process.stdout.write([
-    `Usage: ${PRODUCT_IDENTITY.mcpBinName} [--profile safe|full|admin]`,
-    `       ${PRODUCT_IDENTITY.mcpBinName} --transport http --profile safe --host 127.0.0.1 --port 0`,
+    `Usage: ${invokedBinName} [--profile safe|full|admin]`,
+    `       ${invokedBinName} --transport http --profile safe --host 127.0.0.1 --port 0`,
     '',
-    'HTTP transport requires a bearer token in BROWSER_DEBUG_MCP_HTTP_TOKEN.',
+    `Canonical MCP bin: ${PRODUCT_IDENTITY.mcpBinName}. Legacy MCP bins: ${PRODUCT_IDENTITY.legacyMcpBins.map((entry) => entry.name).join(', ')}.`,
+    'HTTP transport requires a bearer token in TRACE_CUE_MCP_HTTP_TOKEN; BROWSER_DEBUG_MCP_HTTP_TOKEN remains a legacy fallback.',
     'The default transport remains stdio for compatibility.'
   ].join('\n'));
   process.stdout.write('\n');

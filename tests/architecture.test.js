@@ -13,6 +13,13 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'src/agent.js',
     'src/agent-execution.js',
     'src/agent-execution-providers.js',
+    'src/visual-review-provider-policy.js',
+    'src/visual-review-result-preparation.js',
+    'src/visual-review-dashboard.js',
+    'src/visual-review-aggregation.js',
+    'src/desktop-review-provider-preparation-plan.js',
+    'src/image-review.js',
+    'src/identity-audit.js',
     'src/constants.js',
     'src/content-ux-advisory.js',
     'src/daemon.js',
@@ -27,6 +34,9 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'src/review.js',
     'src/mcp.js',
     'src/mcp-capabilities.js',
+    'src/capture-handoff.js',
+    'src/capture-plan.js',
+    'src/mcp-execution-gates.js',
     'src/mcp-client-config.js',
     'src/mcp-http-transport.js',
     'src/mcp-profiles.js',
@@ -35,6 +45,7 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'src/target.js',
     'src/sessions.js',
     'src/supervisor.js',
+    'src/visual-evidence.js',
     'templates/review-target-manifest.json',
     'templates/status-dashboard-content-ux-target-manifest.json',
     '.github/workflows/ci.yml',
@@ -84,6 +95,9 @@ test('package keeps a standard local Node CLI surface', async () => {
   assert.equal(pkg.engines.node, '>=20');
   assert.equal(pkg.bin[PRODUCT_IDENTITY.cliBinName], PRODUCT_IDENTITY.cliBinPath);
   assert.equal(pkg.bin[PRODUCT_IDENTITY.mcpBinName], PRODUCT_IDENTITY.mcpBinPath);
+  for (const legacyBin of [...PRODUCT_IDENTITY.legacyCliBins, ...PRODUCT_IDENTITY.legacyMcpBins]) {
+    assert.equal(pkg.bin[legacyBin.name], legacyBin.path);
+  }
   assert.equal(pkg.exports['.'], './src/api.js');
   assert.equal(pkg.exports['./schemas/*'], './schemas/*.schema.json');
   assert.ok(pkg.files.includes('.codex-plugin/'));
@@ -92,16 +106,21 @@ test('package keeps a standard local Node CLI surface', async () => {
   assert.ok(pkg.files.includes('docs/workflow/IDENTITY_MIGRATION.md'));
   assert.ok(pkg.files.includes('templates/'));
   assert.ok(pkg.files.includes(PRODUCT_IDENTITY.pluginSkillPath));
+  for (const legacySkill of PRODUCT_IDENTITY.legacyPluginSkillPaths) {
+    assert.ok(pkg.files.includes(legacySkill));
+  }
   assert.ok(pkg.scripts.test);
   assert.ok(pkg.scripts['test:browser']);
+  assert.ok(pkg.scripts['test:rename-readiness']);
   assert.ok(pkg.scripts['test:pack']);
   assert.ok(pkg.scripts['test:pack-install']);
   assert.ok(pkg.scripts['release:check']);
+  assert.match(pkg.scripts['release:check'], /npm run test:rename-readiness/);
   assert.match(pkg.scripts['release:check'], /npm run test:pack-install/);
   assert.match(pkg.scripts['test:pack'], /tools\/pack-dry-run\.mjs/);
-  assert.doesNotMatch(pkg.scripts['test:pack'], /browser-debug-cli-npm-cache/);
+  assert.equal(pkg.scripts['test:pack'].includes(`${PRODUCT_IDENTITY.repositoryName}-npm-cache`), false);
   assert.match(pkg.scripts['test:pack-install'], /tools\/pack-install-smoke\.mjs/);
-  assert.doesNotMatch(pkg.scripts['test:pack-install'], /browser-debug-cli-0\.0\.0\.tgz/);
+  assert.equal(pkg.scripts['test:pack-install'].includes(`${PRODUCT_IDENTITY.repositoryName}-${PRODUCT_IDENTITY.packageVersion}.tgz`), false);
   assert.equal(pkg.scripts.postinstall, undefined);
   assert.equal(pkg.scripts.prepublishOnly, undefined);
   assert.doesNotMatch(JSON.stringify(pkg.scripts), /\b(?:gh|curl|wget|publish)\b/);
@@ -143,6 +162,43 @@ test('resource status preflight stays read-only and local', async () => {
   assert.match(resourceStatus, /swap_mutated:\s*false/);
   assert.match(resourceStatus, /cache_deleted:\s*false/);
   assert.match(resourceStatus, /shell_used:\s*false/);
+});
+
+test('visual evidence core stays local, additive, and provider-free', async () => {
+  const source = await readText('src/visual-evidence.js');
+  const artifacts = await readText('src/artifacts.js');
+  const api = await readText('src/api.js');
+  const schemaFile = JSON.parse(await readText('schemas/visual-evidence.schema.json'));
+
+  assert.match(artifacts, /'visual-evidence'/);
+  assert.match(api, /createVisualEvidenceRecord/);
+  assert.equal(schemaFile.title, 'TraceCue Visual Evidence');
+  assert.match(source, /raw_pixels_in_json:\s*false/);
+  assert.match(source, /external_upload:\s*false/);
+  assert.match(source, /provider_call_performed:\s*false/);
+  assert.match(source, /mcp_execution_exposed:\s*false/);
+  assert.doesNotMatch(source, /from 'node:http'|from 'node:child_process'|createServer|\.listen\(|fetch\(|playwright/);
+});
+
+test('standalone image review stays workspace-confined and provider-free', async () => {
+  const source = await readText('src/image-review.js');
+  const parser = await readText('src/parser.js');
+  const api = await readText('src/api.js');
+  const artifacts = await readText('src/artifacts.js');
+  const schemaFile = JSON.parse(await readText('schemas/image-review.schema.json'));
+
+  assert.match(source, /readWorkspaceImageFile/);
+  assert.match(source, /createVisualEvidenceArtifact/);
+  assert.match(source, /review-artifacts/);
+  assert.match(source, /browser_launched:\s*false/);
+  assert.match(source, /provider_call_performed:\s*false/);
+  assert.match(source, /raw_pixels_in_json:\s*false/);
+  assert.match(source, /mcp_execution_exposed:\s*false/);
+  assert.match(parser, /--image <path>|image/);
+  assert.match(api, /runImageReview/);
+  assert.equal(schemaFile.title, 'TraceCue Image Review');
+  assert.doesNotMatch(artifacts, /'image-reviews'/);
+  assert.doesNotMatch(source, /from 'node:http'|from 'node:child_process'|createServer|\.listen\(|fetch\(|playwright|process\.env/);
 });
 
 test('resource guard and artifact cleanup keep explicit local boundaries', async () => {
@@ -217,6 +273,188 @@ test('agent execution provider calls stay in the dedicated adapter boundary', as
   assert.doesNotMatch(mcp, /browser_debug_agent_execution_plan|browser_debug_agent_execution_run|provider_execute/);
 });
 
+test('capture handoff stays workspace-confined and MCP-execution-free', async () => {
+  const handoff = await readText('src/capture-handoff.js');
+  const profiles = await readText('src/mcp-profiles.js');
+
+  assert.match(handoff, /workspace_confined_input:\s*true/);
+  assert.match(handoff, /symlink_escape_allowed:\s*false/);
+  assert.match(handoff, /artifact_created:\s*false/);
+  assert.match(handoff, /writes_artifacts:\s*false/);
+  assert.match(handoff, /capture_performed:\s*false/);
+  assert.match(handoff, /raw_pixels_in_json:\s*false/);
+  assert.match(handoff, /mcp_permissions_changed:\s*false/);
+  assert.match(handoff, /mcp_execution_exposed:\s*false/);
+  assert.match(handoff, /os_capture_api_used:\s*false/);
+  assert.match(handoff, /window_enumeration_performed:\s*false/);
+  assert.doesNotMatch(handoff, /writeFile|writeJsonArtifact|ensureArtifactRoot|\bfetch\s*\(|XMLHttpRequest|curl|wget/);
+  assert.doesNotMatch(handoff, /from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(handoff, /node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(handoff, /from 'node:http'|createServer|\.listen\(|WebSocket|EventSource/);
+  assert.doesNotMatch(profiles, /browser_debug_capture_handoff|browser_debug_capture_run|screen_capture_execute|window_capture_execute/);
+});
+
+test('desktop review provider-preparation planning stays read-only and MCP-free', async () => {
+  const plan = await readText('src/desktop-review-provider-preparation-plan.js');
+  const profiles = await readText('src/mcp-profiles.js');
+
+  assert.match(plan, /read_only:\s*true/);
+  assert.match(plan, /capture_handoff_json_read:\s*true/);
+  assert.match(plan, /image_bytes_read:\s*false/);
+  assert.match(plan, /raw_pixels_in_json:\s*false/);
+  assert.match(plan, /artifact_created:\s*false/);
+  assert.match(plan, /writes_artifacts:\s*false/);
+  assert.match(plan, /provider_call_performed:\s*false/);
+  assert.match(plan, /provider_execution_authorized:\s*false/);
+  assert.match(plan, /external_evidence_transfer:\s*false/);
+  assert.match(plan, /mcp_execution_exposed:\s*false/);
+  assert.match(plan, /mcp_write_execute_exposed:\s*false/);
+  assert.match(plan, /existing_review_mutated:\s*false/);
+  assert.doesNotMatch(plan, /readWorkspaceImageFile|imageMetadata|writeFile|writeJsonArtifact|ensureArtifactRoot|\bfetch\s*\(|XMLHttpRequest|curl|wget/);
+  assert.doesNotMatch(plan, /from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(plan, /node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(plan, /from 'node:http'|createServer|\.listen\(|WebSocket|EventSource/);
+  assert.doesNotMatch(plan, /process\.env/);
+  assert.doesNotMatch(profiles, /browser_debug_visual_review_plan|browser_debug_desktop_review_provider_preparation/);
+});
+
+test('capture plan stays read-only and does not capture pixels', async () => {
+  const capturePlan = await readText('src/capture-plan.js');
+  const mcpProfiles = await readText('src/mcp-profiles.js');
+
+  assert.match(capturePlan, /read_only:\s*true/);
+  assert.match(capturePlan, /planning_only:\s*true/);
+  assert.match(capturePlan, /capture_performed:\s*false/);
+  assert.match(capturePlan, /raw_pixels_read:\s*false/);
+  assert.match(capturePlan, /raw_pixels_written:\s*false/);
+  assert.match(capturePlan, /raw_pixels_in_json:\s*false/);
+  assert.match(capturePlan, /writes_artifacts:\s*false/);
+  assert.match(capturePlan, /provider_call_performed:\s*false/);
+  assert.match(capturePlan, /mcp_execution_exposed:\s*false/);
+  assert.match(capturePlan, /os_capture_api_used:\s*false/);
+  assert.match(capturePlan, /native_capture_dependency_loaded:\s*false/);
+  assert.match(capturePlan, /window_enumeration_performed:\s*false/);
+  assert.match(capturePlan, /process_enumeration_performed:\s*false/);
+  assert.doesNotMatch(capturePlan, /writeFile|writeJsonArtifact|ensureArtifactRoot|\bfetch\s*\(|XMLHttpRequest|curl|wget/);
+  assert.doesNotMatch(capturePlan, /from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(capturePlan, /node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(capturePlan, /from 'node:http'|createServer|\.listen\(|WebSocket|EventSource/);
+  assert.match(mcpProfiles, /browser_debug_capture_plan/);
+  assert.doesNotMatch(mcpProfiles, /browser_debug_capture_run|screen_capture_execute|window_capture_execute/);
+});
+
+test('MCP execution gates stay read-only and non-executing', async () => {
+  const gates = await readText('src/mcp-execution-gates.js');
+  const profiles = await readText('src/mcp-profiles.js');
+
+  assert.match(gates, /read_only:\s*true/);
+  assert.match(gates, /writes_artifacts:\s*false/);
+  assert.match(gates, /provider_call_performed:\s*false/);
+  assert.match(gates, /mcp_permissions_changed:\s*false/);
+  assert.match(gates, /mcp_write_execute_exposed:\s*false/);
+  assert.doesNotMatch(gates, /writeFile|writeJsonArtifact|ensureArtifactRoot|\bfetch\s*\(|XMLHttpRequest|curl|wget/);
+  assert.doesNotMatch(gates, /from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(gates, /node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(gates, /from 'node:http'|createServer|\.listen\(|WebSocket|EventSource/);
+  assert.match(profiles, /browser_debug_mcp_execution_gates/);
+  assert.doesNotMatch(profiles, /browser_debug_agent_execution_run|browser_debug_visual_review_run|cleanup_execute/);
+});
+
+test('visual review dashboard stays read-only and safe-profile compatible', async () => {
+  const dashboard = await readText('src/visual-review-dashboard.js');
+  const mcpProfiles = await readText('src/mcp-profiles.js');
+
+  assert.match(dashboard, /read_only:\s*true/);
+  assert.match(dashboard, /writes_artifacts:\s*false/);
+  assert.match(dashboard, /provider_call_performed:\s*false/);
+  assert.match(dashboard, /api_call_performed:\s*false/);
+  assert.match(dashboard, /raw_pixels_read:\s*false/);
+  assert.match(dashboard, /mcp_write_execute_exposed:\s*false/);
+  assert.match(dashboard, /gate_effect:\s*'none'/);
+  assert.doesNotMatch(dashboard, /writeFile|writeJsonArtifact|ensureArtifactRoot|\bfetch\s*\(|XMLHttpRequest|curl|wget/);
+  assert.doesNotMatch(dashboard, /from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(dashboard, /node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(dashboard, /from 'node:http'|createServer|\.listen\(|WebSocket|EventSource/);
+  assert.match(mcpProfiles, /browser_debug_visual_review_dashboard/);
+});
+
+test('multi-agent visual review aggregation stays read-only provider-free and MCP-free', async () => {
+  const aggregation = await readText('src/visual-review-aggregation.js');
+  const profiles = await readText('src/mcp-profiles.js');
+  const capabilities = await readText('src/mcp-capabilities.js');
+  const gates = await readText('src/mcp-execution-gates.js');
+
+  assert.match(aggregation, /read_only:\s*true/);
+  assert.match(aggregation, /writes_artifacts:\s*false/);
+  assert.match(aggregation, /provider_call_performed:\s*false/);
+  assert.match(aggregation, /raw_pixels_read:\s*false/);
+  assert.match(aggregation, /mcp_execution_exposed:\s*false/);
+  assert.doesNotMatch(aggregation, /\bfetch\s*\(|XMLHttpRequest|curl|wget/);
+  assert.doesNotMatch(aggregation, /process\.env/);
+  assert.doesNotMatch(aggregation, /writeFile|writeJsonArtifact|ensureArtifactRoot/);
+  assert.doesNotMatch(aggregation, /from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(aggregation, /node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(aggregation, /from 'node:http'|createServer|\.listen\(|WebSocket|EventSource/);
+  assert.doesNotMatch(profiles, /browser_debug_visual_review_aggregate/);
+  assert.match(capabilities, /visual_review_aggregation/);
+  assert.match(gates, /visual_review_aggregation/);
+});
+
+test('visual review execution keeps provider boundaries isolated from MCP and raw pixels', async () => {
+  const execution = await readText('src/visual-review-execution.js');
+  const mcp = `${await readText('src/mcp.js')}\n${await readText('src/mcp-profiles.js')}`;
+  const capabilities = await readText('src/mcp-capabilities.js');
+
+  assert.match(execution, /raw_pixels_included:\s*false/);
+  assert.match(execution, /raw_pixels_transferred:\s*false/);
+  assert.match(execution, /raw_provider_response_stored:\s*false/);
+  assert.match(execution, /mcp_execution_exposed:\s*false/);
+  assert.match(execution, /existing_review_mutated:\s*false/);
+  assert.match(execution, /credential_values_recorded:\s*false/);
+  assert.doesNotMatch(execution, /from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(execution, /node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(execution, /from 'node:http'|createServer|\.listen\(|WebSocket|EventSource/);
+  assert.match(execution, /\bfetchImpl\b/);
+  assert.doesNotMatch(mcp, /visual_review_run|browser_debug_visual_review_run|visual_review_execute|browser_debug_visual_review_execute/);
+  assert.match(capabilities, /visual_review_run/);
+});
+
+test('visual review result preparation stays local metadata-only and provider-free', async () => {
+  const preparation = await readText('src/visual-review-result-preparation.js');
+  const mcp = `${await readText('src/mcp.js')}\n${await readText('src/mcp-profiles.js')}`;
+  const capabilities = await readText('src/mcp-capabilities.js');
+
+  assert.match(preparation, /provider_call_performed:\s*false/);
+  assert.match(preparation, /raw_pixels_included:\s*false/);
+  assert.match(preparation, /external_evidence_transfer:\s*false/);
+  assert.match(preparation, /mcp_execution_exposed:\s*false/);
+  assert.match(preparation, /existing_review_mutated:\s*false/);
+  assert.doesNotMatch(preparation, /from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(preparation, /node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(preparation, /\bfetch\s*\(|XMLHttpRequest|curl|wget|from 'node:http'|createServer|\.listen\(/);
+  assert.doesNotMatch(preparation, /process\.env/);
+  assert.doesNotMatch(mcp, /visual_review_prepare|browser_debug_visual_review_prepare/);
+  assert.match(capabilities, /visual_review_result_preparation/);
+});
+
+test('visual review provider policy stays pure planning metadata', async () => {
+  const policy = await readText('src/visual-review-provider-policy.js');
+  const agentExecution = await readText('src/agent-execution.js');
+  const providers = await readText('src/agent-execution-providers.js');
+  const mcp = `${await readText('src/mcp.js')}\n${await readText('src/mcp-profiles.js')}`;
+
+  assert.match(policy, /planning_only:\s*true/);
+  assert.match(policy, /raw_pixels_included:\s*false/);
+  assert.match(policy, /provider_execution_authorized:\s*false/);
+  assert.match(policy, /mcp_execution_exposed:\s*false/);
+  assert.doesNotMatch(policy, /\bfetch\s*\(|XMLHttpRequest|curl|wget|from 'node:http'|createServer|\.listen\(/);
+  assert.doesNotMatch(policy, /node:child_process|child_process|execFile|spawn\(|from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(policy, /readFile|writeFile|process\.env|provider_execute|agent_execution_run/);
+  assert.match(agentExecution, /visual_review_provider_policy/);
+  assert.match(providers, /\bfetchImpl\b/);
+  assert.doesNotMatch(mcp, /browser_debug_agent_execution_plan|browser_debug_agent_execution_run|visual_provider_execute|provider_execute/);
+});
+
 test('packaged target templates stay domain-neutral', async () => {
   const templateFiles = [
     'templates/review-target-manifest.json',
@@ -243,9 +481,10 @@ test('packaged target templates stay domain-neutral', async () => {
 test('plugin metadata keeps local stdio MCP boundaries', async () => {
   const plugin = JSON.parse(await readText('.codex-plugin/plugin.json'));
   const mcp = JSON.parse(await readText('.mcp.json'));
-  const skill = await readText('skills/browser-debug-review/SKILL.md');
+  const skill = await readText(PRODUCT_IDENTITY.pluginSkillPath);
   const consumerUsage = await readText('docs/workflow/CONSUMER_USAGE.md');
   const mcpServer = mcp.mcpServers[PRODUCT_IDENTITY.mcpServerName];
+  const legacyMcpServer = mcp.mcpServers[PRODUCT_IDENTITY.legacyMcpServerNames[0]];
 
   assert.equal(plugin.name, PRODUCT_IDENTITY.pluginName);
   assert.equal(plugin.repository, PRODUCT_IDENTITY.repositoryUrl);
@@ -254,8 +493,10 @@ test('plugin metadata keeps local stdio MCP boundaries', async () => {
   assert.equal(plugin.skills, './skills/');
   assert.equal(mcpServer.command, 'node');
   assert.deepEqual(mcpServer.args, [PRODUCT_IDENTITY.mcpBinPath]);
+  assert.equal(legacyMcpServer.command, 'node');
+  assert.deepEqual(legacyMcpServer.args, [PRODUCT_IDENTITY.legacyMcpBins[0].path]);
   assert.doesNotMatch(JSON.stringify(mcp), /http|https|WebSocket|listen|curl|wget|token|password/i);
-  assert.match(skill, /browser-debug review --target/);
+  assert.match(skill, /trace-cue review --target/);
   assert.match(skill, /upload artifacts|external upload/i);
   assert.match(consumerUsage, /mcp config --profile safe --json/);
   assert.match(consumerUsage, /mcp capabilities --profile admin --scope excluded --json/);
@@ -309,8 +550,35 @@ test('product identity keeps rename-sensitive surfaces aligned', async () => {
   assert.equal(plugin.name, PRODUCT_IDENTITY.pluginName);
   assert.equal(plugin.interface.displayName, PRODUCT_IDENTITY.displayName);
   assert.ok(Object.hasOwn(mcp.mcpServers, PRODUCT_IDENTITY.mcpServerName));
+  assert.equal(Object.hasOwn(mcp.mcpServers, PRODUCT_IDENTITY.legacyMcpServerNames[0]), true);
+  assert.equal(profile.display_name.en, PRODUCT_IDENTITY.displayName);
   assert.match(mcpSource, /PRODUCT_IDENTITY\.mcpServerName/);
   assert.match(cliSource, /PRODUCT_IDENTITY\.mcpBinName/);
+});
+
+test('identity audit keeps rename readiness read-only and configurable', async () => {
+  const identityAudit = await readText('src/identity-audit.js');
+  const api = await readText('src/api.js');
+  const parser = await readText('src/parser.js');
+  const cli = await readText('src/cli.js');
+  const renameCheck = await readText('tools/check_rename_readiness.mjs');
+
+  assert.match(identityAudit, /buildIdentityAudit/);
+  assert.match(identityAudit, /identityReadinessStatus/);
+  assert.match(identityAudit, /normalizeRepositoryUrl/);
+  assert.match(identityAudit, /physical_rename_complete_remote_rename_pending/);
+  assert.match(api, /runIdentityAudit/);
+  assert.match(parser, /identity audit/);
+  assert.match(cli, /identity audit/);
+  assert.match(renameCheck, /PRODUCT_IDENTITY/);
+  assert.doesNotMatch(identityAudit, /node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(identityAudit, /\bfetch\s*\(|XMLHttpRequest|curl|wget|from 'node:http'|createServer|\.listen\(/);
+  assert.doesNotMatch(identityAudit, /\bwriteFile\b|\bunlink\b|\brmdir\b|\bchmod\b|\bchown\b/);
+  assert.doesNotMatch(identityAudit, /process\.env/);
+  assert.match(identityAudit, /git_mutated:\s*false/);
+  assert.match(identityAudit, /remote_contact:\s*false/);
+  assert.match(identityAudit, /legacy_alias_removal_authorized:\s*false/);
+  assert.match(identityAudit, /artifact_root_migration_authorized:\s*false/);
 });
 
 test('CI workflow stays generic and release-safe', async () => {
@@ -319,6 +587,7 @@ test('CI workflow stays generic and release-safe', async () => {
   assert.match(workflow, /actions\/setup-node@v5/);
   assert.match(workflow, /run: npm ci/);
   assert.match(workflow, /run: npm test/);
+  assert.match(workflow, /run: npm run test:rename-readiness/);
   assert.match(workflow, /run: npm run test:pack/);
   assert.match(workflow, /run: npm run test:pack-install/);
   assert.match(workflow, /run: npm run test:browser/);

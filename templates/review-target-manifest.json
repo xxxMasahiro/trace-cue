@@ -1,6 +1,6 @@
 {
   "schemaVersion": "0.1.0",
-  "name": "browser-debug-target",
+  "name": "trace-cue-target",
   "baseUrl": "https://example.test/",
   "scope": {
     "sameOrigin": true,

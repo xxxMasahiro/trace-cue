@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/capture-plan.schema.json",
+  "title": "TraceCue Capture Plan",
+  "type": "object",
+  "required": ["schema_version", "plan_version", "generated_at", "source_selection", "summary", "sources", "boundary"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "plan_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "source_selection": { "type": "string" },
+    "summary": { "type": "object" },
+    "sources": { "type": "array" },
+    "boundary": { "type": "object" },
+    "next_steps": { "type": "array" }
+  },
+  "additionalProperties": true
+}

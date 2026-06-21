@@ -17,6 +17,8 @@ const ARTIFACT_DIRS = [
   'diffs',
   'coverage',
   'review-artifacts',
+  'visual-evidence',
+  'visual-review-results',
   'agent-packages',
   'agent-results',
   'agent-requests',

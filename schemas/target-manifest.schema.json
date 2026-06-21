@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://browser-debug.local/schemas/target-manifest.schema.json",
-  "title": "Browser Debug CLI Target Manifest",
+  "$id": "https://trace-cue.local/schemas/target-manifest.schema.json",
+  "title": "TraceCue Target Manifest",
   "type": "object",
   "required": ["baseUrl"],
   "properties": {

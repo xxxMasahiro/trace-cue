@@ -1,4 +1,4 @@
-export const CLI_NAME = 'browser-debug';
+export const CLI_NAME = 'trace-cue';
 export const PACKAGE_VERSION = '0.0.0';
 export const SCHEMA_VERSION = '0.1.0';
 export const MIN_NODE_MAJOR = 20;
@@ -14,7 +14,7 @@ export const SCHEMA_VERSION_POLICY = Object.freeze({
 export const ARTIFACT_RETENTION_POLICY = Object.freeze({
   mode: 'manual',
   automatic_cleanup: false,
-  cleanup_command: 'browser-debug resource artifacts cleanup --execute',
+  cleanup_command: 'trace-cue resource artifacts cleanup --execute',
   default_root: DEFAULT_ARTIFACT_ROOT
 });
 
@@ -39,6 +39,15 @@ export const PLANNED_COMMANDS = Object.freeze([
   'agent execution run',
   'agent execution status',
   'agent execution list',
+  'visual review plan',
+  'visual review prepare',
+  'visual review run',
+  'visual review status',
+  'visual review list',
+  'visual review dashboard',
+  'identity audit',
+  'capture plan',
+  'capture handoff',
   'agent package',
   'agent ingest',
   'agent report',
@@ -54,5 +63,6 @@ export const PLANNED_COMMANDS = Object.freeze([
   'schema get',
   'mcp serve',
   'mcp config',
-  'mcp capabilities'
+  'mcp capabilities',
+  'mcp execution gates'
 ]);
