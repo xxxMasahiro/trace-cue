@@ -499,3 +499,185 @@ Preserved boundaries:
 - Raw provider responses and credential values are not stored.
 - Deterministic review findings, metrics, release gates, existing review artifacts, and MCP permissions remain unchanged.
 - Agentic Human Review remains excluded from safe, full, and admin MCP profiles.
+
+## Agentic Human Review Strengthening Roadmap
+
+This roadmap is a draft continuation of the TraceCue Agentic Human Review direction. It is not a formal product plan, release commitment, live execution permission, provider/API transfer approval, or MCP execution approval unless the developer explicitly promotes it into the canonical product documents.
+
+### Goal
+
+TraceCue should not stop at mechanical browser inspection. It should be able to transform browser observations into a human-like review that reads, sees, understands, feels, compares, criticizes, and synthesizes the page in a way that can substitute for a skilled human reviewer.
+
+The target flow is:
+
+```text
+Open the page
+ -> collect screenshot, visible text, DOM summary, image metadata, and technical findings
+ -> ask multiple AI review roles to see, read, and evaluate the page like humans
+ -> integrate subjective impressions with deterministic technical findings
+ -> produce a non-engineer-readable review report
+```
+
+For example, for a food blog page, TraceCue should be able to produce a judgment like:
+
+```text
+The page loses value through an old blog layout and technical quality issues, but the article itself is concrete and trustworthy. The photos, prices, waiting-time details, restaurant atmosphere, and temporary-closure context increase the reader's desire to visit. The priority is not to rewrite the core article, but to improve readability, information organization, accessibility, and surrounding UI noise.
+```
+
+### Roadmap
+
+| Slice | Purpose | Implementation content |
+| --- | --- | --- |
+| AHR-01 | Fix the current capability gap | Define the difference between TraceCue's mechanical review and human review. Make UI/UX, content comprehension, reader emotion, trust, subjective impression, and improvement suggestions explicit review targets. |
+| AHR-02 | Human Review Schema v2 | Add structured schema areas such as `first_impression`, `reader_emotion`, `content_comprehension`, `trust`, `visual_ux`, `accessibility`, and `improvement_priority`. |
+| AHR-03 | Multimodal Evidence Package | Package screenshot, visible text, article/body text summary, DOM structure, image metadata, and TraceCue technical findings into one review input package. |
+| AHR-04 | Real Provider Connection | Connect an OpenAI-compatible Vision/LLM provider or another provider through env-only credentials. Do not store raw provider responses; store only normalized advisory JSON. |
+| AHR-05 | Natural-Language Review Planning | Convert a user's natural-language request into an appropriate `effort`, `roles`, `transfer scope`, and `rubric`. Explain in non-engineer-readable language what will be reviewed and how. |
+| AHR-06 | Approved CLI Execution | Mechanically enforce `plan -> approval -> run --execute`. Validate plan hash, transfer permissions, provider capability, and receipts before execution. |
+| AHR-07 | Effort Mode Orchestration | Make `quick`, `standard`, `deep`, and `xhigh` executable. Split work across Visual/UX, Content, Audience, Accessibility, Risk, Critic, Verifier, and Synthesis roles. |
+| AHR-08 | Human Review Prompt And Rubric | Replace free-form prompting with a stable rubric contract. Make "how a person viewing this page would feel" a required review dimension. |
+| AHR-09 | Consensus And Dissent Synthesis | Preserve each sub-agent opinion, contradictions, dissent, and verification results. Prevent technical findings from overwhelming content value and reader-impact evaluation. |
+| AHR-10 | Human-Readable Report | Produce a report that non-engineers can understand, covering strengths, lost value, reader impression, priority fixes, technical issues, and content or copy improvements. |
+| AHR-11 | Safety And Privacy Enforcement | Explicitly gate transfer of raw pixels, page text, DOM summaries, URLs, and artifact references. Reject execution without permission. Do not store credentials, cookies, secrets, or raw provider responses. |
+| AHR-12 | Review Quality Benchmark | Add fixtures for blogs, landing pages, commerce pages, dashboards, images, and article pages. Verify human-like review quality through fake providers and injected transports so CI can run without external calls. |
+
+### MVP Scope
+
+The first practical implementation target should be AHR-01 through AHR-06.
+
+At that point, TraceCue should support a flow shaped like:
+
+```bash
+trace-cue agentic review plan --url <target> --effort standard --json
+trace-cue agentic review run --plan <plan> --allow-screenshot --allow-page-text --execute --json
+```
+
+The MVP should be able to produce:
+
+- A human-like first impression of the page.
+- A reading-comprehension review of visible text and page content.
+- A UI/UX review of what reduces the page's value.
+- A technical-quality summary from TraceCue's deterministic findings.
+- A subjective estimate of reader trust, anxiety, appeal, and motivation.
+- Prioritized improvement suggestions.
+- An integrated comparison between TraceCue's mechanical findings and the agentic human review.
+
+### Key Implementation Policy
+
+This feature must not mix AI-generated review output into deterministic findings or gate status. AI review output must remain separated as `agentic_human_review_advisory`.
+
+TraceCue must preserve two distinct review layers:
+
+```text
+Mechanical inspection:
+  objective, reproducible, deterministic, gate-oriented
+
+Agentic Human Review:
+  subjective, interpretive, reader-centered, improvement-oriented
+```
+
+This separation is essential because many real pages have both strengths and weaknesses at the same time. A page can have technical problems while still being valuable, persuasive, trustworthy, or emotionally effective. TraceCue must be able to explain that distinction clearly.
+
+## Implementation Sync: AHR-01-12
+
+Status:
+- Implemented in TraceCue as an Agentic Human Review strengthening layer on top of Slices 26-42.
+
+Implemented capabilities:
+- Added Agentic Human Review schema v2 contracts with `human_review_schema_version`.
+- Made first impression, reader emotion, content comprehension, trust and credibility, visual UX, accessibility comprehension, and improvement priority explicit review dimensions.
+- Added human review contracts to proposals and plans.
+- Added provider instruction contracts and review-quality benchmark contracts to plans.
+- Added technical evidence and mechanical review summaries to review packages.
+- Added reader-experience review, mechanical-versus-human comparison, and human-review coverage to normalized advisory results.
+- Added human-review coverage and actionability scoring to report-quality output.
+- Added non-engineer-readable Markdown sections for viewer feeling, content and trust, and mechanical review compared with human review.
+- Validated plan artifacts in provider readiness.
+- Validated advisory result contracts and optional execution/result pairing in report-quality.
+- Rejected conflicting proposal inputs before planning.
+- Minimized generic API provider payload metadata so plan paths, execution paths, and deterministic review paths are not transferred.
+- Rejected credential-bearing non-loopback HTTP generic API provider endpoints while preserving loopback HTTP for local development.
+- Synchronized schema files, schema registry entries, API exports, CLI tests, architecture tests, packed-install smoke tests, product docs, workflow state, security notes, verification notes, and session memory.
+
+Preserved boundaries:
+- Agentic Human Review remains advisory-only.
+- Deterministic review findings, metrics, release gates, existing review artifacts, MCP permissions, raw provider response storage, and credential storage remain unchanged.
+- Provider readiness and report-quality remain non-executing read/validation surfaces.
+- Generic `agent execution` remains unable to route Agentic Human Review packages.
+- AHR execution still requires the approved plan hash, package hash validation, explicit `--execute`, provider/model/surface matching, and exact transfer flags.
+
+## Agentic Human Review AHR-13-24 Implementation Plan
+
+Goal:
+- Make high-quality human-equivalent Agentic Human Review measurable, calibratable, and safely dogfoodable with real providers while preserving existing advisory-only and no-MCP-execution boundaries.
+
+Slices:
+- AHR-13: Provider capability contract and capability hash stored in plans, then revalidated at run time.
+- AHR-14: Multimodal evidence planner that separates visual references, text summaries, DOM summaries, accessibility summaries, URLs, artifact references, and raw pixel bytes.
+- AHR-15: Live provider dogfood readiness that remains env-only, explicit, bounded, and CI-disabled by default.
+- AHR-16: Benchmark corpus contract for blog, landing page, commerce page, dashboard, article page, and image cases.
+- AHR-17: Page-type rubric profiles that tune review questions without adding product-specific runtime branches.
+- AHR-18: xhigh orchestration v2 with round dependencies, role instruction contracts, critic/verifier/synthesis diagnostics, and missing-role detection.
+- AHR-19: Review quality evaluator v2 with evidence support, specificity, dissent handling, actionability, calibration, and safety-boundary components.
+- AHR-20: Fake/injected/live test split where CI uses fake/injected seams and live provider dogfood remains manual.
+- AHR-21: Human-readable report v2 with clearer strengths, lost value, reader journey, priority fixes, and direct evidence.
+- AHR-22: Direct-vs-TraceCue comparison for measuring the value added by TraceCue's mechanical context.
+- AHR-23: Privacy and disclosure audit for approved, denied, and effective transfer classes.
+- AHR-24: Calibration loop and benchmark comparison diagnostics for ongoing rubric/prompt/role improvement.
+
+Implementation policy:
+- Add contracts and read-only benchmark/calibration surfaces instead of bypassing the existing `propose -> plan -> run -> report-quality` path.
+- Keep benchmark/calibration output advisory-only with `gate_effect: none`.
+- Do not store credentials, raw provider responses, cookies, storage state, raw review artifacts, or raw pixel bytes.
+- Do not expose Agentic Human Review execution through MCP or generic `agent execution`.
+
+## Implementation Sync: AHR-13-24
+
+Status:
+- Implemented in TraceCue as the provider dogfood, benchmark calibration, and orchestration-quality layer on top of AHR-01-12.
+
+Implemented capabilities:
+- Added provider capability contracts and SHA-256 capability hashes to provider readiness, plans, provider payloads, executions, and results.
+- Added run-time provider capability drift rejection before provider execution.
+- Added evidence planning by transfer class with explicit distinction between visual references and raw pixel bytes.
+- Added rubric profiles for general, blog/content, landing/trust, commerce/confidence, and dashboard/comprehension review.
+- Added privacy disclosure audits for package, plan, and result artifacts.
+- Hardened API provider endpoints against unsupported non-loopback HTTP, URL credentials, credential-like query parameters, redirects, oversized requests, oversized streaming responses, and raw response storage.
+- Added role instruction contracts, orchestration v2 contracts, role instruction coverage, consensus analysis, dissent analysis, review-quality evaluation, and calibration metadata.
+- Added read-only benchmark catalog commands: `agentic review benchmark list` and `agentic review benchmark show`.
+- Added read-only calibration and comparison commands: `agentic review calibrate` and `agentic review compare`.
+- Added schema registry entries, schema files, API exports, CLI help/parser coverage, architecture tests, CLI end-to-end tests, and packed-install smoke coverage.
+- Synchronized product docs, security notes, verification notes, task tracker, handoff, and session memory.
+
+Preserved boundaries:
+- Agentic Human Review remains advisory-only with `gate_effect: none`.
+- Deterministic review findings, metrics, release gates, existing review artifacts, MCP permissions, raw provider response storage, and credential storage remain unchanged.
+- Benchmark, calibration, comparison, provider readiness, and report-quality remain read-only or non-executing validation surfaces.
+- Agentic Human Review execution remains CLI-only and is still not exposed through MCP or generic `agent execution`.
+
+## Implementation Sync: AHR-25-40
+
+Status:
+- Implemented in TraceCue as the completion-readiness layer for real provider dogfood, visual/text evidence contracts, xhigh review quality, direct-vs-TraceCue comparison, and production readiness diagnostics.
+
+Implemented capabilities:
+- Added Agentic Human Review completion, Visual Evidence Package v2, Quality Evaluator v3, and Human Report v3 version contracts.
+- Added `visual_evidence_package_v2` and `visible_text_reading_contract` to local Agentic Human Review packages without embedding raw pixel bytes, raw DOM, raw report bodies, credential values, or raw provider responses.
+- Added a manual-only dogfood readiness command: `agentic review dogfood readiness`.
+- Added a read-only dogfood planning command: `agentic review dogfood plan --case <benchmark-case-id>`.
+- Added `AGENTIC_HUMAN_REVIEW_LIVE_DOGFOOD` as an explicit manual opt-in signal for real-provider dogfood readiness while keeping CI live-provider dogfood disabled by default.
+- Added `article-comprehension-risk` to the benchmark catalog for content comprehension, trust evidence, terminology risk, reader uncertainty, and rewrite-priority review.
+- Added transfer approval preview metadata to plans so required flags, transfer classes, owner-facing explanation, and safety controls are visible before any run.
+- Added xhigh round-plan v2 metadata that records independent review, critique/verification, and synthesis expectations while preserving single approved provider execution.
+- Added Quality Evaluator v3 scores for human likeness, visual specificity, content reading, sensibility, specific fixes, and safety boundary.
+- Added Human Report v3 to advisory results and Markdown reports with reader story, what works, what gets lost, priority fix, and quality snapshot.
+- Added failure diagnostics to provider failures, execution records, and run receipts with advisory-safe stage, code, next actions, and no raw response or credential value storage.
+- Added `--comparison-kind direct-vs-tracecue` to `agentic review compare` and included a direct-vs-TraceCue analysis block.
+- Extended provider payload filtering so v2 visual/text contracts honor the approved transfer flags and still exclude raw bytes and raw DOM.
+- Added public schemas, schema registry entries, API exports, parser/CLI help, product manifest entries, CLI tests, architecture tests, and packed-install smoke coverage for the new dogfood readiness/plan surfaces.
+
+Preserved boundaries:
+- Agentic Human Review remains advisory-only with `gate_effect: none`.
+- Dogfood readiness and dogfood plan are read-only and perform no provider calls, browser launches, credential-value reads, evidence transfer, artifact writes, or release-gate changes.
+- Real provider execution still goes only through `agentic review run` with a valid plan, matching plan hash, package hash validation, provider capability hash, explicit `--execute`, provider/model/surface match, and exact transfer flags.
+- Deterministic review findings, metrics, release gates, existing review artifacts, MCP permissions, raw provider response storage, credential storage, and generic `agent execution` routing remain unchanged.

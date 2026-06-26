@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-dogfood-plan.schema.json",
+  "title": "TraceCue Agentic Human Review Dogfood Plan",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "type",
+    "dogfood_plan_version",
+    "generated_at",
+    "case",
+    "rubric_profile",
+    "provider",
+    "dogfood_set",
+    "workflow",
+    "evaluation_focus",
+    "manual_live_provider_policy",
+    "boundary",
+    "advisory_only",
+    "gate_effect"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "const": "agentic_human_review_dogfood_plan" },
+    "dogfood_plan_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "case": { "type": "object" },
+    "rubric_profile": { "type": "object" },
+    "provider": { "type": "object" },
+    "dogfood_set": { "type": "object" },
+    "workflow": { "type": "object" },
+    "evaluation_focus": { "type": "object" },
+    "manual_live_provider_policy": { "type": "object" },
+    "boundary": { "type": "object" },
+    "advisory_only": { "const": true },
+    "gate_effect": { "const": "none" }
+  },
+  "additionalProperties": true
+}

@@ -14,6 +14,10 @@ import { AGENT_SURFACES } from './agent.js';
 import { CLI_NAME, DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
 import { redact, redactString, truncateText } from './redaction.js';
 import {
+  AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
+  agenticProviderCapabilityContract,
+  agenticProviderCapabilityHash,
+  buildAgenticDogfoodSetupReadiness,
   buildAgenticProviderReadiness,
   executeAgenticHumanReviewApiProvider,
   providerBoundary as providerBoundaryRecord,
@@ -21,6 +25,13 @@ import {
 } from './agentic-human-review-providers.js';
 
 export const AGENTIC_HUMAN_REVIEW_VERSION = '1.0.0';
+export const HUMAN_REVIEW_SCHEMA_VERSION = '2.0.0';
+export const HUMAN_REVIEW_ORCHESTRATION_VERSION = '2.0.0';
+export const HUMAN_REVIEW_CALIBRATION_VERSION = '1.0.0';
+export const HUMAN_REVIEW_COMPLETION_ROADMAP_VERSION = '1.0.0';
+export const HUMAN_REVIEW_EVIDENCE_PACKAGE_VERSION = '2.0.0';
+export const HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION = '3.0.0';
+export const HUMAN_REPORT_VERSION = '3.0.0';
 
 const DEFAULT_PROVIDER_ID = 'fake-agent';
 const DEFAULT_MODEL_ID = 'fake-model';
@@ -63,6 +74,169 @@ const RUBRIC_AREAS = Object.freeze([
   'strengths',
   'improvement_suggestions'
 ]);
+
+const HUMAN_REVIEW_DIMENSIONS = Object.freeze([
+  {
+    id: 'first_impression',
+    label: 'First impression',
+    required_fields: Object.freeze(['non_engineer_summary.likely_first_impression']),
+    purpose: 'Judge what a person is likely to notice first and whether the page communicates its point quickly.'
+  },
+  {
+    id: 'reader_emotion',
+    label: 'Reader emotion',
+    required_fields: Object.freeze(['subjective_perception.emotional_reception']),
+    purpose: 'Estimate likely comfort, anxiety, curiosity, trust, motivation, and friction from the viewer perspective.'
+  },
+  {
+    id: 'content_comprehension',
+    label: 'Content comprehension',
+    required_fields: Object.freeze(['readability_comprehension.meaning_gaps', 'reader_experience_review.content_takeaway']),
+    purpose: 'Review visible text, page meaning, copy tone, and whether a reader understands the intended message.'
+  },
+  {
+    id: 'trust_and_credibility',
+    label: 'Trust and credibility',
+    required_fields: Object.freeze(['subjective_perception.trust_and_credibility', 'reader_experience_review.trust_assessment']),
+    purpose: 'Assess whether the page earns trust through evidence, specificity, visual quality, and risk clarity.'
+  },
+  {
+    id: 'visual_ux',
+    label: 'Visual and UX perception',
+    required_fields: Object.freeze(['reader_experience_review.visual_ux_assessment']),
+    purpose: 'Judge layout, scanability, visual hierarchy, interaction clarity, and what UI choices reduce value.'
+  },
+  {
+    id: 'accessibility_comprehension',
+    label: 'Accessibility and comprehension',
+    required_fields: Object.freeze(['readability_comprehension', 'reader_experience_review.accessibility_comprehension']),
+    purpose: 'Review accessibility basics, cognitive load, and whether people can understand and act without unnecessary effort.'
+  },
+  {
+    id: 'improvement_priority',
+    label: 'Improvement priority',
+    required_fields: Object.freeze(['agentic_human_review_action_plan.suggested_fixes', 'reader_experience_review.priority_recommendation']),
+    purpose: 'Separate what is valuable from what is losing value, then prioritize the smallest useful improvements.'
+  }
+]);
+
+const RUBRIC_PROFILES = Object.freeze([
+  Object.freeze({
+    id: 'general-human-review',
+    label: 'General human review',
+    fixture_types: Object.freeze(['general', 'page', 'image_or_screenshot']),
+    emphasis: Object.freeze(['first_impression', 'visual_ux', 'content_comprehension', 'trust_and_credibility', 'improvement_priority']),
+    evidence_priority: Object.freeze(['page_text', 'raw_pixels', 'artifact_refs', 'accessibility_summary'])
+  }),
+  Object.freeze({
+    id: 'blog-content',
+    label: 'Blog content review',
+    fixture_types: Object.freeze(['blog', 'article_page']),
+    emphasis: Object.freeze(['content_comprehension', 'reader_emotion', 'trust_and_credibility', 'readability', 'improvement_priority']),
+    evidence_priority: Object.freeze(['page_text', 'raw_pixels', 'url', 'artifact_refs'])
+  }),
+  Object.freeze({
+    id: 'landing-trust',
+    label: 'Landing page trust review',
+    fixture_types: Object.freeze(['landing_page', 'marketing_page']),
+    emphasis: Object.freeze(['first_impression', 'trust_and_credibility', 'flow_and_next_action_clarity', 'copy_and_tone']),
+    evidence_priority: Object.freeze(['page_text', 'raw_pixels', 'accessibility_summary', 'url'])
+  }),
+  Object.freeze({
+    id: 'commerce-confidence',
+    label: 'Commerce decision confidence review',
+    fixture_types: Object.freeze(['commerce_page', 'product_page']),
+    emphasis: Object.freeze(['trust_and_credibility', 'content_comprehension', 'risk_and_misleading_content', 'flow_and_next_action_clarity']),
+    evidence_priority: Object.freeze(['page_text', 'raw_pixels', 'accessibility_summary', 'artifact_refs'])
+  }),
+  Object.freeze({
+    id: 'dashboard-comprehension',
+    label: 'Dashboard comprehension review',
+    fixture_types: Object.freeze(['dashboard', 'app_screen']),
+    emphasis: Object.freeze(['information_architecture', 'visual_ux', 'accessibility_comprehension', 'next_action_clarity']),
+    evidence_priority: Object.freeze(['raw_pixels', 'page_text', 'accessibility_summary', 'dom_summary'])
+  })
+]);
+
+const BENCHMARK_CASES = Object.freeze([
+  Object.freeze({
+    case_id: 'blog-content-value',
+    fixture_type: 'blog',
+    rubric_profile_id: 'blog-content',
+    target_audience: 'A reader deciding whether the article is useful, trustworthy, and pleasant to read.',
+    required_dimensions: Object.freeze(['content_comprehension', 'reader_emotion', 'trust_and_credibility', 'visual_ux', 'improvement_priority']),
+    required_mentions: Object.freeze(['reader feeling', 'content value', 'UI or technical value loss', 'trust or credibility', 'specific improvement priority']),
+    forbidden_claims: Object.freeze(['release is approved', 'deterministic findings were changed', 'credentials were used from artifacts']),
+    thresholds: Object.freeze({ coverage_score: 0.75, actionability_score: 0.6, forbidden_claim_score: 1 }),
+    allowed_evidence_classes: Object.freeze(['page_text', 'raw_pixels', 'url', 'artifact_refs', 'accessibility_summary'])
+  }),
+  Object.freeze({
+    case_id: 'landing-trust-clarity',
+    fixture_type: 'landing_page',
+    rubric_profile_id: 'landing-trust',
+    target_audience: 'A visitor deciding whether to trust the offer and take the next action.',
+    required_dimensions: Object.freeze(['first_impression', 'reader_emotion', 'trust_and_credibility', 'content_comprehension', 'improvement_priority']),
+    required_mentions: Object.freeze(['first impression', 'trust proof', 'next action', 'copy clarity']),
+    forbidden_claims: Object.freeze(['release is approved', 'provider output changed the gate']),
+    thresholds: Object.freeze({ coverage_score: 0.75, actionability_score: 0.6, forbidden_claim_score: 1 }),
+    allowed_evidence_classes: Object.freeze(['page_text', 'raw_pixels', 'url', 'accessibility_summary'])
+  }),
+  Object.freeze({
+    case_id: 'commerce-decision-confidence',
+    fixture_type: 'commerce_page',
+    rubric_profile_id: 'commerce-confidence',
+    target_audience: 'A buyer deciding whether the product information is enough to move forward.',
+    required_dimensions: Object.freeze(['content_comprehension', 'trust_and_credibility', 'visual_ux', 'risk_and_misleading_content', 'improvement_priority']),
+    required_mentions: Object.freeze(['decision confidence', 'missing proof', 'risk', 'purchase friction']),
+    forbidden_claims: Object.freeze(['release is approved', 'price or policy was verified without evidence']),
+    thresholds: Object.freeze({ coverage_score: 0.75, actionability_score: 0.65, forbidden_claim_score: 1 }),
+    allowed_evidence_classes: Object.freeze(['page_text', 'raw_pixels', 'artifact_refs', 'accessibility_summary'])
+  }),
+  Object.freeze({
+    case_id: 'dashboard-empty-state',
+    fixture_type: 'dashboard',
+    rubric_profile_id: 'dashboard-comprehension',
+    target_audience: 'An operator trying to understand status, risk, and the next useful action.',
+    required_dimensions: Object.freeze(['first_impression', 'visual_ux', 'accessibility_comprehension', 'content_comprehension', 'improvement_priority']),
+    required_mentions: Object.freeze(['scanability', 'state clarity', 'next action', 'cognitive load']),
+    forbidden_claims: Object.freeze(['release is approved', 'system state changed']),
+    thresholds: Object.freeze({ coverage_score: 0.75, actionability_score: 0.6, forbidden_claim_score: 1 }),
+    allowed_evidence_classes: Object.freeze(['page_text', 'raw_pixels', 'dom_summary', 'accessibility_summary'])
+  }),
+  Object.freeze({
+    case_id: 'image-visual-hierarchy',
+    fixture_type: 'image_or_screenshot',
+    rubric_profile_id: 'general-human-review',
+    target_audience: 'A viewer judging the image or screen from visible hierarchy and readable content.',
+    required_dimensions: Object.freeze(['first_impression', 'visual_ux', 'reader_emotion', 'content_comprehension', 'improvement_priority']),
+    required_mentions: Object.freeze(['visual hierarchy', 'viewer feeling', 'readable content', 'specific visual fix']),
+    forbidden_claims: Object.freeze(['release is approved', 'raw image bytes were embedded in JSON']),
+    thresholds: Object.freeze({ coverage_score: 0.75, actionability_score: 0.6, forbidden_claim_score: 1 }),
+    allowed_evidence_classes: Object.freeze(['raw_pixels', 'page_text', 'artifact_refs'])
+  }),
+  Object.freeze({
+    case_id: 'article-comprehension-risk',
+    fixture_type: 'article_page',
+    rubric_profile_id: 'blog-content',
+    target_audience: 'A reader deciding whether the article is understandable, balanced, and safe to act on.',
+    required_dimensions: Object.freeze(['content_comprehension', 'trust_and_credibility', 'accessibility_comprehension', 'risk_and_misleading_content', 'improvement_priority']),
+    required_mentions: Object.freeze(['plain-language takeaway', 'terminology risk', 'trust evidence', 'reader uncertainty', 'specific rewrite priority']),
+    forbidden_claims: Object.freeze(['release is approved', 'medical legal or financial advice was verified', 'provider output changed the gate']),
+    thresholds: Object.freeze({ coverage_score: 0.8, actionability_score: 0.65, forbidden_claim_score: 1 }),
+    allowed_evidence_classes: Object.freeze(['page_text', 'raw_pixels', 'url', 'accessibility_summary', 'artifact_refs'])
+  })
+]);
+
+const DOGFOOD_SET = Object.freeze({
+  set_id: 'agentic-human-review-completion-dogfood-set',
+  set_version: HUMAN_REVIEW_COMPLETION_ROADMAP_VERSION,
+  manual_live_provider_default: false,
+  ci_live_provider_default: false,
+  case_ids: Object.freeze(BENCHMARK_CASES.map((item) => item.case_id)),
+  required_review_modes: Object.freeze(['fake', 'injected', 'manual_live']),
+  advisory_only: true,
+  gate_effect: 'none'
+});
 
 export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
   const cwd = context.cwd ?? process.cwd();
@@ -144,9 +318,15 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
     targetAudience: options['target-audience'],
     expectedImpression: options['expected-impression']
   });
+  const humanReviewContract = buildHumanReviewContract({
+    intent: structuredIntent.purpose,
+    targetAudience: structuredIntent.target_audience,
+    expectedImpression: structuredIntent.expected_impression
+  });
   const proposalBase = redact({
     schema_version: SCHEMA_VERSION,
     proposal_version: AGENTIC_HUMAN_REVIEW_VERSION,
+    human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
     type: 'agentic_human_review_proposal',
     id,
     status: 'proposal_ready',
@@ -162,6 +342,7 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
       fixture_id: stringOrNull(options['fixture-id'])
     },
     structured_intent: structuredIntent,
+    human_review_contract: humanReviewContract,
     plan_candidate: {
       review_index_path: reviewIndexPreview.reviewIndexPath,
       intent: structuredIntent.purpose,
@@ -173,6 +354,9 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
       surface_id: surface.id,
       target_audience: structuredIntent.target_audience,
       expected_impression: structuredIntent.expected_impression,
+      benchmark_case_id: stringOrNull(options['benchmark-case'] ?? options['case-id']),
+      rubric_profile_id: stringOrNull(options['rubric-profile']),
+      evidence_plan_mode: stringOrNull(options['evidence-plan-mode']),
       dogfood_metadata: buildDogfoodMetadataFromOptions(options)
     },
     human_explanation: {
@@ -364,7 +548,7 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
   const packageRel = artifactRelPath(artifactRootInput, 'agentic-human-review-packages', id, 'package.json');
   const planRel = artifactRelPath(artifactRootInput, 'agentic-human-review-plans', id, 'plan.json');
   const receiptRel = artifactRelPath(artifactRootInput, 'receipts', `${id}-agentic-plan.json`);
-  const reviewPackage = buildReviewPackage({
+  const reviewPackageBase = buildReviewPackage({
     id,
     now,
     packagePath: packageRel,
@@ -376,16 +560,53 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
     targetAudience: planOptions['target-audience'],
     expectedImpression: planOptions['expected-impression']
   });
-  const transferPermissions = buildTransferPermissions({ reviewPackage, intent: intentRead.intent, provider: provider.provider });
+  const benchmarkCase = resolveBenchmarkCase(planOptions['benchmark-case'] ?? planOptions['case-id']);
+  const rubricProfile = resolveRubricProfile({
+    profileId: planOptions['rubric-profile'],
+    benchmarkCase,
+    reviewPackage: reviewPackageBase
+  });
+  const evidencePlan = buildEvidencePlan({
+    reviewPackage: reviewPackageBase,
+    intent: intentRead.intent,
+    provider: provider.provider,
+    rubricProfile,
+    mode: planOptions['evidence-plan-mode']
+  });
+  const reviewPackage = redact({
+    ...reviewPackageBase,
+    rubric_profile: rubricProfile,
+    evidence_plan: evidencePlan,
+    privacy_disclosure_audit: buildPrivacyDisclosureAudit({
+      stage: 'package',
+      provider: provider.provider,
+      evidencePlan,
+      transferPermissions: null,
+      executionBoundary: reviewPackageBase.boundary
+    })
+  });
+  const transferPermissions = buildTransferPermissions({ reviewPackage, intent: intentRead.intent, provider: provider.provider, evidencePlan });
   const orchestration = buildEffortOrchestration({
     effort: effort.value,
     defaultSubagentEffort: defaultSubagentEffort.value,
     roleEfforts: roleEfforts.value
   });
+  const providerCapabilityContract = agenticProviderCapabilityContract(provider.provider);
+  const providerCapabilityHash = agenticProviderCapabilityHash(provider.provider);
+  const roleInstructionContracts = buildRoleInstructionContracts({ orchestration, rubricProfile, evidencePlan });
+  const orchestrationContract = buildOrchestrationContract({ orchestration, roleInstructionContracts });
+  const privacyDisclosureAudit = buildPrivacyDisclosureAudit({
+    stage: 'plan',
+    provider: provider.provider,
+    evidencePlan,
+    transferPermissions,
+    executionBoundary: agenticHumanReviewBoundary({ planning_only: true, writes_artifacts: true })
+  });
 
   const planBase = redact({
     schema_version: SCHEMA_VERSION,
     plan_version: AGENTIC_HUMAN_REVIEW_VERSION,
+    human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
     type: 'agentic_human_review_plan',
     id,
     status: 'planned',
@@ -402,8 +623,14 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
         }
       : null,
     source: reviewPackage.source,
+    source_evidence_summary: buildSourceEvidenceSummary(reviewPackage),
     intent: intentRead.intent,
     review_scope: reviewScope(intentRead.intent),
+    human_review_contract: buildHumanReviewContract({
+      intent: intentRead.intent,
+      targetAudience: reviewPackage.task?.target_audience,
+      expectedImpression: reviewPackage.task?.expected_impression
+    }),
     human_explanation: {
       plain_language_summary: explainPlan({ reviewPackage, orchestration, transferPermissions }),
       what_will_be_reviewed: reviewScope(intentRead.intent).review_targets,
@@ -419,13 +646,18 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
       planning_performed_only: true,
       provider_execution_requires_approval: true
     },
+    transfer_approval_preview: buildTransferApprovalPreview({ transferPermissions, provider: provider.provider, evidencePlan }),
     review_effort: orchestration.review_effort,
+    orchestration_version: HUMAN_REVIEW_ORCHESTRATION_VERSION,
     default_subagent_effort: orchestration.default_subagent_effort,
     role_efforts: orchestration.role_efforts,
     sub_agents: orchestration.sub_agents,
     rounds: orchestration.rounds,
+    orchestration_contract: orchestrationContract,
+    role_instruction_contracts: roleInstructionContracts,
     dogfood_metadata: buildDogfoodMetadataFromOptions(planOptions),
     transfer_permissions: transferPermissions,
+    evidence_plan: evidencePlan,
     disclosure: {
       scope: 'agentic_human_review_plan',
       raw_pixels_may_be_transferred_after_flag: transferPermissions.classes.raw_pixels.required_for_execution,
@@ -438,12 +670,30 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
       provider_execution_authorized: false,
       raw_provider_response_storage_allowed: false
     },
+    privacy_disclosure_audit: privacyDisclosureAudit,
     provider: provider.provider,
+    provider_capability_contract: providerCapabilityContract,
+    provider_capability_hash: providerCapabilityHash,
     model,
     surface: surfaceSummary(surface),
-    rubric: humanReviewRubric(),
+    rubric_profile: rubricProfile,
+    rubric: humanReviewRubric(rubricProfile),
+    provider_instruction_contract: buildProviderInstructionContract({
+      intent: intentRead.intent,
+      reviewPackage,
+      orchestration,
+      rubricProfile,
+      evidencePlan,
+      roleInstructionContracts
+    }),
+    review_quality_benchmark: buildReviewQualityBenchmarkContract({
+      dogfoodMetadata: buildDogfoodMetadataFromOptions(planOptions),
+      benchmarkCase,
+      rubricProfile
+    }),
     result_contract: {
       required_output_schema: 'agentic_human_review_advisory',
+      human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
       result_type: 'agentic_human_review_advisory',
       advisory_only: true,
       deterministic_findings_unchanged: true,
@@ -846,6 +1096,10 @@ export async function runAgenticHumanReviewProviderReadiness(options = {}, conte
     if (!planRead.ok) {
       return errorResult(planRead.error.code, planRead.error.message, planRead.error.details);
     }
+    const validation = validatePlanArtifact({ plan: planRead.value, planPath: planRead.relativePath });
+    if (!validation.ok) {
+      return errorResult(validation.error.code, validation.error.message, validation.error.details);
+    }
     plan = planRead.value;
   }
   const providerReadiness = buildAgenticProviderReadiness({
@@ -872,6 +1126,135 @@ export async function runAgenticHumanReviewProviderReadiness(options = {}, conte
   };
 }
 
+export async function runAgenticHumanReviewDogfoodReadiness(options = {}, context = {}) {
+  const now = materializeNow(context.now);
+  const provider = resolveProviderDescriptor(options.provider, context);
+  if (!provider.ok) {
+    return errorResult(provider.error.code, provider.error.message, provider.error.details);
+  }
+  const setupReadiness = buildAgenticDogfoodSetupReadiness({ provider: provider.provider, context });
+  const readiness = redact({
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_dogfood_readiness',
+    readiness_version: HUMAN_REVIEW_COMPLETION_ROADMAP_VERSION,
+    generated_at: now.toISOString(),
+    status: provider.provider.transport === 'provider_api'
+      ? 'manual_live_dogfood_ready_when_env_configured'
+      : 'local_provider_no_live_dogfood_required',
+    provider: {
+      id: provider.provider.id,
+      kind: provider.provider.kind,
+      transport: provider.provider.transport,
+      capability_hash: agenticProviderCapabilityHash(provider.provider),
+      manual_live_dogfood_supported: provider.provider.transport === 'provider_api'
+    },
+    dogfood_set: dogfoodSetSummary(),
+    setup: setupReadiness,
+    required_owner_controls: [
+      'choose benchmark case',
+      'create proposal and plan',
+      'verify transfer approval preview',
+      'run with matching plan hash, exact transfer flags, --execute, and manual live dogfood opt-in'
+    ],
+    next_commands: {
+      provider_readiness: `${CLI_NAME} agentic review provider-readiness --provider ${provider.provider.id} --json`,
+      dogfood_plan: `${CLI_NAME} agentic review dogfood plan --case ${DOGFOOD_SET.case_ids[0]} --provider ${provider.provider.id} --json`
+    },
+    boundary: agenticHumanReviewBoundary({
+      read_only: true,
+      provider_call_performed: false,
+      api_call_performed: false,
+      credential_values_read: false,
+      credential_values_recorded: false,
+      external_evidence_transfer: false
+    }),
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_dogfood_readiness: readiness,
+      boundary: readiness.boundary
+    },
+    warnings: [],
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewDogfoodPlan(options = {}, context = {}) {
+  const now = materializeNow(context.now);
+  const benchmarkCase = resolveBenchmarkCase(options.case);
+  if (!benchmarkCase) {
+    return errorResult('AGENTIC_REVIEW_BENCHMARK_CASE_NOT_FOUND', 'No agentic human review benchmark case matched the requested id.', {
+      case: options.case,
+      available_cases: BENCHMARK_CASES.map((item) => item.case_id)
+    });
+  }
+  const provider = resolveProviderDescriptor(options.provider, context);
+  if (!provider.ok) {
+    return errorResult(provider.error.code, provider.error.message, provider.error.details);
+  }
+  const rubricProfile = resolveRubricProfile({ profileId: options['rubric-profile'], benchmarkCase, reviewPackage: null });
+  const dogfoodPlan = redact({
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_dogfood_plan',
+    dogfood_plan_version: HUMAN_REVIEW_COMPLETION_ROADMAP_VERSION,
+    generated_at: now.toISOString(),
+    case: benchmarkCase,
+    rubric_profile: rubricProfile,
+    provider: {
+      id: provider.provider.id,
+      kind: provider.provider.kind,
+      transport: provider.provider.transport,
+      capability_hash: agenticProviderCapabilityHash(provider.provider)
+    },
+    dogfood_set: dogfoodSetSummary(),
+    workflow: {
+      proposal: `${CLI_NAME} agentic review propose --brief <human-review-request> --benchmark-case ${benchmarkCase.case_id} --provider ${provider.provider.id} --json`,
+      plan: `${CLI_NAME} agentic review plan --proposal <proposal.json> --benchmark-case ${benchmarkCase.case_id} --json`,
+      run: `${CLI_NAME} agentic review run --plan <plan.json> --plan-hash <sha256> <exact transfer flags> --execute --json`,
+      calibrate: `${CLI_NAME} agentic review calibrate --result <result.json> --case ${benchmarkCase.case_id} --json`,
+      compare: `${CLI_NAME} agentic review compare --baseline <direct-review-result.json> --candidate <tracecue-result.json> --comparison-kind direct-vs-tracecue --json`
+    },
+    evaluation_focus: {
+      required_dimensions: benchmarkCase.required_dimensions,
+      required_mentions: benchmarkCase.required_mentions,
+      forbidden_claims: benchmarkCase.forbidden_claims,
+      thresholds: benchmarkCase.thresholds
+    },
+    manual_live_provider_policy: {
+      live_dogfood_env: AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
+      manual_live_provider_default: false,
+      ci_live_provider_default: false,
+      provider_call_performed_by_plan: false,
+      api_call_performed_by_plan: false,
+      external_evidence_transfer_by_plan: false,
+      credential_values_recorded: false,
+      raw_provider_response_stored: false
+    },
+    boundary: agenticHumanReviewBoundary({
+      read_only: true,
+      provider_call_performed: false,
+      api_call_performed: false,
+      external_evidence_transfer: false
+    }),
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_dogfood_plan: dogfoodPlan,
+      boundary: dogfoodPlan.boundary
+    },
+    warnings: [],
+    errors: [],
+    artifacts: []
+  };
+}
+
 export async function runAgenticHumanReviewReportQuality(options = {}, context = {}) {
   const cwd = context.cwd ?? process.cwd();
   const maxBytes = parseMaxBytes(options['max-bytes']);
@@ -887,6 +1270,13 @@ export async function runAgenticHumanReviewReportQuality(options = {}, context =
   if (!resultRead.ok) {
     return errorResult(resultRead.error.code, resultRead.error.message, resultRead.error.details);
   }
+  const resultValidation = validateAdvisoryResultArtifact({
+    result: resultRead.value,
+    resultPath: resultRead.relativePath
+  });
+  if (!resultValidation.ok) {
+    return errorResult(resultValidation.error.code, resultValidation.error.message, resultValidation.error.details);
+  }
   let execution = null;
   if (options.execution) {
     const executionRead = await readWorkspaceJson({
@@ -897,6 +1287,15 @@ export async function runAgenticHumanReviewReportQuality(options = {}, context =
     });
     if (!executionRead.ok) {
       return errorResult(executionRead.error.code, executionRead.error.message, executionRead.error.details);
+    }
+    const executionValidation = validateReportQualityExecutionMatch({
+      result: resultRead.value,
+      resultPath: resultRead.relativePath,
+      execution: executionRead.value,
+      executionPath: executionRead.relativePath
+    });
+    if (!executionValidation.ok) {
+      return errorResult(executionValidation.error.code, executionValidation.error.message, executionValidation.error.details);
     }
     execution = executionRead.value;
   }
@@ -913,6 +1312,158 @@ export async function runAgenticHumanReviewReportQuality(options = {}, context =
       boundary: quality.boundary
     },
     warnings: [],
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewBenchmarkList(options = {}, context = {}) {
+  const now = materializeNow(context.now);
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_benchmark_cases: {
+        schema_version: SCHEMA_VERSION,
+        type: 'agentic_human_review_benchmark_cases',
+        benchmark_version: HUMAN_REVIEW_CALIBRATION_VERSION,
+        generated_at: now.toISOString(),
+        cases: BENCHMARK_CASES.map(cloneBenchmarkCase),
+        summary: {
+          total: BENCHMARK_CASES.length,
+          fixture_types: [...new Set(BENCHMARK_CASES.map((item) => item.fixture_type))].sort(),
+          advisory_only: true,
+          gate_effect: 'none'
+        },
+        boundary: agenticHumanReviewBoundary({ read_only: true })
+      },
+      boundary: agenticHumanReviewBoundary({ read_only: true })
+    },
+    warnings: [],
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewBenchmarkShow(options = {}, context = {}) {
+  const benchmarkCase = resolveBenchmarkCase(options.case);
+  if (!benchmarkCase) {
+    return errorResult('AGENTIC_REVIEW_BENCHMARK_CASE_NOT_FOUND', 'No agentic human review benchmark case matched the requested id.', {
+      case: options.case,
+      available_cases: BENCHMARK_CASES.map((item) => item.case_id)
+    });
+  }
+  const rubricProfile = resolveRubricProfile({ profileId: benchmarkCase.rubric_profile_id, benchmarkCase, reviewPackage: null });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_benchmark_case: {
+        schema_version: SCHEMA_VERSION,
+        type: 'agentic_human_review_benchmark_case',
+        benchmark_version: HUMAN_REVIEW_CALIBRATION_VERSION,
+        case: benchmarkCase,
+        rubric_profile: rubricProfile,
+        calibration_contract: buildCalibrationContractForCase(benchmarkCase, rubricProfile),
+        boundary: agenticHumanReviewBoundary({ read_only: true })
+      },
+      boundary: agenticHumanReviewBoundary({ read_only: true })
+    },
+    warnings: [],
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewCalibrate(options = {}, context = {}) {
+  const cwd = context.cwd ?? process.cwd();
+  const now = materializeNow(context.now);
+  const maxBytes = parseMaxBytes(options['max-bytes']);
+  if (!maxBytes.ok) {
+    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+  }
+  const benchmarkCase = resolveBenchmarkCase(options.case);
+  if (!benchmarkCase) {
+    return errorResult('AGENTIC_REVIEW_BENCHMARK_CASE_NOT_FOUND', 'No agentic human review benchmark case matched the requested id.', {
+      case: options.case,
+      available_cases: BENCHMARK_CASES.map((item) => item.case_id)
+    });
+  }
+  const resultRead = await readWorkspaceJson({
+    cwd,
+    inputPath: options.result,
+    label: 'agentic human review result',
+    maxBytes: maxBytes.value
+  });
+  if (!resultRead.ok) {
+    return errorResult(resultRead.error.code, resultRead.error.message, resultRead.error.details);
+  }
+  const validation = validateAdvisoryResultArtifact({ result: resultRead.value, resultPath: resultRead.relativePath });
+  if (!validation.ok) {
+    return errorResult(validation.error.code, validation.error.message, validation.error.details);
+  }
+  const calibration = buildCalibrationResult({
+    result: resultRead.value,
+    resultPath: resultRead.relativePath,
+    benchmarkCase,
+    now
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_calibration: calibration,
+      boundary: calibration.boundary
+    },
+    warnings: calibration.warnings,
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewCompare(options = {}, context = {}) {
+  const cwd = context.cwd ?? process.cwd();
+  const now = materializeNow(context.now);
+  const maxBytes = parseMaxBytes(options['max-bytes']);
+  if (!maxBytes.ok) {
+    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+  }
+  const baselineRead = await readWorkspaceJson({
+    cwd,
+    inputPath: options.baseline,
+    label: 'baseline agentic human review result',
+    maxBytes: maxBytes.value
+  });
+  if (!baselineRead.ok) {
+    return errorResult(baselineRead.error.code, baselineRead.error.message, baselineRead.error.details);
+  }
+  const candidateRead = await readWorkspaceJson({
+    cwd,
+    inputPath: options.candidate,
+    label: 'candidate agentic human review result',
+    maxBytes: maxBytes.value
+  });
+  if (!candidateRead.ok) {
+    return errorResult(candidateRead.error.code, candidateRead.error.message, candidateRead.error.details);
+  }
+  for (const [label, read] of [['baseline', baselineRead], ['candidate', candidateRead]]) {
+    const validation = validateAdvisoryResultArtifact({ result: read.value, resultPath: read.relativePath });
+    if (!validation.ok) {
+      return errorResult(validation.error.code, validation.error.message, { ...validation.error.details, role: label });
+    }
+  }
+  const comparison = buildComparisonResult({
+    baseline: baselineRead.value,
+    baselinePath: baselineRead.relativePath,
+    candidate: candidateRead.value,
+    candidatePath: candidateRead.relativePath,
+    now,
+    comparisonKind: options['comparison-kind']
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_comparison: comparison,
+      boundary: comparison.boundary
+    },
+    warnings: comparison.warnings,
     errors: [],
     artifacts: []
   };
@@ -995,6 +1546,7 @@ function buildReviewPackage({
   return redact({
     schema_version: SCHEMA_VERSION,
     package_version: AGENTIC_HUMAN_REVIEW_VERSION,
+    human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
     package_kind: 'agentic_human_review_package',
     id,
     created_at: now.toISOString(),
@@ -1005,6 +1557,11 @@ function buildReviewPackage({
       target_audience: truncateText(targetAudience ?? 'The intended viewer or user of the reviewed page, image, or screen.', 500),
       expected_impression: truncateText(expectedImpression ?? 'The reviewer should judge what a person is likely to notice, understand, trust, feel, and want to do next.', 700)
     },
+    human_review_input_contract: buildHumanReviewContract({
+      intent,
+      targetAudience,
+      expectedImpression
+    }),
     source: {
       review_artifact_index_path: reviewIndexPath,
       review_artifact_index_hash: reviewIndexHash,
@@ -1021,6 +1578,11 @@ function buildReviewPackage({
       raw_pixels_embedded_in_json: false,
       raw_pixels_read_by_planning: false
     },
+    visual_evidence_package_v2: buildVisualEvidencePackageV2({
+      artifactRefs,
+      review,
+      viewport
+    }),
     content_evidence: {
       text_snippet_count: textSnippets.length,
       text_snippets: textSnippets,
@@ -1028,11 +1590,14 @@ function buildReviewPackage({
       raw_dom_included: false,
       raw_report_body_included: false
     },
+    visible_text_reading_contract: buildVisibleTextReadingContract({ textSnippets, review, intent }),
     semantic_evidence: {
       accessibility_summary: summarizeAccessibility(review),
       information_architecture_summary: summarizeInformationArchitecture(review),
       next_action_summary: summarizeNextActions(review)
     },
+    technical_evidence: summarizeTechnicalEvidence(review),
+    mechanical_review_summary: summarizeMechanicalReview(review),
     artifact_references: artifactRefs.slice(0, MAX_EVIDENCE_REFS),
     existing_review_state: {
       findings_count: Number(review.metrics?.finding_count ?? review.findings?.length ?? 0),
@@ -1062,7 +1627,624 @@ function buildReviewPackage({
   });
 }
 
-function buildTransferPermissions({ reviewPackage, intent, provider = null }) {
+function buildVisualEvidencePackageV2({ artifactRefs, review, viewport }) {
+  const visualRefs = artifactRefs.filter(isVisualReference).slice(0, MAX_EVIDENCE_REFS);
+  const metrics = review.metrics ?? {};
+  const qualitySignals = review.quality_signals ?? {};
+  return {
+    schema_version: SCHEMA_VERSION,
+    evidence_package_version: HUMAN_REVIEW_EVIDENCE_PACKAGE_VERSION,
+    reference_count: visualRefs.length,
+    references: visualRefs.map((ref, index) => ({
+      id: `visual-reference-${index + 1}`,
+      type: ref.type,
+      path: ref.path,
+      description: ref.description,
+      local_reference: true,
+      raw_bytes_embedded: false,
+      raw_bytes_read_by_planning: false
+    })),
+    viewport_summary: viewport ?? null,
+    visual_state_summary: {
+      horizontal_overflow: Boolean(metrics.horizontal_overflow),
+      broken_image_count: Number(metrics.broken_images ?? metrics.broken_image_count ?? 0),
+      loading_indicator_count: Number(metrics.loading_indicators ?? metrics.loading_indicator_count ?? 0),
+      empty_data_container_count: Number(metrics.empty_data_containers ?? metrics.empty_data_container_count ?? 0),
+      visual_hierarchy_status: stringOrNull(qualitySignals.visual_hierarchy?.status),
+      rendered_state_status: stringOrNull(qualitySignals.rendered_state?.status)
+    },
+    review_focus: [
+      'first impression',
+      'visual hierarchy',
+      'scanability',
+      'layout friction',
+      'image or media trust cues',
+      'what visual state makes a person hesitate'
+    ],
+    raw_pixel_policy: {
+      raw_pixel_bytes_available_from_json: false,
+      raw_pixel_bytes_embedded_in_json: false,
+      raw_pixel_bytes_read_by_planning: false,
+      raw_pixel_bytes_require_explicit_run_transfer_flag: true
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildVisibleTextReadingContract({ textSnippets, review, intent }) {
+  const headings = normalizeStringArray(review.evidence_summary?.headings ?? review.layout?.headings)
+    .slice(0, 20)
+    .map((text) => truncateText(text, 180));
+  const actionTexts = normalizeStringArray(review.evidence_summary?.action_texts ?? review.action_candidates?.map?.((item) => item.text))
+    .slice(0, 20)
+    .map((text) => truncateText(text, 180));
+  return {
+    schema_version: SCHEMA_VERSION,
+    reading_contract_version: HUMAN_REVIEW_EVIDENCE_PACKAGE_VERSION,
+    intent: truncateText(intent, 900),
+    snippet_count: textSnippets.length,
+    bounded_text_snippets: textSnippets.slice(0, MAX_TEXT_SNIPPETS),
+    heading_summary: {
+      count: headings.length,
+      items: headings
+    },
+    action_text_summary: {
+      count: actionTexts.length,
+      items: actionTexts
+    },
+    required_reading_tasks: [
+      'summarize what the visible text tells a normal reader',
+      'identify likely misunderstanding, vague wording, missing proof, and terminology risk',
+      'separate content value from UI or technical value loss',
+      'prioritize practical copy or structure improvements'
+    ],
+    ocr_boundary: {
+      external_ocr_performed: false,
+      provider_ocr_allowed_only_after_approved_visual_transfer: true,
+      raw_dom_included: false,
+      raw_report_body_included: false
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function resolveBenchmarkCase(caseId) {
+  if (!caseId) {
+    return null;
+  }
+  const match = BENCHMARK_CASES.find((item) => item.case_id === caseId);
+  return match ? cloneBenchmarkCase(match) : null;
+}
+
+function cloneBenchmarkCase(benchmarkCase) {
+  return {
+    case_id: benchmarkCase.case_id,
+    fixture_type: benchmarkCase.fixture_type,
+    rubric_profile_id: benchmarkCase.rubric_profile_id,
+    target_audience: benchmarkCase.target_audience,
+    required_dimensions: [...benchmarkCase.required_dimensions],
+    required_mentions: [...benchmarkCase.required_mentions],
+    forbidden_claims: [...benchmarkCase.forbidden_claims],
+    thresholds: { ...benchmarkCase.thresholds },
+    allowed_evidence_classes: [...benchmarkCase.allowed_evidence_classes],
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildCalibrationContractForCase(benchmarkCase, rubricProfile) {
+  return {
+    schema_version: SCHEMA_VERSION,
+    calibration_version: HUMAN_REVIEW_CALIBRATION_VERSION,
+    case_id: benchmarkCase.case_id,
+    rubric_profile_id: rubricProfile.id,
+    required_dimensions: [...benchmarkCase.required_dimensions],
+    required_mentions: [...benchmarkCase.required_mentions],
+    forbidden_claims: [...benchmarkCase.forbidden_claims],
+    thresholds: { ...benchmarkCase.thresholds },
+    scoring: {
+      required_mention_coverage: 'fraction of required mentions found in summary, reader experience, action plan, claims, or findings',
+      forbidden_claim_score: '1 means no forbidden claim was found',
+      dimension_coverage: 'fraction of required dimensions covered by human_review_coverage',
+      actionability_score: 'normalized report-quality actionability score'
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildCalibrationResult({ result, resultPath, benchmarkCase, now }) {
+  const text = calibrationSearchText(result);
+  const requiredMentionHits = benchmarkCase.required_mentions.map((mention) => ({
+    mention,
+    present: textIncludesLoose(text, mention)
+  }));
+  const forbiddenClaimHits = benchmarkCase.forbidden_claims.map((claim) => ({
+    claim,
+    present: textIncludesLoose(text, claim)
+  }));
+  const coveredDimensions = new Set((result.human_review_coverage?.dimensions ?? [])
+    .filter((dimension) => dimension.status === 'covered')
+    .map((dimension) => dimension.id));
+  const requiredDimensionHits = benchmarkCase.required_dimensions.map((dimension) => ({
+    dimension,
+    present: coveredDimensions.has(dimension)
+  }));
+  const requiredMentionCoverage = fractionPresent(requiredMentionHits);
+  const forbiddenClaimScore = forbiddenClaimHits.some((item) => item.present) ? 0 : 1;
+  const dimensionCoverage = fractionPresent(requiredDimensionHits);
+  const actionabilityScore = clampScore(result.report_quality?.actionability_score ?? 0);
+  const coverageThreshold = Number(benchmarkCase.thresholds.coverage_score ?? 0.75);
+  const actionabilityThreshold = Number(benchmarkCase.thresholds.actionability_score ?? 0.6);
+  const passed = requiredMentionCoverage >= coverageThreshold
+    && dimensionCoverage >= coverageThreshold
+    && actionabilityScore >= actionabilityThreshold
+    && forbiddenClaimScore >= Number(benchmarkCase.thresholds.forbidden_claim_score ?? 1);
+  const warnings = [
+    ...(requiredMentionCoverage >= coverageThreshold ? [] : [{
+      code: 'AGENTIC_REVIEW_CALIBRATION_REQUIRED_MENTIONS_THIN',
+      message: 'The result did not cover enough benchmark-required human-review mentions.',
+      details: { required_mention_coverage: requiredMentionCoverage, threshold: coverageThreshold }
+    }]),
+    ...(dimensionCoverage >= coverageThreshold ? [] : [{
+      code: 'AGENTIC_REVIEW_CALIBRATION_DIMENSION_COVERAGE_THIN',
+      message: 'The result did not cover enough benchmark-required human-review dimensions.',
+      details: { dimension_coverage: dimensionCoverage, threshold: coverageThreshold }
+    }]),
+    ...(forbiddenClaimScore === 1 ? [] : [{
+      code: 'AGENTIC_REVIEW_CALIBRATION_FORBIDDEN_CLAIM_PRESENT',
+      message: 'The result includes a claim that the benchmark forbids.',
+      details: { forbidden_claims: forbiddenClaimHits.filter((item) => item.present).map((item) => item.claim) }
+    }])
+  ];
+  return redact({
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_calibration_result',
+    calibration_version: HUMAN_REVIEW_CALIBRATION_VERSION,
+    generated_at: now.toISOString(),
+    result_path: resultPath,
+    result_id: result.id ?? null,
+    case_id: benchmarkCase.case_id,
+    fixture_type: benchmarkCase.fixture_type,
+    rubric_profile_id: benchmarkCase.rubric_profile_id,
+    scores: {
+      required_mention_coverage: requiredMentionCoverage,
+      forbidden_claim_score: forbiddenClaimScore,
+      dimension_coverage: dimensionCoverage,
+      actionability_score: actionabilityScore,
+      human_review_coverage_score: clampScore(result.report_quality?.human_review_coverage_score ?? result.human_review_coverage?.coverage_score ?? 0),
+      role_instruction_coverage_score: clampScore(result.role_instruction_coverage?.coverage_score ?? 0)
+    },
+    required_mentions: requiredMentionHits,
+    forbidden_claims: forbiddenClaimHits,
+    required_dimensions: requiredDimensionHits,
+    passed,
+    warnings,
+    advisory_only: true,
+    gate_effect: 'none',
+    boundary: agenticHumanReviewBoundary({
+      read_only: true,
+      dogfood_comparison_performed: true,
+      report_quality_gate_effect: 'none'
+    })
+  });
+}
+
+function buildComparisonResult({ baseline, baselinePath, candidate, candidatePath, now, comparisonKind = 'quality-delta' }) {
+  const normalizedComparisonKind = normalizeComparisonKind(comparisonKind);
+  const baselineQuality = comparableQualityScores(baseline);
+  const candidateQuality = comparableQualityScores(candidate);
+  const deltas = Object.fromEntries(Object.keys(candidateQuality).map((key) => [
+    key,
+    clampDelta(candidateQuality[key] - baselineQuality[key])
+  ]));
+  const improved = Object.values(deltas).filter((value) => value > 0.0001).length;
+  const regressed = Object.values(deltas).filter((value) => value < -0.0001).length;
+  const warnings = regressed > 0 ? [{
+    code: 'AGENTIC_REVIEW_COMPARISON_REGRESSION_PRESENT',
+    message: 'The candidate result regressed on at least one comparable quality score.',
+    details: { regressed_score_count: regressed }
+  }] : [];
+  return redact({
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_comparison',
+    comparison_version: HUMAN_REVIEW_CALIBRATION_VERSION,
+    comparison_kind: normalizedComparisonKind,
+    generated_at: now.toISOString(),
+    baseline: {
+      result_path: baselinePath,
+      result_id: baseline.id ?? null,
+      quality_scores: baselineQuality
+    },
+    candidate: {
+      result_path: candidatePath,
+      result_id: candidate.id ?? null,
+      quality_scores: candidateQuality
+    },
+    deltas,
+    summary: {
+      improved_score_count: improved,
+      regressed_score_count: regressed,
+      candidate_quality_improved: improved > regressed,
+      direct_vs_tracecue_comparison: normalizedComparisonKind === 'direct-vs-tracecue',
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    direct_vs_tracecue_analysis: buildDirectVsTraceCueAnalysis({
+      baseline,
+      candidate,
+      deltas,
+      comparisonKind: normalizedComparisonKind
+    }),
+    warnings,
+    advisory_only: true,
+    gate_effect: 'none',
+    boundary: agenticHumanReviewBoundary({
+      read_only: true,
+      dogfood_comparison_performed: true,
+      report_quality_gate_effect: 'none'
+    })
+  });
+}
+
+function normalizeComparisonKind(value) {
+  const normalized = String(value ?? 'quality-delta').trim() || 'quality-delta';
+  return ['quality-delta', 'direct-vs-tracecue', 'provider-dogfood', 'benchmark-regression'].includes(normalized)
+    ? normalized
+    : 'quality-delta';
+}
+
+function buildDirectVsTraceCueAnalysis({ baseline, candidate, deltas, comparisonKind }) {
+  if (comparisonKind !== 'direct-vs-tracecue') {
+    return null;
+  }
+  const mechanicalContextPresent = Boolean(candidate.mechanical_vs_human_review)
+    || Number(candidate.mechanical_vs_human_review?.deterministic_finding_count ?? 0) > 0
+    || Boolean(candidate.evidence_plan)
+    || Boolean(candidate.privacy_disclosure_audit);
+  return {
+    schema_version: SCHEMA_VERSION,
+    analysis_version: HUMAN_REVIEW_COMPLETION_ROADMAP_VERSION,
+    baseline_role: 'direct_or_unstructured_human_like_review',
+    candidate_role: 'tracecue_agentic_human_review_workflow',
+    baseline_result_id: baseline.id ?? null,
+    candidate_result_id: candidate.id ?? null,
+    tracecue_mechanical_context_present: mechanicalContextPresent,
+    tracecue_plan_hash_present: Boolean(candidate.agentic_human_review_advisory?.plan_hash),
+    tracecue_release_gate_effect: candidate.agentic_human_review_advisory?.gate_effect ?? candidate.gate_effect ?? 'none',
+    comparative_reading: {
+      human_review_coverage_delta: deltas.human_review_coverage_score ?? 0,
+      actionability_delta: deltas.actionability_score ?? 0,
+      role_instruction_coverage_delta: deltas.role_instruction_coverage_score ?? 0,
+      calibration_ready_delta: deltas.calibration_ready_score ?? 0
+    },
+    interpretation: [
+      'Positive deltas suggest the TraceCue workflow preserved more structured evidence, role coverage, or actionability.',
+      'Negative deltas suggest the direct review captured human nuance that the TraceCue run did not yet preserve.',
+      'This comparison is advisory and must not approve releases or mutate deterministic findings.'
+    ],
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function calibrationSearchText(result) {
+  return JSON.stringify({
+    non_engineer_summary: result.non_engineer_summary,
+    subjective_perception: result.subjective_perception,
+    reader_experience_review: result.reader_experience_review,
+    mechanical_vs_human_review: result.mechanical_vs_human_review,
+    action_plan: result.agentic_human_review_action_plan,
+    claims: result.review_claims,
+    findings: result.agentic_human_review_findings,
+    owner_decision_requests: result.owner_decision_requests
+  }).toLowerCase();
+}
+
+function textIncludesLoose(text, phrase) {
+  const normalized = String(phrase ?? '').toLowerCase().replace(/[-_]+/g, ' ').trim();
+  if (!normalized) {
+    return false;
+  }
+  return text.replace(/[-_]+/g, ' ').includes(normalized);
+}
+
+function fractionPresent(records) {
+  if (!Array.isArray(records) || records.length === 0) {
+    return 0;
+  }
+  return clampScore(records.filter((item) => item.present).length / records.length);
+}
+
+function comparableQualityScores(result) {
+  return {
+    completeness_score: clampScore(result.report_quality?.completeness_score ?? 0),
+    evidence_coverage_score: clampScore(result.report_quality?.evidence_coverage_score ?? 0),
+    verification_score: clampScore(result.report_quality?.verification_score ?? 0),
+    human_review_coverage_score: clampScore(result.report_quality?.human_review_coverage_score ?? result.human_review_coverage?.coverage_score ?? 0),
+    actionability_score: clampScore(result.report_quality?.actionability_score ?? 0),
+    role_instruction_coverage_score: clampScore(result.role_instruction_coverage?.coverage_score ?? 0),
+    calibration_ready_score: clampScore(result.review_quality_evaluation?.calibration_ready_score ?? 0)
+  };
+}
+
+function clampDelta(value) {
+  return Number(Number(value).toFixed(6));
+}
+
+function resolveRubricProfile({ profileId, benchmarkCase, reviewPackage }) {
+  const requested = profileId ?? benchmarkCase?.rubric_profile_id ?? inferRubricProfileId(reviewPackage);
+  const profile = RUBRIC_PROFILES.find((item) => item.id === requested)
+    ?? RUBRIC_PROFILES.find((item) => item.id === 'general-human-review');
+  return {
+    schema_version: SCHEMA_VERSION,
+    profile_version: HUMAN_REVIEW_SCHEMA_VERSION,
+    id: profile.id,
+    label: profile.label,
+    fixture_types: [...profile.fixture_types],
+    emphasis: [...profile.emphasis],
+    evidence_priority: [...profile.evidence_priority],
+    benchmark_case_id: benchmarkCase?.case_id ?? null,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function inferRubricProfileId(reviewPackage) {
+  const text = [
+    reviewPackage?.task?.intent,
+    reviewPackage?.source?.review_mode,
+    reviewPackage?.source?.route,
+    ...(reviewPackage?.content_evidence?.text_snippets ?? []).map((item) => item.text)
+  ].filter(Boolean).join(' ').toLowerCase();
+  if (/\b(blog|article|post|readability|copy|content)\b/.test(text)) {
+    return 'blog-content';
+  }
+  if (/\b(landing|signup|subscribe|conversion|trust)\b/.test(text)) {
+    return 'landing-trust';
+  }
+  if (/\b(product|price|cart|checkout|commerce|buy)\b/.test(text)) {
+    return 'commerce-confidence';
+  }
+  if (/\b(dashboard|admin|status|operator|empty state)\b/.test(text)) {
+    return 'dashboard-comprehension';
+  }
+  return 'general-human-review';
+}
+
+function buildEvidencePlan({ reviewPackage, intent, provider, rubricProfile, mode }) {
+  const planMode = normalizeEvidencePlanMode(mode);
+  const intentWantsText = /\b(copy|content|text|read|readability|comprehension|meaning|tone|文章|文言|読解|内容)\b/i.test(intent);
+  const providerClasses = new Set(Array.isArray(provider?.transferable_evidence_classes)
+    ? provider.transferable_evidence_classes
+    : TRANSFER_CLASSES.map((item) => item.id));
+  const profilePriority = new Set(rubricProfile?.evidence_priority ?? []);
+  const hasVisualReference = Number(reviewPackage.visual_evidence?.reference_count ?? 0) > 0;
+  const hasText = Number(reviewPackage.content_evidence?.text_snippet_count ?? 0) > 0;
+  const hasRoute = Boolean(reviewPackage.source?.route);
+  const hasArtifacts = Number(reviewPackage.source?.artifact_count ?? 0) > 0;
+  const classInputs = {
+    raw_pixels: {
+      available: hasVisualReference,
+      needed: hasVisualReference && (profilePriority.has('raw_pixels') || planMode === 'visual_strict'),
+      reason: hasVisualReference ? 'Visual references are available for human-like first-impression and layout review.' : 'No visual artifact reference was available.'
+    },
+    page_text: {
+      available: hasText,
+      needed: hasText || intentWantsText || profilePriority.has('page_text'),
+      reason: hasText ? 'Bounded visible text snippets are available for comprehension and copy review.' : 'Text review was requested but no bounded text snippets were available.'
+    },
+    dom_summary: {
+      available: Boolean(reviewPackage.disclosure?.dom_summary_included),
+      needed: profilePriority.has('dom_summary') && Boolean(reviewPackage.disclosure?.dom_summary_included),
+      reason: 'Semantic structure can support comprehension review when available.'
+    },
+    url: {
+      available: hasRoute,
+      needed: hasRoute && profilePriority.has('url'),
+      reason: hasRoute ? 'URL or route metadata can help interpret context without including credentials.' : 'No route metadata was available.'
+    },
+    artifact_refs: {
+      available: hasArtifacts,
+      needed: hasArtifacts && profilePriority.has('artifact_refs'),
+      reason: hasArtifacts ? 'Local artifact references can anchor claims without embedding raw artifact content.' : 'No local artifact references were available.'
+    },
+    accessibility_summary: {
+      available: true,
+      needed: profilePriority.has('accessibility_summary') || planMode === 'accessibility_strict',
+      reason: 'Accessibility and comprehension summaries support cognitive-load and readability judgment.'
+    }
+  };
+  const classes = Object.fromEntries(TRANSFER_CLASSES.map((item) => {
+    const record = classInputs[item.id] ?? { available: false, needed: false, reason: 'No evidence plan rule.' };
+    return [item.id, {
+      id: item.id,
+      flag: item.flag,
+      available: Boolean(record.available),
+      needed: Boolean(record.needed),
+      provider_transfer_supported: providerClasses.has(item.id),
+      requires_runtime_flag: Boolean(record.needed && provider?.external_evidence_transfer === true && providerClasses.has(item.id)),
+      reason: record.reason,
+      raw_bytes_included_by_plan: false
+    }];
+  }));
+  return {
+    schema_version: SCHEMA_VERSION,
+    evidence_plan_version: HUMAN_REVIEW_SCHEMA_VERSION,
+    visual_evidence_package_version: HUMAN_REVIEW_EVIDENCE_PACKAGE_VERSION,
+    visible_text_reading_contract_version: HUMAN_REVIEW_EVIDENCE_PACKAGE_VERSION,
+    mode: planMode,
+    rubric_profile_id: rubricProfile?.id ?? null,
+    provider_id: provider?.id ?? null,
+    classes,
+    visual_reference_policy: {
+      references_allowed: hasVisualReference,
+      raw_pixel_bytes_embedded_in_json: false,
+      raw_pixels_read_by_planning: false,
+      distinction: 'Visual references may identify local artifacts; raw image bytes are not embedded in JSON.'
+    },
+    content_policy: {
+      bounded_text_snippets_allowed: hasText,
+      raw_dom_allowed: false,
+      raw_report_body_allowed: false
+    },
+    privacy_boundary: {
+      credentials_allowed: false,
+      raw_provider_response_storage_allowed: false,
+      mcp_execution_allowed: false,
+      deterministic_review_mutation_allowed: false,
+      gate_effect: 'none'
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function normalizeEvidencePlanMode(value) {
+  const mode = String(value ?? 'balanced').trim() || 'balanced';
+  return ['balanced', 'text_strict', 'visual_strict', 'accessibility_strict', 'minimal'].includes(mode) ? mode : 'balanced';
+}
+
+function buildPrivacyDisclosureAudit({ stage, provider, evidencePlan, transferPermissions, executionBoundary }) {
+  const requiredFlags = normalizeStringArray(transferPermissions?.required_flags);
+  const classes = Object.fromEntries(TRANSFER_CLASSES.map((item) => {
+    const planClass = evidencePlan?.classes?.[item.id] ?? {};
+    const permissionClass = transferPermissions?.classes?.[item.id] ?? {};
+    return [item.id, {
+      planned: Boolean(planClass.needed),
+      included_in_local_package_metadata: Boolean(permissionClass.included ?? planClass.available),
+      runtime_flag_required: requiredFlags.includes(item.flag),
+      raw_bytes_included: false,
+      external_transfer_performed: false
+    }];
+  }));
+  return {
+    schema_version: SCHEMA_VERSION,
+    audit_version: HUMAN_REVIEW_SCHEMA_VERSION,
+    stage,
+    provider_id: provider?.id ?? null,
+    provider_external_evidence_transfer: provider?.external_evidence_transfer === true,
+    classes,
+    controls: {
+      plan_hash_required_before_run: stage !== 'proposal',
+      exact_transfer_flags_required: true,
+      credentials_env_only: provider?.credential_mode === 'environment_variable_only' || provider?.credential_mode === 'none',
+      credential_values_recorded: false,
+      raw_provider_response_stored: false,
+      raw_pixel_bytes_embedded_in_json: false,
+      deterministic_findings_mutated: false,
+      release_gate_mutated: false,
+      mcp_execution_exposed: false
+    },
+    execution_boundary: executionBoundary ?? agenticHumanReviewBoundary(),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildRoleInstructionContracts({ orchestration, rubricProfile, evidencePlan }) {
+  return (orchestration.sub_agents ?? []).slice(0, MAX_ROLE_OPINIONS).map((agent) => ({
+    schema_version: SCHEMA_VERSION,
+    instruction_contract_version: HUMAN_REVIEW_ORCHESTRATION_VERSION,
+    role: agent.role,
+    display_name: agent.display_name,
+    effort: agent.effort,
+    round: agent.round,
+    independent_review: agent.independent_review !== false,
+    rubric_profile_id: rubricProfile?.id ?? null,
+    required_focus: roleFocusForContract(agent.role, rubricProfile),
+    evidence_plan_classes: Object.values(evidencePlan?.classes ?? {})
+      .filter((item) => item.needed)
+      .map((item) => item.id),
+    must_report: [
+      'one plain-language human-reader observation',
+      'evidence or uncertainty for each important claim',
+      'how the observation affects trust, comprehension, feeling, or action'
+    ],
+    must_not: [
+      'approve release gates',
+      'mutate deterministic findings',
+      'claim raw credentials or provider responses were stored'
+    ],
+    advisory_only: true,
+    gate_effect: 'none'
+  }));
+}
+
+function roleFocusForContract(roleId, rubricProfile) {
+  const profileEmphasis = rubricProfile?.emphasis ?? [];
+  if (/visual|ux/.test(roleId)) {
+    return ['visual hierarchy', 'first impression', 'layout and interaction clarity', ...profileEmphasis].slice(0, 8);
+  }
+  if (/content/.test(roleId)) {
+    return ['visible text', 'meaning', 'copy tone', 'reader comprehension', ...profileEmphasis].slice(0, 8);
+  }
+  if (/accessibility/.test(roleId)) {
+    return ['accessibility basics', 'cognitive load', 'comprehension risk', ...profileEmphasis].slice(0, 8);
+  }
+  if (/critic|verification/.test(roleId)) {
+    return ['contradictions', 'weak evidence', 'overclaim risk', 'missed uncertainty', ...profileEmphasis].slice(0, 8);
+  }
+  if (/synthesis/.test(roleId)) {
+    return ['consensus', 'dissent', 'prioritized improvements', 'owner decisions', ...profileEmphasis].slice(0, 8);
+  }
+  return ['first impression', 'reader feeling', 'trust', 'comprehension', ...profileEmphasis].slice(0, 8);
+}
+
+function buildOrchestrationContract({ orchestration, roleInstructionContracts }) {
+  const roundPlanV2 = buildXhighRoundPlanV2({ orchestration });
+  return {
+    schema_version: SCHEMA_VERSION,
+    orchestration_version: HUMAN_REVIEW_ORCHESTRATION_VERSION,
+    round_plan_version: HUMAN_REVIEW_COMPLETION_ROADMAP_VERSION,
+    mode: orchestration.review_effort?.mode ?? DEFAULT_REVIEW_EFFORT,
+    role_count: orchestration.review_effort?.role_count ?? 0,
+    round_count: orchestration.review_effort?.rounds ?? 1,
+    rounds: orchestration.rounds ?? [],
+    round_plan_v2: roundPlanV2,
+    provider_round_execution_mode: 'single_provider_call_with_required_multi_role_round_output',
+    independent_first_round_required: true,
+    critic_or_verifier_included: orchestration.review_effort?.critic_or_verifier_included === true,
+    synthesis_required: true,
+    role_instruction_contract_hash: hashJson(roleInstructionContracts),
+    required_outputs: [
+      'role_opinions',
+      'review_claims',
+      'consensus_summary',
+      'dissent_summary',
+      'critique_records',
+      'integration_record'
+    ],
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildXhighRoundPlanV2({ orchestration }) {
+  const subAgents = orchestration.sub_agents ?? [];
+  return (orchestration.rounds ?? [1]).map((round) => {
+    const roles = subAgents.filter((agent) => Number(agent.round) === Number(round));
+    return {
+      round: Number(round),
+      phase: round === 1 ? 'independent_review' : round === 2 ? 'critique_and_verification' : 'synthesis',
+      roles: roles.map((agent) => agent.role),
+      independent_output_required: round === 1,
+      contradiction_check_required: round >= 2,
+      synthesis_required: round === Math.max(...(orchestration.rounds ?? [1])),
+      required_output: round === 1
+        ? 'separate role opinion with evidence, uncertainty, and human-reader judgment'
+        : round === 2
+          ? 'challenge weak claims, missing evidence, and overconfident subjective conclusions'
+          : 'integrated consensus, dissent, prioritized fixes, and owner decisions',
+      advisory_only: true,
+      gate_effect: 'none'
+    };
+  });
+}
+
+function buildTransferPermissions({ reviewPackage, intent, provider = null, evidencePlan = null }) {
   const intentWantsText = /\b(copy|content|text|read|readability|comprehension|meaning|tone|文章|文言|読解|内容)\b/i.test(intent);
   const rawPixelsRequired = Number(reviewPackage.visual_evidence?.reference_count ?? 0) > 0;
   const pageTextRequired = intentWantsText || Number(reviewPackage.content_evidence?.text_snippet_count ?? 0) > 0;
@@ -1096,6 +2278,8 @@ function buildTransferPermissions({ reviewPackage, intent, provider = null }) {
       included,
       flag: transferClass.flag,
       required_for_execution: requiredForExecution,
+      evidence_plan_required: evidencePlan?.classes?.[transferClass.id]?.needed === true,
+      evidence_plan_reason: evidencePlan?.classes?.[transferClass.id]?.reason ?? null,
       transfer_performed_by_planning: false,
       transfer_performed_by_fake_provider: false,
       external_provider_transfer_class: providerExternal && providerClasses.has(transferClass.id)
@@ -1110,7 +2294,59 @@ function buildTransferPermissions({ reviewPackage, intent, provider = null }) {
     optional_flags_allowed: [],
     classes: classRecords,
     default_external_transfer: providerExternal,
+    evidence_plan_hash: evidencePlan ? hashJson(evidencePlan) : null,
     mcp_transfer_allowed: false
+  };
+}
+
+function buildTransferApprovalPreview({ transferPermissions, provider, evidencePlan }) {
+  const requiredClasses = TRANSFER_CLASSES
+    .filter((item) => transferPermissions.classes[item.id]?.required_for_execution)
+    .map((item) => ({
+      id: item.id,
+      label: item.label,
+      flag: `--${item.flag}`,
+      reason: transferPermissions.classes[item.id]?.evidence_plan_reason ?? evidencePlan?.classes?.[item.id]?.reason ?? null
+    }));
+  const deniedClasses = TRANSFER_CLASSES
+    .filter((item) => !transferPermissions.classes[item.id]?.required_for_execution)
+    .map((item) => item.id);
+  return {
+    schema_version: SCHEMA_VERSION,
+    approval_preview_version: HUMAN_REVIEW_COMPLETION_ROADMAP_VERSION,
+    provider_id: provider?.id ?? null,
+    provider_external_evidence_transfer: provider?.external_evidence_transfer === true,
+    exact_match_required: true,
+    required_flags: transferPermissions.required_flags.map((flag) => `--${flag}`),
+    required_classes: requiredClasses,
+    denied_or_not_required_classes: deniedClasses,
+    owner_confirmation_text: requiredClasses.length > 0
+      ? `Approve only these transfer classes before running: ${requiredClasses.map((item) => item.label).join(', ')}.`
+      : 'No external evidence transfer classes are required by this plan.',
+    safety_controls: {
+      plan_hash_required: true,
+      execute_flag_required: true,
+      extra_transfer_flags_rejected: true,
+      raw_pixel_bytes_embedded_in_json: false,
+      credential_values_recorded: false,
+      raw_provider_response_stored: false,
+      mcp_execution_allowed: false
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function dogfoodSetSummary() {
+  return {
+    set_id: DOGFOOD_SET.set_id,
+    set_version: DOGFOOD_SET.set_version,
+    case_ids: [...DOGFOOD_SET.case_ids],
+    required_review_modes: [...DOGFOOD_SET.required_review_modes],
+    manual_live_provider_default: DOGFOOD_SET.manual_live_provider_default,
+    ci_live_provider_default: DOGFOOD_SET.ci_live_provider_default,
+    advisory_only: true,
+    gate_effect: 'none'
   };
 }
 
@@ -1264,6 +2500,19 @@ function fakeAgenticReviewResult({ provider, model, surface, plan, planPath, tra
       meaning_gaps: [],
       next_action_clarity: []
     },
+    reader_experience_review: {
+      first_impression: ['The first impression should be checked from visual hierarchy, screen text, and the most obvious next action.'],
+      likely_viewer_feeling: ['A viewer may feel reassured when content is specific and visually easy to scan, or uncertain when the page is noisy or technically degraded.'],
+      content_takeaway: ['The reviewer should identify what useful message, story, or decision support the reader can actually take away.'],
+      trust_assessment: ['Trust should be judged from specificity, evidence, working media, accessible text, and whether technical issues undermine confidence.'],
+      visual_ux_assessment: ['Visual and UX value loss should be separated from the intrinsic value of the content.'],
+      accessibility_comprehension: ['Accessibility issues should be translated into practical comprehension risks for real people.'],
+      lost_value_summary: ['Technical or UI friction can make otherwise useful content feel harder to trust or act on.'],
+      priority_recommendation: ['Prioritize changes that make the existing content value easier to see, understand, and trust.']
+    },
+    mechanical_vs_human_review: {
+      balanced_takeaways: ['The deterministic layer identifies objective risks; the human-review layer explains what those risks mean for reader perception.']
+    },
     role_opinions: (plan.sub_agents ?? []).slice(0, MAX_ROLE_OPINIONS).map((agent) => ({
       role: agent.role,
       display_name: agent.display_name,
@@ -1392,14 +2641,51 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
   const critiqueRecords = buildCritiqueRecords({ plan, claims, roleOpinions });
   const rebuttalRecords = buildRebuttalRecords({ critiqueRecords });
   const integrationRecord = buildIntegrationRecord({ roleOpinions, findings, critiqueRecords, input });
+  const readerExperienceReview = buildReaderExperienceReview({ input, plan, findings, roleOpinions });
+  const mechanicalVsHumanReview = buildMechanicalVsHumanReview({ input, plan, findings, readerExperienceReview });
+  const humanReviewCoverage = buildHumanReviewCoverage({
+    input,
+    findings,
+    roleOpinions,
+    readerExperienceReview,
+    actionPlan: input.agentic_human_review_action_plan
+  });
   const dogfoodMetadata = buildDogfoodMetadata({ plan, resultId: id });
+  const roleInstructionCoverage = buildRoleInstructionCoverage({ plan, roleOpinions });
+  const consensusAnalysis = buildConsensusAnalysis({ roleOpinions, findings, claims, input });
+  const dissentAnalysis = buildDissentAnalysis({ roleOpinions, claims, critiqueRecords, input });
   const qualityPreview = buildReportQualityFromParts({
     roleOpinions,
     findings,
     ownerDecisions,
     claims,
     critiqueRecords,
-    integrationRecord
+    integrationRecord,
+    humanReviewCoverage,
+    readerExperienceReview
+  });
+  const reviewQualityEvaluation = buildReviewQualityEvaluation({
+    quality: qualityPreview,
+    roleInstructionCoverage,
+    consensusAnalysis,
+    dissentAnalysis,
+    plan
+  });
+  const calibrationMetadata = buildCalibrationMetadata({ plan, input, quality: qualityPreview });
+  const humanReportV3 = buildHumanReportV3({
+    input,
+    plan,
+    readerExperienceReview,
+    mechanicalVsHumanReview,
+    quality: qualityPreview,
+    reviewQualityEvaluation
+  });
+  const privacyDisclosureAudit = buildPrivacyDisclosureAudit({
+    stage: 'result',
+    provider,
+    evidencePlan: plan.evidence_plan,
+    transferPermissions: transferFlags,
+    executionBoundary: boundary
   });
   const status = findings.length > 0 || ownerDecisions.length > 0 || roleOpinions.length > 0
     ? 'owner_review_recommended'
@@ -1414,6 +2700,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     plan_path: planPath,
     plan_hash: plan.plan_hash,
     review_effort: plan.review_effort?.mode ?? DEFAULT_REVIEW_EFFORT,
+    orchestration_version: plan.orchestration_version ?? HUMAN_REVIEW_ORCHESTRATION_VERSION,
     default_subagent_effort: plan.default_subagent_effort ?? DEFAULT_SUBAGENT_EFFORT,
     role_efforts: plan.role_efforts ?? [],
     gate_effect: 'none',
@@ -1425,6 +2712,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     schema_version: SCHEMA_VERSION,
     id,
     result_type: 'agentic_human_review_advisory',
+    human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
     agentic_human_review_advisory: advisory,
     non_engineer_summary: {
       plain_language_scope: plan.human_explanation?.plain_language_summary ?? safeInputSummary,
@@ -1448,6 +2736,13 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
       meaning_gaps: normalizeStringArray(input.readability_comprehension?.meaning_gaps),
       next_action_clarity: normalizeStringArray(input.readability_comprehension?.next_action_clarity)
     },
+    reader_experience_review: readerExperienceReview,
+    mechanical_vs_human_review: mechanicalVsHumanReview,
+    human_review_coverage: humanReviewCoverage,
+    rubric_profile: plan.rubric_profile ?? null,
+    evidence_plan: plan.evidence_plan ?? null,
+    orchestration_contract: plan.orchestration_contract ?? null,
+    role_instruction_coverage: roleInstructionCoverage,
     role_opinions: roleOpinions,
     role_execution_records: buildRoleExecutionRecords({ plan, roleOpinions, boundary }),
     review_claims: claims,
@@ -1456,9 +2751,14 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     rebuttal_records: rebuttalRecords,
     integration_record: integrationRecord,
     dogfood_metadata: dogfoodMetadata,
+    calibration_metadata: calibrationMetadata,
     report_quality: qualityPreview,
+    review_quality_evaluation: reviewQualityEvaluation,
+    human_report_v3: humanReportV3,
     consensus_summary: buildConsensusSummary({ roleOpinions, findings, input }),
     dissent_summary: buildDissentSummary({ roleOpinions, input }),
+    consensus_analysis: consensusAnalysis,
+    dissent_analysis: dissentAnalysis,
     agentic_human_review_findings: findings,
     agentic_human_review_action_plan: {
       next_actions: normalizeStringArray(input.agentic_human_review_action_plan?.next_actions ?? input.improvement_suggestions).slice(0, 12),
@@ -1479,7 +2779,9 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     provider: {
       id: provider.id,
       kind: provider.kind,
-      transport: provider.transport
+      transport: provider.transport,
+      capability_hash: agenticProviderCapabilityHash(provider),
+      capability_contract_included: false
     },
     model: { id: model.id },
     surface: surfaceSummary(surface),
@@ -1500,6 +2802,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
       accessibility_summary_transferred: boundary.accessibility_summary_transferred,
       raw_provider_response_stored: false
     },
+    privacy_disclosure_audit: privacyDisclosureAudit,
     boundary: agenticHumanReviewBoundary(boundary)
   });
 }
@@ -1541,6 +2844,7 @@ function buildExecutionRecord({
     plan_hash: planHash,
     package_path: plan.package_path,
     package_hash: plan.package_hash,
+    provider_capability_hash: plan.provider_capability_hash ?? agenticProviderCapabilityHash(provider),
     provider,
     model,
     surface: surfaceSummary(surface),
@@ -1565,7 +2869,8 @@ function buildExecutionRecord({
         request_bytes: boundary.request_bytes,
         response_bytes: boundary.response_bytes,
         provider_status_code: boundary.provider_status_code,
-        raw_provider_response_stored: false
+        raw_provider_response_stored: false,
+        failure_diagnostics: providerResult.failure_diagnostics ?? null
       },
       normalize: {
         status: providerResult.ok ? 'completed' : 'blocked',
@@ -1605,6 +2910,7 @@ function buildExecutionRecord({
     request_bytes: boundary.request_bytes,
     response_bytes: boundary.response_bytes,
     provider_status_code: boundary.provider_status_code,
+    failure_diagnostics: providerResult.failure_diagnostics ?? null,
     deterministic_findings_mutated: false,
     metrics_finding_count_mutated: false,
     existing_review_mutated: false,
@@ -1614,12 +2920,12 @@ function buildExecutionRecord({
   });
 }
 
-function validateRunRequest({ plan, planPath, suppliedPlanHash, options, context }) {
-  if (plan.type !== 'agentic_human_review_plan' || plan.result_contract?.required_output_schema !== 'agentic_human_review_advisory') {
-    return validationError('AGENTIC_REVIEW_PLAN_CONTRACT_MISMATCH', 'agentic review run requires an agentic_human_review_plan artifact.', {
+function validatePlanArtifact({ plan, planPath }) {
+  if (plan?.type !== 'agentic_human_review_plan' || plan?.result_contract?.required_output_schema !== 'agentic_human_review_advisory') {
+    return validationError('AGENTIC_REVIEW_PLAN_CONTRACT_MISMATCH', 'The input plan is not an agentic_human_review_plan artifact.', {
       plan: planPath,
-      type: plan.type ?? null,
-      required_output_schema: plan.result_contract?.required_output_schema ?? null
+      type: plan?.type ?? null,
+      required_output_schema: plan?.result_contract?.required_output_schema ?? null
     });
   }
   const recomputedHash = computePlanHash(plan);
@@ -1630,6 +2936,58 @@ function validateRunRequest({ plan, planPath, suppliedPlanHash, options, context
       recomputed_plan_hash: recomputedHash
     });
   }
+  return { ok: true, planHash: recomputedHash };
+}
+
+function validateAdvisoryResultArtifact({ result, resultPath }) {
+  if (result?.result_type !== 'agentic_human_review_advisory') {
+    return validationError('AGENTIC_REVIEW_RESULT_CONTRACT_MISMATCH', 'agentic review report-quality requires an agentic_human_review_advisory result artifact.', {
+      result: resultPath,
+      result_type: result?.result_type ?? null
+    });
+  }
+  if (result.agentic_human_review_advisory?.gate_effect !== 'none' || result.boundary?.advisory_only === false) {
+    return validationError('AGENTIC_REVIEW_RESULT_BOUNDARY_MISMATCH', 'agentic review report-quality requires an advisory-only result with no gate effect.', {
+      result: resultPath,
+      gate_effect: result.agentic_human_review_advisory?.gate_effect ?? null,
+      advisory_only: result.boundary?.advisory_only ?? null
+    });
+  }
+  return { ok: true };
+}
+
+function validateReportQualityExecutionMatch({ result, resultPath, execution, executionPath }) {
+  if (execution?.mode !== 'agentic_human_review_run') {
+    return validationError('AGENTIC_REVIEW_EXECUTION_CONTRACT_MISMATCH', 'agentic review report-quality execution metadata must be an agentic_human_review_run execution artifact.', {
+      execution: executionPath,
+      mode: execution?.mode ?? null
+    });
+  }
+  const resultExecutionId = result.execution?.id ?? null;
+  if (resultExecutionId && execution.id && resultExecutionId !== execution.id) {
+    return validationError('AGENTIC_REVIEW_RESULT_EXECUTION_MISMATCH', 'The supplied result and execution artifacts refer to different agentic review executions.', {
+      result: resultPath,
+      execution: executionPath,
+      result_execution_id: resultExecutionId,
+      execution_id: execution.id
+    });
+  }
+  if (execution.result_path && resultPath !== execution.result_path) {
+    return validationError('AGENTIC_REVIEW_RESULT_PATH_MISMATCH', 'The supplied result path does not match the execution metadata result path.', {
+      result: resultPath,
+      execution: executionPath,
+      expected_result_path: execution.result_path
+    });
+  }
+  return { ok: true };
+}
+
+function validateRunRequest({ plan, planPath, suppliedPlanHash, options, context }) {
+  const planValidation = validatePlanArtifact({ plan, planPath });
+  if (!planValidation.ok) {
+    return planValidation;
+  }
+  const recomputedHash = planValidation.planHash;
   if (suppliedPlanHash !== plan.plan_hash) {
     return validationError('AGENTIC_REVIEW_PLAN_HASH_MISMATCH', 'The supplied --plan-hash does not match the approved plan hash.', {
       plan: planPath,
@@ -1684,6 +3042,14 @@ function validateRunRequest({ plan, planPath, suppliedPlanHash, options, context
   if (mismatches.length > 0) {
     return validationError('AGENTIC_REVIEW_PLAN_RUN_MISMATCH', 'The requested provider, model, or surface does not match the approved plan.', {
       mismatches: mismatches.map(([field, expected, actual]) => ({ field, expected, actual }))
+    });
+  }
+  const currentCapabilityHash = agenticProviderCapabilityHash(provider.provider);
+  if (plan.provider_capability_hash && plan.provider_capability_hash !== currentCapabilityHash) {
+    return validationError('AGENTIC_REVIEW_PROVIDER_CAPABILITY_DRIFT', 'The current provider capability contract no longer matches the approved plan.', {
+      provider: provider.provider.id,
+      plan_provider_capability_hash: plan.provider_capability_hash,
+      current_provider_capability_hash: currentCapabilityHash
     });
   }
   return {
@@ -1764,6 +3130,7 @@ function buildRunReceipt({ execution, providerResult }) {
     release_gate_mutated: false,
     mcp_execution_exposed: false,
     provider_error_code: providerResult.error?.code ?? null,
+    failure_diagnostics: providerResult.failure_diagnostics ?? null,
     gate_effect: 'none'
   });
 }
@@ -1787,9 +3154,28 @@ function renderAgenticReviewReport(result) {
     '',
     '## Viewer Feeling And Comprehension',
     '',
+    ...normalizeStringArray(result.reader_experience_review?.likely_viewer_feeling).map((item) => `- ${item}`),
     ...normalizeStringArray(result.subjective_perception?.emotional_reception).map((item) => `- ${item}`),
     ...normalizeStringArray(result.subjective_perception?.trust_and_credibility).map((item) => `- ${item}`),
     ...normalizeStringArray(result.readability_comprehension?.meaning_gaps).map((item) => `- ${item}`),
+    '',
+    '## Content And Trust',
+    '',
+    ...normalizeStringArray(result.reader_experience_review?.content_takeaway).map((item) => `- ${item}`),
+    ...normalizeStringArray(result.reader_experience_review?.trust_assessment).map((item) => `- ${item}`),
+    '',
+    '## Human Report V3',
+    '',
+    result.human_report_v3?.reader_story ?? '',
+    '',
+    `Priority fix: ${result.human_report_v3?.highest_priority_fix ?? 'owner review required'}`,
+    '',
+    ...normalizeStringArray(result.human_report_v3?.what_works).map((item) => `- Works: ${item}`),
+    ...normalizeStringArray(result.human_report_v3?.what_gets_lost).map((item) => `- Lost value: ${item}`),
+    '',
+    '## Mechanical Review Compared With Human Review',
+    '',
+    ...normalizeStringArray(result.mechanical_vs_human_review?.balanced_takeaways).map((item) => `- ${item}`),
     '',
     '## Role Opinions',
     '',
@@ -1821,6 +3207,25 @@ function renderAgenticReviewReport(result) {
     `Completeness: ${result.report_quality?.completeness_score ?? 'unknown'}`,
     `Evidence coverage: ${result.report_quality?.evidence_coverage_score ?? 'unknown'}`,
     `Verification coverage: ${result.report_quality?.verification_score ?? 'unknown'}`,
+    `Human-review coverage: ${result.report_quality?.human_review_coverage_score ?? 'unknown'}`,
+    `Actionability: ${result.report_quality?.actionability_score ?? 'unknown'}`,
+    `Evaluator: ${result.report_quality?.quality_evaluator_version ?? result.review_quality_evaluation?.evaluator_version ?? 'unknown'}`,
+    '',
+    '## Quality Evaluation',
+    '',
+    `Calibration readiness: ${result.review_quality_evaluation?.calibration_ready_score ?? 'unknown'}`,
+    `Human likeness: ${result.review_quality_evaluation?.human_likeness_score ?? 'unknown'}`,
+    `Content reading: ${result.review_quality_evaluation?.content_reading_score ?? 'unknown'}`,
+    `Sensibility: ${result.review_quality_evaluation?.sensibility_score ?? 'unknown'}`,
+    `Role coverage: ${result.role_instruction_coverage?.coverage_score ?? 'unknown'}`,
+    `Weak claims: ${result.dissent_analysis?.weak_claim_count ?? 'unknown'}`,
+    '',
+    '## Calibration And Privacy',
+    '',
+    `Benchmark case: ${result.calibration_metadata?.benchmark_case_id ?? 'none'}`,
+    `Rubric profile: ${result.rubric_profile?.id ?? 'none'}`,
+    `Raw provider response stored: ${result.privacy_disclosure_audit?.controls?.raw_provider_response_stored ?? false}`,
+    `Raw pixel bytes embedded in JSON: ${result.privacy_disclosure_audit?.controls?.raw_pixel_bytes_embedded_in_json ?? false}`,
     '',
     '## Boundary',
     '',
@@ -2004,6 +3409,40 @@ function buildStructuredIntent({ brief, targetAudience, expectedImpression }) {
   };
 }
 
+function buildHumanReviewContract({ intent, targetAudience, expectedImpression } = {}) {
+  return {
+    schema_version: SCHEMA_VERSION,
+    human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
+    review_model: 'agentic_human_review_v2',
+    intent: truncateText(intent ?? 'Human-like review of visual, UX, content, comprehension, trust, feeling, and improvements.', 1200),
+    target_audience: truncateText(targetAudience ?? 'The intended viewer or user of the reviewed page, image, or screen.', 500),
+    expected_impression: truncateText(expectedImpression ?? 'Judge what a person is likely to notice, understand, trust, feel, and want to do next.', 700),
+    dimensions: HUMAN_REVIEW_DIMENSIONS.map((dimension) => ({
+      id: dimension.id,
+      label: dimension.label,
+      purpose: dimension.purpose,
+      required_fields: [...dimension.required_fields],
+      subjective_judgment_allowed: true,
+      evidence_required: true,
+      uncertainty_required: true
+    })),
+    required_distinctions: [
+      'separate deterministic technical findings from subjective human interpretation',
+      'separate content value from UI or technical value loss',
+      'separate evidence-backed observations from uncertain impressions',
+      'separate consensus from dissent'
+    ],
+    output_requirements: {
+      reader_feeling_required: true,
+      content_comprehension_required: true,
+      mechanical_vs_human_review_required: true,
+      improvement_priority_required: true,
+      advisory_only: true,
+      gate_effect: 'none'
+    }
+  };
+}
+
 async function buildProposalReviewIndexPreview({ cwd, options, artifactRootInput, id, now, brief, maxBytes, provider }) {
   if (!options['review-index']) {
     const emptyPackage = {
@@ -2060,7 +3499,8 @@ async function buildProposalReviewIndexPreview({ cwd, options, artifactRootInput
 }
 
 function buildDogfoodMetadataFromOptions(options) {
-  const hasDogfood = options['case-id']
+  const hasDogfood = options['benchmark-case']
+    || options['case-id']
     || options['fixture-id']
     || options['baseline-snapshot-hash']
     || options['comparison-run-id'];
@@ -2068,7 +3508,8 @@ function buildDogfoodMetadataFromOptions(options) {
     return null;
   }
   return {
-    case_id: stringOrNull(options['case-id']),
+    case_id: stringOrNull(options['benchmark-case'] ?? options['case-id']),
+    legacy_case_id: stringOrNull(options['case-id']),
     fixture_id: stringOrNull(options['fixture-id']),
     baseline_snapshot_hash: stringOrNull(options['baseline-snapshot-hash']),
     comparison_run_id: stringOrNull(options['comparison-run-id']),
@@ -2152,6 +3593,9 @@ function applyProposalDefaults(options, proposal) {
     surface: options.surface ?? candidate.surface_id,
     'target-audience': options['target-audience'] ?? candidate.target_audience,
     'expected-impression': options['expected-impression'] ?? candidate.expected_impression,
+    'benchmark-case': options['benchmark-case'] ?? candidate.benchmark_case_id,
+    'rubric-profile': options['rubric-profile'] ?? candidate.rubric_profile_id,
+    'evidence-plan-mode': options['evidence-plan-mode'] ?? candidate.evidence_plan_mode,
     'case-id': options['case-id'] ?? candidate.dogfood_metadata?.case_id,
     'fixture-id': options['fixture-id'] ?? candidate.dogfood_metadata?.fixture_id,
     'baseline-snapshot-hash': options['baseline-snapshot-hash'] ?? candidate.dogfood_metadata?.baseline_snapshot_hash,
@@ -2369,11 +3813,22 @@ function normalizeArtifactReferences(values) {
   }
   return values.slice(0, MAX_EVIDENCE_REFS).map((artifact) => ({
     type: stringOrNull(artifact?.type),
-    path: stringOrNull(artifact?.path),
+    path: safeArtifactReferencePath(artifact?.path),
     description: stringOrNull(artifact?.description),
     content_included: false,
     local_reference: true
   }));
+}
+
+function safeArtifactReferencePath(value) {
+  const text = stringOrNull(value);
+  if (!text) {
+    return null;
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(text) || path.isAbsolute(text) || text.includes('\0') || text.split(/[\\/]+/).includes('..')) {
+    return null;
+  }
+  return text.replace(/\\/g, '/');
 }
 
 function isVisualReference(artifact) {
@@ -2426,10 +3881,88 @@ function summarizeNextActions(review) {
   };
 }
 
+function summarizeTechnicalEvidence(review) {
+  const metrics = review.metrics ?? {};
+  const findings = Array.isArray(review.findings) ? review.findings : [];
+  return {
+    finding_count: Number(metrics.finding_count ?? findings.length ?? 0),
+    severity_counts: normalizeRecordNumbers(metrics.by_severity),
+    category_counts: normalizeRecordNumbers(metrics.by_category),
+    failed_request_count: Number(metrics.failed_requests ?? 0),
+    console_message_count: Number(metrics.console_messages ?? 0),
+    action_candidate_count: Number(metrics.action_candidates ?? 0),
+    horizontal_overflow: Boolean(metrics.horizontal_overflow),
+    local_release_gate: stringOrNull(
+      review.quality_signals?.release_readiness?.local_gate
+      ?? review.action_plan?.release_gate
+    ),
+    quality_statuses: summarizeQualitySignalStatuses(review.quality_signals)
+  };
+}
+
+function summarizeMechanicalReview(review) {
+  const technical = summarizeTechnicalEvidence(review);
+  const advisorySummary = truncateText(review.review_advisory?.summary ?? '', 700);
+  return {
+    status: technical.local_release_gate ?? 'unknown',
+    technical_issue_count: technical.finding_count,
+    highest_known_severity: highestSeverity(technical.severity_counts),
+    browser_health_count: Number(technical.category_counts.browser_health ?? 0),
+    accessibility_count: Number(technical.category_counts.accessibility_basics ?? 0),
+    interaction_count: Number(technical.category_counts.interaction_quality ?? 0),
+    summary: advisorySummary || 'The deterministic review should be treated as objective technical evidence, not as the full human reader impression.'
+  };
+}
+
+function summarizeQualitySignalStatuses(qualitySignals) {
+  if (!qualitySignals || typeof qualitySignals !== 'object') {
+    return {};
+  }
+  const output = {};
+  for (const [key, value] of Object.entries(qualitySignals)) {
+    if (value && typeof value === 'object' && typeof value.status === 'string') {
+      output[key] = value.status;
+    }
+  }
+  return output;
+}
+
+function normalizeRecordNumbers(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, count]) => [key, Number(count) || 0]));
+}
+
+function highestSeverity(counts) {
+  for (const severity of ['critical', 'high', 'medium', 'low', 'info']) {
+    if (Number(counts?.[severity] ?? 0) > 0) {
+      return severity;
+    }
+  }
+  return 'none';
+}
+
+function buildSourceEvidenceSummary(reviewPackage) {
+  return {
+    review_id: reviewPackage.source?.review_id ?? null,
+    route_present: Boolean(reviewPackage.source?.route),
+    viewport_present: Boolean(reviewPackage.source?.viewport),
+    visual_reference_count: Number(reviewPackage.visual_evidence?.reference_count ?? 0),
+    text_snippet_count: Number(reviewPackage.content_evidence?.text_snippet_count ?? 0),
+    artifact_reference_count: Number(reviewPackage.source?.artifact_count ?? 0),
+    deterministic_finding_count: Number(reviewPackage.existing_review_state?.findings_count ?? 0),
+    local_release_gate: reviewPackage.existing_review_state?.local_release_gate ?? null,
+    has_technical_evidence: Boolean(reviewPackage.technical_evidence),
+    has_mechanical_review_summary: Boolean(reviewPackage.mechanical_review_summary)
+  };
+}
+
 function humanReviewRubric() {
   return {
     schema_version: SCHEMA_VERSION,
     rubric_version: AGENTIC_HUMAN_REVIEW_VERSION,
+    human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
     output_schema: 'agentic_human_review_advisory',
     areas: RUBRIC_AREAS.map((area) => ({
       id: area,
@@ -2438,7 +3971,84 @@ function humanReviewRubric() {
       subjective_judgment_allowed: true,
       uncertainty_required: true
     })),
+    dimensions: HUMAN_REVIEW_DIMENSIONS.map((dimension) => ({
+      id: dimension.id,
+      label: dimension.label,
+      purpose: dimension.purpose,
+      required_fields: [...dimension.required_fields]
+    })),
+    required_sections: [
+      'reader_experience_review',
+      'mechanical_vs_human_review',
+      'human_review_coverage',
+      'consensus_summary',
+      'dissent_summary',
+      'agentic_human_review_action_plan'
+    ],
     confidence_model: ['low', 'medium', 'high', 'inconclusive'],
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildProviderInstructionContract({ intent, reviewPackage, orchestration }) {
+  return {
+    schema_version: SCHEMA_VERSION,
+    human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
+    contract_kind: 'stable_agentic_human_review_instruction',
+    intent: truncateText(intent, 1200),
+    role_count: orchestration.review_effort?.role_count ?? 0,
+    round_count: orchestration.review_effort?.rounds ?? 1,
+    required_behavior: [
+      'review the target like a skilled human reviewer, not only as a technical validator',
+      'read visible text and summarize how a person would understand it',
+      'judge likely viewer feeling, trust, motivation, and confusion as advisory subjective output',
+      'compare deterministic technical issues with content value and reader impact',
+      'preserve evidence, uncertainty, dissent, and owner-decision needs',
+      'return normalized JSON matching agentic_human_review_advisory'
+    ],
+    input_summary: buildSourceEvidenceSummary(reviewPackage),
+    output_sections: [
+      'non_engineer_summary',
+      'subjective_perception',
+      'readability_comprehension',
+      'reader_experience_review',
+      'mechanical_vs_human_review',
+      'role_opinions',
+      'consensus_summary',
+      'dissent_summary',
+      'findings',
+      'review_claims',
+      'owner_decision_requests'
+    ],
+    prohibited_behavior: [
+      'do not claim deterministic release approval',
+      'do not mutate or reinterpret gate status as provider authority',
+      'do not ask for credentials',
+      'do not include raw provider response metadata in advisory text'
+    ],
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildReviewQualityBenchmarkContract({ dogfoodMetadata = null } = {}) {
+  return {
+    schema_version: SCHEMA_VERSION,
+    benchmark_version: HUMAN_REVIEW_SCHEMA_VERSION,
+    enabled: Boolean(dogfoodMetadata),
+    case_id: dogfoodMetadata?.case_id ?? null,
+    fixture_id: dogfoodMetadata?.fixture_id ?? null,
+    supported_fixture_types: ['blog', 'landing_page', 'commerce_page', 'dashboard', 'article_page', 'image_or_screenshot'],
+    quality_dimensions: [
+      'human_review_dimension_coverage',
+      'reader_emotion_specificity',
+      'content_comprehension_specificity',
+      'mechanical_vs_human_distinction',
+      'evidence_support',
+      'dissent_or_uncertainty',
+      'actionability'
+    ],
     advisory_only: true,
     gate_effect: 'none'
   };
@@ -2542,6 +4152,115 @@ function normalizeOwnerDecisionRequests(values) {
     gate_effect: 'none',
     untrusted_text: true
   }));
+}
+
+function buildReaderExperienceReview({ input, plan, findings, roleOpinions }) {
+  const explicit = input.reader_experience_review ?? {};
+  const firstOpinionSummary = roleOpinions.find((opinion) => opinion.summary)?.summary;
+  const firstFinding = findings[0]?.message;
+  return {
+    first_impression: normalizeStringArray(explicit.first_impression ?? input.subjective_perception?.first_impression).slice(0, 6),
+    likely_viewer_feeling: normalizeStringArray(explicit.likely_viewer_feeling ?? input.subjective_perception?.emotional_reception).slice(0, 8),
+    content_takeaway: normalizeStringArray(explicit.content_takeaway ?? input.content_takeaway ?? [input.summary, firstOpinionSummary].filter(Boolean)).slice(0, 8),
+    trust_assessment: normalizeStringArray(explicit.trust_assessment ?? input.subjective_perception?.trust_and_credibility).slice(0, 8),
+    visual_ux_assessment: normalizeStringArray(explicit.visual_ux_assessment ?? input.visual_ux_assessment ?? [firstFinding].filter(Boolean)).slice(0, 8),
+    accessibility_comprehension: normalizeStringArray(explicit.accessibility_comprehension ?? input.accessibility_comprehension ?? input.readability_comprehension?.meaning_gaps).slice(0, 8),
+    lost_value_summary: normalizeStringArray(explicit.lost_value_summary ?? input.lost_value_summary).slice(0, 8),
+    priority_recommendation: normalizeStringArray(explicit.priority_recommendation ?? input.priority_recommendation ?? input.improvement_suggestions).slice(0, 8),
+    intended_audience: truncateText(plan.human_review_contract?.target_audience ?? plan.intent ?? '', 500),
+    expected_impression: truncateText(plan.human_review_contract?.expected_impression ?? '', 700),
+    subjective_judgment: true,
+    evidence_required: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildMechanicalVsHumanReview({ input, plan, findings, readerExperienceReview }) {
+  const explicit = input.mechanical_vs_human_review ?? {};
+  const source = plan.source_evidence_summary ?? {};
+  const technicalIssueCount = Number(source.deterministic_finding_count ?? 0);
+  const findingCount = findings.length;
+  const valueStatements = [
+    ...normalizeStringArray(readerExperienceReview.content_takeaway),
+    ...normalizeStringArray(input.strengths)
+  ].slice(0, 6);
+  const lossStatements = [
+    ...normalizeStringArray(readerExperienceReview.lost_value_summary),
+    ...normalizeStringArray(readerExperienceReview.visual_ux_assessment),
+    ...findings.map((finding) => finding.message)
+  ].slice(0, 6);
+  return {
+    deterministic_finding_count: technicalIssueCount,
+    advisory_finding_count: findingCount,
+    local_release_gate: source.local_release_gate ?? null,
+    content_or_reader_value: normalizeStringArray(explicit.content_or_reader_value ?? valueStatements).slice(0, 8),
+    technical_or_ux_value_loss: normalizeStringArray(explicit.technical_or_ux_value_loss ?? lossStatements).slice(0, 8),
+    balanced_takeaways: normalizeStringArray(explicit.balanced_takeaways ?? buildBalancedTakeaways({ technicalIssueCount, valueStatements, lossStatements })).slice(0, 8),
+    deterministic_layer_unchanged: true,
+    subjective_layer_advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildBalancedTakeaways({ technicalIssueCount, valueStatements, lossStatements }) {
+  const takeaways = [];
+  if (technicalIssueCount > 0) {
+    takeaways.push(`The deterministic review found ${technicalIssueCount} technical or structural issue(s), so technical quality still needs owner attention.`);
+  }
+  if (valueStatements.length > 0) {
+    takeaways.push('Human review should preserve the page or content value that readers can still understand, trust, or find useful.');
+  }
+  if (lossStatements.length > 0) {
+    takeaways.push('The priority is to reduce the UI, readability, accessibility, or technical friction that prevents that value from coming through.');
+  }
+  if (takeaways.length === 0) {
+    takeaways.push('No strong distinction between deterministic issues and human reader impact was provided; owner review should verify both.');
+  }
+  return takeaways;
+}
+
+function buildHumanReviewCoverage({ input, findings, roleOpinions, readerExperienceReview, actionPlan }) {
+  const available = {
+    first_impression: normalizeStringArray(readerExperienceReview.first_impression).length > 0
+      || normalizeStringArray(input.subjective_perception?.first_impression).length > 0,
+    reader_emotion: normalizeStringArray(readerExperienceReview.likely_viewer_feeling).length > 0
+      || normalizeStringArray(input.subjective_perception?.emotional_reception).length > 0,
+    content_comprehension: normalizeStringArray(readerExperienceReview.content_takeaway).length > 0
+      || normalizeStringArray(input.readability_comprehension?.meaning_gaps).length > 0,
+    trust_and_credibility: normalizeStringArray(readerExperienceReview.trust_assessment).length > 0
+      || normalizeStringArray(input.subjective_perception?.trust_and_credibility).length > 0,
+    visual_ux: normalizeStringArray(readerExperienceReview.visual_ux_assessment).length > 0
+      || findings.some((finding) => /visual|ux|layout|interaction|ui/i.test(finding.category)),
+    accessibility_comprehension: normalizeStringArray(readerExperienceReview.accessibility_comprehension).length > 0
+      || findings.some((finding) => /accessibility|comprehension|readability/i.test(finding.category)),
+    improvement_priority: normalizeStringArray(readerExperienceReview.priority_recommendation).length > 0
+      || normalizeStringArray(actionPlan?.suggested_fixes ?? input.improvement_suggestions).length > 0
+  };
+  const dimensions = HUMAN_REVIEW_DIMENSIONS.map((dimension) => ({
+    id: dimension.id,
+    label: dimension.label,
+    status: available[dimension.id] ? 'covered' : 'missing_or_thin',
+    required_fields: [...dimension.required_fields],
+    evidence_required: true,
+    subjective_judgment_allowed: true
+  }));
+  return {
+    human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
+    dimensions,
+    coverage_score: computeDimensionCoverageScore(dimensions),
+    role_count: roleOpinions.length,
+    advisory_finding_count: findings.length,
+    missing_dimensions: dimensions.filter((dimension) => dimension.status !== 'covered').map((dimension) => dimension.id),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function computeDimensionCoverageScore(dimensions) {
+  if (!Array.isArray(dimensions) || dimensions.length === 0) {
+    return 0;
+  }
+  return clampScore(dimensions.filter((dimension) => dimension.status === 'covered').length / dimensions.length);
 }
 
 function buildConsensusSummary({ roleOpinions, findings, input }) {
@@ -2691,6 +4410,161 @@ function buildDogfoodMetadata({ plan, resultId }) {
   };
 }
 
+function buildRoleInstructionCoverage({ plan, roleOpinions }) {
+  const plannedContracts = Array.isArray(plan.role_instruction_contracts) ? plan.role_instruction_contracts : [];
+  const reportedRoles = new Set(roleOpinions.map((item) => item.role));
+  const roleRecords = plannedContracts.map((contract) => ({
+    role: contract.role,
+    display_name: contract.display_name,
+    round: contract.round,
+    planned_focus: contract.required_focus ?? [],
+    reported: reportedRoles.has(contract.role),
+    must_report_count: Array.isArray(contract.must_report) ? contract.must_report.length : 0,
+    gate_effect: 'none'
+  }));
+  return {
+    schema_version: SCHEMA_VERSION,
+    orchestration_version: plan.orchestration_version ?? HUMAN_REVIEW_ORCHESTRATION_VERSION,
+    planned_role_count: roleRecords.length,
+    reported_role_count: roleRecords.filter((item) => item.reported).length,
+    coverage_score: roleRecords.length === 0 ? 0 : clampScore(roleRecords.filter((item) => item.reported).length / roleRecords.length),
+    missing_roles: roleRecords.filter((item) => !item.reported).map((item) => item.role),
+    roles: roleRecords,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildConsensusAnalysis({ roleOpinions, findings, claims, input }) {
+  const supportedClaimCount = claims.filter((claim) => claim.supported_by_roles?.length > 0).length;
+  const confidenceValues = roleOpinions.map((opinion) => opinion.confidence?.judgment ?? 'inconclusive');
+  const highOrMedium = confidenceValues.filter((value) => value === 'high' || value === 'medium').length;
+  return {
+    schema_version: SCHEMA_VERSION,
+    analysis_version: HUMAN_REVIEW_ORCHESTRATION_VERSION,
+    agreement_count: Number(input.consensus_summary?.agreement_count ?? supportedClaimCount),
+    supported_claim_count: supportedClaimCount,
+    role_count: roleOpinions.length,
+    confidence_alignment_score: roleOpinions.length === 0 ? 0 : clampScore(highOrMedium / roleOpinions.length),
+    corroborated_findings: normalizeStringArray(input.consensus_summary?.corroborated_findings).slice(0, 12),
+    shared_risks: normalizeStringArray(input.consensus_summary?.shared_risks).slice(0, 12),
+    finding_count: findings.length,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildDissentAnalysis({ roleOpinions, claims, critiqueRecords, input }) {
+  const uncertainties = roleOpinions.flatMap((opinion) => normalizeStringArray(opinion.uncertainties)).slice(0, 16);
+  const weakClaimCount = claims.filter((claim) => claim.evidence_refs.length === 0 && claim.supported_by_roles.length === 0).length;
+  const dedicatedCritiqueReported = critiqueRecords.some((record) => record.status === 'reported' || record.status === 'integrated');
+  return {
+    schema_version: SCHEMA_VERSION,
+    analysis_version: HUMAN_REVIEW_ORCHESTRATION_VERSION,
+    disagreement_count: Number(input.dissent_summary?.disagreement_count ?? 0),
+    weak_claim_count: weakClaimCount,
+    dedicated_critique_reported: dedicatedCritiqueReported,
+    contradictions: normalizeStringArray(input.dissent_summary?.contradictions).slice(0, 12),
+    minority_opinions: normalizeStringArray(input.dissent_summary?.minority_opinions).slice(0, 12),
+    residual_uncertainties: uncertainties,
+    owner_review_required: true,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildReviewQualityEvaluation({ quality, roleInstructionCoverage, consensusAnalysis, dissentAnalysis, plan }) {
+  const xhighExpected = plan.review_effort?.mode === 'xhigh';
+  const multiRoundSatisfied = !xhighExpected
+    || (Array.isArray(plan.rounds) && plan.rounds.length >= 3 && dissentAnalysis.dedicated_critique_reported);
+  const calibrationReadyScore = clampScore(
+    (quality.human_review_coverage_score * 0.3)
+    + (quality.actionability_score * 0.2)
+    + (quality.verification_score * 0.2)
+    + (roleInstructionCoverage.coverage_score * 0.2)
+    + (consensusAnalysis.confidence_alignment_score * 0.1)
+  );
+  return {
+    schema_version: SCHEMA_VERSION,
+    evaluator_version: HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION,
+    calibration_version: HUMAN_REVIEW_CALIBRATION_VERSION,
+    status: calibrationReadyScore >= 0.75 && multiRoundSatisfied ? 'calibration_ready' : 'owner_review_recommended',
+    calibration_ready_score: calibrationReadyScore,
+    human_likeness_score: clampScore((quality.human_review_coverage_score * 0.45) + (quality.actionability_score * 0.35) + (consensusAnalysis.confidence_alignment_score * 0.2)),
+    visual_specificity_score: clampScore(plan.evidence_plan?.classes?.raw_pixels?.needed ? quality.evidence_coverage_score : quality.human_review_coverage_score),
+    content_reading_score: clampScore(plan.evidence_plan?.classes?.page_text?.needed ? quality.human_review_coverage_score : quality.actionability_score),
+    sensibility_score: clampScore((quality.human_review_coverage_score * 0.55) + (roleInstructionCoverage.coverage_score * 0.25) + (quality.verification_score * 0.2)),
+    specific_fix_score: quality.actionability_score,
+    safety_boundary_score: 1,
+    multi_round_expectation_satisfied: multiRoundSatisfied,
+    role_instruction_coverage_score: roleInstructionCoverage.coverage_score,
+    consensus_confidence_alignment_score: consensusAnalysis.confidence_alignment_score,
+    weak_claim_count: dissentAnalysis.weak_claim_count,
+    quality_warnings: [
+      ...normalizeStringArray(quality.quality_warnings),
+      ...(multiRoundSatisfied ? [] : ['xhigh review expected multiple rounds with dedicated critique or verification output.'])
+    ],
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildHumanReportV3({ input, plan, readerExperienceReview, mechanicalVsHumanReview, quality, reviewQualityEvaluation }) {
+  const summary = secretSafeText(input.human_report_v3?.summary ?? input.summary ?? 'Agentic human review completed.', 1200);
+  return {
+    schema_version: SCHEMA_VERSION,
+    report_version: HUMAN_REPORT_VERSION,
+    audience: plan.task?.target_audience ?? plan.human_review_contract?.target_audience ?? null,
+    reader_story: secretSafeText(
+      input.human_report_v3?.reader_story
+      ?? `A reader first tries to understand: ${truncateText(plan.intent ?? 'the reviewed target', 260)}`,
+      1000
+    ),
+    plain_language_takeaway: summary,
+    what_works: normalizeStringArray(input.human_report_v3?.what_works ?? input.strengths ?? input.non_engineer_summary?.top_strengths).slice(0, 8),
+    what_gets_lost: normalizeStringArray(
+      input.human_report_v3?.what_gets_lost
+      ?? readerExperienceReview?.lost_value_summary
+      ?? mechanicalVsHumanReview?.balanced_takeaways
+    ).slice(0, 8),
+    highest_priority_fix: normalizeStringArray(
+      input.human_report_v3?.highest_priority_fix
+      ?? readerExperienceReview?.priority_recommendation
+      ?? input.improvement_suggestions
+    )[0] ?? 'Review the advisory output with the owner and prioritize the clearest comprehension or trust gap.',
+    quality_snapshot: {
+      completeness_score: quality.completeness_score,
+      human_review_coverage_score: quality.human_review_coverage_score,
+      actionability_score: quality.actionability_score,
+      human_likeness_score: reviewQualityEvaluation.human_likeness_score,
+      sensibility_score: reviewQualityEvaluation.sensibility_score
+    },
+    owner_review_required: true,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildCalibrationMetadata({ plan, input, quality }) {
+  return {
+    schema_version: SCHEMA_VERSION,
+    calibration_version: HUMAN_REVIEW_CALIBRATION_VERSION,
+    benchmark_case_id: plan.review_quality_benchmark?.case_id ?? plan.dogfood_metadata?.case_id ?? null,
+    benchmark_enabled: plan.review_quality_benchmark?.enabled === true,
+    fixture_id: plan.review_quality_benchmark?.fixture_id ?? plan.dogfood_metadata?.fixture_id ?? null,
+    rubric_profile_id: plan.rubric_profile?.id ?? null,
+    quality_input_hash: hashJson({
+      role_opinions: input.role_opinions ?? [],
+      findings: input.findings ?? input.agentic_human_review_findings ?? [],
+      claims: input.review_claims ?? [],
+      quality
+    }),
+    repeatable_quality_check: true,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
 function buildReportQuality({ result, resultPath, execution, now }) {
   const quality = buildReportQualityFromParts({
     roleOpinions: normalizeRoleOpinions(result.role_opinions),
@@ -2698,12 +4572,15 @@ function buildReportQuality({ result, resultPath, execution, now }) {
     ownerDecisions: normalizeOwnerDecisionRequests(result.owner_decision_requests),
     claims: normalizeReviewClaims(result.review_claims),
     critiqueRecords: Array.isArray(result.critique_records) ? result.critique_records : [],
-    integrationRecord: result.integration_record ?? null
+    integrationRecord: result.integration_record ?? null,
+    humanReviewCoverage: result.human_review_coverage ?? null,
+    readerExperienceReview: result.reader_experience_review ?? null
   });
   return redact({
     schema_version: SCHEMA_VERSION,
     type: 'agentic_human_review_report_quality',
     generated_at: now.toISOString(),
+    quality_evaluator_version: HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION,
     result_path: resultPath,
     result_id: result.id ?? null,
     execution_id: execution?.id ?? null,
@@ -2716,7 +4593,7 @@ function buildReportQuality({ result, resultPath, execution, now }) {
   });
 }
 
-function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, claims, critiqueRecords, integrationRecord }) {
+function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, claims, critiqueRecords, integrationRecord, humanReviewCoverage = null, readerExperienceReview = null }) {
   const completenessScore = clampScore(
     (roleOpinions.length > 0 ? 0.25 : 0)
     + (claims.length > 0 || findings.length > 0 ? 0.25 : 0)
@@ -2727,26 +4604,39 @@ function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, c
   const evidenceCoverageScore = clampScore(
     claims.length === 0
       ? 0
-      : claims.filter((claim) => claim.evidence_refs?.length > 0 || claim.confidence?.evidence !== 'low').length / claims.length
+      : claims.filter((claim) => claim.evidence_refs?.length > 0 || claim.supported_by_roles?.length > 0).length / claims.length
   );
   const verificationScore = clampScore(
     critiqueRecords.some((record) => record.status === 'reported' || record.status === 'integrated') ? 1 : 0.35
   );
+  const humanCoverageScore = clampScore(
+    Number(humanReviewCoverage?.coverage_score)
+    || computeDimensionCoverageScore(humanReviewCoverage?.dimensions)
+  );
+  const actionabilityScore = clampScore(
+    (findings.some((finding) => finding.recommendation) ? 0.35 : 0)
+    + (ownerDecisions.length > 0 ? 0.2 : 0)
+    + (Array.isArray(readerExperienceReview?.priority_recommendation) && readerExperienceReview.priority_recommendation.length > 0 ? 0.25 : 0)
+    + (integrationRecord ? 0.2 : 0)
+  );
   return {
+    quality_evaluator_version: HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION,
     completeness_score: completenessScore,
     evidence_coverage_score: evidenceCoverageScore,
     verification_score: verificationScore,
+    human_review_coverage_score: humanCoverageScore,
+    actionability_score: actionabilityScore,
     role_count: roleOpinions.length,
     finding_count: findings.length,
     claim_count: claims.length,
     owner_decision_count: ownerDecisions.length,
-    quality_warnings: reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueRecords }),
+    quality_warnings: reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueRecords, humanReviewCoverage, actionabilityScore }),
     advisory_only: true,
     gate_effect: 'none'
   };
 }
 
-function reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueRecords }) {
+function reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueRecords, humanReviewCoverage = null, actionabilityScore = 0 }) {
   const warnings = [];
   if (roleOpinions.length === 0) {
     warnings.push('No role-specific opinions were present.');
@@ -2759,6 +4649,12 @@ function reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueR
   }
   if (!critiqueRecords.some((record) => record.status === 'reported' || record.status === 'integrated')) {
     warnings.push('No dedicated critique or verification output was present.');
+  }
+  if (humanReviewCoverage && Number(humanReviewCoverage.coverage_score) < 0.75) {
+    warnings.push('Human-review dimension coverage is incomplete.');
+  }
+  if (actionabilityScore < 0.5) {
+    warnings.push('Recommendations may be too vague to guide product work.');
   }
   return warnings;
 }
@@ -2805,13 +4701,63 @@ function providerFailure({
     apiCallPerformed,
     externalEvidenceTransfer
   });
+  const diagnosticDetails = redact(details ?? {});
   return {
     ok: false,
     status,
-    error: { code, message, details: redact(details ?? {}) },
+    error: { code, message, details: diagnosticDetails },
+    failure_diagnostics: {
+      schema_version: SCHEMA_VERSION,
+      diagnostic_version: '1.0.0',
+      stage: diagnosticStageForCode(code),
+      code,
+      provider_id: provider?.id ?? null,
+      status,
+      message,
+      next_actions: providerFailureNextActions(code),
+      provider_call_performed: Boolean(providerCallPerformed),
+      api_call_performed: Boolean(apiCallPerformed),
+      external_evidence_transfer: Boolean(externalEvidenceTransfer),
+      credential_values_recorded: false,
+      raw_provider_response_stored: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
     boundary,
     warnings: []
   };
+}
+
+function diagnosticStageForCode(code) {
+  if (/CONFIGURATION|ENDPOINT|FETCH/.test(code)) {
+    return 'setup';
+  }
+  if (/REQUEST|TIMEOUT|PACKAGE/.test(code)) {
+    return 'request';
+  }
+  if (/RESPONSE|JSON|SCHEMA/.test(code)) {
+    return 'response';
+  }
+  return 'provider';
+}
+
+function providerFailureNextActions(code) {
+  if (/CONFIGURATION/.test(code)) {
+    return [
+      'Configure provider endpoint and credential environment variables.',
+      'Run agentic review dogfood readiness before retrying.'
+    ];
+  }
+  if (/PACKAGE/.test(code)) {
+    return ['Recreate the plan and package so the package hash matches the approved plan.'];
+  }
+  if (/RUNNER/.test(code)) {
+    return ['Configure the injected local runner or switch to another approved provider.'];
+  }
+  if (/PROVIDER_UNKNOWN/.test(code)) {
+    return ['Select an implemented provider from provider-readiness output.'];
+  }
+  return ['Inspect the advisory-safe diagnostics and retry only after preserving the approved plan boundary.'];
 }
 
 function providerBoundary({

@@ -3,12 +3,17 @@ const VALUE_OPTIONS = new Set([
   'actions',
   'agent-result',
   'artifact-root',
+  'baseline',
   'body-limit',
   'capture-handoff',
   'baseline-snapshot-hash',
+  'benchmark-case',
   'brief',
+  'case',
+  'candidate',
   'case-id',
   'client',
+  'comparison-kind',
   'comparison-run-id',
   'daemon',
   'default-subagent-effort',
@@ -16,6 +21,7 @@ const VALUE_OPTIONS = new Set([
   'effort',
   'execution',
   'expected-impression',
+  'evidence-plan-mode',
   'fixture-id',
   'fixture-root',
   'group',
@@ -50,6 +56,7 @@ const VALUE_OPTIONS = new Set([
   'review-index',
   'review-effort',
   'role-efforts',
+  'rubric-profile',
   'result',
   'risk',
   'scope',
@@ -1020,7 +1027,7 @@ function parseAgentic(args, globals) {
   }
   const scope = args[0];
   const action = args[1];
-  const reviewActions = ['propose', 'plan', 'run', 'status', 'list', 'provider-readiness', 'report-quality'];
+  const reviewActions = ['propose', 'plan', 'run', 'status', 'list', 'provider-readiness', 'report-quality', 'benchmark', 'dogfood', 'calibrate', 'compare'];
   if (scope !== 'review' || !reviewActions.includes(action)) {
     return parseError('agentic', globals.json, {
       code: scope ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
@@ -1056,9 +1063,12 @@ function parseAgentic(args, globals) {
       'target-audience',
       'expected-impression',
       'case-id',
+      'benchmark-case',
       'fixture-id',
       'baseline-snapshot-hash',
       'comparison-run-id',
+      'rubric-profile',
+      'evidence-plan-mode',
       'artifact-root',
       'max-bytes'
     ].includes(option));
@@ -1074,6 +1084,14 @@ function parseAgentic(args, globals) {
         code: 'CONFLICTING_OPTIONS',
         message: 'agentic review propose accepts either --effort or --review-effort for the same value.',
         details: { options: ['effort', 'review-effort'] }
+      });
+    }
+    const proposalInputSources = ['brief', 'intent', 'input'].filter((option) => parsed.options[option]);
+    if (proposalInputSources.length > 1) {
+      return parseError('agentic review propose', globals.json, {
+        code: 'CONFLICTING_OPTIONS',
+        message: 'agentic review propose accepts only one of --brief, --intent, or --input.',
+        details: { options: proposalInputSources }
       });
     }
     if (!parsed.options.brief && !parsed.options.intent && !parsed.options.input) {
@@ -1113,9 +1131,12 @@ function parseAgentic(args, globals) {
       'target-audience',
       'expected-impression',
       'case-id',
+      'benchmark-case',
       'fixture-id',
       'baseline-snapshot-hash',
       'comparison-run-id',
+      'rubric-profile',
+      'evidence-plan-mode',
       'artifact-root',
       'max-bytes'
     ].includes(option));
@@ -1131,6 +1152,13 @@ function parseAgentic(args, globals) {
         code: 'CONFLICTING_OPTIONS',
         message: 'agentic review plan accepts either --effort or --review-effort for the same value.',
         details: { options: ['effort', 'review-effort'] }
+      });
+    }
+    if (parsed.options.proposal && parsed.options.intent) {
+      return parseError('agentic review plan', globals.json, {
+        code: 'CONFLICTING_OPTIONS',
+        message: 'agentic review plan --proposal cannot be combined with --intent; create a new proposal or plan directly from --review-index.',
+        details: { options: ['proposal', 'intent'] }
       });
     }
     if (!parsed.options['review-index'] && !parsed.options.proposal) {
@@ -1221,6 +1249,13 @@ function parseAgentic(args, globals) {
         details: { option: unsupported }
       });
     }
+    if (parsed.options.proposal && parsed.options.plan) {
+      return parseError('agentic review provider-readiness', globals.json, {
+        code: 'CONFLICTING_OPTIONS',
+        message: 'agentic review provider-readiness accepts --proposal or --plan, not both.',
+        details: { options: ['proposal', 'plan'] }
+      });
+    }
     return { ok: true, command: 'agentic review provider-readiness', json: globals.json, options: parsed.options };
   }
   if (action === 'report-quality') {
@@ -1237,6 +1272,133 @@ function parseAgentic(args, globals) {
       return parseError('agentic review report-quality', globals.json, {
         code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_REPORT_QUALITY_OPTION',
         message: `agentic review report-quality does not accept --${unsupported} because it is read-only.`,
+        details: { option: unsupported }
+      });
+    }
+    return parsed;
+  }
+  if (action === 'benchmark') {
+    const benchmarkAction = args[2];
+    if (benchmarkAction === 'list') {
+      const parsed = parseOptions('agentic review benchmark list', args.slice(3), globals.json);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      if (parsed.positionals.length > 0) {
+        return parseError('agentic review benchmark list', globals.json, {
+          code: 'UNEXPECTED_ARGUMENT',
+          message: 'agentic review benchmark list does not accept positional arguments.',
+          details: { argument: parsed.positionals[0] }
+        });
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review benchmark list', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_BENCHMARK_OPTION',
+          message: `agentic review benchmark list does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return { ok: true, command: 'agentic review benchmark list', json: globals.json, options: parsed.options };
+    }
+    if (benchmarkAction === 'show') {
+      const parsed = parseRequiredOptions('agentic review benchmark show', args.slice(3), globals, ['case']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['case', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review benchmark show', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_BENCHMARK_OPTION',
+          message: `agentic review benchmark show does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
+    return parseError('agentic review benchmark', globals.json, {
+      code: benchmarkAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: benchmarkAction ? `Unknown agentic review benchmark subcommand: ${benchmarkAction}` : 'agentic review benchmark requires list or show.',
+      details: { subcommands: ['list', 'show'] }
+    });
+  }
+  if (action === 'dogfood') {
+    const dogfoodAction = args[2];
+    if (dogfoodAction === 'readiness') {
+      const parsed = parseOptions('agentic review dogfood readiness', args.slice(3), globals.json);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      if (parsed.positionals.length > 0) {
+        return parseError('agentic review dogfood readiness', globals.json, {
+          code: 'UNEXPECTED_ARGUMENT',
+          message: 'agentic review dogfood readiness does not accept positional arguments.',
+          details: { argument: parsed.positionals[0] }
+        });
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['provider', 'surface', 'model', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review dogfood readiness', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_DOGFOOD_OPTION',
+          message: `agentic review dogfood readiness does not accept --${unsupported} because it performs no provider call.`,
+          details: { option: unsupported }
+        });
+      }
+      return { ok: true, command: 'agentic review dogfood readiness', json: globals.json, options: parsed.options };
+    }
+    if (dogfoodAction === 'plan') {
+      const parsed = parseRequiredOptions('agentic review dogfood plan', args.slice(3), globals, ['case']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => ![
+        'case',
+        'provider',
+        'surface',
+        'model',
+        'rubric-profile',
+        'max-bytes'
+      ].includes(option));
+      if (unsupported) {
+        return parseError('agentic review dogfood plan', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_DOGFOOD_OPTION',
+          message: `agentic review dogfood plan does not accept --${unsupported} because it performs no provider call.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
+    return parseError('agentic review dogfood', globals.json, {
+      code: dogfoodAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: dogfoodAction ? `Unknown agentic review dogfood subcommand: ${dogfoodAction}` : 'agentic review dogfood requires readiness or plan.',
+      details: { subcommands: ['readiness', 'plan'] }
+    });
+  }
+  if (action === 'calibrate') {
+    const parsed = parseRequiredOptions('agentic review calibrate', args.slice(2), globals, ['result', 'case']);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    const unsupported = Object.keys(parsed.options).find((option) => !['result', 'case', 'max-bytes'].includes(option));
+    if (unsupported) {
+      return parseError('agentic review calibrate', globals.json, {
+        code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_CALIBRATE_OPTION',
+        message: `agentic review calibrate does not accept --${unsupported} because it is read-only.`,
+        details: { option: unsupported }
+      });
+    }
+    return parsed;
+  }
+  if (action === 'compare') {
+    const parsed = parseRequiredOptions('agentic review compare', args.slice(2), globals, ['baseline', 'candidate']);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    const unsupported = Object.keys(parsed.options).find((option) => !['baseline', 'candidate', 'comparison-kind', 'max-bytes'].includes(option));
+    if (unsupported) {
+      return parseError('agentic review compare', globals.json, {
+        code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_COMPARE_OPTION',
+        message: `agentic review compare does not accept --${unsupported} because it is read-only.`,
         details: { option: unsupported }
       });
     }
@@ -1890,6 +2052,12 @@ function plannedCommands() {
     'agentic review list',
     'agentic review provider-readiness',
     'agentic review report-quality',
+    'agentic review benchmark list',
+    'agentic review benchmark show',
+    'agentic review dogfood readiness',
+    'agentic review dogfood plan',
+    'agentic review calibrate',
+    'agentic review compare',
     'visual review plan',
     'visual review prepare',
     'visual review run',

@@ -6,8 +6,11 @@
   "required": [
     "schema_version",
     "rubric_version",
+    "human_review_schema_version",
     "output_schema",
     "areas",
+    "dimensions",
+    "required_sections",
     "confidence_model",
     "advisory_only",
     "gate_effect"
@@ -15,8 +18,11 @@
   "properties": {
     "schema_version": { "type": "string" },
     "rubric_version": { "type": "string" },
+    "human_review_schema_version": { "type": "string" },
     "output_schema": { "const": "agentic_human_review_advisory" },
     "areas": { "type": "array" },
+    "dimensions": { "type": "array" },
+    "required_sections": { "type": "array" },
     "confidence_model": { "type": "array" },
     "advisory_only": { "const": true },
     "gate_effect": { "const": "none" }

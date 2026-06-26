@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-benchmark-cases.schema.json",
+  "title": "TraceCue Agentic Human Review Benchmark Cases",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "type",
+    "benchmark_version",
+    "generated_at",
+    "cases",
+    "summary",
+    "boundary"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "const": "agentic_human_review_benchmark_cases" },
+    "benchmark_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "cases": { "type": "array" },
+    "summary": { "type": "object" },
+    "boundary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

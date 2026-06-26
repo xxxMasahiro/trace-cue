@@ -1,12 +1,33 @@
+import { createHash } from 'node:crypto';
 import { SCHEMA_VERSION } from './constants.js';
 import { redact, truncateText } from './redaction.js';
 
 export const AGENTIC_REVIEW_API_ENDPOINT_ENV = 'AGENTIC_HUMAN_REVIEW_API_ENDPOINT';
 export const AGENTIC_REVIEW_API_CREDENTIAL_ENV = 'AGENTIC_HUMAN_REVIEW_API_TOKEN';
+export const AGENTIC_REVIEW_LIVE_DOGFOOD_ENV = 'AGENTIC_HUMAN_REVIEW_LIVE_DOGFOOD';
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_MAX_REQUEST_BYTES = 128 * 1024;
 const DEFAULT_MAX_RESPONSE_BYTES = 256 * 1024;
+const CAPABILITY_CONTRACT_VERSION = '2.0.0';
+const REAL_PROVIDER_ADAPTER_CONTRACT_VERSION = '1.0.0';
+const KNOWN_PROVIDER_KINDS = new Set(['fake_provider', 'injected_runner', 'api_provider']);
+const KNOWN_TRANSPORTS = new Set(['local_function', 'local_callback', 'provider_api']);
+const KNOWN_TRANSFER_CLASSES = new Set(['raw_pixels', 'page_text', 'dom_summary', 'url', 'artifact_refs', 'accessibility_summary']);
+const SENSITIVE_ENDPOINT_QUERY_PARAMS = new Set([
+  'token',
+  'api_key',
+  'apikey',
+  'key',
+  'secret',
+  'password',
+  'credential',
+  'authorization',
+  'auth',
+  'access_token',
+  'id_token',
+  'refresh_token'
+]);
 
 export const AGENTIC_HUMAN_REVIEW_PROVIDERS = Object.freeze([
   Object.freeze({
@@ -70,8 +91,148 @@ export const AGENTIC_HUMAN_REVIEW_PROVIDERS = Object.freeze([
   })
 ]);
 
+export function agenticProviderCapabilityContract(provider) {
+  const normalized = normalizeProviderDescriptor(provider);
+  const supportedModalities = uniqueSorted(normalized.supported_modalities);
+  const transferableEvidenceClasses = uniqueSorted(normalized.transferable_evidence_classes)
+    .filter((item) => KNOWN_TRANSFER_CLASSES.has(item));
+  return redact({
+    schema_version: SCHEMA_VERSION,
+    capability_contract_version: CAPABILITY_CONTRACT_VERSION,
+    provider_id: normalized.id,
+    kind: normalized.kind,
+    transport: normalized.transport,
+    implemented: normalized.implemented === true,
+    credential_mode: normalized.credential_mode,
+    endpoint_env: normalized.endpoint_env ?? null,
+    credential_env: normalized.credential_env ?? null,
+    default_model: normalized.default_model,
+    supported_modalities: supportedModalities,
+    transferable_evidence_classes: transferableEvidenceClasses,
+    external_evidence_transfer: normalized.external_evidence_transfer === true,
+    api_call_performed_by_adapter: normalized.api_call_performed === true,
+    raw_provider_response_stored: false,
+    timeout_ms: normalized.timeout_ms,
+    max_attempts: normalized.max_attempts,
+    max_request_bytes: normalized.max_request_bytes,
+    max_response_bytes: normalized.max_response_bytes,
+    cost_policy: normalized.cost_policy,
+    supports_vision: supportedModalities.some((item) => /image|pixel|vision|screenshot/i.test(item))
+      || transferableEvidenceClasses.includes('raw_pixels'),
+    supports_json_schema: true,
+    endpoint_policy: {
+      https_required_for_external: true,
+      loopback_http_allowed: true,
+      url_credentials_allowed: false,
+      sensitive_query_allowed: false,
+      redirects_allowed: false,
+      credential_source: normalized.credential_mode === 'environment_variable_only' ? 'environment_variable_only' : normalized.credential_mode
+    },
+    execution_boundary: {
+      mcp_execution_exposed: false,
+      deterministic_findings_mutated: false,
+      release_gate_mutated: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    real_provider_adapter_contract: {
+      contract_version: REAL_PROVIDER_ADAPTER_CONTRACT_VERSION,
+      manual_live_dogfood_supported: normalized.transport === 'provider_api',
+      ci_live_provider_default: false,
+      credential_values_recorded: false,
+      raw_provider_response_stored: false,
+      setup_readiness_surface: 'agentic_review_dogfood_readiness',
+      execution_surface: 'agentic_review_run_only',
+      required_owner_controls: [
+        'approved plan hash',
+        'explicit execute flag',
+        'exact transfer flags',
+        'environment-variable credential',
+        'manual live dogfood opt-in'
+      ],
+      provider_specific_configuration_allowed: true,
+      provider_specific_runtime_branches_allowed: false
+    }
+  });
+}
+
+export function agenticProviderCapabilityHash(provider) {
+  return createHash('sha256')
+    .update(canonicalStringify(agenticProviderCapabilityContract(provider)))
+    .digest('hex');
+}
+
+export function validateAgenticProviderDescriptor(provider, { builtInIds = new Set(AGENTIC_HUMAN_REVIEW_PROVIDERS.map((item) => item.id)) } = {}) {
+  const normalized = normalizeProviderDescriptor(provider);
+  const missing = ['id', 'kind', 'transport'].filter((field) => !normalized[field]);
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      error: {
+        code: 'AGENTIC_REVIEW_PROVIDER_DESCRIPTOR_INVALID',
+        message: 'Agentic human review provider descriptors must declare stable id, kind, and transport fields.',
+        details: { missing_fields: missing }
+      }
+    };
+  }
+  if (builtInIds.has(normalized.id)) {
+    return {
+      ok: false,
+      error: {
+        code: 'AGENTIC_REVIEW_PROVIDER_DESCRIPTOR_COLLISION',
+        message: 'Custom agentic human review provider descriptors cannot override built-in provider ids.',
+        details: { provider: normalized.id }
+      }
+    };
+  }
+  if (!KNOWN_PROVIDER_KINDS.has(normalized.kind)) {
+    return {
+      ok: false,
+      error: {
+        code: 'AGENTIC_REVIEW_PROVIDER_DESCRIPTOR_INVALID',
+        message: 'Agentic human review provider descriptors must use a known provider kind.',
+        details: { provider: normalized.id, kind: normalized.kind, allowed_kinds: [...KNOWN_PROVIDER_KINDS] }
+      }
+    };
+  }
+  if (!KNOWN_TRANSPORTS.has(normalized.transport)) {
+    return {
+      ok: false,
+      error: {
+        code: 'AGENTIC_REVIEW_PROVIDER_DESCRIPTOR_INVALID',
+        message: 'Agentic human review provider descriptors must use a known provider transport.',
+        details: { provider: normalized.id, transport: normalized.transport, allowed_transports: [...KNOWN_TRANSPORTS] }
+      }
+    };
+  }
+  const unsupportedClasses = uniqueSorted(normalized.transferable_evidence_classes)
+    .filter((item) => !KNOWN_TRANSFER_CLASSES.has(item));
+  if (unsupportedClasses.length > 0) {
+    return {
+      ok: false,
+      error: {
+        code: 'AGENTIC_REVIEW_PROVIDER_DESCRIPTOR_INVALID',
+        message: 'Agentic human review provider descriptors declared unsupported evidence transfer classes.',
+        details: { provider: normalized.id, unsupported_classes: unsupportedClasses }
+      }
+    };
+  }
+  if (normalized.transport === 'provider_api' && normalized.credential_mode !== 'environment_variable_only') {
+    return {
+      ok: false,
+      error: {
+        code: 'AGENTIC_REVIEW_PROVIDER_DESCRIPTOR_INVALID',
+        message: 'Provider API descriptors must use environment-variable-only credentials.',
+        details: { provider: normalized.id, credential_mode: normalized.credential_mode }
+      }
+    };
+  }
+  return { ok: true, provider: normalized };
+}
+
 export function agenticProviderSummary(provider) {
   const normalized = normalizeProviderDescriptor(provider);
+  const capability = agenticProviderCapabilityContract(normalized);
   return {
     id: normalized.id,
     display_name: normalized.display_name,
@@ -91,15 +252,21 @@ export function agenticProviderSummary(provider) {
     max_attempts: normalized.max_attempts ?? 1,
     max_request_bytes: normalized.max_request_bytes ?? DEFAULT_MAX_REQUEST_BYTES,
     max_response_bytes: normalized.max_response_bytes ?? DEFAULT_MAX_RESPONSE_BYTES,
-    cost_policy: normalized.cost_policy ?? 'unknown_cost_requires_owner_review'
+    cost_policy: normalized.cost_policy ?? 'unknown_cost_requires_owner_review',
+    supports_vision: capability.supports_vision,
+    supports_json_schema: capability.supports_json_schema,
+    endpoint_policy: capability.endpoint_policy,
+    capability_contract: capability,
+    capability_hash: agenticProviderCapabilityHash(normalized)
   };
 }
 
 export function resolveAgenticHumanReviewProvider({ providerId, context = {} } = {}) {
-  const providers = [
-    ...normalizeProviderDescriptors(context.agenticReviewProviders),
-    ...AGENTIC_HUMAN_REVIEW_PROVIDERS
-  ].map(normalizeProviderDescriptor);
+  const prepared = prepareProviderDescriptors(context);
+  if (!prepared.ok) {
+    return prepared;
+  }
+  const providers = prepared.providers;
   const id = providerId ?? 'fake-agent';
   const provider = providers.find((candidate) => candidate.id === id);
   if (!provider) {
@@ -127,10 +294,11 @@ export function buildAgenticProviderReadiness({
   context = {},
   now = new Date()
 } = {}) {
-  const providers = [
-    ...normalizeProviderDescriptors(context.agenticReviewProviders),
-    ...AGENTIC_HUMAN_REVIEW_PROVIDERS
-  ].map((provider) => readinessProviderRecord(provider, { surface, model }));
+  const prepared = prepareProviderDescriptors(context);
+  if (!prepared.ok) {
+    return prepared;
+  }
+  const providers = prepared.providers.map((provider) => readinessProviderRecord(provider, { surface, model }));
   const selected = providerId && providerId !== 'all'
     ? providers.filter((provider) => provider.id === providerId)
     : providers;
@@ -191,6 +359,26 @@ export function buildAgenticProviderReadiness({
   };
 }
 
+export function buildAgenticDogfoodSetupReadiness({ provider, context = {} } = {}) {
+  const env = context.env ?? process.env;
+  const endpointEnv = provider?.endpoint_env ?? null;
+  const credentialEnv = provider?.credential_env ?? null;
+  const liveDogfoodValue = env[AGENTIC_REVIEW_LIVE_DOGFOOD_ENV];
+  return redact({
+    endpoint_env: endpointEnv,
+    credential_env: credentialEnv,
+    live_dogfood_env: AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
+    endpoint_configured: Boolean(endpointEnv && env[endpointEnv]),
+    credential_configured: Boolean(credentialEnv && env[credentialEnv]),
+    live_dogfood_enabled: liveDogfoodValue === '1' || String(liveDogfoodValue ?? '').toLowerCase() === 'true',
+    manual_live_provider_default: false,
+    ci_live_provider_default: false,
+    credential_values_read_by_readiness: false,
+    credential_values_recorded: false,
+    raw_provider_response_stored: false
+  });
+}
+
 export async function executeAgenticHumanReviewApiProvider({
   provider,
   model,
@@ -243,15 +431,32 @@ export async function executeAgenticHumanReviewApiProvider({
       provider
     });
   }
-  if (!['https:', 'http:'].includes(endpointUrl.protocol)) {
+  if (endpointUrl.protocol !== 'https:' && !(endpointUrl.protocol === 'http:' && isLoopbackHost(endpointUrl.hostname))) {
     return providerFailure({
       status: 'blocked',
       code: 'AGENTIC_REVIEW_API_ENDPOINT_UNSUPPORTED_PROTOCOL',
-      message: 'The agentic review API endpoint must use http or https.',
+      message: 'The agentic review API endpoint must use https, except for explicit loopback http development endpoints.',
       details: {
         provider: provider.id,
         endpoint_env: provider.endpoint_env,
         endpoint_protocol: endpointUrl.protocol,
+        endpoint_loopback: isLoopbackHost(endpointUrl.hostname),
+        credential_values_recorded: false,
+        api_call_performed: false
+      },
+      provider
+    });
+  }
+  const endpointValidation = validateApiEndpointUrl(endpointUrl);
+  if (!endpointValidation.ok) {
+    return providerFailure({
+      status: 'blocked',
+      code: endpointValidation.error.code,
+      message: endpointValidation.error.message,
+      details: {
+        provider: provider.id,
+        endpoint_env: provider.endpoint_env,
+        ...endpointValidation.error.details,
         credential_values_recorded: false,
         api_call_performed: false
       },
@@ -314,6 +519,7 @@ export async function executeAgenticHumanReviewApiProvider({
         authorization: `Bearer ${credential}`
       },
       body: payloadText,
+      redirect: 'error',
       signal: controller?.signal
     });
   } catch (error) {
@@ -359,6 +565,27 @@ export async function executeAgenticHumanReviewApiProvider({
       details: {
         provider: provider.id,
         ...responseMeta,
+        credential_values_recorded: false,
+        raw_provider_response_stored: false
+      },
+      provider,
+      providerCallPerformed: true,
+      apiCallPerformed: true,
+      externalEvidenceTransfer: true
+    });
+  }
+
+  const declaredLength = Number(typeof response.headers?.get === 'function' ? response.headers.get('content-length') : null);
+  if (Number.isFinite(declaredLength) && declaredLength > provider.max_response_bytes) {
+    await discardResponseBody(response, provider.max_response_bytes);
+    return providerFailure({
+      status: 'failed',
+      code: 'AGENTIC_REVIEW_API_RESPONSE_TOO_LARGE',
+      message: 'The agentic review API response exceeds the provider response-size limit.',
+      details: {
+        provider: provider.id,
+        ...responseMeta,
+        response_bytes: declaredLength,
         credential_values_recorded: false,
         raw_provider_response_stored: false
       },
@@ -461,10 +688,42 @@ function readinessProviderRecord(provider, { surface, model }) {
     transfer_policy: {
       requires_approved_plan_hash: true,
       requires_exact_transfer_flags: true,
+      requires_matching_provider_capability_hash: true,
+      provider_capability_hash: summary.capability_hash,
       mcp_execution_allowed: false,
       default_external_transfer: false,
       transferable_evidence_classes: summary.transferable_evidence_classes
+    },
+    setup_readiness: {
+      readiness_surface: 'agentic_review_dogfood_readiness',
+      live_dogfood_manual_only: true,
+      ci_live_provider_default: false,
+      endpoint_env: summary.endpoint_env,
+      credential_env: summary.credential_env,
+      live_dogfood_env: AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
+      credential_values_read_by_readiness: false,
+      credential_values_recorded: false,
+      raw_provider_response_stored: false
     }
+  };
+}
+
+function prepareProviderDescriptors(context = {}) {
+  const customDescriptors = normalizeProviderDescriptors(context.agenticReviewProviders);
+  const customProviders = [];
+  for (const descriptor of customDescriptors) {
+    const validation = validateAgenticProviderDescriptor(descriptor);
+    if (!validation.ok) {
+      return validation;
+    }
+    customProviders.push(validation.provider);
+  }
+  return {
+    ok: true,
+    providers: [
+      ...customProviders,
+      ...AGENTIC_HUMAN_REVIEW_PROVIDERS.map(normalizeProviderDescriptor)
+    ]
   };
 }
 
@@ -504,7 +763,7 @@ function buildAgenticApiPayload({ plan, planPath, reviewPackage, transferFlags, 
     type: 'agentic_human_review_request',
     plan: {
       id: plan.id,
-      plan_path: planPath,
+      plan_path_included: false,
       plan_hash: plan.plan_hash,
       intent: plan.intent,
       review_scope: plan.review_scope,
@@ -512,6 +771,17 @@ function buildAgenticApiPayload({ plan, planPath, reviewPackage, transferFlags, 
       sub_agents: plan.sub_agents,
       rounds: plan.rounds,
       rubric: plan.rubric,
+      rubric_profile: plan.rubric_profile ?? null,
+      evidence_plan: plan.evidence_plan ?? reviewPackage?.evidence_plan ?? null,
+      visual_evidence_package_v2: reviewPackage?.visual_evidence_package_v2 ?? null,
+      visible_text_reading_contract: reviewPackage?.visible_text_reading_contract ?? null,
+      human_review_contract: plan.human_review_contract ?? null,
+      provider_instruction_contract: plan.provider_instruction_contract ?? null,
+      role_instruction_contracts: plan.role_instruction_contracts ?? null,
+      orchestration_contract: plan.orchestration_contract ?? null,
+      review_quality_benchmark: plan.review_quality_benchmark ?? null,
+      provider_capability_contract: plan.provider_capability_contract ?? null,
+      provider_capability_hash: plan.provider_capability_hash ?? null,
       dogfood_metadata: plan.dogfood_metadata ?? null
     },
     package: filterReviewPackageForTransfer(reviewPackage, transferFlags),
@@ -528,12 +798,15 @@ function buildAgenticApiPayload({ plan, planPath, reviewPackage, transferFlags, 
     },
     execution: {
       id: execution.id,
-      execution_path: execution.execution_path
+      execution_path_included: false
     },
     disclosure_policy: {
       approved_transfer_flags: transferFlags.supplied_flags,
       raw_pixels_included: false,
       raw_artifact_content_included: false,
+      raw_pixel_bytes_included: false,
+      visual_references_included: transferFlags.supplied_flags?.includes('allow-raw-pixels') === true,
+      control_metadata_included: true,
       page_text_summary_included: transferFlags.supplied_flags?.includes('allow-page-text') === true,
       dom_summary_included: transferFlags.supplied_flags?.includes('allow-dom-summary') === true,
       url_metadata_included: transferFlags.supplied_flags?.includes('allow-url') === true,
@@ -565,20 +838,111 @@ function filterReviewPackageForTransfer(reviewPackage, transferFlags) {
           raw_pixels_embedded_in_json: false
         }
       : { reference_count: 0, references: [], raw_pixels_embedded_in_json: false },
+    visual_evidence_package_v2: flags.has('allow-raw-pixels')
+      ? reviewPackage?.visual_evidence_package_v2 ?? null
+      : {
+          schema_version: SCHEMA_VERSION,
+          evidence_package_version: reviewPackage?.visual_evidence_package_v2?.evidence_package_version ?? null,
+          reference_count: 0,
+          references: [],
+          raw_pixel_policy: {
+            raw_pixel_bytes_available_from_json: false,
+            raw_pixel_bytes_embedded_in_json: false,
+            raw_pixel_bytes_read_by_planning: false,
+            raw_pixel_bytes_require_explicit_run_transfer_flag: true
+          },
+          advisory_only: true,
+          gate_effect: 'none'
+        },
     content_evidence: flags.has('allow-page-text')
       ? reviewPackage?.content_evidence ?? null
       : { text_snippet_count: 0, text_snippets: [], page_text_included_as_bounded_summary: false },
+    visible_text_reading_contract: flags.has('allow-page-text')
+      ? reviewPackage?.visible_text_reading_contract ?? null
+      : {
+          schema_version: SCHEMA_VERSION,
+          reading_contract_version: reviewPackage?.visible_text_reading_contract?.reading_contract_version ?? null,
+          snippet_count: 0,
+          bounded_text_snippets: [],
+          ocr_boundary: {
+            external_ocr_performed: false,
+            provider_ocr_allowed_only_after_approved_visual_transfer: true,
+            raw_dom_included: false,
+            raw_report_body_included: false
+          },
+          advisory_only: true,
+          gate_effect: 'none'
+        },
     semantic_evidence: flags.has('allow-accessibility-summary') ? reviewPackage?.semantic_evidence ?? null : null,
     artifact_references: flags.has('allow-artifact-refs') ? reviewPackage?.artifact_references ?? [] : [],
-    existing_review_state: reviewPackage?.existing_review_state ?? null,
+    rubric_profile: reviewPackage?.rubric_profile ?? null,
+    evidence_plan: reviewPackage?.evidence_plan ?? null,
+    privacy_disclosure_audit: reviewPackage?.privacy_disclosure_audit ?? null,
+    existing_review_state: filterExistingReviewState(reviewPackage?.existing_review_state),
     disclosure: {
       raw_pixels_embedded_in_json: false,
-      raw_artifact_content_included: false
+      raw_artifact_content_included: false,
+      raw_pixel_bytes_included: false,
+      visual_references_included: flags.has('allow-raw-pixels')
     }
   };
 }
 
+function filterExistingReviewState(existingReviewState) {
+  if (!existingReviewState || typeof existingReviewState !== 'object') {
+    return null;
+  }
+  return {
+    findings_count: Number(existingReviewState.findings_count ?? 0),
+    local_release_gate: existingReviewState.local_release_gate ?? null,
+    deterministic_review_hash: existingReviewState.deterministic_review_hash ?? null,
+    deterministic_review_path_included: false,
+    deterministic_review_mutation_allowed: false
+  };
+}
+
+function isLoopbackHost(hostname) {
+  const host = String(hostname ?? '').toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+}
+
+function validateApiEndpointUrl(endpointUrl) {
+  if (endpointUrl.username || endpointUrl.password) {
+    return {
+      ok: false,
+      error: {
+        code: 'AGENTIC_REVIEW_API_ENDPOINT_CREDENTIALS_UNSUPPORTED',
+        message: 'The agentic review API endpoint cannot include username or password URL credentials.',
+        details: { endpoint_credentials_present: true }
+      }
+    };
+  }
+  const sensitiveParams = [];
+  for (const key of endpointUrl.searchParams.keys()) {
+    if (SENSITIVE_ENDPOINT_QUERY_PARAMS.has(String(key).toLowerCase())) {
+      sensitiveParams.push(key);
+    }
+  }
+  if (sensitiveParams.length > 0) {
+    return {
+      ok: false,
+      error: {
+        code: 'AGENTIC_REVIEW_API_ENDPOINT_SENSITIVE_QUERY_UNSUPPORTED',
+        message: 'The agentic review API endpoint cannot include sensitive credential-like query parameters.',
+        details: { sensitive_query_params: sensitiveParams }
+      }
+    };
+  }
+  return { ok: true };
+}
+
 async function parseBoundedResponse(response, maxResponseBytes) {
+  if (response.body && typeof response.body.getReader === 'function') {
+    return parseReadableStreamResponse(response.body, maxResponseBytes);
+  }
+  if (response.body && typeof response.body[Symbol.asyncIterator] === 'function') {
+    return parseAsyncIterableResponse(response.body, maxResponseBytes);
+  }
   if (typeof response.text === 'function') {
     const text = await response.text();
     const bytes = Buffer.byteLength(text, 'utf8');
@@ -621,6 +985,66 @@ async function parseBoundedResponse(response, maxResponseBytes) {
   };
 }
 
+async function parseReadableStreamResponse(body, maxResponseBytes) {
+  const reader = body.getReader();
+  const chunks = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      const chunk = Buffer.from(value ?? []);
+      bytes += chunk.length;
+      if (bytes > maxResponseBytes) {
+        await reader.cancel?.();
+        return responseTooLarge(bytes);
+      }
+      chunks.push(chunk);
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+  return parseResponseText(Buffer.concat(chunks).toString('utf8'), bytes);
+}
+
+async function parseAsyncIterableResponse(body, maxResponseBytes) {
+  const chunks = [];
+  let bytes = 0;
+  for await (const value of body) {
+    const chunk = typeof value === 'string' ? Buffer.from(value, 'utf8') : Buffer.from(value ?? []);
+    bytes += chunk.length;
+    if (bytes > maxResponseBytes) {
+      return responseTooLarge(bytes);
+    }
+    chunks.push(chunk);
+  }
+  return parseResponseText(Buffer.concat(chunks).toString('utf8'), bytes);
+}
+
+function parseResponseText(text, bytes = Buffer.byteLength(text, 'utf8')) {
+  try {
+    return { ok: true, value: JSON.parse(text), response_bytes: bytes };
+  } catch {
+    return {
+      ok: false,
+      code: 'AGENTIC_REVIEW_API_RESPONSE_INVALID_JSON',
+      message: 'The agentic review API response was not valid JSON.',
+      response_bytes: bytes
+    };
+  }
+}
+
+function responseTooLarge(responseBytes) {
+  return {
+    ok: false,
+    code: 'AGENTIC_REVIEW_API_RESPONSE_TOO_LARGE',
+    message: 'The agentic review API response exceeds the provider response-size limit.',
+    response_bytes: responseBytes
+  };
+}
+
 async function discardResponseBody(response, maxResponseBytes) {
   try {
     await parseBoundedResponse(response, maxResponseBytes);
@@ -639,10 +1063,28 @@ function providerFailure({
   apiCallPerformed = false,
   externalEvidenceTransfer = false
 }) {
+  const diagnosticDetails = redact(details ?? {});
   return {
     ok: false,
     status,
-    error: { code, message, details: redact(details ?? {}) },
+    error: { code, message, details: diagnosticDetails },
+    failure_diagnostics: {
+      schema_version: SCHEMA_VERSION,
+      diagnostic_version: '1.0.0',
+      stage: diagnosticStageForCode(code),
+      code,
+      provider_id: provider?.id ?? null,
+      status,
+      message,
+      next_actions: providerFailureNextActions(code),
+      provider_call_performed: Boolean(providerCallPerformed),
+      api_call_performed: Boolean(apiCallPerformed),
+      external_evidence_transfer: Boolean(externalEvidenceTransfer),
+      credential_values_recorded: false,
+      raw_provider_response_stored: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
     boundary: providerBoundary({
       provider,
       providerCallPerformed,
@@ -651,6 +1093,44 @@ function providerFailure({
     }),
     warnings: []
   };
+}
+
+function diagnosticStageForCode(code) {
+  if (/CONFIGURATION|ENDPOINT|FETCH/.test(code)) {
+    return 'setup';
+  }
+  if (/REQUEST|TIMEOUT/.test(code)) {
+    return 'request';
+  }
+  if (/RESPONSE|JSON/.test(code)) {
+    return 'response';
+  }
+  return 'provider';
+}
+
+function providerFailureNextActions(code) {
+  if (/CONFIGURATION/.test(code)) {
+    return [
+      'Configure endpoint and credential environment variables for the selected provider.',
+      'Run dogfood readiness before retrying the approved plan.'
+    ];
+  }
+  if (/ENDPOINT/.test(code)) {
+    return [
+      'Use an https endpoint or explicit loopback http endpoint.',
+      'Remove URL credentials, sensitive query parameters, and redirect-dependent endpoints.'
+    ];
+  }
+  if (/REQUEST_TOO_LARGE/.test(code)) {
+    return ['Reduce approved transfer classes or lower package size before retrying.'];
+  }
+  if (/RESPONSE_TOO_LARGE|INVALID_JSON|RESPONSE_NOT_OK/.test(code)) {
+    return ['Check provider output formatting and size limits without storing raw response bodies.'];
+  }
+  if (/TIMEOUT/.test(code)) {
+    return ['Increase the configured timeout or retry with a smaller approved evidence package.'];
+  }
+  return ['Inspect the advisory-safe diagnostics and retry only after preserving the approved plan boundary.'];
 }
 
 function redactExactSecrets(value, secrets) {
@@ -665,4 +1145,26 @@ function redactExactSecrets(value, secrets) {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactExactSecrets(item, filtered)]));
   }
   return value;
+}
+
+function uniqueSorted(values) {
+  return [...new Set(Array.isArray(values) ? values.map((item) => String(item)) : [])].sort();
+}
+
+function canonicalStringify(value) {
+  return JSON.stringify(sortForJson(value));
+}
+
+function sortForJson(value) {
+  if (Array.isArray(value)) {
+    return value.map(sortForJson);
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, sortForJson(value[key])])
+  );
 }

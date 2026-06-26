@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-dogfood-readiness.schema.json",
+  "title": "TraceCue Agentic Human Review Dogfood Readiness",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "type",
+    "readiness_version",
+    "generated_at",
+    "status",
+    "provider",
+    "dogfood_set",
+    "setup",
+    "boundary",
+    "advisory_only",
+    "gate_effect"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "const": "agentic_human_review_dogfood_readiness" },
+    "readiness_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "status": { "type": "string" },
+    "provider": { "type": "object" },
+    "dogfood_set": { "type": "object" },
+    "setup": { "type": "object" },
+    "required_owner_controls": { "type": "array" },
+    "next_commands": { "type": "object" },
+    "boundary": { "type": "object" },
+    "advisory_only": { "const": true },
+    "gate_effect": { "const": "none" }
+  },
+  "additionalProperties": true
+}

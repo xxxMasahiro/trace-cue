@@ -6,6 +6,12 @@ import {
   runAgentExecutionStatus
 } from './agent-execution.js';
 import {
+  runAgenticHumanReviewBenchmarkList,
+  runAgenticHumanReviewBenchmarkShow,
+  runAgenticHumanReviewCalibrate,
+  runAgenticHumanReviewCompare,
+  runAgenticHumanReviewDogfoodPlan,
+  runAgenticHumanReviewDogfoodReadiness,
   runAgenticHumanReviewList,
   runAgenticHumanReviewPlan,
   runAgenticHumanReviewPropose,
@@ -280,6 +286,30 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'agentic review report-quality') {
       return runtimeResult(parsed.command, await (context.agenticHumanReviewReportQualityRunner ?? runAgenticHumanReviewReportQuality)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review benchmark list') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewBenchmarkListRunner ?? runAgenticHumanReviewBenchmarkList)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review benchmark show') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewBenchmarkShowRunner ?? runAgenticHumanReviewBenchmarkShow)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review dogfood readiness') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewDogfoodReadinessRunner ?? runAgenticHumanReviewDogfoodReadiness)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review dogfood plan') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewDogfoodPlanRunner ?? runAgenticHumanReviewDogfoodPlan)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review calibrate') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewCalibrateRunner ?? runAgenticHumanReviewCalibrate)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review compare') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewCompareRunner ?? runAgenticHumanReviewCompare)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'visual review plan') {
@@ -769,6 +799,14 @@ function usageText(topic) {
     || topic === 'agentic review list'
     || topic === 'agentic review provider-readiness'
     || topic === 'agentic review report-quality'
+    || topic === 'agentic review benchmark'
+    || topic === 'agentic review benchmark list'
+    || topic === 'agentic review benchmark show'
+    || topic === 'agentic review dogfood'
+    || topic === 'agentic review dogfood readiness'
+    || topic === 'agentic review dogfood plan'
+    || topic === 'agentic review calibrate'
+    || topic === 'agentic review compare'
   ) {
     return [
       `Usage: ${CLI_NAME} agentic review propose --brief <request> [--review-index <review-artifact-index>] [--effort quick|standard|deep|xhigh] [--json]`,
@@ -776,10 +814,16 @@ function usageText(topic) {
       `       ${CLI_NAME} agentic review provider-readiness [--provider <id>|--proposal <proposal>|--plan <plan>] [--json]`,
       `       ${CLI_NAME} agentic review run --plan <plan> --plan-hash <sha256> [--allow-raw-pixels] [--allow-page-text] [--allow-url] [--allow-artifact-refs] [--allow-accessibility-summary] --execute [--json]`,
       `       ${CLI_NAME} agentic review report-quality --result <agentic-human-review-result> [--execution <agentic-human-review-execution>] [--json]`,
+      `       ${CLI_NAME} agentic review benchmark list [--json]`,
+      `       ${CLI_NAME} agentic review benchmark show --case <benchmark-case-id> [--json]`,
+      `       ${CLI_NAME} agentic review dogfood readiness [--provider <id>] [--json]`,
+      `       ${CLI_NAME} agentic review dogfood plan --case <benchmark-case-id> [--provider <id>] [--json]`,
+      `       ${CLI_NAME} agentic review calibrate --result <agentic-human-review-result> --case <benchmark-case-id> [--json]`,
+      `       ${CLI_NAME} agentic review compare --baseline <agentic-human-review-result> --candidate <agentic-human-review-result> [--comparison-kind quality-delta|direct-vs-tracecue|provider-dogfood|benchmark-regression] [--json]`,
       `       ${CLI_NAME} agentic review status --execution <agentic-human-review-execution> [--json]`,
       `       ${CLI_NAME} agentic review list [--json]`,
       '',
-      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider readiness performs no provider call; running requires matching hash, explicit --execute, and exact flags; report quality is read-only and advisory. MCP execution remains excluded.'
+      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider and dogfood readiness perform no provider call; running requires matching hash, explicit --execute, and exact flags; report quality, benchmark, dogfood planning, calibration, and comparison are read-only advisory checks. MCP execution remains excluded.'
     ].join('\n');
   }
 
@@ -992,6 +1036,9 @@ function usageText(topic) {
     '  review --image <path> --capture-handoff <path> --json',
     '  agentic review plan --review-index <path> --json',
     '  agentic review run --plan <path> --plan-hash <sha256> --execute --json',
+    '  agentic review benchmark list --json',
+    '  agentic review dogfood readiness --json',
+    '  agentic review calibrate --result <path> --case blog-content-value --json',
     '  visual review plan --capture-handoff <path> --json',
     '  visual review dashboard --json',
     '  visual review aggregate --preparation <path> --json',

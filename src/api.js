@@ -7,8 +7,21 @@ export {
 } from './agent-execution.js';
 export {
   AGENTIC_HUMAN_REVIEW_VERSION,
+  HUMAN_REVIEW_SCHEMA_VERSION,
+  HUMAN_REVIEW_CALIBRATION_VERSION,
+  HUMAN_REVIEW_COMPLETION_ROADMAP_VERSION,
+  HUMAN_REVIEW_EVIDENCE_PACKAGE_VERSION,
+  HUMAN_REVIEW_ORCHESTRATION_VERSION,
+  HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION,
+  HUMAN_REPORT_VERSION,
   agenticHumanReviewBoundary,
   isAgenticHumanReviewPackage,
+  runAgenticHumanReviewBenchmarkList,
+  runAgenticHumanReviewBenchmarkShow,
+  runAgenticHumanReviewCalibrate,
+  runAgenticHumanReviewCompare,
+  runAgenticHumanReviewDogfoodPlan,
+  runAgenticHumanReviewDogfoodReadiness,
   runAgenticHumanReviewList,
   runAgenticHumanReviewPlan,
   runAgenticHumanReviewPropose,
@@ -21,8 +34,12 @@ export {
   AGENTIC_HUMAN_REVIEW_PROVIDERS,
   AGENTIC_REVIEW_API_CREDENTIAL_ENV,
   AGENTIC_REVIEW_API_ENDPOINT_ENV,
+  AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
+  agenticProviderCapabilityContract,
+  agenticProviderCapabilityHash,
   buildAgenticProviderReadiness,
   executeAgenticHumanReviewApiProvider,
+  validateAgenticProviderDescriptor,
   resolveAgenticHumanReviewProvider
 } from './agentic-human-review-providers.js';
 export {

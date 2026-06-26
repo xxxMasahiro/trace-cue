@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-calibration-result.schema.json",
+  "title": "TraceCue Agentic Human Review Calibration Result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "type",
+    "calibration_version",
+    "generated_at",
+    "result_path",
+    "case_id",
+    "scores",
+    "passed",
+    "warnings",
+    "advisory_only",
+    "gate_effect",
+    "boundary"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "const": "agentic_human_review_calibration_result" },
+    "calibration_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "result_path": { "type": "string" },
+    "result_id": { "type": ["string", "null"] },
+    "case_id": { "type": "string" },
+    "fixture_type": { "type": "string" },
+    "rubric_profile_id": { "type": "string" },
+    "scores": { "type": "object" },
+    "required_mentions": { "type": "array" },
+    "forbidden_claims": { "type": "array" },
+    "required_dimensions": { "type": "array" },
+    "passed": { "type": "boolean" },
+    "warnings": { "type": "array" },
+    "advisory_only": { "const": true },
+    "gate_effect": { "const": "none" },
+    "boundary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

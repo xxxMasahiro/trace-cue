@@ -228,6 +228,15 @@ test('agentic human review stays approval-gated, local-first, and outside MCP pr
   const schemaFile = JSON.parse(await readText('schemas/agentic-human-review-advisory.schema.json'));
 
   assert.match(source, /agentic_human_review_advisory/);
+  assert.match(source, /HUMAN_REVIEW_SCHEMA_VERSION/);
+  assert.match(source, /reader_experience_review/);
+  assert.match(source, /mechanical_vs_human_review/);
+  assert.match(source, /human_review_coverage/);
+  assert.match(source, /provider_capability_hash/);
+  assert.match(source, /privacy_disclosure_audit/);
+  assert.match(source, /review_quality_evaluation/);
+  assert.match(source, /human_report_v3/);
+  assert.match(source, /transfer_approval_preview/);
   assert.match(source, /plan_hash/);
   assert.match(source, /required_flags/);
   assert.match(source, /mcp_execution_exposed:\s*false/);
@@ -237,10 +246,20 @@ test('agentic human review stays approval-gated, local-first, and outside MCP pr
   assert.match(parser, /agentic review propose/);
   assert.match(parser, /agentic review provider-readiness/);
   assert.match(parser, /agentic review report-quality/);
+  assert.match(parser, /agentic review benchmark list/);
+  assert.match(parser, /agentic review dogfood/);
+  assert.match(parser, /agentic review calibrate/);
+  assert.match(parser, /agentic review compare/);
   assert.match(api, /runAgenticHumanReviewPlan/);
   assert.match(api, /runAgenticHumanReviewPropose/);
+  assert.match(api, /runAgenticHumanReviewDogfoodReadiness/);
+  assert.match(api, /runAgenticHumanReviewCalibrate/);
+  assert.match(api, /agenticProviderCapabilityHash/);
   assert.match(api, /resolveAgenticHumanReviewProvider/);
   assert.equal(schemaFile.title, 'TraceCue Agentic Human Review Advisory');
+  assert.equal(schemaFile.required.includes('reader_experience_review'), true);
+  assert.equal(schemaFile.required.includes('mechanical_vs_human_review'), true);
+  assert.equal(schemaFile.required.includes('human_review_coverage'), true);
   assert.doesNotMatch(source, /from 'node:http'|from 'node:https'|from 'node:child_process'|createServer|\.listen\(|fetch\(|playwright|process\.env/);
   assert.match(providerSource, /fetchImpl/);
   assert.match(providerSource, /process\.env/);

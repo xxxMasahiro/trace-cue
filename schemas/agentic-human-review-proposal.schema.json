@@ -6,6 +6,7 @@
   "required": [
     "schema_version",
     "proposal_version",
+    "human_review_schema_version",
     "type",
     "id",
     "status",
@@ -14,6 +15,7 @@
     "proposal_hash",
     "source_request",
     "structured_intent",
+    "human_review_contract",
     "plan_candidate",
     "human_explanation",
     "review_effort",
@@ -30,6 +32,7 @@
   "properties": {
     "schema_version": { "type": "string" },
     "proposal_version": { "type": "string" },
+    "human_review_schema_version": { "type": "string" },
     "type": { "const": "agentic_human_review_proposal" },
     "id": { "type": "string" },
     "status": { "type": "string" },
@@ -38,6 +41,7 @@
     "proposal_hash": { "type": "string" },
     "source_request": { "type": "object" },
     "structured_intent": { "type": "object" },
+    "human_review_contract": { "type": "object" },
     "plan_candidate": { "type": "object" },
     "human_explanation": { "type": "object" },
     "review_effort": { "type": "object" },
