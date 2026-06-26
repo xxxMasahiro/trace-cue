@@ -9,6 +9,16 @@
 
 ## Phase Plan
 
+### Agentic Human Review Roadmap Slice 34-42: Conversational Proposal, Provider Readiness, API Provider, And Quality Verification
+
+Purpose: extend Agentic Human Review from a plan/run-only owner layer into a more usable human-equivalent review workflow. The feature lets developers ask for a review in normal language, have TraceCue produce a non-executing proposal, convert that proposal into the existing hash-approved plan/run path, verify provider readiness without calls, run an environment-configured generic API provider only through the approved plan gate, and evaluate advisory report quality.
+
+Implemented scope: add `agentic review propose`, `agentic review plan --proposal`, `agentic review provider-readiness`, generic API provider execution through `agentic review run`, and `agentic review report-quality`; add proposal/provider-readiness/report-quality schemas; isolate provider API I/O in `src/agentic-human-review-providers.js`; record role execution, claims, round records, critique, rebuttal, integration, dogfood metadata, and report-quality metadata in advisory output; keep proposal/readiness/report-quality outside execution authority; and keep all Agentic Human Review operations excluded from MCP profiles. Non-scope: MCP agentic review execution, browser or OS capture expansion, raw provider response storage, credential persistence, deterministic review mutation, release gate mutation, package publication, parent-repository changes, consumer-repository changes, or automatic approval of provider execution.
+
+Implementation order: add provider adapter isolation, proposal artifacts and proposal hash validation, proposal-to-plan defaults, provider readiness, generic API provider execution behind existing plan-hash and exact-transfer-flag gates, report-quality calculation, parser/CLI/API/schema/operation/MCP capability updates, no-browser CLI/API/architecture/security tests, packed-install coverage, product structure/security gates, and product/workflow document synchronization.
+
+Recovery: this slice is additive and local. Existing review, agent advisory, agent execution, visual review, capture, language, release, artifact-root, alias, shell, MCP profile, safe HTTP, and Slice 26-33 Agentic Human Review behavior remain compatible. Rollback is a standard Git revert of the Slice 34-42 changes; no artifact migration, deletion, publication, credential storage, raw provider response persistence, remote mutation, or MCP permission expansion is involved.
+
 ### Agentic Human Review Roadmap Slice 26-33: Human-Like Visual, UX, Content, And Subjective Review
 
 Purpose: implement the requested Slice 26-33 continuation as a dedicated owner-layer Agentic Human Review feature. The feature lets TraceCue use AI-agent judgment for human-like visual perception, UI/UX review, screen-text comprehension, copy/content critique, subjective audience reaction, trust/risk assessment, and improvement advice from existing local review artifact indexes.

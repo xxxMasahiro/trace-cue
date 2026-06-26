@@ -5,13 +5,18 @@ const VALUE_OPTIONS = new Set([
   'artifact-root',
   'body-limit',
   'capture-handoff',
+  'baseline-snapshot-hash',
+  'brief',
+  'case-id',
   'client',
+  'comparison-run-id',
   'daemon',
   'default-subagent-effort',
   'endpoint',
   'effort',
   'execution',
   'expected-impression',
+  'fixture-id',
   'fixture-root',
   'group',
   'host',
@@ -38,12 +43,14 @@ const VALUE_OPTIONS = new Set([
   'port',
   'preparation',
   'profile',
+  'proposal',
   'provider',
   'region',
   'resource-guard',
   'review-index',
   'review-effort',
   'role-efforts',
+  'result',
   'risk',
   'scope',
   'source',
@@ -1013,20 +1020,86 @@ function parseAgentic(args, globals) {
   }
   const scope = args[0];
   const action = args[1];
-  if (scope !== 'review' || !['plan', 'run', 'status', 'list'].includes(action)) {
+  const reviewActions = ['propose', 'plan', 'run', 'status', 'list', 'provider-readiness', 'report-quality'];
+  if (scope !== 'review' || !reviewActions.includes(action)) {
     return parseError('agentic', globals.json, {
       code: scope ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
       message: scope ? `Unknown agentic subcommand: ${[scope, action].filter(Boolean).join(' ')}` : 'agentic requires a subcommand.',
-      details: { subcommands: ['review plan', 'review run', 'review status', 'review list'] }
+      details: { subcommands: reviewActions.map((item) => `review ${item}`) }
     });
   }
-  if (action === 'plan') {
-    const parsed = parseRequiredOptions('agentic review plan', args.slice(2), globals, ['review-index']);
+  if (action === 'propose') {
+    const parsed = parseOptions('agentic review propose', args.slice(2), globals.json);
     if (!parsed.ok) {
       return parsed;
     }
+    if (parsed.positionals.length > 0) {
+      return parseError('agentic review propose', globals.json, {
+        code: 'UNEXPECTED_ARGUMENT',
+        message: 'agentic review propose does not accept positional arguments.',
+        details: { argument: parsed.positionals[0] }
+      });
+    }
+    const unsupported = Object.keys(parsed.options).find((option) => ![
+      'brief',
+      'intent',
+      'input',
+      'review-index',
+      'effort',
+      'review-effort',
+      'default-subagent-effort',
+      'role-efforts',
+      'surface',
+      'provider',
+      'model',
+      'name',
+      'target-audience',
+      'expected-impression',
+      'case-id',
+      'fixture-id',
+      'baseline-snapshot-hash',
+      'comparison-run-id',
+      'artifact-root',
+      'max-bytes'
+    ].includes(option));
+    if (unsupported) {
+      return parseError('agentic review propose', globals.json, {
+        code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_PROPOSE_OPTION',
+        message: `agentic review propose does not accept --${unsupported} because proposals do not execute plans or transfer evidence.`,
+        details: { option: unsupported }
+      });
+    }
+    if (parsed.options.effort && parsed.options['review-effort'] && parsed.options.effort !== parsed.options['review-effort']) {
+      return parseError('agentic review propose', globals.json, {
+        code: 'CONFLICTING_OPTIONS',
+        message: 'agentic review propose accepts either --effort or --review-effort for the same value.',
+        details: { options: ['effort', 'review-effort'] }
+      });
+    }
+    if (!parsed.options.brief && !parsed.options.intent && !parsed.options.input) {
+      return parseError('agentic review propose', globals.json, {
+        code: 'MISSING_REQUIRED_OPTION',
+        message: 'agentic review propose requires --brief, --intent, or --input.',
+        details: { options: ['brief', 'intent', 'input'] }
+      });
+    }
+    return { ok: true, command: 'agentic review propose', json: globals.json, options: parsed.options };
+  }
+  if (action === 'plan') {
+    const parsed = parseOptions('agentic review plan', args.slice(2), globals.json);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (parsed.positionals.length > 0) {
+      return parseError('agentic review plan', globals.json, {
+        code: 'UNEXPECTED_ARGUMENT',
+        message: 'agentic review plan does not accept positional arguments.',
+        details: { argument: parsed.positionals[0] }
+      });
+    }
     const unsupported = Object.keys(parsed.options).find((option) => ![
       'review-index',
+      'proposal',
       'intent',
       'input',
       'effort',
@@ -1039,6 +1112,10 @@ function parseAgentic(args, globals) {
       'name',
       'target-audience',
       'expected-impression',
+      'case-id',
+      'fixture-id',
+      'baseline-snapshot-hash',
+      'comparison-run-id',
       'artifact-root',
       'max-bytes'
     ].includes(option));
@@ -1056,7 +1133,14 @@ function parseAgentic(args, globals) {
         details: { options: ['effort', 'review-effort'] }
       });
     }
-    return parsed;
+    if (!parsed.options['review-index'] && !parsed.options.proposal) {
+      return parseError('agentic review plan', globals.json, {
+        code: 'MISSING_REQUIRED_OPTION',
+        message: 'agentic review plan requires --review-index or --proposal.',
+        details: { options: ['review-index', 'proposal'] }
+      });
+    }
+    return { ok: true, command: 'agentic review plan', json: globals.json, options: parsed.options };
   }
   if (action === 'run') {
     const parsed = parseRequiredOptions('agentic review run', args.slice(2), globals, ['plan', 'plan-hash']);
@@ -1105,6 +1189,54 @@ function parseAgentic(args, globals) {
       return parseError('agentic review status', globals.json, {
         code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_STATUS_OPTION',
         message: `agentic review status does not accept --${unsupported} because it is read-only.`,
+        details: { option: unsupported }
+      });
+    }
+    return parsed;
+  }
+  if (action === 'provider-readiness') {
+    const parsed = parseOptions('agentic review provider-readiness', args.slice(2), globals.json);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (parsed.positionals.length > 0) {
+      return parseError('agentic review provider-readiness', globals.json, {
+        code: 'UNEXPECTED_ARGUMENT',
+        message: 'agentic review provider-readiness does not accept positional arguments.',
+        details: { argument: parsed.positionals[0] }
+      });
+    }
+    const unsupported = Object.keys(parsed.options).find((option) => ![
+      'provider',
+      'surface',
+      'model',
+      'proposal',
+      'plan',
+      'max-bytes'
+    ].includes(option));
+    if (unsupported) {
+      return parseError('agentic review provider-readiness', globals.json, {
+        code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_PROVIDER_READINESS_OPTION',
+        message: `agentic review provider-readiness does not accept --${unsupported} because it performs no provider call.`,
+        details: { option: unsupported }
+      });
+    }
+    return { ok: true, command: 'agentic review provider-readiness', json: globals.json, options: parsed.options };
+  }
+  if (action === 'report-quality') {
+    const parsed = parseRequiredOptions('agentic review report-quality', args.slice(2), globals, ['result']);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    const unsupported = Object.keys(parsed.options).find((option) => ![
+      'result',
+      'execution',
+      'max-bytes'
+    ].includes(option));
+    if (unsupported) {
+      return parseError('agentic review report-quality', globals.json, {
+        code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_REPORT_QUALITY_OPTION',
+        message: `agentic review report-quality does not accept --${unsupported} because it is read-only.`,
         details: { option: unsupported }
       });
     }
@@ -1751,10 +1883,13 @@ function plannedCommands() {
     'agent execution run',
     'agent execution status',
     'agent execution list',
+    'agentic review propose',
     'agentic review plan',
     'agentic review run',
     'agentic review status',
     'agentic review list',
+    'agentic review provider-readiness',
+    'agentic review report-quality',
     'visual review plan',
     'visual review prepare',
     'visual review run',

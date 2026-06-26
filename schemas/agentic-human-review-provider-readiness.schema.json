@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-provider-readiness.schema.json",
+  "title": "TraceCue Agentic Human Review Provider Readiness",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "type",
+    "generated_at",
+    "status",
+    "selected_provider",
+    "providers",
+    "policy",
+    "boundary"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "const": "agentic_human_review_provider_readiness" },
+    "generated_at": { "type": "string" },
+    "status": { "type": "string" },
+    "selected_provider": { "type": "string" },
+    "providers": { "type": "array" },
+    "input_context": { "type": "object" },
+    "policy": { "type": "object" },
+    "boundary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

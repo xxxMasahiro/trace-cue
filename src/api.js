@@ -11,9 +11,20 @@ export {
   isAgenticHumanReviewPackage,
   runAgenticHumanReviewList,
   runAgenticHumanReviewPlan,
+  runAgenticHumanReviewPropose,
+  runAgenticHumanReviewProviderReadiness,
+  runAgenticHumanReviewReportQuality,
   runAgenticHumanReviewRun,
   runAgenticHumanReviewStatus
 } from './agentic-human-review.js';
+export {
+  AGENTIC_HUMAN_REVIEW_PROVIDERS,
+  AGENTIC_REVIEW_API_CREDENTIAL_ENV,
+  AGENTIC_REVIEW_API_ENDPOINT_ENV,
+  buildAgenticProviderReadiness,
+  executeAgenticHumanReviewApiProvider,
+  resolveAgenticHumanReviewProvider
+} from './agentic-human-review-providers.js';
 export {
   AGENT_EXECUTION_PROVIDERS,
   resolveAgentExecutionProvider

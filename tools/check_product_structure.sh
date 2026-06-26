@@ -36,7 +36,10 @@ for rel in \
   schemas/agentic-human-review-advisory.schema.json \
   schemas/agentic-human-review-package.schema.json \
   schemas/agentic-human-review-plan.schema.json \
+  schemas/agentic-human-review-proposal.schema.json \
+  schemas/agentic-human-review-provider-readiness.schema.json \
   schemas/agentic-human-review-receipt.schema.json \
+  schemas/agentic-human-review-report-quality.schema.json \
 	  schemas/capture-handoff.schema.json \
 	  schemas/capture-plan.schema.json \
 	  schemas/envelope.schema.json \
@@ -60,6 +63,7 @@ for rel in \
   schemas/visual-review-result.schema.json \
   src/api.js \
   src/agentic-human-review.js \
+  src/agentic-human-review-providers.js \
   src/capture-handoff.js \
 	  src/capture-plan.js \
 	  src/identity-audit.js \

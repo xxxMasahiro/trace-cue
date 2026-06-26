@@ -14,6 +14,7 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'src/agent-execution.js',
     'src/agent-execution-providers.js',
     'src/agentic-human-review.js',
+    'src/agentic-human-review-providers.js',
     'src/visual-review-provider-policy.js',
     'src/visual-review-result-preparation.js',
     'src/visual-review-dashboard.js',
@@ -220,6 +221,7 @@ test('standalone image review stays workspace-confined and provider-free', async
 
 test('agentic human review stays approval-gated, local-first, and outside MCP profiles', async () => {
   const source = await readText('src/agentic-human-review.js');
+  const providerSource = await readText('src/agentic-human-review-providers.js');
   const parser = await readText('src/parser.js');
   const api = await readText('src/api.js');
   const mcpProfiles = await readText('src/mcp-profiles.js');
@@ -232,9 +234,19 @@ test('agentic human review stays approval-gated, local-first, and outside MCP pr
   assert.match(source, /raw_provider_response_stored:\s*false/);
   assert.match(source, /credential_values_recorded:\s*false/);
   assert.match(parser, /agentic review plan/);
+  assert.match(parser, /agentic review propose/);
+  assert.match(parser, /agentic review provider-readiness/);
+  assert.match(parser, /agentic review report-quality/);
   assert.match(api, /runAgenticHumanReviewPlan/);
+  assert.match(api, /runAgenticHumanReviewPropose/);
+  assert.match(api, /resolveAgenticHumanReviewProvider/);
   assert.equal(schemaFile.title, 'TraceCue Agentic Human Review Advisory');
   assert.doesNotMatch(source, /from 'node:http'|from 'node:https'|from 'node:child_process'|createServer|\.listen\(|fetch\(|playwright|process\.env/);
+  assert.match(providerSource, /fetchImpl/);
+  assert.match(providerSource, /process\.env/);
+  assert.match(providerSource, /raw_provider_response_stored:\s*false/);
+  assert.match(providerSource, /credential_values_recorded:\s*false/);
+  assert.doesNotMatch(providerSource, /from 'node:child_process'|createServer|\.listen\(|playwright|raw_provider_response_stored:\s*true/);
   assert.doesNotMatch(mcpProfiles, /agentic.*review|human_review|raw_pixel|page_text/i);
 });
 

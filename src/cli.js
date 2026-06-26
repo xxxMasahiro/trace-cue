@@ -8,6 +8,9 @@ import {
 import {
   runAgenticHumanReviewList,
   runAgenticHumanReviewPlan,
+  runAgenticHumanReviewPropose,
+  runAgenticHumanReviewProviderReadiness,
+  runAgenticHumanReviewReportQuality,
   runAgenticHumanReviewRun,
   runAgenticHumanReviewStatus
 } from './agentic-human-review.js';
@@ -251,6 +254,10 @@ export async function executeCli(argv, context = {}) {
       return runtimeResult(parsed.command, await (context.agentExecutionListRunner ?? runAgentExecutionList)(parsed.options, context), parsed.json, now);
     }
 
+    if (parsed.command === 'agentic review propose') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewProposeRunner ?? runAgenticHumanReviewPropose)(parsed.options, context), parsed.json, now);
+    }
+
     if (parsed.command === 'agentic review plan') {
       return runtimeResult(parsed.command, await (context.agenticHumanReviewPlanRunner ?? runAgenticHumanReviewPlan)(parsed.options, context), parsed.json, now);
     }
@@ -265,6 +272,14 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'agentic review list') {
       return runtimeResult(parsed.command, await (context.agenticHumanReviewListRunner ?? runAgenticHumanReviewList)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review provider-readiness') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewProviderReadinessRunner ?? runAgenticHumanReviewProviderReadiness)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review report-quality') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewReportQualityRunner ?? runAgenticHumanReviewReportQuality)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'visual review plan') {
@@ -747,18 +762,24 @@ function usageText(topic) {
   if (
     topic === 'agentic'
     || topic === 'agentic review'
+    || topic === 'agentic review propose'
     || topic === 'agentic review plan'
     || topic === 'agentic review run'
     || topic === 'agentic review status'
     || topic === 'agentic review list'
+    || topic === 'agentic review provider-readiness'
+    || topic === 'agentic review report-quality'
   ) {
     return [
-      `Usage: ${CLI_NAME} agentic review plan --review-index <review-artifact-index> [--intent <text>|--input <text|@file|->] [--effort quick|standard|deep|xhigh] [--json]`,
-      `       ${CLI_NAME} agentic review run --plan <plan> --plan-hash <sha256> [--allow-raw-pixels] [--allow-page-text] --execute [--json]`,
+      `Usage: ${CLI_NAME} agentic review propose --brief <request> [--review-index <review-artifact-index>] [--effort quick|standard|deep|xhigh] [--json]`,
+      `       ${CLI_NAME} agentic review plan --proposal <proposal> [--review-index <review-artifact-index>] [--json]`,
+      `       ${CLI_NAME} agentic review provider-readiness [--provider <id>|--proposal <proposal>|--plan <plan>] [--json]`,
+      `       ${CLI_NAME} agentic review run --plan <plan> --plan-hash <sha256> [--allow-raw-pixels] [--allow-page-text] [--allow-url] [--allow-artifact-refs] [--allow-accessibility-summary] --execute [--json]`,
+      `       ${CLI_NAME} agentic review report-quality --result <agentic-human-review-result> [--execution <agentic-human-review-execution>] [--json]`,
       `       ${CLI_NAME} agentic review status --execution <agentic-human-review-execution> [--json]`,
       `       ${CLI_NAME} agentic review list [--json]`,
       '',
-      'Plans and runs CLI-only agentic human review. Planning explains the human-review scope, sub-agent roles, transfer flags, and exact approved run command without provider execution. Running requires a matching plan hash, explicit --execute, and exact transfer flags, writes advisory-only output, and remains excluded from MCP execution.'
+      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider readiness performs no provider call; running requires matching hash, explicit --execute, and exact flags; report quality is read-only and advisory. MCP execution remains excluded.'
     ].join('\n');
   }
 

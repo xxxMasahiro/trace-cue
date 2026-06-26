@@ -20,6 +20,7 @@ const ARTIFACT_DIRS = [
   'review-artifacts',
   'visual-evidence',
   'visual-review-results',
+  'agentic-human-review-proposals',
   'agentic-human-review-plans',
   'agentic-human-review-packages',
   'agentic-human-review-results',

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-report-quality.schema.json",
+  "title": "TraceCue Agentic Human Review Report Quality",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "type",
+    "generated_at",
+    "result_path",
+    "completeness_score",
+    "evidence_coverage_score",
+    "verification_score",
+    "advisory_only",
+    "gate_effect",
+    "boundary"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "const": "agentic_human_review_report_quality" },
+    "generated_at": { "type": "string" },
+    "result_path": { "type": "string" },
+    "result_id": { "type": ["string", "null"] },
+    "execution_id": { "type": ["string", "null"] },
+    "completeness_score": { "type": "number" },
+    "evidence_coverage_score": { "type": "number" },
+    "verification_score": { "type": "number" },
+    "role_count": { "type": "number" },
+    "finding_count": { "type": "number" },
+    "claim_count": { "type": "number" },
+    "owner_decision_count": { "type": "number" },
+    "quality_warnings": { "type": "array" },
+    "advisory_only": { "const": true },
+    "gate_effect": { "const": "none" },
+    "boundary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

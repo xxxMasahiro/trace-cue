@@ -241,6 +241,10 @@
       "role": "manifest"
     },
     {
+      "path": "src/agentic-human-review-providers.js",
+      "role": "manifest"
+    },
+    {
       "path": "schemas/visual-review-result-preparation.schema.json",
       "role": "manifest"
     },
@@ -281,6 +285,14 @@
       "role": "manifest"
     },
     {
+      "path": "schemas/agentic-human-review-proposal.schema.json",
+      "role": "manifest"
+    },
+    {
+      "path": "schemas/agentic-human-review-provider-readiness.schema.json",
+      "role": "manifest"
+    },
+    {
       "path": "schemas/agentic-human-review-package.schema.json",
       "role": "manifest"
     },
@@ -295,8 +307,39 @@
     {
       "path": "schemas/agentic-human-review-receipt.schema.json",
       "role": "manifest"
+    },
+    {
+      "path": "schemas/agentic-human-review-report-quality.schema.json",
+      "role": "manifest"
     }
   ],
+  "agentic_human_review_slice_34_42": {
+    "status": "complete",
+    "feature": "Conversational Agentic Human Review proposal, provider readiness, API provider, and report quality",
+    "files": [
+      "src/agentic-human-review.js",
+      "src/agentic-human-review-providers.js",
+      "schemas/agentic-human-review-proposal.schema.json",
+      "schemas/agentic-human-review-provider-readiness.schema.json",
+      "schemas/agentic-human-review-report-quality.schema.json",
+      "tests/cli.test.js",
+      "tests/architecture.test.js",
+      "tests/pack-install-smoke.test.js"
+    ],
+    "boundaries": {
+      "proposal_is_not_approval": true,
+      "provider_readiness_calls_provider": false,
+      "plan_hash_required": true,
+      "package_hash_required": true,
+      "exact_transfer_flags_required": true,
+      "generic_api_provider_env_only": true,
+      "raw_provider_response_stored": false,
+      "credential_values_recorded": false,
+      "mcp_execution_exposed": false,
+      "existing_review_mutated": false,
+      "gate_effect": "none"
+    }
+  },
   "agentic_human_review_slice_26_33": {
     "status": "complete",
     "feature": "CLI-only Agentic Human Review owner layer",

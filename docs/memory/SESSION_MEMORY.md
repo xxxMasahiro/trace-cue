@@ -264,3 +264,238 @@ The following remain separately approval-bound:
 - Promotion into deterministic findings.
 - Promotion into release gates or product gates.
 - Claims that the feature provides guaranteed human-equivalent or human-superior judgment.
+
+## Follow-Up Draft Roadmap: Slices 34-42
+
+This section extends the TraceCue Agentic Human Review draft roadmap after the Slice 26-33 foundation. It remains a draft roadmap, not a formal product plan, release commitment, provider/API transfer approval, MCP execution approval, or approval to weaken the safety boundaries already implemented.
+
+Step 1 has been completed separately:
+- The local Slice 26-33 implementation was pushed to `origin/main`.
+- GitHub Actions `CI` completed successfully for commit `6498667`.
+- The local working tree was clean and synchronized with `origin/main` after CI success.
+
+### Slice 34: Conversational Review Request Intake
+
+Purpose:
+- Allow developers and non-engineers to request an agentic review without manually composing complex commands.
+- Convert a natural-language review request into a structured review intent.
+- Keep this step planning-only, with no provider execution, no external transfer, and no MCP exposure.
+
+Deliverables:
+- `agentic review propose` command.
+- `--brief`, `--input`, and `@file` support.
+- Structured review intent containing target, purpose, target audience, expected impression, requested review areas, and effort candidates.
+- Non-engineer-readable explanation of what the review would inspect.
+- No-execution guarantee for proposal generation.
+
+Completion criteria:
+- A natural-language request can produce a readable review proposal.
+- The proposal does not execute `agentic review plan` or `agentic review run`.
+- MCP exposure remains unavailable.
+
+### Slice 35: Proposal-To-Plan Candidate Conversion
+
+Purpose:
+- Convert a conversational proposal into a candidate input for the existing `agentic review plan` flow.
+- Explain required evidence-transfer permissions before a plan hash is finalized.
+- Make approval content understandable before any execution can happen.
+
+Deliverables:
+- Effort-mode inference.
+- Role-specific effort inference.
+- Required transfer-flag explanation for raw pixels, page text, DOM summary, URL, and artifact references.
+- Exact command preview for the next planning step.
+- Human-readable safety and disclosure summary.
+
+Completion criteria:
+- The user can see what evidence would be used and why.
+- The proposal identifies required transfer permissions in plain language.
+- No plan/run approval gate is bypassed.
+
+### Slice 36: Safe Bridge From Proposal To Existing Plan/Run
+
+Purpose:
+- Connect `agentic review propose` to the already implemented plan/run safety layer.
+- Reuse the existing plan hash, `--execute`, transfer-flag, advisory-only, and MCP-exclusion mechanisms.
+- Ensure a convenience flow cannot become a bypass path.
+
+Deliverables:
+- Agentic review proposal schema.
+- Proposal receipt.
+- `agentic review plan --proposal <path>` support.
+- Proposal-to-plan provenance metadata.
+- Regression tests proving that proposal output cannot run providers directly.
+
+Completion criteria:
+- A proposal can create a normal `agentic review plan`.
+- The resulting plan still requires plan hash validation and exact run flags.
+- Existing `agentic review plan/run` safety behavior remains unchanged.
+
+### Slice 37: Real AI Provider Readiness
+
+Purpose:
+- Define real provider connection requirements before allowing provider calls.
+- Keep the implementation readiness-focused before adding live transfer.
+- Make provider capability, disclosure, credential, cost, timeout, and failure behavior explicit.
+
+Deliverables:
+- Provider capability registry.
+- Env-only credential policy.
+- Declared transferable evidence types per provider.
+- Raw response non-storage policy.
+- Cost, timeout, retry, and size-limit metadata.
+- Provider readiness command or metadata surface.
+
+Completion criteria:
+- TraceCue can report what a provider is allowed to receive before execution.
+- Credential values are not read, logged, stored, or committed.
+- No real provider call is performed in this slice.
+
+### Slice 38: Minimal Approved Real AI Provider Execution
+
+Purpose:
+- Add the first live provider adapter behind the existing approval gates.
+- Execute only when the stored plan, supplied plan hash, `--execute`, provider selection, and transfer flags all match.
+- Normalize provider output into advisory-only results without storing raw responses.
+
+Deliverables:
+- Provider adapter interface.
+- Request builder.
+- Response normalizer.
+- Secret redaction.
+- Failure receipt.
+- Raw response non-storage regression coverage.
+
+Completion criteria:
+- Real provider execution is possible only through an approved plan.
+- Output remains `agentic_human_review_advisory`.
+- Credentials and raw provider responses are not stored.
+- MCP exposure remains unavailable.
+
+### Slice 39: Multi-Role Independent Review Execution
+
+Purpose:
+- Execute role-specific reviews independently for `standard`, `deep`, and `xhigh` modes.
+- Preserve each role's perspective instead of collapsing results too early.
+- Make effort selection meaningful across roles.
+
+Default roles:
+- Visual/UX.
+- Content/Copy.
+- Accessibility/Comprehension.
+- Subjective Impression.
+- Risk/Rebuttal.
+- Integrator.
+
+Deliverables:
+- Role execution records.
+- Role-specific prompts or instruction contracts.
+- Role-specific effort application.
+- Per-role evidence references.
+- Per-role limitations and confidence.
+
+Completion criteria:
+- Each role writes an independent advisory record.
+- Role effort affects the generated task metadata and execution behavior.
+- The deterministic review layer remains unchanged.
+
+### Slice 40: Critic, Rebuttal, And Integration Rounds
+
+Purpose:
+- Improve review quality in `xhigh` mode by adding review rounds beyond first-pass findings.
+- Detect contradictions, unsupported claims, weak subjective impressions, and likely missed issues.
+- Produce an integrated result without hiding dissent.
+
+Deliverables:
+- Critic round.
+- Rebuttal round.
+- Consistency check.
+- Consensus extraction.
+- Dissent and uncertainty extraction.
+- Integrator summary.
+
+Completion criteria:
+- The final report separates consensus, dissent, and uncertainty.
+- Subjective impressions include supporting rationale.
+- Weak or unsupported claims can be downgraded or flagged.
+- Output remains advisory-only.
+
+### Slice 41: Real-Page Dogfood Foundation
+
+Purpose:
+- Create a repeatable way to test agentic review quality on real pages and screenshots.
+- Use dogfood runs to evaluate whether reviews are useful to humans.
+- Preserve review comparison metadata without turning advisory output into deterministic gates.
+
+Deliverables:
+- Dogfood target manifest.
+- Repeatable review input set.
+- Review quality rubric.
+- Snapshot and comparison metadata.
+- Fixture strategy for stable examples.
+
+Completion criteria:
+- The same target can be reviewed repeatedly and compared.
+- Visual, text, content, and flow review quality can be evaluated on real pages.
+- Dogfood evidence remains local and approval-bound.
+
+### Slice 42: Report Quality And Human-Usability Tuning
+
+Purpose:
+- Make the final review report useful to both non-engineers and developers.
+- Turn subjective impressions into actionable, evidence-backed feedback.
+- Reduce vague comments, thin opinions, and ambiguous recommendations.
+
+Deliverables:
+- Non-engineer summary.
+- Developer action plan.
+- Priority, impact, and suggested-fix fields.
+- Dedicated "how viewers may feel" section.
+- Report quality checks for clarity, usefulness, evidence support, and actionability.
+
+Completion criteria:
+- Reports explain what users may feel, why, and what to improve.
+- Findings are specific enough to guide product work.
+- The report distinguishes subjective perception from objective evidence.
+- Advisory-only and deterministic-gate separation remains intact.
+
+## Recommended Implementation Order
+
+Implement Slices 34-42 in this order:
+
+```text
+34 conversational intake
+ -> 35 proposal-to-plan candidate conversion
+ -> 36 safe bridge into existing plan/run
+ -> 37 real provider readiness
+ -> 38 minimal approved provider execution
+ -> 39 multi-role independent review
+ -> 40 critic/rebuttal/integration rounds
+ -> 41 real-page dogfood foundation
+ -> 42 report quality tuning
+```
+
+The key safety principle is that Slices 34-36 should be completed before live provider execution. That ensures every future provider-backed review still passes through a human-readable approval explanation, stored plan, plan hash, exact transfer flags, explicit `--execute`, local receipts, MCP exclusion, and advisory-only result handling.
+
+## Implementation Sync: Slices 34-42
+
+Status:
+- Implemented in TraceCue as a CLI-only Agentic Human Review continuation.
+
+Implemented capabilities:
+- `agentic review propose` for non-executing conversational intake and proposal artifacts.
+- `agentic review plan --proposal` with proposal-hash verification and fresh plan-hash generation.
+- `agentic review provider-readiness` with provider catalog and environment-variable-name diagnostics only.
+- Generic API provider execution through the existing approved `agentic review run` path.
+- Package-hash validation and exact transfer flags for externally transferable evidence classes.
+- `agentic review report-quality` for read-only advisory report quality diagnostics.
+- Role execution records, review claims, round records, critique records, rebuttal records, integration records, dogfood metadata, and report-quality metadata in advisory output.
+- Provider adapter isolation in `src/agentic-human-review-providers.js`.
+- Proposal, provider-readiness, and report-quality schemas.
+
+Preserved boundaries:
+- Proposal and readiness do not authorize provider execution or evidence transfer.
+- Agentic review execution still requires matching plan hash, explicit `--execute`, provider/model/surface match, package-hash validation, and exact transfer flags.
+- Raw provider responses and credential values are not stored.
+- Deterministic review findings, metrics, release gates, existing review artifacts, and MCP permissions remain unchanged.
+- Agentic Human Review remains excluded from safe, full, and admin MCP profiles.

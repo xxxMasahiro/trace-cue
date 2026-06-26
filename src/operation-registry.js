@@ -159,6 +159,25 @@ const OPERATIONS = Object.freeze([
     ]
   }),
   operation({
+    id: 'agentic_human_review_propose',
+    group: 'operation_governance',
+    command: 'agentic review propose',
+    category: 'agentic_human_review_proposal',
+    cliAvailable: true,
+    currentStatus: 'cli_only_available',
+    proposedStage: 'owner_layer_proposal_available',
+    risk: ['write'],
+    capabilityReason: 'Writes local non-executing proposals from conversational review requests; MCP exposure is intentionally excluded.',
+    futureReview: 'Requires a separate MCP design before any agentic review proposal or execution surface can be exposed outside the CLI.',
+    gates: [
+      gate('proposal_is_not_approval', 'Proposal artifacts must not authorize provider execution, evidence transfer, or plan hashes.'),
+      gate('no_provider_call', 'Proposal creation must not call local runners or provider APIs.'),
+      gate('workspace_confined', 'Optional proposal inputs must stay workspace-confined and bounded.'),
+      gate('mcp_exclusion', 'Agentic human review proposal must remain outside all MCP profiles in this stage.'),
+      gate('gate_neutrality', 'Proposal creation must not mutate deterministic review findings, release gates, or existing reviews.')
+    ]
+  }),
+  operation({
     id: 'agentic_human_review_plan',
     group: 'operation_governance',
     command: 'agentic review plan',
@@ -215,6 +234,62 @@ const OPERATIONS = Object.freeze([
       gate('raw_provider_response_not_stored', 'Raw provider responses must not be written to artifacts, receipts, or stdout.'),
       gate('mcp_exclusion', 'Agentic human review execution must remain outside all MCP profiles in this stage.'),
       gate('gate_neutrality', 'Execution must not mutate deterministic findings, release gates, or existing reviews.')
+    ]
+  }),
+  operation({
+    id: 'agentic_human_review_provider_readiness',
+    group: 'provider_mcp',
+    command: 'agentic review provider-readiness',
+    category: 'agentic_human_review_provider_readiness',
+    cliAvailable: true,
+    currentStatus: 'cli_only_available',
+    proposedStage: 'owner_layer_readiness_available',
+    risk: ['read', 'provider'],
+    capabilityReason: 'Reports provider availability, required environment-variable names, and transfer policy without reading credential values or calling providers.',
+    futureReview: 'Any MCP exposure would require a separate read-only design that preserves credential-value non-disclosure.',
+    gates: [
+      gate('read_only', 'Provider readiness must not write artifacts, call providers, or mutate review state.'),
+      gate('credential_names_only', 'Readiness may disclose environment variable names but must not read or print credential values.'),
+      gate('no_provider_call', 'Readiness must not perform API calls.'),
+      gate('mcp_exclusion', 'Agentic human review provider readiness remains outside MCP profiles in this stage.')
+    ]
+  }),
+  operation({
+    id: 'agentic_human_review_provider_api_execution',
+    group: 'provider_mcp',
+    command: 'agentic review run --provider generic-api-provider --execute',
+    category: 'agentic_human_review_execution',
+    cliAvailable: true,
+    currentStatus: 'cli_only_available',
+    proposedStage: 'owner_layer_api_execution_available',
+    risk: ['provider', 'capture', 'write'],
+    capabilityReason: 'Runs an approved plan through a bounded environment-configured provider API only after plan hash and exact transfer flags match.',
+    futureReview: 'Requires provider-specific adapters and a separate admin MCP design before any non-CLI execution expansion.',
+    gates: [
+      gate('approved_plan_hash', 'API execution must reference a plan whose canonical hash still matches the approved hash.'),
+      gate('exact_transfer_flags', 'All classes that can leave the local process must be represented by exact plan-approved flags.'),
+      gate('environment_only_credentials', 'Endpoint and credential values must come from environment variables and must not be stored.'),
+      gate('bounded_payloads', 'Request and response size limits and timeout limits must be enforced.'),
+      gate('raw_provider_response_not_stored', 'Raw provider responses must not be written to artifacts, receipts, or stdout.'),
+      gate('mcp_exclusion', 'API execution must remain outside all MCP profiles in this stage.'),
+      gate('gate_neutrality', 'API execution must not mutate deterministic findings, release gates, or existing reviews.')
+    ]
+  }),
+  operation({
+    id: 'agentic_human_review_report_quality',
+    group: 'operation_governance',
+    command: 'agentic review report-quality',
+    category: 'agentic_human_review_report_quality',
+    cliAvailable: true,
+    currentStatus: 'cli_only_available',
+    proposedStage: 'owner_layer_report_quality_available',
+    risk: ['read'],
+    capabilityReason: 'Reads local advisory results and reports completeness, evidence coverage, and verification coverage without mutating gates.',
+    futureReview: 'Can become part of dashboards after read-only artifact and MCP policy review.',
+    gates: [
+      gate('read_only', 'Report quality must not call providers, write artifacts, or mutate existing review state.'),
+      gate('advisory_only', 'Quality scores must not change release gates or deterministic findings.'),
+      gate('mcp_exclusion', 'Report quality remains outside MCP profiles in this stage.')
     ]
   }),
   operation({
