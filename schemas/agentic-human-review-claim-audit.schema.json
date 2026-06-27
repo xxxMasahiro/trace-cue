@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-claim-audit.schema.json",
+  "title": "TraceCue Agentic Human Review Claim Audit",
+  "type": "object",
+  "required": ["schema_version", "type", "claim_policy_version", "generated_at", "result_path", "claim_count", "status", "human_equivalent_claim_allowed", "human_superior_claim_allowed", "warnings", "boundary", "advisory_only", "gate_effect"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "const": "agentic_human_review_claim_audit" },
+    "claim_policy_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "result_path": { "type": "string" },
+    "claim_count": { "type": "number" },
+    "status": { "type": "string" },
+    "human_equivalent_claim_allowed": { "const": false },
+    "human_superior_claim_allowed": { "const": false },
+    "warnings": { "type": "array" },
+    "boundary": { "type": "object" },
+    "advisory_only": { "const": true },
+    "gate_effect": { "const": "none" }
+  },
+  "additionalProperties": true
+}

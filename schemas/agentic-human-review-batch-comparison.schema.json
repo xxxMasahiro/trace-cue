@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-batch-comparison.schema.json",
+  "title": "TraceCue Agentic Human Review Batch Comparison",
+  "type": "object",
+  "required": ["schema_version", "type", "batch_comparison_version", "generated_at", "pair_count", "compared_pair_count", "average_deltas", "comparisons", "warnings", "boundary", "advisory_only", "gate_effect"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "const": "agentic_human_review_batch_comparison" },
+    "batch_comparison_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "dataset_path": { "type": ["string", "null"] },
+    "dataset_hash": { "type": ["string", "null"] },
+    "pair_count": { "type": "number" },
+    "compared_pair_count": { "type": "number" },
+    "comparison_kinds": { "type": "array" },
+    "average_deltas": { "type": "object" },
+    "comparisons": { "type": "array" },
+    "warnings": { "type": "array" },
+    "boundary": { "type": "object" },
+    "advisory_only": { "const": true },
+    "gate_effect": { "const": "none" }
+  },
+  "additionalProperties": true
+}

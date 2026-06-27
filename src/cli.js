@@ -9,16 +9,25 @@ import {
   runAgenticHumanReviewBenchmarkList,
   runAgenticHumanReviewBenchmarkShow,
   runAgenticHumanReviewCalibrate,
+  runAgenticHumanReviewClaimAudit,
+  runAgenticHumanReviewClaimPolicy,
   runAgenticHumanReviewCompare,
+  runAgenticHumanReviewCompareBatch,
   runAgenticHumanReviewDogfoodPlan,
   runAgenticHumanReviewDogfoodReadiness,
+  runAgenticHumanReviewEvaluatorPolicy,
+  runAgenticHumanReviewEvidenceSetSummarize,
+  runAgenticHumanReviewEvidenceSetValidate,
   runAgenticHumanReviewList,
+  runAgenticHumanReviewLongitudinalQuality,
   runAgenticHumanReviewPlan,
   runAgenticHumanReviewPropose,
   runAgenticHumanReviewProviderReadiness,
   runAgenticHumanReviewReportQuality,
   runAgenticHumanReviewRun,
-  runAgenticHumanReviewStatus
+  runAgenticHumanReviewStatus,
+  runAgenticHumanReviewXhighPlan,
+  runAgenticHumanReviewXhighSimulate
 } from './agentic-human-review.js';
 import {
   runAgentIngest,
@@ -310,6 +319,42 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'agentic review compare') {
       return runtimeResult(parsed.command, await (context.agenticHumanReviewCompareRunner ?? runAgenticHumanReviewCompare)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review compare batch') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewCompareBatchRunner ?? runAgenticHumanReviewCompareBatch)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review evidence-set validate') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewEvidenceSetValidateRunner ?? runAgenticHumanReviewEvidenceSetValidate)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review evidence-set summarize') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewEvidenceSetSummarizeRunner ?? runAgenticHumanReviewEvidenceSetSummarize)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review evaluator policy') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewEvaluatorPolicyRunner ?? runAgenticHumanReviewEvaluatorPolicy)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review xhigh plan') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewXhighPlanRunner ?? runAgenticHumanReviewXhighPlan)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review xhigh simulate') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewXhighSimulateRunner ?? runAgenticHumanReviewXhighSimulate)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review quality longitudinal') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewLongitudinalQualityRunner ?? runAgenticHumanReviewLongitudinalQuality)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review claim policy') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewClaimPolicyRunner ?? runAgenticHumanReviewClaimPolicy)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review claim audit') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewClaimAuditRunner ?? runAgenticHumanReviewClaimAudit)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'visual review plan') {
@@ -807,6 +852,11 @@ function usageText(topic) {
     || topic === 'agentic review dogfood plan'
     || topic === 'agentic review calibrate'
     || topic === 'agentic review compare'
+    || topic === 'agentic review evidence-set'
+    || topic === 'agentic review evaluator'
+    || topic === 'agentic review xhigh'
+    || topic === 'agentic review quality'
+    || topic === 'agentic review claim'
   ) {
     return [
       `Usage: ${CLI_NAME} agentic review propose --brief <request> [--review-index <review-artifact-index>] [--effort quick|standard|deep|xhigh] [--json]`,
@@ -820,10 +870,19 @@ function usageText(topic) {
       `       ${CLI_NAME} agentic review dogfood plan --case <benchmark-case-id> [--provider <id>] [--json]`,
       `       ${CLI_NAME} agentic review calibrate --result <agentic-human-review-result> --case <benchmark-case-id> [--json]`,
       `       ${CLI_NAME} agentic review compare --baseline <agentic-human-review-result> --candidate <agentic-human-review-result> [--comparison-kind quality-delta|direct-vs-tracecue|provider-dogfood|benchmark-regression] [--json]`,
+      `       ${CLI_NAME} agentic review compare batch --dataset <workspace-json> [--json]`,
+      `       ${CLI_NAME} agentic review evidence-set validate --input <workspace-json> [--json]`,
+      `       ${CLI_NAME} agentic review evidence-set summarize --input <workspace-json> [--json]`,
+      `       ${CLI_NAME} agentic review evaluator policy [--input <workspace-json>] [--json]`,
+      `       ${CLI_NAME} agentic review xhigh plan --plan <agentic-human-review-plan> [--json]`,
+      `       ${CLI_NAME} agentic review xhigh simulate --plan <agentic-human-review-plan> --round-input <workspace-json> [--json]`,
+      `       ${CLI_NAME} agentic review quality longitudinal --evidence-set <workspace-json> [--json]`,
+      `       ${CLI_NAME} agentic review claim policy [--input <workspace-json>] [--json]`,
+      `       ${CLI_NAME} agentic review claim audit --result <agentic-human-review-result> [--policy <workspace-json>] [--json]`,
       `       ${CLI_NAME} agentic review status --execution <agentic-human-review-execution> [--json]`,
       `       ${CLI_NAME} agentic review list [--json]`,
       '',
-      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider and dogfood readiness perform no provider call; running requires matching hash, explicit --execute, and exact flags; report quality, benchmark, dogfood planning, calibration, and comparison are read-only advisory checks. MCP execution remains excluded.'
+      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider and dogfood readiness perform no provider call; running requires matching hash, explicit --execute, and exact flags; report quality, benchmark, dogfood planning, calibration, comparison, evidence-set, xhigh, longitudinal, evaluator, and claim-policy commands are read-only advisory checks. MCP execution remains excluded.'
     ].join('\n');
   }
 

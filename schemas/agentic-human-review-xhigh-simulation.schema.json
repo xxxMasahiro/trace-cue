@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-xhigh-simulation.schema.json",
+  "title": "TraceCue Agentic Human Review XHigh Simulation",
+  "type": "object",
+  "required": ["schema_version", "type", "xhigh_round_plan_version", "generated_at", "plan_path", "round_input_path", "status", "warnings", "boundary", "advisory_only", "gate_effect"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "const": "agentic_human_review_xhigh_simulation" },
+    "xhigh_round_plan_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "plan_path": { "type": "string" },
+    "round_input_path": { "type": "string" },
+    "status": { "type": "string" },
+    "warnings": { "type": "array" },
+    "boundary": { "type": "object" },
+    "advisory_only": { "const": true },
+    "gate_effect": { "const": "none" }
+  },
+  "additionalProperties": true
+}

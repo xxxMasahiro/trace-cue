@@ -38,6 +38,12 @@ export const HUMAN_REVIEW_LIVE_DOGFOOD_GATE_VERSION = '1.0.0';
 export const HUMAN_REVIEW_BENCHMARK_COMPLETION_VERSION = '1.0.0';
 export const HUMAN_REVIEW_XHIGH_COMPLETION_VERSION = '1.0.0';
 export const HUMAN_REVIEW_MATURITY_VERSION = '1.0.0';
+export const HUMAN_REVIEW_EVIDENCE_SET_VERSION = '1.0.0';
+export const HUMAN_REVIEW_BATCH_COMPARISON_VERSION = '1.0.0';
+export const HUMAN_REVIEW_EVALUATOR_POLICY_VERSION = '1.0.0';
+export const HUMAN_REVIEW_XHIGH_ROUND_PLAN_VERSION = '1.0.0';
+export const HUMAN_REVIEW_LONGITUDINAL_QUALITY_VERSION = '1.0.0';
+export const HUMAN_REVIEW_CLAIM_POLICY_VERSION = '1.0.0';
 
 const DEFAULT_PROVIDER_ID = 'fake-agent';
 const DEFAULT_MODEL_ID = 'fake-model';
@@ -119,6 +125,12 @@ const HUMAN_REVIEW_DIMENSIONS = Object.freeze([
     label: 'Accessibility and comprehension',
     required_fields: Object.freeze(['readability_comprehension', 'reader_experience_review.accessibility_comprehension']),
     purpose: 'Review accessibility basics, cognitive load, and whether people can understand and act without unnecessary effort.'
+  },
+  {
+    id: 'risk_and_misleading_content',
+    label: 'Risk and misleading content',
+    required_fields: Object.freeze(['reader_experience_review.risk_and_misleading_content', 'readability_comprehension.terminology_risk', 'subjective_perception.likely_user_questions']),
+    purpose: 'Review whether visible wording, missing context, uncertainty, or trust gaps could mislead a real reader.'
   },
   {
     id: 'improvement_priority',
@@ -717,7 +729,8 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
       orchestration,
       rubricProfile,
       evidencePlan,
-      roleInstructionContracts
+      roleInstructionContracts,
+      benchmarkCase
     }),
     review_quality_benchmark: buildReviewQualityBenchmarkContract({
       dogfoodMetadata: buildDogfoodMetadataFromOptions(planOptions),
@@ -733,6 +746,8 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
       required_output_schema: 'agentic_human_review_advisory',
       human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
       result_type: 'agentic_human_review_advisory',
+      benchmark_requirement_coverage_required: Boolean(benchmarkCase),
+      benchmark_requirement_coverage_source: 'review_quality_benchmark',
       advisory_only: true,
       deterministic_findings_unchanged: true,
       gate_effect: 'none'
@@ -1344,10 +1359,24 @@ export async function runAgenticHumanReviewReportQuality(options = {}, context =
     }
     execution = executionRead.value;
   }
+  let evaluatorPolicy = null;
+  if (options['evaluator-policy']) {
+    const policyRead = await readOptionalPolicyInput({
+      cwd,
+      inputPath: options['evaluator-policy'],
+      label: 'agentic human review evaluator policy',
+      maxBytes: maxBytes.value
+    });
+    if (!policyRead.ok) {
+      return errorResult(policyRead.error.code, policyRead.error.message, policyRead.error.details);
+    }
+    evaluatorPolicy = normalizeEvaluatorPolicy(policyRead.value);
+  }
   const quality = buildReportQuality({
     result: resultRead.value,
     resultPath: resultRead.relativePath,
     execution,
+    evaluatorPolicy,
     now: materializeNow(context.now)
   });
   return {
@@ -1514,6 +1543,972 @@ export async function runAgenticHumanReviewCompare(options = {}, context = {}) {
     errors: [],
     artifacts: []
   };
+}
+
+export async function runAgenticHumanReviewEvidenceSetValidate(options = {}, context = {}) {
+  return runAgenticHumanReviewEvidenceSet(options, context, 'validate');
+}
+
+export async function runAgenticHumanReviewEvidenceSetSummarize(options = {}, context = {}) {
+  return runAgenticHumanReviewEvidenceSet(options, context, 'summarize');
+}
+
+async function runAgenticHumanReviewEvidenceSet(options = {}, context = {}, mode = 'validate') {
+  const cwd = context.cwd ?? process.cwd();
+  const now = materializeNow(context.now);
+  const maxBytes = parseMaxBytes(options['max-bytes']);
+  if (!maxBytes.ok) {
+    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+  }
+  const manifestRead = await readWorkspaceJson({
+    cwd,
+    inputPath: options.input,
+    label: 'agentic human review evidence set',
+    maxBytes: maxBytes.value
+  });
+  if (!manifestRead.ok) {
+    return errorResult(manifestRead.error.code, manifestRead.error.message, manifestRead.error.details);
+  }
+  const evidenceSet = await buildEvidenceSetSummary({
+    cwd,
+    manifest: manifestRead.value,
+    manifestPath: manifestRead.relativePath,
+    manifestHash: hashText(manifestRead.text),
+    now,
+    maxBytes: maxBytes.value,
+    mode
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_evidence_set: evidenceSet,
+      boundary: evidenceSet.boundary
+    },
+    warnings: evidenceSet.warnings,
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewCompareBatch(options = {}, context = {}) {
+  const cwd = context.cwd ?? process.cwd();
+  const now = materializeNow(context.now);
+  const maxBytes = parseMaxBytes(options['max-bytes']);
+  if (!maxBytes.ok) {
+    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+  }
+  const datasetRead = await readWorkspaceJson({
+    cwd,
+    inputPath: options.dataset,
+    label: 'agentic human review batch comparison dataset',
+    maxBytes: maxBytes.value
+  });
+  if (!datasetRead.ok) {
+    return errorResult(datasetRead.error.code, datasetRead.error.message, datasetRead.error.details);
+  }
+  const batch = await buildBatchComparison({
+    cwd,
+    dataset: datasetRead.value,
+    datasetPath: datasetRead.relativePath,
+    datasetHash: hashText(datasetRead.text),
+    now,
+    maxBytes: maxBytes.value
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_batch_comparison: batch,
+      boundary: batch.boundary
+    },
+    warnings: batch.warnings,
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewEvaluatorPolicy(options = {}, context = {}) {
+  const cwd = context.cwd ?? process.cwd();
+  const now = materializeNow(context.now);
+  const maxBytes = parseMaxBytes(options['max-bytes']);
+  if (!maxBytes.ok) {
+    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+  }
+  const policyRead = options.input
+    ? await readOptionalPolicyInput({
+        cwd,
+        inputPath: options.input,
+        label: 'agentic human review evaluator policy',
+        maxBytes: maxBytes.value
+      })
+    : { ok: true, value: null, relativePath: null, hash: null };
+  if (!policyRead.ok) {
+    return errorResult(policyRead.error.code, policyRead.error.message, policyRead.error.details);
+  }
+  const policy = normalizeEvaluatorPolicy(policyRead.value);
+  const report = {
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_evaluator_policy',
+    policy_version: HUMAN_REVIEW_EVALUATOR_POLICY_VERSION,
+    generated_at: now.toISOString(),
+    input_path: policyRead.relativePath,
+    input_hash: policyRead.hash,
+    policy,
+    boundary: agenticHumanReviewBoundary({ read_only: true }),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_evaluator_policy: report,
+      boundary: report.boundary
+    },
+    warnings: [],
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewXhighPlan(options = {}, context = {}) {
+  const cwd = context.cwd ?? process.cwd();
+  const now = materializeNow(context.now);
+  const maxBytes = parseMaxBytes(options['max-bytes']);
+  if (!maxBytes.ok) {
+    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+  }
+  const planRead = await readWorkspaceJson({
+    cwd,
+    inputPath: options.plan,
+    label: 'agentic human review xhigh plan input',
+    maxBytes: maxBytes.value
+  });
+  if (!planRead.ok) {
+    return errorResult(planRead.error.code, planRead.error.message, planRead.error.details);
+  }
+  const validation = validatePlanArtifact({ plan: planRead.value, planPath: planRead.relativePath });
+  if (!validation.ok) {
+    return errorResult(validation.error.code, validation.error.message, validation.error.details);
+  }
+  const xhighPlan = buildXhighRoundPlanReport({
+    plan: planRead.value,
+    planPath: planRead.relativePath,
+    now
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_xhigh_plan: xhighPlan,
+      boundary: xhighPlan.boundary
+    },
+    warnings: xhighPlan.warnings,
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewXhighSimulate(options = {}, context = {}) {
+  const cwd = context.cwd ?? process.cwd();
+  const now = materializeNow(context.now);
+  const maxBytes = parseMaxBytes(options['max-bytes']);
+  if (!maxBytes.ok) {
+    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+  }
+  const planRead = await readWorkspaceJson({
+    cwd,
+    inputPath: options.plan,
+    label: 'agentic human review xhigh plan input',
+    maxBytes: maxBytes.value
+  });
+  if (!planRead.ok) {
+    return errorResult(planRead.error.code, planRead.error.message, planRead.error.details);
+  }
+  const validation = validatePlanArtifact({ plan: planRead.value, planPath: planRead.relativePath });
+  if (!validation.ok) {
+    return errorResult(validation.error.code, validation.error.message, validation.error.details);
+  }
+  const roundInputRead = await readWorkspaceJson({
+    cwd,
+    inputPath: options['round-input'],
+    label: 'agentic human review xhigh round input',
+    maxBytes: maxBytes.value
+  });
+  if (!roundInputRead.ok) {
+    return errorResult(roundInputRead.error.code, roundInputRead.error.message, roundInputRead.error.details);
+  }
+  const simulation = buildXhighSimulationReport({
+    plan: planRead.value,
+    planPath: planRead.relativePath,
+    roundInput: roundInputRead.value,
+    roundInputPath: roundInputRead.relativePath,
+    roundInputHash: hashText(roundInputRead.text),
+    now
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_xhigh_simulation: simulation,
+      boundary: simulation.boundary
+    },
+    warnings: simulation.warnings,
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewLongitudinalQuality(options = {}, context = {}) {
+  const cwd = context.cwd ?? process.cwd();
+  const now = materializeNow(context.now);
+  const maxBytes = parseMaxBytes(options['max-bytes']);
+  if (!maxBytes.ok) {
+    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+  }
+  const manifestRead = await readWorkspaceJson({
+    cwd,
+    inputPath: options['evidence-set'],
+    label: 'agentic human review longitudinal evidence set',
+    maxBytes: maxBytes.value
+  });
+  if (!manifestRead.ok) {
+    return errorResult(manifestRead.error.code, manifestRead.error.message, manifestRead.error.details);
+  }
+  const evidenceSet = await buildEvidenceSetSummary({
+    cwd,
+    manifest: manifestRead.value,
+    manifestPath: manifestRead.relativePath,
+    manifestHash: hashText(manifestRead.text),
+    now,
+    maxBytes: maxBytes.value,
+    mode: 'longitudinal'
+  });
+  const longitudinal = buildLongitudinalQualityRollup({
+    evidenceSet,
+    evidenceSetPath: manifestRead.relativePath,
+    evidenceSetHash: hashText(manifestRead.text),
+    now
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_longitudinal_quality: longitudinal,
+      boundary: longitudinal.boundary
+    },
+    warnings: longitudinal.warnings,
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewClaimPolicy(options = {}, context = {}) {
+  const cwd = context.cwd ?? process.cwd();
+  const now = materializeNow(context.now);
+  const maxBytes = parseMaxBytes(options['max-bytes']);
+  if (!maxBytes.ok) {
+    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+  }
+  const policyRead = options.input
+    ? await readOptionalPolicyInput({
+        cwd,
+        inputPath: options.input,
+        label: 'agentic human review claim policy',
+        maxBytes: maxBytes.value
+      })
+    : { ok: true, value: null, relativePath: null, hash: null };
+  if (!policyRead.ok) {
+    return errorResult(policyRead.error.code, policyRead.error.message, policyRead.error.details);
+  }
+  const policyReport = {
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_claim_policy',
+    policy_version: HUMAN_REVIEW_CLAIM_POLICY_VERSION,
+    generated_at: now.toISOString(),
+    input_path: policyRead.relativePath,
+    input_hash: policyRead.hash,
+    policy: normalizeClaimPolicy(policyRead.value),
+    boundary: agenticHumanReviewBoundary({ read_only: true }),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_claim_policy: policyReport,
+      boundary: policyReport.boundary
+    },
+    warnings: [],
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewClaimAudit(options = {}, context = {}) {
+  const cwd = context.cwd ?? process.cwd();
+  const now = materializeNow(context.now);
+  const maxBytes = parseMaxBytes(options['max-bytes']);
+  if (!maxBytes.ok) {
+    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+  }
+  const resultRead = await readWorkspaceJson({
+    cwd,
+    inputPath: options.result,
+    label: 'agentic human review claim audit result',
+    maxBytes: maxBytes.value
+  });
+  if (!resultRead.ok) {
+    return errorResult(resultRead.error.code, resultRead.error.message, resultRead.error.details);
+  }
+  const validation = validateAdvisoryResultArtifact({ result: resultRead.value, resultPath: resultRead.relativePath });
+  if (!validation.ok) {
+    return errorResult(validation.error.code, validation.error.message, validation.error.details);
+  }
+  const policyRead = options.policy
+    ? await readOptionalPolicyInput({
+        cwd,
+        inputPath: options.policy,
+        label: 'agentic human review claim policy',
+        maxBytes: maxBytes.value
+      })
+    : { ok: true, value: null, relativePath: null, hash: null };
+  if (!policyRead.ok) {
+    return errorResult(policyRead.error.code, policyRead.error.message, policyRead.error.details);
+  }
+  const audit = buildClaimAudit({
+    result: resultRead.value,
+    resultPath: resultRead.relativePath,
+    resultHash: hashText(resultRead.text),
+    policy: normalizeClaimPolicy(policyRead.value),
+    policyPath: policyRead.relativePath,
+    policyHash: policyRead.hash,
+    now
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_claim_audit: audit,
+      boundary: audit.boundary
+    },
+    warnings: audit.warnings,
+    errors: [],
+    artifacts: []
+  };
+}
+
+async function readOptionalPolicyInput({ cwd, inputPath, label, maxBytes }) {
+  const read = await readWorkspaceJson({ cwd, inputPath, label, maxBytes: maxBytes ?? DEFAULT_MAX_BYTES });
+  if (!read.ok) {
+    return read;
+  }
+  return {
+    ok: true,
+    value: read.value,
+    relativePath: read.relativePath,
+    hash: hashText(read.text)
+  };
+}
+
+async function buildEvidenceSetSummary({ cwd, manifest, manifestPath, manifestHash, now, maxBytes, mode }) {
+  const warnings = [];
+  const resultEntries = evidenceSetEntries(manifest, 'results', ['result_path', 'path', 'artifact_path']);
+  const calibrationEntries = evidenceSetEntries(manifest, 'calibrations', ['calibration_path', 'path', 'artifact_path']);
+  const comparisonEntries = evidenceSetEntries(manifest, 'comparisons', ['comparison_path', 'path', 'artifact_path']);
+  const results = [];
+  for (const entry of resultEntries) {
+    const resultRead = await readEvidenceSetArtifact({ cwd, entry, label: 'agentic human review evidence-set result', maxBytes });
+    if (!resultRead.ok) {
+      warnings.push(resultRead.warning);
+      continue;
+    }
+    const validation = validateAdvisoryResultArtifact({ result: resultRead.value, resultPath: resultRead.relativePath });
+    if (!validation.ok) {
+      warnings.push({
+        code: validation.error.code,
+        message: validation.error.message,
+        details: validation.error.details
+      });
+      continue;
+    }
+    results.push(evidenceSetResultRecord({
+      entry,
+      result: resultRead.value,
+      resultPath: resultRead.relativePath,
+      resultHash: hashText(resultRead.text)
+    }));
+  }
+  const calibrations = [];
+  for (const entry of calibrationEntries) {
+    const calibrationRead = await readEvidenceSetArtifact({ cwd, entry, label: 'agentic human review evidence-set calibration', maxBytes });
+    if (!calibrationRead.ok) {
+      warnings.push(calibrationRead.warning);
+      continue;
+    }
+    calibrations.push(evidenceSetCalibrationRecord({
+      entry,
+      calibration: calibrationRead.value,
+      calibrationPath: calibrationRead.relativePath,
+      calibrationHash: hashText(calibrationRead.text)
+    }));
+  }
+  const comparisons = [];
+  for (const entry of comparisonEntries) {
+    const comparisonRead = await readEvidenceSetArtifact({ cwd, entry, label: 'agentic human review evidence-set comparison', maxBytes });
+    if (!comparisonRead.ok) {
+      warnings.push(comparisonRead.warning);
+      continue;
+    }
+    comparisons.push(evidenceSetComparisonRecord({
+      entry,
+      comparison: comparisonRead.value,
+      comparisonPath: comparisonRead.relativePath,
+      comparisonHash: hashText(comparisonRead.text)
+    }));
+  }
+  const summary = evidenceSetCoverageSummary({ results, calibrations, comparisons });
+  warnings.push(...evidenceSetCoverageWarnings(summary));
+  return redact({
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_evidence_set',
+    evidence_set_version: HUMAN_REVIEW_EVIDENCE_SET_VERSION,
+    generated_at: now.toISOString(),
+    mode,
+    input_path: manifestPath,
+    input_hash: manifestHash,
+    manifest: {
+      id: stringOrNull(manifest.id ?? manifest.set_id),
+      declared_type: stringOrNull(manifest.type),
+      declared_version: stringOrNull(manifest.version ?? manifest.set_version)
+    },
+    summary,
+    results,
+    calibrations,
+    comparisons,
+    validation: {
+      valid_json: true,
+      referenced_result_count: resultEntries.length,
+      readable_result_count: results.length,
+      referenced_calibration_count: calibrationEntries.length,
+      readable_calibration_count: calibrations.length,
+      referenced_comparison_count: comparisonEntries.length,
+      readable_comparison_count: comparisons.length,
+      complete_for_human_equivalence_claim: false,
+      reason: 'Evidence sets organize owner-review evidence, but do not authorize human-equivalent or human-superior claims.'
+    },
+    warnings,
+    boundary: agenticHumanReviewBoundary({ read_only: true }),
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+}
+
+function evidenceSetEntries(manifest, key, pathKeys) {
+  const direct = Array.isArray(manifest?.[key]) ? manifest[key] : [];
+  const artifacts = Array.isArray(manifest?.artifacts)
+    ? manifest.artifacts.filter((artifact) => {
+        const kind = String(artifact?.kind ?? artifact?.type ?? '').replace(/-/g, '_');
+        return key === 'results'
+          ? /result|advisory/.test(kind)
+          : key === 'calibrations'
+            ? /calibration/.test(kind)
+            : /comparison/.test(kind);
+      })
+    : [];
+  return [...direct, ...artifacts].map((entry) => ({
+    ...entry,
+    path: firstPresentPath(entry, pathKeys)
+  })).filter((entry) => entry.path);
+}
+
+function firstPresentPath(entry, keys) {
+  for (const key of keys) {
+    if (entry?.[key]) {
+      return entry[key];
+    }
+  }
+  return null;
+}
+
+async function readEvidenceSetArtifact({ cwd, entry, label, maxBytes }) {
+  const read = await readWorkspaceJson({
+    cwd,
+    inputPath: entry.path,
+    label,
+    maxBytes
+  });
+  if (read.ok) {
+    return read;
+  }
+  return {
+    ok: false,
+    warning: {
+      code: read.error.code,
+      message: read.error.message,
+      details: read.error.details
+    }
+  };
+}
+
+function evidenceSetResultRecord({ entry, result, resultPath, resultHash }) {
+  const effort = normalizeObservedReviewEffort(entry.effort ?? result.agentic_human_review_advisory?.review_effort);
+  const caseId = entry.case_id
+    ?? result.calibration_metadata?.benchmark_case_id
+    ?? result.benchmark_requirement_coverage?.case_id
+    ?? result.benchmark_completion_readiness?.active_case_id
+    ?? result.dogfood_metadata?.case_id
+    ?? null;
+  return {
+    path: resultPath,
+    hash: resultHash,
+    result_id: result.id ?? null,
+    effort,
+    case_id: caseId,
+    fixture_type: entry.fixture_type ?? result.benchmark_requirement_coverage?.fixture_type ?? result.benchmark_completion_readiness?.active_fixture_type ?? null,
+    provider_id: entry.provider_id ?? result.provider?.id ?? null,
+    model_id: entry.model_id ?? result.model?.id ?? null,
+    api_call_performed: Boolean(result.execution?.api_call_performed),
+    external_evidence_transfer: Boolean(result.execution?.external_evidence_transfer),
+    xhigh_completion_status: result.xhigh_multi_round_review?.status ?? null,
+    calibration_status: result.review_quality_evaluation?.status ?? null,
+    benchmark_requirement_coverage_status: result.benchmark_requirement_coverage?.status ?? 'not_enabled',
+    quality_scores: comparableQualityScores(result),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function evidenceSetCalibrationRecord({ entry, calibration, calibrationPath, calibrationHash }) {
+  return {
+    path: calibrationPath,
+    hash: calibrationHash,
+    result_path: calibration.result_path ?? entry.result_path ?? null,
+    result_id: calibration.result_id ?? null,
+    case_id: calibration.case_id ?? entry.case_id ?? null,
+    passed: calibration.passed === true,
+    scores: calibration.scores ?? {},
+    warning_count: Array.isArray(calibration.warnings) ? calibration.warnings.length : 0,
+    advisory_only: calibration.advisory_only !== false,
+    gate_effect: calibration.gate_effect ?? 'none'
+  };
+}
+
+function evidenceSetComparisonRecord({ entry, comparison, comparisonPath, comparisonHash }) {
+  return {
+    path: comparisonPath,
+    hash: comparisonHash,
+    comparison_kind: comparison.comparison_kind ?? entry.comparison_kind ?? null,
+    baseline_result_id: comparison.baseline?.result_id ?? null,
+    candidate_result_id: comparison.candidate?.result_id ?? null,
+    deltas: comparison.deltas ?? {},
+    regressed_score_count: Number(comparison.summary?.regressed_score_count ?? 0),
+    improved_score_count: Number(comparison.summary?.improved_score_count ?? 0),
+    advisory_only: comparison.advisory_only !== false,
+    gate_effect: comparison.gate_effect ?? 'none'
+  };
+}
+
+function evidenceSetCoverageSummary({ results, calibrations, comparisons }) {
+  const observedEfforts = uniqueSorted(results.map((result) => result.effort).filter(Boolean));
+  const observedCaseIds = uniqueSorted([
+    ...results.map((result) => result.case_id),
+    ...calibrations.map((calibration) => calibration.case_id)
+  ].filter(Boolean));
+  const observedComparisonKinds = uniqueSorted(comparisons.map((comparison) => comparison.comparison_kind).filter(Boolean));
+  const requiredBenchmarkCaseIds = BENCHMARK_CASES.map((item) => item.case_id);
+  const missingEfforts = HUMAN_REVIEW_CLAIM_EFFORTS.filter((effort) => !observedEfforts.includes(effort));
+  const missingCaseIds = requiredBenchmarkCaseIds.filter((caseId) => !observedCaseIds.includes(caseId));
+  const missingComparisonKinds = HUMAN_REVIEW_REQUIRED_COMPARISON_KINDS.filter((kind) => !observedComparisonKinds.includes(kind));
+  const qualityScores = results.map((result) => result.quality_scores);
+  return {
+    result_count: results.length,
+    calibration_count: calibrations.length,
+    comparison_count: comparisons.length,
+    required_efforts: [...HUMAN_REVIEW_CLAIM_EFFORTS],
+    observed_efforts: observedEfforts,
+    missing_efforts: missingEfforts,
+    required_benchmark_case_ids: requiredBenchmarkCaseIds,
+    observed_benchmark_case_ids: observedCaseIds,
+    missing_benchmark_case_ids: missingCaseIds,
+    required_comparison_kinds: [...HUMAN_REVIEW_REQUIRED_COMPARISON_KINDS],
+    observed_comparison_kinds: observedComparisonKinds,
+    missing_comparison_kinds: missingComparisonKinds,
+    calibration_pass_count: calibrations.filter((calibration) => calibration.passed).length,
+    xhigh_complete_count: results.filter((result) => result.xhigh_completion_status === 'complete').length,
+    live_provider_dogfood_count: results.filter((result) => result.api_call_performed && result.external_evidence_transfer).length,
+    average_quality_scores: averageQualityScores(qualityScores),
+    complete_for_longitudinal_owner_review: missingEfforts.length === 0 && missingCaseIds.length === 0 && missingComparisonKinds.length === 0 && results.length > 1,
+    human_equivalent_claim_allowed: false,
+    human_superior_claim_allowed: false
+  };
+}
+
+function evidenceSetCoverageWarnings(summary) {
+  const warnings = [];
+  if (summary.missing_efforts.length > 0) {
+    warnings.push({ code: 'AHR_EVIDENCE_SET_EFFORT_MATRIX_INCOMPLETE', message: 'The evidence set is missing required review efforts.', details: { missing_efforts: summary.missing_efforts } });
+  }
+  if (summary.missing_benchmark_case_ids.length > 0) {
+    warnings.push({ code: 'AHR_EVIDENCE_SET_CASE_MATRIX_INCOMPLETE', message: 'The evidence set is missing benchmark cases.', details: { missing_benchmark_case_ids: summary.missing_benchmark_case_ids } });
+  }
+  if (summary.missing_comparison_kinds.length > 0) {
+    warnings.push({ code: 'AHR_EVIDENCE_SET_COMPARISONS_INCOMPLETE', message: 'The evidence set is missing required comparison kinds.', details: { missing_comparison_kinds: summary.missing_comparison_kinds } });
+  }
+  return warnings;
+}
+
+async function buildBatchComparison({ cwd, dataset, datasetPath, datasetHash, now, maxBytes }) {
+  const warnings = [];
+  const pairEntries = Array.isArray(dataset?.pairs)
+    ? dataset.pairs
+    : Array.isArray(dataset?.comparison_pairs)
+      ? dataset.comparison_pairs
+      : [];
+  const comparisons = [];
+  for (const [index, pair] of pairEntries.entries()) {
+    const baselinePath = pair.baseline ?? pair.baseline_path;
+    const candidatePath = pair.candidate ?? pair.candidate_path;
+    if (!baselinePath || !candidatePath) {
+      warnings.push({ code: 'AHR_BATCH_COMPARISON_PAIR_PATH_MISSING', message: 'A batch comparison pair is missing baseline or candidate path.', details: { index } });
+      continue;
+    }
+    const baselineRead = await readWorkspaceJson({ cwd, inputPath: baselinePath, label: 'batch comparison baseline result', maxBytes });
+    const candidateRead = await readWorkspaceJson({ cwd, inputPath: candidatePath, label: 'batch comparison candidate result', maxBytes });
+    if (!baselineRead.ok || !candidateRead.ok) {
+      const failed = baselineRead.ok ? candidateRead : baselineRead;
+      warnings.push({ code: failed.error.code, message: failed.error.message, details: { ...failed.error.details, index } });
+      continue;
+    }
+    const baselineValidation = validateAdvisoryResultArtifact({ result: baselineRead.value, resultPath: baselineRead.relativePath });
+    const candidateValidation = validateAdvisoryResultArtifact({ result: candidateRead.value, resultPath: candidateRead.relativePath });
+    if (!baselineValidation.ok || !candidateValidation.ok) {
+      const failed = baselineValidation.ok ? candidateValidation : baselineValidation;
+      warnings.push({ code: failed.error.code, message: failed.error.message, details: { ...failed.error.details, index } });
+      continue;
+    }
+    comparisons.push(buildComparisonResult({
+      baseline: baselineRead.value,
+      baselinePath: baselineRead.relativePath,
+      candidate: candidateRead.value,
+      candidatePath: candidateRead.relativePath,
+      now,
+      comparisonKind: pair.comparison_kind ?? pair['comparison-kind'] ?? dataset.comparison_kind
+    }));
+  }
+  if (comparisons.length === 0) {
+    warnings.push({ code: 'AHR_BATCH_COMPARISON_NO_COMPARABLE_PAIRS', message: 'No readable comparison pairs were available in the dataset.', details: { pair_count: pairEntries.length } });
+  }
+  const comparisonKinds = uniqueSorted(comparisons.map((comparison) => comparison.comparison_kind));
+  return redact({
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_batch_comparison',
+    batch_comparison_version: HUMAN_REVIEW_BATCH_COMPARISON_VERSION,
+    generated_at: now.toISOString(),
+    dataset_path: datasetPath,
+    dataset_hash: datasetHash,
+    pair_count: pairEntries.length,
+    compared_pair_count: comparisons.length,
+    comparison_kinds: comparisonKinds,
+    average_deltas: averageQualityScores(comparisons.map((comparison) => comparison.deltas)),
+    regression_count: comparisons.filter((comparison) => comparison.summary.regressed_score_count > 0).length,
+    improvement_count: comparisons.filter((comparison) => comparison.summary.improved_score_count > comparison.summary.regressed_score_count).length,
+    comparisons: comparisons.map((comparison) => ({
+      comparison_kind: comparison.comparison_kind,
+      baseline: comparison.baseline,
+      candidate: comparison.candidate,
+      deltas: comparison.deltas,
+      summary: comparison.summary,
+      warnings: comparison.warnings
+    })),
+    warnings,
+    boundary: agenticHumanReviewBoundary({ read_only: true, dogfood_comparison_performed: true }),
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+}
+
+function normalizeEvaluatorPolicy(input) {
+  const policy = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  return {
+    schema_version: SCHEMA_VERSION,
+    policy_version: HUMAN_REVIEW_EVALUATOR_POLICY_VERSION,
+    scoring_weights: {
+      human_review_coverage: Number(policy.scoring_weights?.human_review_coverage ?? 0.2),
+      actionability: Number(policy.scoring_weights?.actionability ?? 0.2),
+      verification: Number(policy.scoring_weights?.verification ?? 0.15),
+      role_instruction_coverage: Number(policy.scoring_weights?.role_instruction_coverage ?? 0.2),
+      consensus_alignment: Number(policy.scoring_weights?.consensus_alignment ?? 0.1),
+      benchmark_requirement_coverage: Number(policy.scoring_weights?.benchmark_requirement_coverage ?? 0.15)
+    },
+    minimum_scores: {
+      calibration_ready_score: Number(policy.minimum_scores?.calibration_ready_score ?? 0.75),
+      benchmark_requirement_coverage_score: Number(policy.minimum_scores?.benchmark_requirement_coverage_score ?? 0.75),
+      verification_score: Number(policy.minimum_scores?.verification_score ?? 0.75),
+      actionability_score: Number(policy.minimum_scores?.actionability_score ?? 0.6)
+    },
+    required_outputs: {
+      structured_benchmark_requirement_coverage: policy.required_outputs?.structured_benchmark_requirement_coverage !== false,
+      critique_or_verification: policy.required_outputs?.critique_or_verification !== false,
+      owner_decision_requests: policy.required_outputs?.owner_decision_requests !== false,
+      role_independent_opinions: policy.required_outputs?.role_independent_opinions !== false
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildXhighRoundPlanReport({ plan, planPath, now }) {
+  const plannedRounds = xhighPlannedRounds(plan);
+  const missingConditions = [];
+  if (plan.review_effort?.mode !== 'xhigh') {
+    missingConditions.push('review_effort is not xhigh');
+  }
+  if (plannedRounds.length < 2) {
+    missingConditions.push('xhigh needs more than one planned review round');
+  }
+  if (!(plan.sub_agents ?? []).some((agent) => /critic|verification|synthesis/i.test(agent.role))) {
+    missingConditions.push('xhigh needs critic, verification, or synthesis roles');
+  }
+  const report = {
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_xhigh_plan',
+    xhigh_round_plan_version: HUMAN_REVIEW_XHIGH_ROUND_PLAN_VERSION,
+    generated_at: now.toISOString(),
+    plan_path: planPath,
+    plan_id: plan.id ?? null,
+    plan_hash: plan.plan_hash ?? null,
+    review_effort: plan.review_effort?.mode ?? null,
+    status: missingConditions.length === 0 ? 'ready_for_local_round_simulation' : 'round_plan_incomplete',
+    rounds: plannedRounds,
+    expected_merge_contract: {
+      role_opinions_required: true,
+      critique_records_required: true,
+      integration_record_required: true,
+      benchmark_requirement_coverage_preserved: plan.review_quality_benchmark?.enabled === true,
+      deterministic_gate_mutation_allowed: false
+    },
+    execution_boundary: {
+      live_multi_call_execution_performed: false,
+      live_multi_call_execution_authorized_by_plan: false,
+      provider_call_performed: false,
+      api_call_performed: false,
+      external_evidence_transfer: false,
+      mcp_execution_exposed: false
+    },
+    warnings: missingConditions.map((condition) => ({
+      code: 'AHR_XHIGH_ROUND_PLAN_CONDITION_MISSING',
+      message: condition
+    })),
+    boundary: agenticHumanReviewBoundary({ read_only: true }),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  return redact(report);
+}
+
+function xhighPlannedRounds(plan) {
+  const agentsByRound = new Map();
+  for (const agent of plan.sub_agents ?? []) {
+    const round = Number(agent.round ?? 1);
+    if (!agentsByRound.has(round)) {
+      agentsByRound.set(round, []);
+    }
+    agentsByRound.get(round).push({
+      role: agent.role,
+      display_name: agent.display_name,
+      effort: agent.effort,
+      independent_review: agent.independent_review !== false
+    });
+  }
+  return [...agentsByRound.entries()].sort((a, b) => a[0] - b[0]).map(([round, agents]) => ({
+    round,
+    role_count: agents.length,
+    roles: agents,
+    depends_on_rounds: round > 1 ? [round - 1] : [],
+    expected_output_sections: round > 1
+      ? ['role_opinions', 'critique_records', 'rebuttal_records', 'integration_record']
+      : ['role_opinions', 'findings', 'review_claims'],
+    provider_call_policy: 'not_executed_by_round_plan'
+  }));
+}
+
+function buildXhighSimulationReport({ plan, planPath, roundInput, roundInputPath, roundInputHash, now }) {
+  const planned = buildXhighRoundPlanReport({ plan, planPath, now });
+  const opinions = normalizeRoleOpinions(roundInput.role_opinions ?? roundInput.agentic_human_review_advisory?.role_opinions, plan.sub_agents);
+  const reportedRoles = new Set(reportedRoleOpinions(opinions).map((opinion) => opinion.role));
+  const plannedRoles = (plan.sub_agents ?? []).map((agent) => agent.role);
+  const missingRoles = plannedRoles.filter((role) => !reportedRoles.has(role));
+  const critiqueRecords = Array.isArray(roundInput.critique_records) ? roundInput.critique_records : [];
+  const integrationRecord = roundInput.integration_record ?? null;
+  const simulation = {
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_xhigh_simulation',
+    xhigh_round_plan_version: HUMAN_REVIEW_XHIGH_ROUND_PLAN_VERSION,
+    generated_at: now.toISOString(),
+    plan_path: planPath,
+    round_input_path: roundInputPath,
+    round_input_hash: roundInputHash,
+    status: missingRoles.length === 0 && critiqueRecords.length > 0 && integrationRecord ? 'simulation_complete' : 'simulation_incomplete',
+    planned_round_count: planned.rounds.length,
+    planned_role_count: plannedRoles.length,
+    reported_role_count: reportedRoles.size,
+    missing_roles: missingRoles,
+    critique_record_count: critiqueRecords.length,
+    integration_record_present: Boolean(integrationRecord),
+    benchmark_requirement_coverage_present: Boolean(roundInput.benchmark_requirement_coverage),
+    true_multi_call_execution_performed: false,
+    provider_call_performed: false,
+    warnings: [
+      ...missingRoles.map((role) => ({ code: 'AHR_XHIGH_SIMULATION_ROLE_MISSING', message: 'A planned role was not present in the round input.', details: { role } })),
+      ...(critiqueRecords.length > 0 ? [] : [{ code: 'AHR_XHIGH_SIMULATION_CRITIQUE_MISSING', message: 'No critique records were present in the round input.' }]),
+      ...(integrationRecord ? [] : [{ code: 'AHR_XHIGH_SIMULATION_INTEGRATION_MISSING', message: 'No integration record was present in the round input.' }])
+    ],
+    boundary: agenticHumanReviewBoundary({ read_only: true }),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  return redact(simulation);
+}
+
+function buildLongitudinalQualityRollup({ evidenceSet, evidenceSetPath, evidenceSetHash, now }) {
+  const summary = evidenceSet.summary;
+  const resultsByCase = groupCount(evidenceSet.results.map((result) => result.case_id).filter(Boolean));
+  const resultsByEffort = groupCount(evidenceSet.results.map((result) => result.effort).filter(Boolean));
+  const repeatedCaseCount = Object.values(resultsByCase).filter((count) => count > 1).length;
+  const averageQuality = summary.average_quality_scores ?? {};
+  const stabilityScore = clampScore(
+    (summary.observed_efforts.length / HUMAN_REVIEW_CLAIM_EFFORTS.length * 0.3)
+    + (summary.observed_benchmark_case_ids.length / summary.required_benchmark_case_ids.length * 0.3)
+    + (summary.observed_comparison_kinds.length / HUMAN_REVIEW_REQUIRED_COMPARISON_KINDS.length * 0.2)
+    + (repeatedCaseCount > 0 ? 0.1 : 0)
+    + (summary.calibration_pass_count > 0 ? 0.1 : 0)
+  );
+  const warnings = [
+    ...evidenceSet.warnings,
+    ...(repeatedCaseCount > 0 ? [] : [{ code: 'AHR_LONGITUDINAL_NO_REPEATED_CASES', message: 'No benchmark case has repeated observations yet.' }])
+  ];
+  return redact({
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_longitudinal_quality',
+    longitudinal_quality_version: HUMAN_REVIEW_LONGITUDINAL_QUALITY_VERSION,
+    generated_at: now.toISOString(),
+    evidence_set_path: evidenceSetPath,
+    evidence_set_hash: evidenceSetHash,
+    status: summary.complete_for_longitudinal_owner_review && repeatedCaseCount > 0 ? 'ready_for_owner_longitudinal_review' : 'longitudinal_evidence_incomplete',
+    result_count: summary.result_count,
+    results_by_case: resultsByCase,
+    results_by_effort: resultsByEffort,
+    repeated_case_count: repeatedCaseCount,
+    observed_comparison_kinds: summary.observed_comparison_kinds,
+    average_quality_scores: averageQuality,
+    longitudinal_stability_score: stabilityScore,
+    claim_policy: {
+      human_equivalent_claim_allowed: false,
+      human_superior_claim_allowed: false,
+      reason: 'Longitudinal quality rollups support owner review, but claims remain disallowed until a separately approved claim standard is met.'
+    },
+    warnings,
+    boundary: agenticHumanReviewBoundary({ read_only: true }),
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+}
+
+function normalizeClaimPolicy(input) {
+  const policy = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  return {
+    schema_version: SCHEMA_VERSION,
+    policy_version: HUMAN_REVIEW_CLAIM_POLICY_VERSION,
+    forbidden_claim_patterns: normalizeStringArray(policy.forbidden_claim_patterns).length > 0
+      ? normalizeStringArray(policy.forbidden_claim_patterns)
+      : [
+          'human-equivalent',
+          'human equivalent',
+          'human-superior',
+          'human superior',
+          'better than human',
+          'release is approved',
+          'provider output changed the gate',
+          'credentials were used from artifacts',
+          'medical legal or financial advice was verified'
+        ],
+    required_evidence_for_claims: policy.required_evidence_for_claims !== false,
+    equality_or_superiority_claims_allowed: false,
+    owner_labeled_evidence_required: true,
+    required_efforts: [...HUMAN_REVIEW_CLAIM_EFFORTS],
+    required_comparison_kinds: [...HUMAN_REVIEW_REQUIRED_COMPARISON_KINDS],
+    required_benchmark_case_ids: BENCHMARK_CASES.map((item) => item.case_id),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildClaimAudit({ result, resultPath, resultHash, policy, policyPath, policyHash, now }) {
+  const claimRecords = normalizeReviewClaims(result.review_claims);
+  const claimTexts = [
+    ...claimRecords.map((claim) => claim.claim),
+    result.non_engineer_summary?.main_takeaway,
+    result.human_report_v3?.plain_language_takeaway,
+    result.human_report_v3?.highest_priority_fix
+  ].filter(Boolean);
+  const forbiddenMatches = [];
+  for (const pattern of policy.forbidden_claim_patterns) {
+    const matched = claimTexts.filter((text) => textIncludesLoose(String(text).toLowerCase(), pattern));
+    if (matched.length > 0) {
+      forbiddenMatches.push({ pattern, match_count: matched.length });
+    }
+  }
+  const missingEvidenceClaims = policy.required_evidence_for_claims
+    ? claimRecords.filter((claim) => claim.evidence_refs.length === 0 && claim.supported_by_roles.length === 0)
+    : [];
+  const equalityTextPresent = claimTexts.some((text) => /\bhuman[-\s]?(equivalent|superior)\b|better than human/i.test(String(text)));
+  const warnings = [
+    ...forbiddenMatches.map((match) => ({ code: 'AHR_CLAIM_POLICY_FORBIDDEN_CLAIM_PRESENT', message: 'A forbidden claim pattern was present.', details: match })),
+    ...missingEvidenceClaims.map((claim) => ({ code: 'AHR_CLAIM_POLICY_EVIDENCE_MISSING', message: 'A review claim has no evidence refs or supporting roles.', details: { claim_id: claim.id } })),
+    ...(equalityTextPresent ? [{ code: 'AHR_CLAIM_POLICY_EQUALITY_OR_SUPERIORITY_UNSUPPORTED', message: 'Human-equivalent or human-superior wording is not supported by this result.' }] : [])
+  ];
+  return redact({
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_claim_audit',
+    claim_policy_version: HUMAN_REVIEW_CLAIM_POLICY_VERSION,
+    generated_at: now.toISOString(),
+    result_path: resultPath,
+    result_hash: resultHash,
+    result_id: result.id ?? null,
+    policy_path: policyPath,
+    policy_hash: policyHash,
+    claim_count: claimRecords.length,
+    forbidden_claim_matches: forbiddenMatches,
+    missing_evidence_claim_count: missingEvidenceClaims.length,
+    equality_or_superiority_text_present: equalityTextPresent,
+    status: warnings.length === 0 ? 'claim_policy_passed_for_advisory_result' : 'claim_policy_warnings_present',
+    human_equivalent_claim_allowed: false,
+    human_superior_claim_allowed: false,
+    policy,
+    warnings,
+    boundary: agenticHumanReviewBoundary({ read_only: true }),
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+}
+
+function averageQualityScores(records) {
+  const keys = uniqueSorted(records.flatMap((record) => Object.keys(record ?? {})));
+  if (records.length === 0) {
+    return {};
+  }
+  return Object.fromEntries(keys.map((key) => {
+    const values = records.map((record) => Number(record?.[key])).filter((value) => Number.isFinite(value));
+    const average = values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+    return [key, Number(average.toFixed(6))];
+  }));
+}
+
+function groupCount(values) {
+  return values.reduce((accumulator, value) => {
+    const key = String(value);
+    accumulator[key] = (accumulator[key] ?? 0) + 1;
+    return accumulator;
+  }, {});
+}
+
+function uniqueSorted(values) {
+  return [...new Set(values.filter((value) => value !== undefined && value !== null && value !== ''))].sort();
 }
 
 export function agenticHumanReviewBoundary(overrides = {}) {
@@ -1899,9 +2894,10 @@ function buildCalibrationContractForCase(benchmarkCase, rubricProfile) {
     forbidden_claims: [...benchmarkCase.forbidden_claims],
     thresholds: { ...benchmarkCase.thresholds },
     scoring: {
-      required_mention_coverage: 'fraction of required mentions found in summary, reader experience, action plan, claims, or findings',
+      structured_record_completeness: 'fraction of required benchmark records explicitly returned in benchmark_requirement_coverage',
+      required_mention_coverage: 'fraction of benchmark-required mentions covered by structured evidence-backed records',
       forbidden_claim_score: '1 means no forbidden claim was found',
-      dimension_coverage: 'fraction of required dimensions covered by human_review_coverage',
+      dimension_coverage: 'fraction of required dimensions covered by structured evidence-backed records',
       actionability_score: 'normalized report-quality actionability score'
     },
     advisory_only: true,
@@ -1909,34 +2905,284 @@ function buildCalibrationContractForCase(benchmarkCase, rubricProfile) {
   };
 }
 
-function buildCalibrationResult({ result, resultPath, benchmarkCase, now }) {
-  const text = calibrationSearchText(result);
-  const requiredMentionHits = benchmarkCase.required_mentions.map((mention) => ({
-    mention,
-    present: textIncludesLoose(text, mention)
-  }));
-  const forbiddenClaimHits = benchmarkCase.forbidden_claims.map((claim) => ({
-    claim,
-    present: textIncludesLoose(text, claim)
-  }));
-  const coveredDimensions = new Set((result.human_review_coverage?.dimensions ?? [])
+function buildProviderDeclaredBenchmarkRequirementCoverage({ plan, input }) {
+  const benchmarkCase = resolveBenchmarkCase(plan.review_quality_benchmark?.case_id ?? plan.dogfood_metadata?.case_id);
+  if (!benchmarkCase) {
+    return null;
+  }
+  return {
+    schema_version: SCHEMA_VERSION,
+    coverage_version: HUMAN_REVIEW_CALIBRATION_VERSION,
+    source: 'deterministic_fake_provider_contract',
+    case_id: benchmarkCase.case_id,
+    rubric_profile_id: benchmarkCase.rubric_profile_id,
+    required_mentions: benchmarkCase.required_mentions.map((mention) => ({
+      mention,
+      status: 'covered',
+      present: true,
+      evidence: benchmarkRequirementEvidenceText({ kind: 'mention', id: mention, input }),
+      evidence_refs: []
+    })),
+    required_dimensions: benchmarkCase.required_dimensions.map((dimension) => ({
+      dimension,
+      status: 'covered',
+      present: true,
+      evidence: benchmarkRequirementEvidenceText({ kind: 'dimension', id: dimension, input }),
+      evidence_refs: []
+    })),
+    forbidden_claims: benchmarkCase.forbidden_claims.map((claim) => ({
+      claim,
+      status: 'absent',
+      present: false,
+      evidence: `The deterministic advisory output makes no benchmark-forbidden claim: ${claim}.`,
+      evidence_refs: []
+    })),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function benchmarkRequirementEvidenceText({ kind, id, input }) {
+  const summary = secretSafeText(input.summary ?? input.human_report_v3?.summary ?? 'Advisory output reviewed this benchmark requirement.', 360);
+  return `${kind} "${id}" is addressed by the advisory summary, reader-experience review, role opinions, and owner-review action plan. ${summary}`;
+}
+
+function buildBenchmarkRequirementCoverage({ plan = null, input = {}, humanReviewCoverage = null, readerExperienceReview = null, benchmarkCase = null } = {}) {
+  const contract = plan?.review_quality_benchmark ?? null;
+  const resolvedCase = benchmarkCase
+    ?? resolveBenchmarkCase(contract?.case_id ?? plan?.dogfood_metadata?.case_id ?? input?.calibration_metadata?.benchmark_case_id ?? input?.dogfood_metadata?.case_id);
+  const enabled = Boolean(contract?.enabled || resolvedCase);
+  const requiredMentions = normalizeStringArray(contract?.required_mentions ?? resolvedCase?.required_mentions);
+  const requiredDimensions = normalizeStringArray(contract?.required_dimensions ?? resolvedCase?.required_dimensions);
+  const forbiddenClaims = normalizeStringArray(contract?.forbidden_claims ?? resolvedCase?.forbidden_claims);
+  const thresholds = {
+    coverage_score: Number(contract?.thresholds?.coverage_score ?? resolvedCase?.thresholds?.coverage_score ?? 0.75),
+    actionability_score: Number(contract?.thresholds?.actionability_score ?? resolvedCase?.thresholds?.actionability_score ?? 0.6),
+    forbidden_claim_score: Number(contract?.thresholds?.forbidden_claim_score ?? resolvedCase?.thresholds?.forbidden_claim_score ?? 1)
+  };
+  if (!enabled) {
+    return {
+      schema_version: SCHEMA_VERSION,
+      coverage_version: HUMAN_REVIEW_CALIBRATION_VERSION,
+      enabled: false,
+      status: 'not_enabled',
+      case_id: null,
+      rubric_profile_id: null,
+      required_mentions: [],
+      required_dimensions: [],
+      forbidden_claims: [],
+      summary: {
+        required_mention_coverage_score: 0,
+        dimension_coverage_score: 0,
+        forbidden_claim_score: 1,
+        structured_record_completeness_score: 1,
+        evidence_backed_record_score: 1
+      },
+      advisory_only: true,
+      gate_effect: 'none'
+    };
+  }
+  const rawCoverage = input?.benchmark_requirement_coverage
+    ?? input?.benchmark_calibration_evidence
+    ?? input?.calibration_evidence
+    ?? null;
+  const normalizedCoverage = normalizeProviderBenchmarkRequirementCoverage(rawCoverage);
+  const text = calibrationSearchText(input);
+  const humanCoveredDimensions = new Set((humanReviewCoverage?.dimensions ?? input?.human_review_coverage?.dimensions ?? [])
     .filter((dimension) => dimension.status === 'covered')
     .map((dimension) => dimension.id));
-  const requiredDimensionHits = benchmarkCase.required_dimensions.map((dimension) => ({
-    dimension,
-    present: coveredDimensions.has(dimension)
-  }));
-  const requiredMentionCoverage = fractionPresent(requiredMentionHits);
-  const forbiddenClaimScore = forbiddenClaimHits.some((item) => item.present) ? 0 : 1;
-  const dimensionCoverage = fractionPresent(requiredDimensionHits);
+  const requiredMentionRecords = requiredMentions.map((mention) => {
+    const providerRecord = findBenchmarkCoverageRecord(normalizedCoverage.required_mentions, mention, ['mention', 'id', 'name']);
+    const diagnosticTextPresent = textIncludesLoose(text, mention);
+    const evidence = secretSafeText(providerRecord?.evidence ?? providerRecord?.reason ?? '', 700);
+    const structuredPresent = Boolean(providerRecord);
+    const evidenceBacked = structuredPresent && evidence.length > 0;
+    const present = evidenceBacked && benchmarkRecordIsPresent(providerRecord);
+    return {
+      mention,
+      present,
+      status: present ? 'covered' : (structuredPresent ? 'missing_evidence_or_not_covered' : 'missing_structured_record'),
+      evidence,
+      evidence_refs: normalizeArtifactReferences(providerRecord?.evidence_refs ?? providerRecord?.artifacts),
+      structured_record_present: structuredPresent,
+      evidence_backed: evidenceBacked,
+      diagnostic_text_present: diagnosticTextPresent
+    };
+  });
+  const requiredDimensionRecords = requiredDimensions.map((dimension) => {
+    const providerRecord = findBenchmarkCoverageRecord(normalizedCoverage.required_dimensions, dimension, ['dimension', 'id', 'name']);
+    const evidence = secretSafeText(providerRecord?.evidence ?? providerRecord?.reason ?? '', 700);
+    const structuredPresent = Boolean(providerRecord);
+    const evidenceBacked = structuredPresent && evidence.length > 0;
+    const present = evidenceBacked && benchmarkRecordIsPresent(providerRecord);
+    return {
+      dimension,
+      present,
+      status: present ? 'covered' : (structuredPresent ? 'missing_evidence_or_not_covered' : 'missing_structured_record'),
+      evidence,
+      evidence_refs: normalizeArtifactReferences(providerRecord?.evidence_refs ?? providerRecord?.artifacts),
+      structured_record_present: structuredPresent,
+      evidence_backed: evidenceBacked,
+      human_review_coverage_present: humanCoveredDimensions.has(dimension),
+      reader_experience_present: benchmarkDimensionReaderExperiencePresent({ dimension, readerExperienceReview, input })
+    };
+  });
+  const forbiddenClaimRecords = forbiddenClaims.map((claim) => {
+    const providerRecord = findBenchmarkCoverageRecord(normalizedCoverage.forbidden_claims, claim, ['claim', 'id', 'name']);
+    const diagnosticTextPresent = textIncludesLoose(text, claim);
+    const structuredPresent = Boolean(providerRecord);
+    const present = structuredPresent ? benchmarkRecordIsPresent(providerRecord) : diagnosticTextPresent;
+    return {
+      claim,
+      present,
+      status: present ? 'forbidden_claim_present' : (structuredPresent ? 'absent' : 'absent_but_missing_structured_record'),
+      evidence: secretSafeText(providerRecord?.evidence ?? providerRecord?.reason ?? '', 700),
+      evidence_refs: normalizeArtifactReferences(providerRecord?.evidence_refs ?? providerRecord?.artifacts),
+      structured_record_present: structuredPresent,
+      evidence_backed: structuredPresent && secretSafeText(providerRecord?.evidence ?? providerRecord?.reason ?? '', 700).length > 0,
+      diagnostic_text_present: diagnosticTextPresent
+    };
+  });
+  const allRequiredRecords = [
+    ...requiredMentionRecords,
+    ...requiredDimensionRecords,
+    ...forbiddenClaimRecords
+  ];
+  const structuredRecordCompleteness = fractionPresent(allRequiredRecords.map((record) => ({ present: record.structured_record_present })));
+  const evidenceBackedRecordScore = fractionPresent(allRequiredRecords.map((record) => ({ present: record.evidence_backed || (record.claim && record.structured_record_present) })));
+  const requiredMentionCoverage = fractionPresent(requiredMentionRecords);
+  const dimensionCoverage = fractionPresent(requiredDimensionRecords);
+  const forbiddenClaimScore = forbiddenClaimRecords.some((record) => record.present) ? 0 : 1;
+  const passed = structuredRecordCompleteness === 1
+    && evidenceBackedRecordScore === 1
+    && requiredMentionCoverage >= thresholds.coverage_score
+    && dimensionCoverage >= thresholds.coverage_score
+    && forbiddenClaimScore >= thresholds.forbidden_claim_score;
+  return redact({
+    schema_version: SCHEMA_VERSION,
+    coverage_version: HUMAN_REVIEW_CALIBRATION_VERSION,
+    enabled: true,
+    status: passed ? 'passed' : 'incomplete',
+    case_id: resolvedCase?.case_id ?? contract?.case_id ?? null,
+    fixture_type: resolvedCase?.fixture_type ?? contract?.fixture_type ?? null,
+    rubric_profile_id: contract?.rubric_profile_id ?? resolvedCase?.rubric_profile_id ?? null,
+    source: rawCoverage ? 'provider_structured_coverage' : 'missing_provider_structured_coverage',
+    thresholds,
+    required_mentions: requiredMentionRecords,
+    required_dimensions: requiredDimensionRecords,
+    forbidden_claims: forbiddenClaimRecords,
+    summary: {
+      required_mention_coverage_score: requiredMentionCoverage,
+      dimension_coverage_score: dimensionCoverage,
+      forbidden_claim_score: forbiddenClaimScore,
+      structured_record_completeness_score: structuredRecordCompleteness,
+      evidence_backed_record_score: evidenceBackedRecordScore,
+      human_review_dimension_diagnostic_score: clampScore(Number(humanReviewCoverage?.coverage_score ?? input?.human_review_coverage?.coverage_score ?? 0))
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+}
+
+function normalizeProviderBenchmarkRequirementCoverage(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {
+      required_mentions: [],
+      required_dimensions: [],
+      forbidden_claims: []
+    };
+  }
+  return {
+    required_mentions: Array.isArray(value.required_mentions) ? value.required_mentions : [],
+    required_dimensions: Array.isArray(value.required_dimensions) ? value.required_dimensions : [],
+    forbidden_claims: Array.isArray(value.forbidden_claims) ? value.forbidden_claims : []
+  };
+}
+
+function findBenchmarkCoverageRecord(records, expected, keys) {
+  const expectedKey = normalizeCoverageKey(expected);
+  return records.find((record) => keys.some((key) => normalizeCoverageKey(record?.[key]) === expectedKey));
+}
+
+function normalizeCoverageKey(value) {
+  return String(value ?? '').trim().toLowerCase().replace(/[-_\s]+/g, ' ');
+}
+
+function benchmarkRecordIsPresent(record) {
+  if (!record || typeof record !== 'object') {
+    return false;
+  }
+  if (record.present === true || record.covered === true) {
+    return true;
+  }
+  const status = normalizeCoverageKey(record.status);
+  return ['covered', 'present', 'met', 'addressed', 'absent'].includes(status) && status !== 'absent';
+}
+
+function benchmarkDimensionReaderExperiencePresent({ dimension, readerExperienceReview, input }) {
+  const source = readerExperienceReview ?? input?.reader_experience_review ?? {};
+  if (dimension === 'first_impression') {
+    return normalizeStringArray(source.first_impression ?? input?.subjective_perception?.first_impression).length > 0;
+  }
+  if (dimension === 'reader_emotion') {
+    return normalizeStringArray(source.likely_viewer_feeling ?? input?.subjective_perception?.emotional_reception).length > 0;
+  }
+  if (dimension === 'content_comprehension') {
+    return normalizeStringArray(source.content_takeaway ?? input?.readability_comprehension?.meaning_gaps).length > 0;
+  }
+  if (dimension === 'trust_and_credibility') {
+    return normalizeStringArray(source.trust_assessment ?? input?.subjective_perception?.trust_and_credibility).length > 0;
+  }
+  if (dimension === 'visual_ux') {
+    return normalizeStringArray(source.visual_ux_assessment).length > 0;
+  }
+  if (dimension === 'accessibility_comprehension') {
+    return normalizeStringArray(source.accessibility_comprehension ?? input?.readability_comprehension?.meaning_gaps).length > 0;
+  }
+  if (dimension === 'risk_and_misleading_content') {
+    return normalizeStringArray(source.risk_and_misleading_content ?? input?.readability_comprehension?.terminology_risk ?? input?.subjective_perception?.likely_user_questions).length > 0;
+  }
+  if (dimension === 'improvement_priority') {
+    return normalizeStringArray(source.priority_recommendation ?? input?.improvement_suggestions).length > 0;
+  }
+  return false;
+}
+
+function buildCalibrationResult({ result, resultPath, benchmarkCase, now }) {
+  const benchmarkRequirementCoverage = buildBenchmarkRequirementCoverage({
+    input: result,
+    humanReviewCoverage: result.human_review_coverage ?? null,
+    readerExperienceReview: result.reader_experience_review ?? null,
+    benchmarkCase
+  });
+  const requiredMentionHits = benchmarkRequirementCoverage.required_mentions;
+  const forbiddenClaimHits = benchmarkRequirementCoverage.forbidden_claims;
+  const requiredDimensionHits = benchmarkRequirementCoverage.required_dimensions;
+  const requiredMentionCoverage = benchmarkRequirementCoverage.summary.required_mention_coverage_score;
+  const forbiddenClaimScore = benchmarkRequirementCoverage.summary.forbidden_claim_score;
+  const dimensionCoverage = benchmarkRequirementCoverage.summary.dimension_coverage_score;
+  const structuredRecordCompleteness = benchmarkRequirementCoverage.summary.structured_record_completeness_score;
+  const evidenceBackedRecordScore = benchmarkRequirementCoverage.summary.evidence_backed_record_score;
   const actionabilityScore = clampScore(result.report_quality?.actionability_score ?? 0);
   const coverageThreshold = Number(benchmarkCase.thresholds.coverage_score ?? 0.75);
   const actionabilityThreshold = Number(benchmarkCase.thresholds.actionability_score ?? 0.6);
-  const passed = requiredMentionCoverage >= coverageThreshold
+  const passed = structuredRecordCompleteness === 1
+    && evidenceBackedRecordScore === 1
+    && requiredMentionCoverage >= coverageThreshold
     && dimensionCoverage >= coverageThreshold
     && actionabilityScore >= actionabilityThreshold
     && forbiddenClaimScore >= Number(benchmarkCase.thresholds.forbidden_claim_score ?? 1);
   const warnings = [
+    ...(structuredRecordCompleteness === 1 ? [] : [{
+      code: 'AGENTIC_REVIEW_CALIBRATION_STRUCTURED_COVERAGE_INCOMPLETE',
+      message: 'The result did not include a complete benchmark_requirement_coverage record set.',
+      details: { structured_record_completeness: structuredRecordCompleteness, threshold: 1 }
+    }]),
+    ...(evidenceBackedRecordScore === 1 ? [] : [{
+      code: 'AGENTIC_REVIEW_CALIBRATION_STRUCTURED_EVIDENCE_THIN',
+      message: 'The structured benchmark coverage records were missing evidence text.',
+      details: { evidence_backed_record_score: evidenceBackedRecordScore, threshold: 1 }
+    }]),
     ...(requiredMentionCoverage >= coverageThreshold ? [] : [{
       code: 'AGENTIC_REVIEW_CALIBRATION_REQUIRED_MENTIONS_THIN',
       message: 'The result did not cover enough benchmark-required human-review mentions.',
@@ -1967,6 +3213,8 @@ function buildCalibrationResult({ result, resultPath, benchmarkCase, now }) {
       required_mention_coverage: requiredMentionCoverage,
       forbidden_claim_score: forbiddenClaimScore,
       dimension_coverage: dimensionCoverage,
+      structured_record_completeness_score: structuredRecordCompleteness,
+      evidence_backed_record_score: evidenceBackedRecordScore,
       actionability_score: actionabilityScore,
       human_review_coverage_score: clampScore(result.report_quality?.human_review_coverage_score ?? result.human_review_coverage?.coverage_score ?? 0),
       role_instruction_coverage_score: clampScore(result.role_instruction_coverage?.coverage_score ?? 0)
@@ -1974,6 +3222,7 @@ function buildCalibrationResult({ result, resultPath, benchmarkCase, now }) {
     required_mentions: requiredMentionHits,
     forbidden_claims: forbiddenClaimHits,
     required_dimensions: requiredDimensionHits,
+    benchmark_requirement_coverage: benchmarkRequirementCoverage,
     benchmark_completion_readiness: buildBenchmarkCompletionReadiness({
       benchmarkCase,
       rubricProfile: { id: benchmarkCase.rubric_profile_id }
@@ -2095,6 +3344,9 @@ function calibrationSearchText(result) {
     reader_experience_review: result.reader_experience_review,
     mechanical_vs_human_review: result.mechanical_vs_human_review,
     action_plan: result.agentic_human_review_action_plan,
+    benchmark_requirement_coverage: result.benchmark_requirement_coverage,
+    calibration_metadata: result.calibration_metadata,
+    human_report_v3: result.human_report_v3,
     claims: result.review_claims,
     findings: result.agentic_human_review_findings,
     owner_decision_requests: result.owner_decision_requests
@@ -2124,7 +3376,11 @@ function comparableQualityScores(result) {
     human_review_coverage_score: clampScore(result.report_quality?.human_review_coverage_score ?? result.human_review_coverage?.coverage_score ?? 0),
     actionability_score: clampScore(result.report_quality?.actionability_score ?? 0),
     role_instruction_coverage_score: clampScore(result.role_instruction_coverage?.coverage_score ?? 0),
-    calibration_ready_score: clampScore(result.review_quality_evaluation?.calibration_ready_score ?? 0)
+    calibration_ready_score: clampScore(result.review_quality_evaluation?.calibration_ready_score ?? 0),
+    benchmark_required_mention_coverage_score: clampScore(result.benchmark_requirement_coverage?.summary?.required_mention_coverage_score ?? result.report_quality?.benchmark_required_mention_coverage_score ?? 0),
+    benchmark_dimension_coverage_score: clampScore(result.benchmark_requirement_coverage?.summary?.dimension_coverage_score ?? result.report_quality?.benchmark_dimension_coverage_score ?? 0),
+    benchmark_structured_record_completeness_score: clampScore(result.benchmark_requirement_coverage?.summary?.structured_record_completeness_score ?? result.report_quality?.benchmark_structured_record_completeness_score ?? 0),
+    benchmark_forbidden_claim_score: clampScore(result.benchmark_requirement_coverage?.summary?.forbidden_claim_score ?? result.report_quality?.benchmark_forbidden_claim_score ?? 1)
   };
 }
 
@@ -2712,11 +3968,12 @@ function fakeAgenticReviewResult({ provider, model, surface, plan, planPath, tra
       first_impression: ['The first impression should be checked from visual hierarchy, screen text, and the most obvious next action.'],
       likely_viewer_feeling: ['A viewer may feel reassured when content is specific and visually easy to scan, or uncertain when the page is noisy or technically degraded.'],
       content_takeaway: ['The reviewer should identify what useful message, story, or decision support the reader can actually take away.'],
-      trust_assessment: ['Trust should be judged from specificity, evidence, working media, accessible text, and whether technical issues undermine confidence.'],
-      visual_ux_assessment: ['Visual and UX value loss should be separated from the intrinsic value of the content.'],
-      accessibility_comprehension: ['Accessibility issues should be translated into practical comprehension risks for real people.'],
-      lost_value_summary: ['Technical or UI friction can make otherwise useful content feel harder to trust or act on.'],
-      priority_recommendation: ['Prioritize changes that make the existing content value easier to see, understand, and trust.']
+    trust_assessment: ['Trust should be judged from specificity, evidence, working media, accessible text, and whether technical issues undermine confidence.'],
+    visual_ux_assessment: ['Visual and UX value loss should be separated from the intrinsic value of the content.'],
+    accessibility_comprehension: ['Accessibility issues should be translated into practical comprehension risks for real people.'],
+    risk_and_misleading_content: ['Risks should identify uncertainty, terminology hazards, missing proof, or wording that could mislead a reader.'],
+    lost_value_summary: ['Technical or UI friction can make otherwise useful content feel harder to trust or act on.'],
+    priority_recommendation: ['Prioritize changes that make the existing content value easier to see, understand, and trust.']
     },
     mechanical_vs_human_review: {
       balanced_takeaways: ['The deterministic layer identifies objective risks; the human-review layer explains what those risks mean for reader perception.']
@@ -2740,6 +3997,7 @@ function fakeAgenticReviewResult({ provider, model, surface, plan, planPath, tra
       reason: 'Agentic human review is advisory-only and cannot change release gates by itself.'
     }]
   };
+  input.benchmark_requirement_coverage = buildProviderDeclaredBenchmarkRequirementCoverage({ plan, input });
   const boundary = providerBoundary({
     provider,
     providerCallPerformed: true,
@@ -2865,6 +4123,13 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     rubricProfile: plan.rubric_profile ?? null,
     dogfoodMetadata: plan.dogfood_metadata ?? null
   });
+  const benchmarkRequirementCoverage = buildBenchmarkRequirementCoverage({
+    plan,
+    input,
+    humanReviewCoverage,
+    readerExperienceReview,
+    benchmarkCase
+  });
   const roleInstructionCoverage = buildRoleInstructionCoverage({ plan, roleOpinions });
   const consensusAnalysis = buildConsensusAnalysis({ roleOpinions, findings, claims, input });
   const dissentAnalysis = buildDissentAnalysis({ roleOpinions, claims, critiqueRecords, input });
@@ -2884,7 +4149,8 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     critiqueRecords,
     integrationRecord,
     humanReviewCoverage,
-    readerExperienceReview
+    readerExperienceReview,
+    benchmarkRequirementCoverage
   });
   const reviewQualityEvaluation = buildReviewQualityEvaluation({
     quality: qualityPreview,
@@ -2892,9 +4158,15 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     consensusAnalysis,
     dissentAnalysis,
     xhighCompletion,
-    plan
+    plan,
+    benchmarkRequirementCoverage
   });
-  const calibrationMetadata = buildCalibrationMetadata({ plan, input, quality: qualityPreview });
+  const calibrationMetadata = buildCalibrationMetadata({
+    plan,
+    input,
+    quality: qualityPreview,
+    benchmarkRequirementCoverage
+  });
   const humanReportV3 = buildHumanReportV3({
     input,
     plan,
@@ -2976,6 +4248,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     dogfood_metadata: dogfoodMetadata,
     live_dogfood_execution_gate: transferFlags.live_dogfood_execution_gate ?? plan.live_dogfood_execution_gate ?? null,
     benchmark_completion_readiness: benchmarkCompletionReadiness,
+    benchmark_requirement_coverage: benchmarkRequirementCoverage,
     calibration_metadata: calibrationMetadata,
     report_quality: qualityPreview,
     review_quality_evaluation: reviewQualityEvaluation,
@@ -4261,7 +5534,15 @@ function humanReviewRubric() {
   };
 }
 
-function buildProviderInstructionContract({ intent, reviewPackage, orchestration }) {
+function buildProviderInstructionContract({ intent, reviewPackage, orchestration, rubricProfile = null, evidencePlan = null, roleInstructionContracts = [], benchmarkCase = null }) {
+  const benchmarkRequirements = benchmarkCase ? {
+    case_id: benchmarkCase.case_id,
+    rubric_profile_id: rubricProfile?.id ?? benchmarkCase.rubric_profile_id ?? null,
+    required_dimensions: [...benchmarkCase.required_dimensions],
+    required_mentions: [...benchmarkCase.required_mentions],
+    forbidden_claims: [...benchmarkCase.forbidden_claims],
+    thresholds: { ...benchmarkCase.thresholds }
+  } : null;
   return {
     schema_version: SCHEMA_VERSION,
     human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
@@ -4275,15 +5556,20 @@ function buildProviderInstructionContract({ intent, reviewPackage, orchestration
       'judge likely viewer feeling, trust, motivation, and confusion as advisory subjective output',
       'compare deterministic technical issues with content value and reader impact',
       'preserve evidence, uncertainty, dissent, and owner-decision needs',
+      'when review_quality_benchmark is enabled, return benchmark_requirement_coverage with one evidence-backed record for every required mention, required dimension, and forbidden claim',
       'return normalized JSON matching agentic_human_review_advisory'
     ],
     input_summary: buildSourceEvidenceSummary(reviewPackage),
+    benchmark_requirement_contract: benchmarkRequirements,
+    evidence_plan_hash: evidencePlan ? hashJson(evidencePlan) : null,
+    role_instruction_contract_count: Array.isArray(roleInstructionContracts) ? roleInstructionContracts.length : 0,
     output_sections: [
       'non_engineer_summary',
       'subjective_perception',
       'readability_comprehension',
       'reader_experience_review',
       'mechanical_vs_human_review',
+      'benchmark_requirement_coverage',
       'role_opinions',
       'consensus_summary',
       'dissent_summary',
@@ -4327,6 +5613,8 @@ function buildReviewQualityBenchmarkContract({ dogfoodMetadata = null, benchmark
     forbidden_claims: benchmarkCase?.forbidden_claims ?? [],
     thresholds: benchmarkCase?.thresholds ?? { coverage_score: 0.75, actionability_score: 0.6, forbidden_claim_score: 1 },
     allowed_evidence_classes: benchmarkCase?.allowed_evidence_classes ?? [],
+    required_output_section: caseId ? 'benchmark_requirement_coverage' : null,
+    structured_coverage_required_for_calibration: Boolean(caseId),
     advisory_only: true,
     gate_effect: 'none'
   };
@@ -4519,6 +5807,7 @@ function buildReaderExperienceReview({ input, plan, findings, roleOpinions }) {
     trust_assessment: normalizeStringArray(explicit.trust_assessment ?? input.subjective_perception?.trust_and_credibility).slice(0, 8),
     visual_ux_assessment: normalizeStringArray(explicit.visual_ux_assessment ?? input.visual_ux_assessment ?? [firstFinding].filter(Boolean)).slice(0, 8),
     accessibility_comprehension: normalizeStringArray(explicit.accessibility_comprehension ?? input.accessibility_comprehension ?? input.readability_comprehension?.meaning_gaps).slice(0, 8),
+    risk_and_misleading_content: normalizeStringArray(explicit.risk_and_misleading_content ?? input.risk_and_misleading_content ?? input.readability_comprehension?.terminology_risk ?? input.subjective_perception?.likely_user_questions).slice(0, 8),
     lost_value_summary: normalizeStringArray(explicit.lost_value_summary ?? input.lost_value_summary).slice(0, 8),
     priority_recommendation: normalizeStringArray(explicit.priority_recommendation ?? input.priority_recommendation ?? input.improvement_suggestions).slice(0, 8),
     intended_audience: truncateText(plan.human_review_contract?.target_audience ?? plan.intent ?? '', 500),
@@ -4587,6 +5876,10 @@ function buildHumanReviewCoverage({ input, findings, roleOpinions, readerExperie
       || findings.some((finding) => /visual|ux|layout|interaction|ui/i.test(finding.category)),
     accessibility_comprehension: normalizeStringArray(readerExperienceReview.accessibility_comprehension).length > 0
       || findings.some((finding) => /accessibility|comprehension|readability/i.test(finding.category)),
+    risk_and_misleading_content: normalizeStringArray(readerExperienceReview.risk_and_misleading_content).length > 0
+      || normalizeStringArray(input.readability_comprehension?.terminology_risk).length > 0
+      || normalizeStringArray(input.subjective_perception?.likely_user_questions).length > 0
+      || findings.some((finding) => /risk|misleading|safety|trust|uncertain/i.test(`${finding.category} ${finding.message}`)),
     improvement_priority: normalizeStringArray(readerExperienceReview.priority_recommendation).length > 0
       || normalizeStringArray(actionPlan?.suggested_fixes ?? input.improvement_suggestions).length > 0
   };
@@ -4896,16 +6189,26 @@ function buildXhighCompletionAssessment({ plan, roleOpinions, roundRecords, crit
   };
 }
 
-function buildReviewQualityEvaluation({ quality, roleInstructionCoverage, consensusAnalysis, dissentAnalysis, xhighCompletion, plan }) {
+function buildReviewQualityEvaluation({ quality, roleInstructionCoverage, consensusAnalysis, dissentAnalysis, xhighCompletion, plan, benchmarkRequirementCoverage = null }) {
   const xhighExpected = plan.review_effort?.mode === 'xhigh';
   const multiRoundSatisfied = !xhighExpected
     || xhighCompletion?.status === 'complete';
+  const benchmarkEnabled = benchmarkRequirementCoverage?.enabled === true;
+  const benchmarkCoverageScore = benchmarkEnabled
+    ? clampScore(
+        (benchmarkRequirementCoverage.summary.required_mention_coverage_score * 0.3)
+        + (benchmarkRequirementCoverage.summary.dimension_coverage_score * 0.3)
+        + (benchmarkRequirementCoverage.summary.structured_record_completeness_score * 0.25)
+        + (benchmarkRequirementCoverage.summary.evidence_backed_record_score * 0.15)
+      )
+    : 1;
   const calibrationReadyScore = clampScore(
-    (quality.human_review_coverage_score * 0.3)
+    (quality.human_review_coverage_score * 0.2)
     + (quality.actionability_score * 0.2)
-    + (quality.verification_score * 0.2)
+    + (quality.verification_score * 0.15)
     + (roleInstructionCoverage.coverage_score * 0.2)
     + (consensusAnalysis.confidence_alignment_score * 0.1)
+    + (benchmarkCoverageScore * 0.15)
   );
   return {
     schema_version: SCHEMA_VERSION,
@@ -4919,6 +6222,8 @@ function buildReviewQualityEvaluation({ quality, roleInstructionCoverage, consen
     sensibility_score: clampScore((quality.human_review_coverage_score * 0.55) + (roleInstructionCoverage.coverage_score * 0.25) + (quality.verification_score * 0.2)),
     specific_fix_score: quality.actionability_score,
     safety_boundary_score: 1,
+    benchmark_requirement_coverage_score: benchmarkCoverageScore,
+    benchmark_requirement_coverage_status: benchmarkRequirementCoverage?.status ?? 'not_enabled',
     multi_round_expectation_satisfied: multiRoundSatisfied,
     xhigh_completion_status: xhighCompletion?.status ?? null,
     true_multi_call_execution_performed: xhighCompletion?.true_multi_call_execution_performed ?? false,
@@ -4928,6 +6233,7 @@ function buildReviewQualityEvaluation({ quality, roleInstructionCoverage, consen
     quality_warnings: [
       ...normalizeStringArray(quality.quality_warnings),
       ...(multiRoundSatisfied ? [] : ['xhigh review expected complete provider output for planned roles, critique/verification, and synthesis.']),
+      ...(benchmarkEnabled && benchmarkRequirementCoverage?.status !== 'passed' ? ['Benchmark requirement coverage is incomplete or missing structured evidence.'] : []),
       ...normalizeStringArray(xhighCompletion?.missing_conditions)
     ],
     advisory_only: true,
@@ -4971,7 +6277,7 @@ function buildHumanReportV3({ input, plan, readerExperienceReview, mechanicalVsH
   };
 }
 
-function buildCalibrationMetadata({ plan, input, quality }) {
+function buildCalibrationMetadata({ plan, input, quality, benchmarkRequirementCoverage = null }) {
   return {
     schema_version: SCHEMA_VERSION,
     calibration_version: HUMAN_REVIEW_CALIBRATION_VERSION,
@@ -4983,15 +6289,19 @@ function buildCalibrationMetadata({ plan, input, quality }) {
       role_opinions: input.role_opinions ?? [],
       findings: input.findings ?? input.agentic_human_review_findings ?? [],
       claims: input.review_claims ?? [],
-      quality
+      quality,
+      benchmark_requirement_coverage: benchmarkRequirementCoverage?.summary ?? null
     }),
+    benchmark_requirement_coverage_status: benchmarkRequirementCoverage?.status ?? 'not_enabled',
+    benchmark_requirement_coverage_scores: benchmarkRequirementCoverage?.summary ?? null,
     repeatable_quality_check: true,
     advisory_only: true,
     gate_effect: 'none'
   };
 }
 
-function buildReportQuality({ result, resultPath, execution, now }) {
+function buildReportQuality({ result, resultPath, execution, evaluatorPolicy = null, now }) {
+  const policy = normalizeEvaluatorPolicy(evaluatorPolicy);
   const quality = buildReportQualityFromParts({
     roleOpinions: normalizeRoleOpinions(result.role_opinions),
     findings: normalizeFindings(result.agentic_human_review_findings, result.id ?? 'agentic-result'),
@@ -5000,8 +6310,10 @@ function buildReportQuality({ result, resultPath, execution, now }) {
     critiqueRecords: Array.isArray(result.critique_records) ? result.critique_records : [],
     integrationRecord: result.integration_record ?? null,
     humanReviewCoverage: result.human_review_coverage ?? null,
-    readerExperienceReview: result.reader_experience_review ?? null
+    readerExperienceReview: result.reader_experience_review ?? null,
+    benchmarkRequirementCoverage: result.benchmark_requirement_coverage ?? null
   });
+  const policyWarnings = reportQualityPolicyWarnings({ quality, policy });
   const humanReviewMaturity = buildHumanReviewMaturity({ result, execution, quality });
   return redact({
     schema_version: SCHEMA_VERSION,
@@ -5011,7 +6323,13 @@ function buildReportQuality({ result, resultPath, execution, now }) {
     result_path: resultPath,
     result_id: result.id ?? null,
     execution_id: execution?.id ?? null,
+    evaluator_policy: policy,
     ...quality,
+    quality_warnings: [
+      ...normalizeStringArray(quality.quality_warnings),
+      ...policyWarnings.map((warning) => warning.message)
+    ],
+    policy_warnings: policyWarnings,
     human_review_maturity: humanReviewMaturity,
     longitudinal_quality_evaluation: humanReviewMaturity.longitudinal_quality_evaluation,
     benchmark_completion_readiness: result.benchmark_completion_readiness ?? null,
@@ -5022,6 +6340,32 @@ function buildReportQuality({ result, resultPath, execution, now }) {
       report_quality_gate_effect: 'none'
     })
   });
+}
+
+function reportQualityPolicyWarnings({ quality, policy }) {
+  const warnings = [];
+  if (quality.actionability_score < policy.minimum_scores.actionability_score) {
+    warnings.push({
+      code: 'AHR_EVALUATOR_POLICY_ACTIONABILITY_BELOW_MINIMUM',
+      message: 'Actionability score is below the evaluator policy minimum.',
+      details: { score: quality.actionability_score, minimum: policy.minimum_scores.actionability_score }
+    });
+  }
+  if (quality.verification_score < policy.minimum_scores.verification_score) {
+    warnings.push({
+      code: 'AHR_EVALUATOR_POLICY_VERIFICATION_BELOW_MINIMUM',
+      message: 'Verification score is below the evaluator policy minimum.',
+      details: { score: quality.verification_score, minimum: policy.minimum_scores.verification_score }
+    });
+  }
+  if (quality.benchmark_requirement_coverage_score < policy.minimum_scores.benchmark_requirement_coverage_score) {
+    warnings.push({
+      code: 'AHR_EVALUATOR_POLICY_BENCHMARK_COVERAGE_BELOW_MINIMUM',
+      message: 'Benchmark requirement coverage score is below the evaluator policy minimum.',
+      details: { score: quality.benchmark_requirement_coverage_score, minimum: policy.minimum_scores.benchmark_requirement_coverage_score }
+    });
+  }
+  return warnings;
 }
 
 function buildHumanReviewMaturity({ result, execution, quality }) {
@@ -5219,7 +6563,7 @@ function buildHumanReviewMaturityNextActions({ missingEfforts, missingBenchmarkC
   return actions;
 }
 
-function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, claims, critiqueRecords, integrationRecord, humanReviewCoverage = null, readerExperienceReview = null }) {
+function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, claims, critiqueRecords, integrationRecord, humanReviewCoverage = null, readerExperienceReview = null, benchmarkRequirementCoverage = null }) {
   const actualRoleOpinions = reportedRoleOpinions(roleOpinions);
   const completenessScore = clampScore(
     (actualRoleOpinions.length > 0 ? 0.25 : 0)
@@ -5246,6 +6590,15 @@ function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, c
     + (Array.isArray(readerExperienceReview?.priority_recommendation) && readerExperienceReview.priority_recommendation.length > 0 ? 0.25 : 0)
     + (integrationRecord ? 0.2 : 0)
   );
+  const benchmarkCoverageEnabled = benchmarkRequirementCoverage?.enabled === true;
+  const benchmarkRequirementCoverageScore = benchmarkCoverageEnabled
+    ? clampScore(
+        (benchmarkRequirementCoverage.summary?.required_mention_coverage_score * 0.3)
+        + (benchmarkRequirementCoverage.summary?.dimension_coverage_score * 0.3)
+        + (benchmarkRequirementCoverage.summary?.structured_record_completeness_score * 0.25)
+        + (benchmarkRequirementCoverage.summary?.evidence_backed_record_score * 0.15)
+      )
+    : 1;
   return {
     quality_evaluator_version: HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION,
     completeness_score: completenessScore,
@@ -5253,17 +6606,22 @@ function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, c
     verification_score: verificationScore,
     human_review_coverage_score: humanCoverageScore,
     actionability_score: actionabilityScore,
+    benchmark_requirement_coverage_score: benchmarkRequirementCoverageScore,
+    benchmark_required_mention_coverage_score: clampScore(benchmarkRequirementCoverage?.summary?.required_mention_coverage_score ?? 0),
+    benchmark_dimension_coverage_score: clampScore(benchmarkRequirementCoverage?.summary?.dimension_coverage_score ?? 0),
+    benchmark_structured_record_completeness_score: clampScore(benchmarkRequirementCoverage?.summary?.structured_record_completeness_score ?? (benchmarkCoverageEnabled ? 0 : 1)),
+    benchmark_forbidden_claim_score: clampScore(benchmarkRequirementCoverage?.summary?.forbidden_claim_score ?? 1),
     role_count: actualRoleOpinions.length,
     finding_count: findings.length,
     claim_count: claims.length,
     owner_decision_count: ownerDecisions.length,
-    quality_warnings: reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueRecords, humanReviewCoverage, actionabilityScore }),
+    quality_warnings: reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueRecords, humanReviewCoverage, actionabilityScore, benchmarkRequirementCoverage }),
     advisory_only: true,
     gate_effect: 'none'
   };
 }
 
-function reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueRecords, humanReviewCoverage = null, actionabilityScore = 0 }) {
+function reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueRecords, humanReviewCoverage = null, actionabilityScore = 0, benchmarkRequirementCoverage = null }) {
   const warnings = [];
   if (reportedRoleOpinions(roleOpinions).length === 0) {
     warnings.push('No role-specific opinions were present.');
@@ -5282,6 +6640,9 @@ function reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueR
   }
   if (actionabilityScore < 0.5) {
     warnings.push('Recommendations may be too vague to guide product work.');
+  }
+  if (benchmarkRequirementCoverage?.enabled === true && benchmarkRequirementCoverage.status !== 'passed') {
+    warnings.push('Benchmark requirement coverage is incomplete or lacks structured evidence.');
   }
   return warnings;
 }

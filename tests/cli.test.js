@@ -2078,6 +2078,14 @@ test('schema commands expose machine-readable contracts', async () => {
     ['agentic_human_review_benchmark_case', '../schemas/agentic-human-review-benchmark-case.schema.json'],
     ['agentic_human_review_calibration_result', '../schemas/agentic-human-review-calibration-result.schema.json'],
     ['agentic_human_review_comparison', '../schemas/agentic-human-review-comparison.schema.json'],
+    ['agentic_human_review_batch_comparison', '../schemas/agentic-human-review-batch-comparison.schema.json'],
+    ['agentic_human_review_evidence_set', '../schemas/agentic-human-review-evidence-set.schema.json'],
+    ['agentic_human_review_evaluator_policy', '../schemas/agentic-human-review-evaluator-policy.schema.json'],
+    ['agentic_human_review_xhigh_plan', '../schemas/agentic-human-review-xhigh-plan.schema.json'],
+    ['agentic_human_review_xhigh_simulation', '../schemas/agentic-human-review-xhigh-simulation.schema.json'],
+    ['agentic_human_review_longitudinal_quality', '../schemas/agentic-human-review-longitudinal-quality.schema.json'],
+    ['agentic_human_review_claim_policy', '../schemas/agentic-human-review-claim-policy.schema.json'],
+    ['agentic_human_review_claim_audit', '../schemas/agentic-human-review-claim-audit.schema.json'],
     ['agentic_human_review_dogfood_readiness', '../schemas/agentic-human-review-dogfood-readiness.schema.json'],
     ['agentic_human_review_dogfood_plan', '../schemas/agentic-human-review-dogfood-plan.schema.json'],
     ['agentic_human_review_plan', '../schemas/agentic-human-review-plan.schema.json'],
@@ -3509,6 +3517,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     'high',
     '--role-efforts',
     'critic_reviewer:xhigh,verification_reviewer:xhigh',
+    '--benchmark-case',
+    'blog-content-value',
     '--json'
   ]);
   assert.equal(parsedPlan.ok, true);
@@ -3528,6 +3538,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     'high',
     '--role-efforts',
     'critic_reviewer:xhigh,verification_reviewer:xhigh',
+    '--benchmark-case',
+    'blog-content-value',
     '--surface',
     'local-subscription-agent',
     '--provider',
@@ -3552,10 +3564,12 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(planBody.data.agentic_human_review_plan.human_review_schema_version, '2.0.0');
   assert.equal(planBody.data.agentic_human_review_plan.human_review_contract.output_requirements.content_comprehension_required, true);
   assert.equal(planBody.data.agentic_human_review_plan.provider_instruction_contract.required_behavior.some((item) => /skilled human reviewer/.test(item)), true);
+  assert.equal(planBody.data.agentic_human_review_plan.provider_instruction_contract.output_sections.includes('benchmark_requirement_coverage'), true);
+  assert.equal(planBody.data.agentic_human_review_plan.result_contract.benchmark_requirement_coverage_required, true);
   assert.equal(planBody.data.agentic_human_review_plan.review_quality_benchmark.quality_dimensions.includes('mechanical_vs_human_distinction'), true);
   assert.equal(planBody.data.agentic_human_review_plan.benchmark_completion_readiness.completion_version, '1.0.0');
   assert.equal(planBody.data.agentic_human_review_plan.benchmark_completion_readiness.release_gate_policy.release_gate_mutated, false);
-  assert.equal(planBody.data.agentic_human_review_plan.live_dogfood_execution_gate.status, 'not_dogfood_run');
+  assert.equal(planBody.data.agentic_human_review_plan.live_dogfood_execution_gate.status, 'local_or_non_api_dogfood_ready');
   assert.equal(planBody.data.agentic_human_review_plan.provider_capability_contract.provider_id, 'fake-agent');
   assert.match(planBody.data.agentic_human_review_plan.provider_capability_hash, /^[a-f0-9]{64}$/);
   assert.equal(planBody.data.agentic_human_review_plan.provider_capability_contract.execution_boundary.mcp_execution_exposed, false);
@@ -4123,6 +4137,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(Array.isArray(resultFile.mechanical_vs_human_review.balanced_takeaways), true);
   assert.equal(resultFile.human_review_coverage.human_review_schema_version, '2.0.0');
   assert.equal(resultFile.human_review_coverage.coverage_score > 0.5, true);
+  assert.equal(resultFile.benchmark_requirement_coverage.status, 'passed');
+  assert.equal(resultFile.benchmark_requirement_coverage.summary.structured_record_completeness_score, 1);
+  assert.equal(resultFile.benchmark_requirement_coverage.required_mentions.every((item) => item.present === true), true);
   assert.equal(resultFile.agentic_human_review_readiness.advisory_only, true);
   assert.equal(resultFile.agentic_human_review_readiness.deterministic_findings_unchanged, true);
   assert.equal(resultFile.agentic_human_review_readiness.gate_effect, 'none');
@@ -4142,7 +4159,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(resultFile.xhigh_multi_round_review.status, 'complete');
   assert.equal(resultFile.xhigh_multi_round_review.true_multi_call_execution_performed, false);
   assert.equal(resultFile.benchmark_completion_readiness.release_gate_policy.release_gate_mutated, false);
-  assert.equal(resultFile.live_dogfood_execution_gate.status, 'not_dogfood_run');
+  assert.equal(resultFile.live_dogfood_execution_gate.status, 'local_or_non_api_dogfood_ready');
   assert.equal(resultFile.human_report_v3.report_version, '3.0.0');
   assert.equal(resultFile.human_report_v3.owner_review_required, true);
   assert.equal(resultFile.consensus_analysis.gate_effect, 'none');
@@ -4184,6 +4201,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(qualityBody.data.agentic_human_review_report_quality.gate_effect, 'none');
   assert.equal(qualityBody.data.agentic_human_review_report_quality.quality_evaluator_version, '3.0.0');
   assert.equal(qualityBody.data.agentic_human_review_report_quality.human_review_coverage_score > 0.5, true);
+  assert.equal(qualityBody.data.agentic_human_review_report_quality.benchmark_requirement_coverage_score, 1);
   assert.equal(qualityBody.data.agentic_human_review_report_quality.actionability_score > 0, true);
   assert.equal(qualityBody.data.agentic_human_review_report_quality.xhigh_multi_round_review.status, 'complete');
   assert.equal(qualityBody.data.agentic_human_review_report_quality.benchmark_completion_readiness.release_gate_policy.blocks_release, false);
@@ -4261,6 +4279,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(calibrationBody.command, 'agentic review calibrate');
   assert.equal(calibrationBody.data.agentic_human_review_calibration.case_id, 'blog-content-value');
   assert.equal(typeof calibrationBody.data.agentic_human_review_calibration.scores.required_mention_coverage, 'number');
+  assert.equal(calibrationBody.data.agentic_human_review_calibration.passed, true);
+  assert.equal(calibrationBody.data.agentic_human_review_calibration.scores.structured_record_completeness_score, 1);
   assert.equal(calibrationBody.data.agentic_human_review_calibration.benchmark_completion_readiness.active_case_id, 'blog-content-value');
   assert.equal(calibrationBody.data.agentic_human_review_calibration.boundary.read_only, true);
   assert.equal(calibrationBody.data.agentic_human_review_calibration.gate_effect, 'none');
@@ -4285,6 +4305,116 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(comparisonBody.data.agentic_human_review_comparison.comparison_kind, 'direct-vs-tracecue');
   assert.equal(comparisonBody.data.agentic_human_review_comparison.direct_vs_tracecue_analysis.candidate_role, 'tracecue_agentic_human_review_workflow');
   assert.equal(typeof comparisonBody.data.agentic_human_review_comparison.deltas.actionability_score, 'number');
+  assert.equal(typeof comparisonBody.data.agentic_human_review_comparison.deltas.benchmark_structured_record_completeness_score, 'number');
+
+  const evidenceSetPath = path.join(cwd, 'agentic-evidence-set.json');
+  await writeFile(evidenceSetPath, JSON.stringify({
+    type: 'agentic_human_review_evidence_set_manifest',
+    results: [
+      { path: '.browser-debug/agentic-human-review-results/agentic-execution-fixed/result.json' }
+    ],
+    calibrations: [],
+    comparisons: []
+  }, null, 2), 'utf8');
+  const evidenceSet = await executeCli([
+    'agentic',
+    'review',
+    'evidence-set',
+    'summarize',
+    '--input',
+    'agentic-evidence-set.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(evidenceSet.exitCode, 0);
+  const evidenceSetBody = JSON.parse(evidenceSet.stdout);
+  assert.equal(evidenceSetBody.command, 'agentic review evidence-set summarize');
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.observed_efforts.includes('xhigh'), true);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.human_equivalent_claim_allowed, false);
+
+  const comparisonDatasetPath = path.join(cwd, 'agentic-comparison-dataset.json');
+  await writeFile(comparisonDatasetPath, JSON.stringify({
+    pairs: [{
+      baseline: '.browser-debug/agentic-human-review-results/agentic-execution-api/result.json',
+      candidate: '.browser-debug/agentic-human-review-results/agentic-execution-fixed/result.json',
+      comparison_kind: 'provider-dogfood'
+    }]
+  }, null, 2), 'utf8');
+  const batchComparison = await executeCli([
+    'agentic',
+    'review',
+    'compare',
+    'batch',
+    '--dataset',
+    'agentic-comparison-dataset.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(batchComparison.exitCode, 0);
+  const batchComparisonBody = JSON.parse(batchComparison.stdout);
+  assert.equal(batchComparisonBody.command, 'agentic review compare batch');
+  assert.equal(batchComparisonBody.data.agentic_human_review_batch_comparison.compared_pair_count, 1);
+  assert.equal(batchComparisonBody.data.agentic_human_review_batch_comparison.boundary.read_only, true);
+
+  const evaluatorPolicy = await executeCli([
+    'agentic',
+    'review',
+    'evaluator',
+    'policy',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(evaluatorPolicy.exitCode, 0);
+  const evaluatorPolicyBody = JSON.parse(evaluatorPolicy.stdout);
+  assert.equal(evaluatorPolicyBody.data.agentic_human_review_evaluator_policy.policy.required_outputs.structured_benchmark_requirement_coverage, true);
+
+  const xhighPlan = await executeCli([
+    'agentic',
+    'review',
+    'xhigh',
+    'plan',
+    '--plan',
+    planPath,
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(xhighPlan.exitCode, 0);
+  const xhighPlanBody = JSON.parse(xhighPlan.stdout);
+  assert.equal(xhighPlanBody.data.agentic_human_review_xhigh_plan.status, 'ready_for_local_round_simulation');
+  assert.equal(xhighPlanBody.data.agentic_human_review_xhigh_plan.execution_boundary.live_multi_call_execution_performed, false);
+
+  const longitudinal = await executeCli([
+    'agentic',
+    'review',
+    'quality',
+    'longitudinal',
+    '--evidence-set',
+    'agentic-evidence-set.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(longitudinal.exitCode, 0);
+  const longitudinalBody = JSON.parse(longitudinal.stdout);
+  assert.equal(longitudinalBody.data.agentic_human_review_longitudinal_quality.claim_policy.human_equivalent_claim_allowed, false);
+
+  const claimAudit = await executeCli([
+    'agentic',
+    'review',
+    'claim',
+    'audit',
+    '--result',
+    '.browser-debug/agentic-human-review-results/agentic-execution-fixed/result.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(claimAudit.exitCode, 0);
+  const claimAuditBody = JSON.parse(claimAudit.stdout);
+  assert.equal(claimAuditBody.data.agentic_human_review_claim_audit.human_superior_claim_allowed, false);
+
+  const claimPolicy = await executeCli([
+    'agentic',
+    'review',
+    'claim',
+    'policy',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(claimPolicy.exitCode, 0);
+  const claimPolicyBody = JSON.parse(claimPolicy.stdout);
+  assert.equal(claimPolicyBody.data.agentic_human_review_claim_policy.policy.equality_or_superiority_claims_allowed, false);
 
   assert.equal(await readFile(path.join(cwd, '.browser-debug', 'reviews', 'image-review-fixed.json'), 'utf8'), originalReviewText);
   assert.equal(await readFile(path.join(cwd, reviewIndexPath), 'utf8'), originalIndexText);

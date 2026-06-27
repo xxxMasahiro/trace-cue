@@ -16,11 +16,14 @@ const VALUE_OPTIONS = new Set([
   'comparison-kind',
   'comparison-run-id',
   'daemon',
+  'dataset',
   'default-subagent-effort',
   'endpoint',
   'effort',
   'execution',
   'expected-impression',
+  'evaluator-policy',
+  'evidence-set',
   'evidence-plan-mode',
   'fixture-id',
   'fixture-root',
@@ -44,6 +47,7 @@ const VALUE_OPTIONS = new Set([
   'operation',
   'package',
   'phase',
+  'policy',
   'plan',
   'plan-hash',
   'port',
@@ -56,6 +60,7 @@ const VALUE_OPTIONS = new Set([
   'review-index',
   'review-effort',
   'role-efforts',
+  'round-input',
   'rubric-profile',
   'result',
   'risk',
@@ -1027,7 +1032,7 @@ function parseAgentic(args, globals) {
   }
   const scope = args[0];
   const action = args[1];
-  const reviewActions = ['propose', 'plan', 'run', 'status', 'list', 'provider-readiness', 'report-quality', 'benchmark', 'dogfood', 'calibrate', 'compare'];
+  const reviewActions = ['propose', 'plan', 'run', 'status', 'list', 'provider-readiness', 'report-quality', 'benchmark', 'dogfood', 'calibrate', 'compare', 'evidence-set', 'evaluator', 'xhigh', 'quality', 'claim'];
   if (scope !== 'review' || !reviewActions.includes(action)) {
     return parseError('agentic', globals.json, {
       code: scope ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
@@ -1266,6 +1271,7 @@ function parseAgentic(args, globals) {
     const unsupported = Object.keys(parsed.options).find((option) => ![
       'result',
       'execution',
+      'evaluator-policy',
       'max-bytes'
     ].includes(option));
     if (unsupported) {
@@ -1390,6 +1396,21 @@ function parseAgentic(args, globals) {
     return parsed;
   }
   if (action === 'compare') {
+    if (args[2] === 'batch') {
+      const parsed = parseRequiredOptions('agentic review compare batch', args.slice(3), globals, ['dataset']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['dataset', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review compare batch', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_COMPARE_BATCH_OPTION',
+          message: `agentic review compare batch does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
     const parsed = parseRequiredOptions('agentic review compare', args.slice(2), globals, ['baseline', 'candidate']);
     if (!parsed.ok) {
       return parsed;
@@ -1403,6 +1424,166 @@ function parseAgentic(args, globals) {
       });
     }
     return parsed;
+  }
+  if (action === 'evidence-set') {
+    const evidenceSetAction = args[2];
+    if (evidenceSetAction === 'validate' || evidenceSetAction === 'summarize') {
+      const command = `agentic review evidence-set ${evidenceSetAction}`;
+      const parsed = parseRequiredOptions(command, args.slice(3), globals, ['input']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['input', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError(command, globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_EVIDENCE_SET_OPTION',
+          message: `${command} does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
+    return parseError('agentic review evidence-set', globals.json, {
+      code: evidenceSetAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: evidenceSetAction ? `Unknown agentic review evidence-set subcommand: ${evidenceSetAction}` : 'agentic review evidence-set requires validate or summarize.',
+      details: { subcommands: ['validate', 'summarize'] }
+    });
+  }
+  if (action === 'evaluator') {
+    const evaluatorAction = args[2];
+    if (evaluatorAction === 'policy') {
+      const parsed = parseOptions('agentic review evaluator policy', args.slice(3), globals.json);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      if (parsed.positionals.length > 0) {
+        return parseError('agentic review evaluator policy', globals.json, {
+          code: 'UNEXPECTED_ARGUMENT',
+          message: 'agentic review evaluator policy does not accept positional arguments.',
+          details: { argument: parsed.positionals[0] }
+        });
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['input', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review evaluator policy', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_EVALUATOR_POLICY_OPTION',
+          message: `agentic review evaluator policy does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return { ok: true, command: 'agentic review evaluator policy', json: globals.json, options: parsed.options };
+    }
+    return parseError('agentic review evaluator', globals.json, {
+      code: evaluatorAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: evaluatorAction ? `Unknown agentic review evaluator subcommand: ${evaluatorAction}` : 'agentic review evaluator requires policy.',
+      details: { subcommands: ['policy'] }
+    });
+  }
+  if (action === 'xhigh') {
+    const xhighAction = args[2];
+    if (xhighAction === 'plan') {
+      const parsed = parseRequiredOptions('agentic review xhigh plan', args.slice(3), globals, ['plan']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['plan', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review xhigh plan', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_XHIGH_PLAN_OPTION',
+          message: `agentic review xhigh plan does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
+    if (xhighAction === 'simulate') {
+      const parsed = parseRequiredOptions('agentic review xhigh simulate', args.slice(3), globals, ['plan', 'round-input']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['plan', 'round-input', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review xhigh simulate', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_XHIGH_SIMULATE_OPTION',
+          message: `agentic review xhigh simulate does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
+    return parseError('agentic review xhigh', globals.json, {
+      code: xhighAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: xhighAction ? `Unknown agentic review xhigh subcommand: ${xhighAction}` : 'agentic review xhigh requires plan or simulate.',
+      details: { subcommands: ['plan', 'simulate'] }
+    });
+  }
+  if (action === 'quality') {
+    const qualityAction = args[2];
+    if (qualityAction === 'longitudinal') {
+      const parsed = parseRequiredOptions('agentic review quality longitudinal', args.slice(3), globals, ['evidence-set']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['evidence-set', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review quality longitudinal', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_QUALITY_LONGITUDINAL_OPTION',
+          message: `agentic review quality longitudinal does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
+    return parseError('agentic review quality', globals.json, {
+      code: qualityAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: qualityAction ? `Unknown agentic review quality subcommand: ${qualityAction}` : 'agentic review quality requires longitudinal.',
+      details: { subcommands: ['longitudinal'] }
+    });
+  }
+  if (action === 'claim') {
+    const claimAction = args[2];
+    if (claimAction === 'policy') {
+      const parsed = parseOptions('agentic review claim policy', args.slice(3), globals.json);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      if (parsed.positionals.length > 0) {
+        return parseError('agentic review claim policy', globals.json, {
+          code: 'UNEXPECTED_ARGUMENT',
+          message: 'agentic review claim policy does not accept positional arguments.',
+          details: { argument: parsed.positionals[0] }
+        });
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['input', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review claim policy', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_CLAIM_POLICY_OPTION',
+          message: `agentic review claim policy does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return { ok: true, command: 'agentic review claim policy', json: globals.json, options: parsed.options };
+    }
+    if (claimAction === 'audit') {
+      const parsed = parseRequiredOptions('agentic review claim audit', args.slice(3), globals, ['result']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['result', 'policy', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review claim audit', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_CLAIM_AUDIT_OPTION',
+          message: `agentic review claim audit does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
+    return parseError('agentic review claim', globals.json, {
+      code: claimAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: claimAction ? `Unknown agentic review claim subcommand: ${claimAction}` : 'agentic review claim requires policy or audit.',
+      details: { subcommands: ['policy', 'audit'] }
+    });
   }
   const parsed = parseOptions('agentic review list', args.slice(2), globals.json);
   if (!parsed.ok) {
@@ -2058,6 +2239,15 @@ function plannedCommands() {
     'agentic review dogfood plan',
     'agentic review calibrate',
     'agentic review compare',
+    'agentic review compare batch',
+    'agentic review evidence-set validate',
+    'agentic review evidence-set summarize',
+    'agentic review evaluator policy',
+    'agentic review xhigh plan',
+    'agentic review xhigh simulate',
+    'agentic review quality longitudinal',
+    'agentic review claim policy',
+    'agentic review claim audit',
     'visual review plan',
     'visual review prepare',
     'visual review run',

@@ -23,16 +23,25 @@ export {
   runAgenticHumanReviewBenchmarkList,
   runAgenticHumanReviewBenchmarkShow,
   runAgenticHumanReviewCalibrate,
+  runAgenticHumanReviewClaimAudit,
+  runAgenticHumanReviewClaimPolicy,
   runAgenticHumanReviewCompare,
+  runAgenticHumanReviewCompareBatch,
   runAgenticHumanReviewDogfoodPlan,
   runAgenticHumanReviewDogfoodReadiness,
+  runAgenticHumanReviewEvaluatorPolicy,
+  runAgenticHumanReviewEvidenceSetSummarize,
+  runAgenticHumanReviewEvidenceSetValidate,
   runAgenticHumanReviewList,
+  runAgenticHumanReviewLongitudinalQuality,
   runAgenticHumanReviewPlan,
   runAgenticHumanReviewPropose,
   runAgenticHumanReviewProviderReadiness,
   runAgenticHumanReviewReportQuality,
   runAgenticHumanReviewRun,
-  runAgenticHumanReviewStatus
+  runAgenticHumanReviewStatus,
+  runAgenticHumanReviewXhighPlan,
+  runAgenticHumanReviewXhighSimulate
 } from './agentic-human-review.js';
 export {
   AGENTIC_HUMAN_REVIEW_PROVIDERS,

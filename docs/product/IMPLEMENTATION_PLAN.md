@@ -9,6 +9,16 @@
 
 ## Phase Plan
 
+### Agentic Human Review Quality Gate Foundation: Structured Benchmark, Evidence Sets, And Claim Audit
+
+Purpose: move the next Agentic Human Review dogfood phase from one-off live output checks toward repeatable quality evidence. The slice makes benchmark calibration depend on structured, evidence-backed requirement records, then adds local read-only diagnostics for comparing standard/deep/xhigh real-page dogfood results, evaluator policy thresholds, longitudinal quality, and claim safety.
+
+Implemented scope: require provider instructions and advisory normalization to surface `benchmark_requirement_coverage`; add strict calibration scoring for required mentions, required human-review dimensions, and forbidden claims; add `risk_and_misleading_content` as an explicit human-review dimension; add read-only `agentic review evidence-set validate|summarize`, `agentic review compare batch`, `agentic review evaluator policy`, `agentic review xhigh plan|simulate`, `agentic review quality longitudinal`, and `agentic review claim policy|audit` CLI/API/schema surfaces; extend report-quality with evaluator policy warnings and benchmark coverage scores; keep all new diagnostics local and read-only. Non-scope: live provider execution approval, MCP exposure, deterministic review mutation, release-gate mutation, raw provider response storage, credential persistence, parent-repository changes, consumer-repository changes, package publication, or human-equivalent/human-superior claim authorization.
+
+Implementation order: synchronize product and workflow documents; extend benchmark requirement contracts and provider instructions; add normalization and strict calibration helpers; add evidence-set, batch comparison, evaluator policy, xhigh, longitudinal, and claim audit runners; wire parser, CLI, API, schema registry, and package manifests; extend no-browser and packed-install tests; run product document, security, package, and repository gates.
+
+Recovery: this slice is additive and local. Existing Agentic Human Review proposal, plan, run, report-quality, benchmark, calibrate, compare, dogfood readiness, Responses adapter, visual review, agent execution, MCP profiles, safe HTTP MCP, release readiness, artifact-root policy, alias compatibility, deterministic findings, and release gates remain compatible. Rollback is a standard Git revert of the quality-gate changes; no artifact migration, publication, credential storage, raw response persistence, release gate change, or MCP permission expansion is involved.
+
 ### Agentic Human Review Responses Adapter: Local Responses-Compatible Live Dogfood Bridge
 
 Purpose: close the manual live-provider dogfood gap without weakening the existing Agentic Human Review owner-layer. The adapter lets the existing `generic-api-provider` endpoint target a loopback local HTTP bridge, while the bridge performs the upstream Responses-compatible request conversion, provider credential loading, JSON advisory parsing, and normalized advisory return.

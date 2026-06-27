@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-evidence-set.schema.json",
+  "title": "TraceCue Agentic Human Review Evidence Set",
+  "type": "object",
+  "required": ["schema_version", "type", "evidence_set_version", "generated_at", "summary", "results", "calibrations", "comparisons", "warnings", "boundary", "advisory_only", "gate_effect"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "const": "agentic_human_review_evidence_set" },
+    "evidence_set_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "input_path": { "type": ["string", "null"] },
+    "input_hash": { "type": ["string", "null"] },
+    "summary": { "type": "object" },
+    "results": { "type": "array" },
+    "calibrations": { "type": "array" },
+    "comparisons": { "type": "array" },
+    "warnings": { "type": "array" },
+    "boundary": { "type": "object" },
+    "advisory_only": { "const": true },
+    "gate_effect": { "const": "none" }
+  },
+  "additionalProperties": true
+}
