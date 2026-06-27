@@ -46,6 +46,18 @@ node "$TRACE_CUE_CLI" mcp capabilities --profile all --json
 
 Use `target init` for the first manifest, then keep an edited manifest in the consumer repository when the app has known routes, important pages, expected selectors, or content UX advisory checks.
 
+## Agentic Human Review Live Dogfood
+
+Agentic Human Review live provider dogfood still starts from a normal TraceCue review artifact index, then `agentic review propose`, `agentic review plan`, `agentic review provider-readiness`, and `agentic review run` with the approved plan hash and exact transfer flags. The optional Responses adapter is only the local conversion endpoint for the existing `generic-api-provider`; it is not a shortcut around the plan/run gate.
+
+For this flow, point `AGENTIC_HUMAN_REVIEW_API_ENDPOINT` at the loopback adapter URL, not directly at the upstream provider. Start the adapter from the TraceCue checkout:
+
+```bash
+AGENTIC_HUMAN_REVIEW_API_TOKEN=<tok> AGENTIC_HUMAN_REVIEW_OPENAI_API_KEY=<key> AGENTIC_HUMAN_REVIEW_OPENAI_MODEL=<model> npm run ahr:responses-adapter -- --json
+```
+
+The adapter stores no provider key, no adapter token, and no raw provider response. Live upstream calls are manual and should not be enabled in CI.
+
 ## MCP Stdio Quickstart
 
 Use MCP stdio when an MCP client can launch a local command. Ask the CLI to generate client metadata instead of reading source files:

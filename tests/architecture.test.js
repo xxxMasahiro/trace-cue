@@ -15,6 +15,7 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'src/agent-execution-providers.js',
     'src/agentic-human-review.js',
     'src/agentic-human-review-providers.js',
+    'src/agentic-human-review-responses-adapter.js',
     'src/visual-review-provider-policy.js',
     'src/visual-review-result-preparation.js',
     'src/visual-review-dashboard.js',
@@ -66,6 +67,7 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'templates/review-target-manifest.json',
     'templates/status-dashboard-content-ux-target-manifest.json',
     '.github/workflows/ci.yml',
+    'bin/trace-cue-ahr-responses-adapter.js',
     'tests/cli.test.js',
     'tests/browser-smoke.test.js',
     'README.md'
@@ -132,6 +134,7 @@ test('package keeps a standard local Node CLI surface', async () => {
   assert.ok(pkg.scripts['test:rename-readiness']);
   assert.ok(pkg.scripts['test:pack']);
   assert.ok(pkg.scripts['test:pack-install']);
+  assert.ok(pkg.scripts['ahr:responses-adapter']);
   assert.ok(pkg.scripts['release:check']);
   assert.match(pkg.scripts['release:check'], /npm run test:rename-readiness/);
   assert.match(pkg.scripts['release:check'], /npm run test:pack-install/);
@@ -267,6 +270,42 @@ test('agentic human review stays approval-gated, local-first, and outside MCP pr
   assert.match(providerSource, /credential_values_recorded:\s*false/);
   assert.doesNotMatch(providerSource, /from 'node:child_process'|createServer|\.listen\(|playwright|raw_provider_response_stored:\s*true/);
   assert.doesNotMatch(mcpProfiles, /agentic.*review|human_review|raw_pixel|page_text/i);
+});
+
+test('agentic human review Responses adapter stays loopback-only and advisory-only', async () => {
+  const adapter = await readText('src/agentic-human-review-responses-adapter.js');
+  const bin = await readText('bin/trace-cue-ahr-responses-adapter.js');
+  const source = await readText('src/agentic-human-review.js');
+  const providerSource = await readText('src/agentic-human-review-providers.js');
+  const mcpProfiles = await readText('src/mcp-profiles.js');
+  const api = await readText('src/api.js');
+
+  assert.match(adapter, /from 'node:http'/);
+  assert.match(adapter, /createServer/);
+  assert.match(adapter, /loopback/i);
+  assert.match(adapter, /store:\s*false/);
+  assert.match(adapter, /tools:\s*\[\]/);
+  assert.match(adapter, /raw_provider_response_stored:\s*false/);
+  assert.match(adapter, /credential_values_recorded:\s*false/);
+  assert.match(adapter, /request_payload_stored:\s*false/);
+  assert.match(adapter, /advisory_only:\s*true/);
+  assert.match(adapter, /gate_effect:\s*'none'/);
+  assert.match(adapter, /raw_pixel_bytes_included/);
+  assert.match(adapter, /providerApiKeyEnv/);
+  assert.match(adapter, /providerApiKeyFallbackEnv/);
+  assert.doesNotMatch(adapter, /node:child_process|from 'playwright'|import\('playwright'\)|\bwriteFile\b|\bunlink\b|\brmdir\b/);
+  assert.doesNotMatch(adapter, /credential:\s*adapterToken|authorization:\s*normalizedHeaders\.authorization/);
+  assert.doesNotMatch(adapter, /raw_provider_response_stored:\s*true|release_gate_mutated:\s*true|deterministic_findings_mutated:\s*true/);
+
+  assert.match(bin, /startAgenticHumanReviewResponsesAdapter/);
+  assert.match(bin, /--provider-model/);
+  assert.doesNotMatch(bin, /node:child_process|from 'playwright'|import\('playwright'\)|\bwriteFile\b|\bunlink\b|\brmdir\b/);
+
+  assert.match(api, /startAgenticHumanReviewResponsesAdapter/);
+  assert.match(api, /handleAgenticHumanReviewResponsesAdapterRequest/);
+  assert.doesNotMatch(source, /agentic-human-review-responses-adapter|createServer|\.listen\(|fetch\(|process\.env/);
+  assert.doesNotMatch(providerSource, /agentic-human-review-responses-adapter|createServer|\.listen\(|raw_provider_response_stored:\s*true/);
+  assert.doesNotMatch(mcpProfiles, /responses.*adapter|openai.*responses/i);
 });
 
 test('resource guard and artifact cleanup keep explicit local boundaries', async () => {

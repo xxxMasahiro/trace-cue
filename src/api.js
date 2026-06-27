@@ -10,9 +10,13 @@ export {
   HUMAN_REVIEW_SCHEMA_VERSION,
   HUMAN_REVIEW_CALIBRATION_VERSION,
   HUMAN_REVIEW_COMPLETION_ROADMAP_VERSION,
+  HUMAN_REVIEW_BENCHMARK_COMPLETION_VERSION,
   HUMAN_REVIEW_EVIDENCE_PACKAGE_VERSION,
+  HUMAN_REVIEW_LIVE_DOGFOOD_GATE_VERSION,
   HUMAN_REVIEW_ORCHESTRATION_VERSION,
   HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION,
+  HUMAN_REVIEW_TEXT_PROVENANCE_VERSION,
+  HUMAN_REVIEW_XHIGH_COMPLETION_VERSION,
   HUMAN_REPORT_VERSION,
   agenticHumanReviewBoundary,
   isAgenticHumanReviewPackage,
@@ -37,11 +41,21 @@ export {
   AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
   agenticProviderCapabilityContract,
   agenticProviderCapabilityHash,
+  buildAgenticLiveDogfoodExecutionGate,
   buildAgenticProviderReadiness,
   executeAgenticHumanReviewApiProvider,
   validateAgenticProviderDescriptor,
   resolveAgenticHumanReviewProvider
 } from './agentic-human-review-providers.js';
+export {
+  AGENTIC_HUMAN_REVIEW_RESPONSES_ADAPTER_DEFAULTS,
+  AGENTIC_HUMAN_REVIEW_RESPONSES_ADAPTER_VERSION,
+  buildOpenAiResponsesRequest,
+  handleAgenticHumanReviewResponsesAdapterRequest,
+  normalizeAgenticHumanReviewResponsesAdapterConfig,
+  parseOpenAiResponsesAdvisory,
+  startAgenticHumanReviewResponsesAdapter
+} from './agentic-human-review-responses-adapter.js';
 export {
   AGENT_EXECUTION_PROVIDERS,
   resolveAgentExecutionProvider

@@ -43,6 +43,7 @@ async function main() {
 
     await assertFile(packageDir, normalizePackagePath(PRODUCT_IDENTITY.cliBinPath));
     await assertFile(packageDir, normalizePackagePath(PRODUCT_IDENTITY.mcpBinPath));
+    await assertFile(packageDir, 'bin/trace-cue-ahr-responses-adapter.js');
     for (const binEntry of packageBinEntries()) {
       await assertFile(packageDir, normalizePackagePath(binEntry.path));
     }
@@ -81,6 +82,7 @@ async function main() {
     await assertFile(packageDir, 'src/visual-review-aggregation.js');
     await assertFile(packageDir, 'src/agentic-human-review.js');
     await assertFile(packageDir, 'src/agentic-human-review-providers.js');
+    await assertFile(packageDir, 'src/agentic-human-review-responses-adapter.js');
     await assertFile(packageDir, 'schemas/agent-execution.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-proposal.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-provider-readiness.schema.json');
@@ -335,6 +337,10 @@ async function main() {
     assert.equal(typeof api.runAgenticHumanReviewRun, 'function');
     assert.equal(typeof api.runAgenticHumanReviewStatus, 'function');
     assert.equal(typeof api.runAgenticHumanReviewList, 'function');
+    assert.equal(typeof api.startAgenticHumanReviewResponsesAdapter, 'function');
+    assert.equal(typeof api.handleAgenticHumanReviewResponsesAdapterRequest, 'function');
+    assert.equal(typeof api.buildOpenAiResponsesRequest, 'function');
+    assert.equal(typeof api.parseOpenAiResponsesAdvisory, 'function');
     assert.equal(typeof api.resolveAgenticHumanReviewProvider, 'function');
     assert.equal(typeof api.agenticProviderCapabilityContract, 'function');
     assert.equal(typeof api.agenticProviderCapabilityHash, 'function');
