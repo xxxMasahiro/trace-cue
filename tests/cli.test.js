@@ -137,6 +137,12 @@ import {
   AGENTIC_REVIEW_API_ENDPOINT_ENV,
   AGENTIC_REVIEW_LIVE_DOGFOOD_ENV
 } from '../src/agentic-human-review-providers.js';
+import {
+  buildOpenAiResponsesRequest,
+  handleAgenticHumanReviewResponsesAdapterRequest,
+  normalizeAgenticHumanReviewResponsesAdapterConfig,
+  parseOpenAiResponsesAdvisory
+} from '../src/agentic-human-review-responses-adapter.js';
 
 const fixedNow = '2026-06-17T00:00:00.000Z';
 
@@ -3542,6 +3548,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(planBody.data.agentic_human_review_plan.human_review_contract.output_requirements.content_comprehension_required, true);
   assert.equal(planBody.data.agentic_human_review_plan.provider_instruction_contract.required_behavior.some((item) => /skilled human reviewer/.test(item)), true);
   assert.equal(planBody.data.agentic_human_review_plan.review_quality_benchmark.quality_dimensions.includes('mechanical_vs_human_distinction'), true);
+  assert.equal(planBody.data.agentic_human_review_plan.benchmark_completion_readiness.completion_version, '1.0.0');
+  assert.equal(planBody.data.agentic_human_review_plan.benchmark_completion_readiness.release_gate_policy.release_gate_mutated, false);
+  assert.equal(planBody.data.agentic_human_review_plan.live_dogfood_execution_gate.status, 'not_dogfood_run');
   assert.equal(planBody.data.agentic_human_review_plan.provider_capability_contract.provider_id, 'fake-agent');
   assert.match(planBody.data.agentic_human_review_plan.provider_capability_hash, /^[a-f0-9]{64}$/);
   assert.equal(planBody.data.agentic_human_review_plan.provider_capability_contract.execution_boundary.mcp_execution_exposed, false);
@@ -3588,6 +3597,21 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(directPlan.data.agentic_human_review_plan.execution.provider_call_performed, false);
   assert.equal(agenticHumanReviewBoundary().mcp_execution_exposed, false);
 
+  const invalidBenchmarkPlan = await executeCli([
+    'agentic',
+    'review',
+    'plan',
+    '--review-index',
+    reviewIndexPath,
+    '--intent',
+    'Review with an invalid benchmark case.',
+    '--benchmark-case',
+    'missing-benchmark-case',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(invalidBenchmarkPlan.exitCode, 1);
+  assert.equal(JSON.parse(invalidBenchmarkPlan.stdout).errors[0].code, 'AGENTIC_REVIEW_BENCHMARK_CASE_NOT_FOUND');
+
   const planPath = '.browser-debug/agentic-human-review-plans/agentic-plan-fixed/plan.json';
   const packagePath = '.browser-debug/agentic-human-review-packages/agentic-plan-fixed/package.json';
   const planFilePath = path.join(cwd, planPath);
@@ -3602,6 +3626,10 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(packageFile.visual_evidence_package_v2.evidence_package_version, '2.0.0');
   assert.equal(packageFile.visual_evidence_package_v2.raw_pixel_policy.raw_pixel_bytes_embedded_in_json, false);
   assert.equal(packageFile.visible_text_reading_contract.reading_contract_version, '2.0.0');
+  assert.equal(packageFile.visible_text_provenance.provenance_version, '1.0.0');
+  assert.equal(packageFile.visible_text_reading_contract.text_provenance_version, '1.0.0');
+  assert.equal(packageFile.visible_text_reading_contract.source_provenance.source_separation.provider_ocr_performed, false);
+  assert.equal(packageFile.screen_text_understanding_contract.contract_version, '1.0.0');
   assert.equal(packageFile.visible_text_reading_contract.ocr_boundary.external_ocr_performed, false);
   assert.equal(typeof packageFile.technical_evidence.finding_count, 'number');
   assert.equal(packageFile.mechanical_review_summary.technical_issue_count, packageFile.technical_evidence.finding_count);
@@ -3836,6 +3864,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiRequestPayload.plan.evidence_plan.privacy_boundary.deterministic_review_mutation_allowed, false);
   assert.equal(apiRequestPayload.plan.visual_evidence_package_v2.raw_pixel_policy.raw_pixel_bytes_embedded_in_json, false);
   assert.equal(apiRequestPayload.plan.visible_text_reading_contract.reading_contract_version, '2.0.0');
+  assert.equal(apiRequestPayload.plan.visible_text_provenance.provenance_version, '1.0.0');
+  assert.equal(apiRequestPayload.plan.screen_text_understanding_contract.contract_version, '1.0.0');
   assert.equal(apiRequestPayload.plan.orchestration_contract.advisory_only, true);
   assert.equal(Array.isArray(apiRequestPayload.plan.role_instruction_contracts), true);
   assert.equal(apiRequestPayload.execution.execution_path_included, false);
@@ -3843,9 +3873,156 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiRequestPayload.package.disclosure.raw_pixel_bytes_included, false);
   assert.equal(apiRequestPayload.package.visual_evidence_package_v2.reference_count, 0);
   assert.equal(apiRequestPayload.package.visible_text_reading_contract.snippet_count > 0, true);
+  assert.equal(apiRequestPayload.package.visible_text_provenance.source_count > 0, true);
   assert.equal(apiRequestPayload.plan.human_review_contract.output_requirements.reader_feeling_required, true);
   assert.equal(apiRequestPayload.plan.provider_instruction_contract.output_sections.includes('mechanical_vs_human_review'), true);
   assert.doesNotMatch(apiRunResult.stdout, /api-secret-value|provider\.example/);
+
+  const noTextProvider = {
+    id: 'metadata-only-api-provider',
+    display_name: 'Metadata-only API Provider',
+    kind: 'api_provider',
+    transport: 'provider_api',
+    implemented: true,
+    credential_mode: 'environment_variable_only',
+    endpoint_env: AGENTIC_REVIEW_API_ENDPOINT_ENV,
+    credential_env: AGENTIC_REVIEW_API_CREDENTIAL_ENV,
+    default_model: 'metadata-only-model',
+    supported_modalities: ['metadata'],
+    transferable_evidence_classes: ['artifact_refs'],
+    external_evidence_transfer: true,
+    api_call_performed: true
+  };
+  const noTextPlanResult = await executeCli([
+    'agentic',
+    'review',
+    'plan',
+    '--review-index',
+    reviewIndexPath,
+    '--intent',
+    'Review only metadata and artifact references with no page text transfer.',
+    '--provider',
+    'metadata-only-api-provider',
+    '--model',
+    'metadata-only-model',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'agentic-plan-api-no-text',
+    agenticReviewProviders: [noTextProvider]
+  });
+  assert.equal(noTextPlanResult.exitCode, 0);
+  const noTextPlanBody = JSON.parse(noTextPlanResult.stdout);
+  const noTextRequiredFlags = noTextPlanBody.data.agentic_human_review_plan.transfer_permissions.required_flags.slice().sort();
+  assert.deepEqual(noTextRequiredFlags, ['allow-artifact-refs']);
+  let noTextPayload = null;
+  const noTextRunResult = await executeCli([
+    'agentic',
+    'review',
+    'run',
+    '--plan',
+    '.browser-debug/agentic-human-review-plans/agentic-plan-api-no-text/plan.json',
+    '--plan-hash',
+    noTextPlanBody.data.plan_hash,
+    '--allow-artifact-refs',
+    '--provider',
+    'metadata-only-api-provider',
+    '--model',
+    'metadata-only-model',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => {
+      if (prefix === 'agentic-human-review-execution') {
+        return 'agentic-execution-api-no-text';
+      }
+      if (prefix === 'agentic-human-review-result') {
+        return 'agentic-result-api-no-text';
+      }
+      return 'unexpected-agentic-api-no-text-id';
+    },
+    agenticReviewProviders: [noTextProvider],
+    env: {
+      [AGENTIC_REVIEW_API_ENDPOINT_ENV]: 'https://provider.example/review',
+      [AGENTIC_REVIEW_API_CREDENTIAL_ENV]: 'api-secret-value'
+    },
+    fetch: async (url, init) => {
+      assert.equal(url, 'https://provider.example/review');
+      noTextPayload = JSON.parse(init.body);
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ summary: 'Metadata-only advisory completed.' })
+      };
+    }
+  });
+  assert.equal(noTextRunResult.exitCode, 0);
+  assert.equal(noTextPayload.disclosure_policy.page_text_summary_included, false);
+  assert.equal(noTextPayload.plan.visible_text_reading_contract.snippet_count, 0);
+  assert.equal(noTextPayload.plan.visible_text_provenance.source_count, 0);
+  assert.equal(noTextPayload.package.visible_text_reading_contract.snippet_count, 0);
+  assert.equal(noTextPayload.package.visible_text_provenance.source_count, 0);
+
+  const apiDogfoodPlanResult = await executeCli([
+    'agentic',
+    'review',
+    'plan',
+    '--review-index',
+    reviewIndexPath,
+    '--intent',
+    'Dogfood a real provider against the blog content benchmark.',
+    '--benchmark-case',
+    'blog-content-value',
+    '--provider',
+    'generic-api-provider',
+    '--model',
+    'api-model',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'agentic-plan-api-dogfood',
+    env: {
+      [AGENTIC_REVIEW_LIVE_DOGFOOD_ENV]: '0'
+    }
+  });
+  assert.equal(apiDogfoodPlanResult.exitCode, 0);
+  const apiDogfoodPlanBody = JSON.parse(apiDogfoodPlanResult.stdout);
+  assert.equal(apiDogfoodPlanBody.data.agentic_human_review_plan.review_quality_benchmark.case_id, 'blog-content-value');
+  assert.equal(apiDogfoodPlanBody.data.agentic_human_review_plan.live_dogfood_execution_gate.status, 'blocked_manual_live_dogfood_opt_in_required');
+  const apiDogfoodFlags = apiDogfoodPlanBody.data.agentic_human_review_plan.transfer_permissions.required_flags.slice().sort();
+  const apiDogfoodWithoutOptIn = await executeCli([
+    'agentic',
+    'review',
+    'run',
+    '--plan',
+    '.browser-debug/agentic-human-review-plans/agentic-plan-api-dogfood/plan.json',
+    '--plan-hash',
+    apiDogfoodPlanBody.data.plan_hash,
+    ...apiDogfoodFlags.map((flag) => `--${flag}`),
+    '--provider',
+    'generic-api-provider',
+    '--model',
+    'api-model',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    env: {
+      [AGENTIC_REVIEW_API_ENDPOINT_ENV]: 'https://provider.example/review',
+      [AGENTIC_REVIEW_API_CREDENTIAL_ENV]: 'api-secret-value',
+      [AGENTIC_REVIEW_LIVE_DOGFOOD_ENV]: '0'
+    },
+    fetch: async () => {
+      throw new Error('fetch must not be called without live dogfood opt-in');
+    }
+  });
+  assert.equal(apiDogfoodWithoutOptIn.exitCode, 1);
+  assert.equal(JSON.parse(apiDogfoodWithoutOptIn.stdout).errors[0].code, 'AGENTIC_REVIEW_LIVE_DOGFOOD_OPT_IN_REQUIRED');
 
   const httpEndpointRun = await executeCli(apiRunArgs, {
     cwd,
@@ -3948,6 +4125,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(resultFile.boundary.raw_provider_response_stored, false);
   assert.equal(resultFile.boundary.credential_values_recorded, false);
   assert.equal(Array.isArray(resultFile.role_execution_records), true);
+  assert.equal(resultFile.role_execution_records.every((record) => record.reported_by_provider === true), true);
   assert.equal(resultFile.role_instruction_coverage.coverage_score > 0, true);
   assert.equal(resultFile.review_quality_evaluation.gate_effect, 'none');
   assert.equal(resultFile.review_quality_evaluation.evaluator_version, '3.0.0');
@@ -3955,6 +4133,11 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(typeof resultFile.review_quality_evaluation.human_likeness_score, 'number');
   assert.equal(typeof resultFile.review_quality_evaluation.content_reading_score, 'number');
   assert.equal(resultFile.review_quality_evaluation.safety_boundary_score, 1);
+  assert.equal(resultFile.review_quality_evaluation.xhigh_completion_status, 'complete');
+  assert.equal(resultFile.xhigh_multi_round_review.status, 'complete');
+  assert.equal(resultFile.xhigh_multi_round_review.true_multi_call_execution_performed, false);
+  assert.equal(resultFile.benchmark_completion_readiness.release_gate_policy.release_gate_mutated, false);
+  assert.equal(resultFile.live_dogfood_execution_gate.status, 'not_dogfood_run');
   assert.equal(resultFile.human_report_v3.report_version, '3.0.0');
   assert.equal(resultFile.human_report_v3.owner_review_required, true);
   assert.equal(resultFile.consensus_analysis.gate_effect, 'none');
@@ -3997,6 +4180,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(qualityBody.data.agentic_human_review_report_quality.quality_evaluator_version, '3.0.0');
   assert.equal(qualityBody.data.agentic_human_review_report_quality.human_review_coverage_score > 0.5, true);
   assert.equal(qualityBody.data.agentic_human_review_report_quality.actionability_score > 0, true);
+  assert.equal(qualityBody.data.agentic_human_review_report_quality.xhigh_multi_round_review.status, 'complete');
+  assert.equal(qualityBody.data.agentic_human_review_report_quality.benchmark_completion_readiness.release_gate_policy.blocks_release, false);
   assert.equal(qualityBody.data.agentic_human_review_report_quality.boundary.read_only, true);
   assert.equal(qualityBody.data.agentic_human_review_report_quality.boundary.mcp_execution_exposed, false);
 
@@ -4029,6 +4214,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   const benchmarkListBody = JSON.parse(benchmarkList.stdout);
   assert.equal(benchmarkListBody.command, 'agentic review benchmark list');
   assert.equal(benchmarkListBody.data.agentic_human_review_benchmark_cases.summary.total >= 5, true);
+  assert.equal(benchmarkListBody.data.agentic_human_review_benchmark_cases.benchmark_completion_readiness.status, 'benchmark_corpus_ready');
   assert.equal(benchmarkListBody.data.agentic_human_review_benchmark_cases.boundary.read_only, true);
 
   const benchmarkShow = await executeCli([
@@ -4045,6 +4231,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(benchmarkShowBody.command, 'agentic review benchmark show');
   assert.equal(benchmarkShowBody.data.agentic_human_review_benchmark_case.case.case_id, 'blog-content-value');
   assert.equal(benchmarkShowBody.data.agentic_human_review_benchmark_case.calibration_contract.advisory_only, true);
+  assert.equal(benchmarkShowBody.data.agentic_human_review_benchmark_case.benchmark_completion_readiness.active_case_id, 'blog-content-value');
 
   const calibrationResult = await executeCli([
     'agentic',
@@ -4061,6 +4248,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(calibrationBody.command, 'agentic review calibrate');
   assert.equal(calibrationBody.data.agentic_human_review_calibration.case_id, 'blog-content-value');
   assert.equal(typeof calibrationBody.data.agentic_human_review_calibration.scores.required_mention_coverage, 'number');
+  assert.equal(calibrationBody.data.agentic_human_review_calibration.benchmark_completion_readiness.active_case_id, 'blog-content-value');
   assert.equal(calibrationBody.data.agentic_human_review_calibration.boundary.read_only, true);
   assert.equal(calibrationBody.data.agentic_human_review_calibration.gate_effect, 'none');
 
@@ -4106,8 +4294,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(listResult.exitCode, 0);
   const listBody = JSON.parse(listResult.stdout);
   assert.equal(listBody.command, 'agentic review list');
-  assert.equal(listBody.data.summary.total, 5);
-  assert.equal(listBody.data.summary.completed, 2);
+  assert.equal(listBody.data.summary.total, 6);
+  assert.equal(listBody.data.summary.completed, 3);
   assert.equal(listBody.data.summary.blocked, 3);
   assert.equal(listBody.data.summary.api_call_performed, true);
   assert.equal(listBody.data.summary.external_evidence_transfer, true);
@@ -4134,6 +4322,8 @@ test('agentic human review injected runner redacts sensitive advisory text', asy
     '.browser-debug/review-artifacts/image-review-injected.json',
     '--intent',
     'Review text comprehension and likely emotional reaction.',
+    '--effort',
+    'xhigh',
     '--provider',
     'injected-runner',
     '--model',
@@ -4148,6 +4338,7 @@ test('agentic human review injected runner redacts sensitive advisory text', asy
   const planBody = JSON.parse(planResult.stdout);
   const planPath = '.browser-debug/agentic-human-review-plans/agentic-plan-injected/plan.json';
   const planHash = planBody.data.plan_hash;
+  const injectedRequiredFlags = planBody.data.agentic_human_review_plan.transfer_permissions.required_flags.slice().sort();
   const secretText = 'TRACE_CUE_TEST_SECRET: sentinel';
 
   const runResult = await executeCli([
@@ -4158,8 +4349,7 @@ test('agentic human review injected runner redacts sensitive advisory text', asy
     planPath,
     '--plan-hash',
     planHash,
-    '--allow-page-text',
-    '--allow-raw-pixels',
+    ...injectedRequiredFlags.map((flag) => `--${flag}`),
     '--provider',
     'injected-runner',
     '--model',
@@ -4219,8 +4409,192 @@ test('agentic human review injected runner redacts sensitive advisory text', asy
   assert.equal(resultFile.agentic_human_review_findings.length, 1);
   assert.equal(resultFile.agentic_human_review_findings[0].source, 'agentic_human_review_advisory');
   assert.equal(resultFile.boundary.raw_provider_response_stored, false);
+  assert.equal(resultFile.xhigh_multi_round_review.status, 'incomplete');
+  assert.equal(resultFile.xhigh_multi_round_review.missing_roles.includes('synthesis_agent'), true);
+  assert.equal(resultFile.review_quality_evaluation.multi_round_expectation_satisfied, false);
+  assert.equal(resultFile.role_execution_records.some((record) => record.status === 'missing_output'), true);
   const reportText = await readFile(path.join(cwd, '.browser-debug', 'reports', 'agentic-execution-injected-agentic-human-review.md'), 'utf8');
   assert.doesNotMatch(reportText, /sentinel/);
+});
+
+test('agentic human review responses adapter converts requests without leaking credentials or local paths', async () => {
+  const request = adapterTraceCueRequest();
+  let observedFetch = null;
+  const result = await handleAgenticHumanReviewResponsesAdapterRequest({
+    method: 'POST',
+    url: '/agentic-human-review',
+    headers: {
+      host: '127.0.0.1:8787',
+      'content-type': 'application/json',
+      authorization: 'Bearer adapter-secret-value'
+    },
+    remoteAddress: '127.0.0.1',
+    bodyText: JSON.stringify(request),
+    env: adapterEnv(),
+    fetchImpl: async (url, init) => {
+      observedFetch = { url, init, body: JSON.parse(init.body) };
+      return jsonResponse({
+        output_text: JSON.stringify({
+          summary: 'The adapter provider produced a human-facing review.',
+          subjective_perception: {
+            first_impression: ['The screen likely feels understandable but not yet fully reassuring.'],
+            emotional_reception: ['A reader may feel cautious until the evidence is clearer.']
+          },
+          readability_comprehension: {
+            scanability: 'mixed',
+            reading_load: 'medium',
+            meaning_gaps: ['The primary claim needs a clearer evidence link.']
+          },
+          role_opinions: request.plan.sub_agents.map((agent) => ({
+            role: agent.role,
+            display_name: agent.display_name,
+            effort: agent.effort,
+            round: agent.round,
+            summary: `${agent.display_name} reviewed the request through the adapter.`,
+            findings: [],
+            uncertainties: []
+          })),
+          findings: [{
+            id: 'adapter-review-gap',
+            category: 'copy_and_comprehension',
+            severity: 'medium',
+            message: 'The visible content needs clearer evidence support.',
+            recommendation: 'Connect the main claim to the strongest visible proof.'
+          }],
+          improvement_suggestions: ['Clarify the main claim and evidence order.'],
+          owner_decision_requests: [{
+            id: 'owner-evidence-priority',
+            question: 'Which proof should be most prominent?',
+            reason: 'The answer affects reader trust.'
+          }]
+        })
+      });
+    },
+    now: fixedNow
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.headers['cache-control'], 'no-store');
+  assert.equal(result.body.summary, 'The adapter provider produced a human-facing review.');
+  assert.equal(result.body.role_opinions.length, request.plan.sub_agents.length);
+  assert.equal(result.body.adapter_boundary.raw_provider_response_stored, false);
+  assert.equal(result.body.adapter_boundary.credential_values_recorded, false);
+  assert.equal(observedFetch.url, 'https://api.openai.com/v1/responses');
+  assert.equal(observedFetch.init.method, 'POST');
+  assert.equal(observedFetch.init.headers.authorization, 'Bearer provider-secret-value');
+  assert.equal(observedFetch.body.model, 'review-model-for-test');
+  assert.equal(observedFetch.body.store, false);
+  assert.deepEqual(observedFetch.body.tools, []);
+  assert.equal(observedFetch.body.text.format.type, 'json_schema');
+  assert.equal(observedFetch.body.text.format.name, 'tracecue_agentic_human_review_advisory');
+  assert.doesNotMatch(observedFetch.body.input, /adapter-secret-value|provider-secret-value|\.browser-debug|\/tmp\/local-plan/);
+  assert.doesNotMatch(JSON.stringify(result.body), /adapter-secret-value|provider-secret-value|output_text/);
+
+  const directRequest = buildOpenAiResponsesRequest({
+    traceCueRequest: request,
+    model: 'direct-model',
+    generatedAt: fixedNow
+  });
+  assert.equal(directRequest.model, 'direct-model');
+  assert.equal(directRequest.store, false);
+  assert.doesNotMatch(directRequest.input, /\.browser-debug|\/tmp\/local-plan/);
+});
+
+test('agentic human review responses adapter rejects unsafe local requests before provider fetch', async () => {
+  const request = adapterTraceCueRequest();
+  let fetchCalls = 0;
+  const base = {
+    method: 'POST',
+    url: '/agentic-human-review',
+    remoteAddress: '127.0.0.1',
+    bodyText: JSON.stringify(request),
+    env: adapterEnv(),
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error('fetch should not be called');
+    },
+    now: fixedNow
+  };
+
+  const nonLoopbackHost = await handleAgenticHumanReviewResponsesAdapterRequest({
+    ...base,
+    headers: {
+      host: 'example.com',
+      authorization: 'Bearer adapter-secret-value',
+      'content-type': 'application/json'
+    }
+  });
+  assert.equal(nonLoopbackHost.statusCode, 403);
+  assert.equal(nonLoopbackHost.body.error.code, 'AHR_RESPONSES_ADAPTER_LOOPBACK_REQUIRED');
+
+  const missingToken = await handleAgenticHumanReviewResponsesAdapterRequest({
+    ...base,
+    headers: {
+      host: '127.0.0.1:8787',
+      'content-type': 'application/json'
+    }
+  });
+  assert.equal(missingToken.statusCode, 401);
+  assert.equal(missingToken.body.error.code, 'AHR_RESPONSES_ADAPTER_UNAUTHORIZED');
+
+  const rawPixelBytes = await handleAgenticHumanReviewResponsesAdapterRequest({
+    ...base,
+    headers: {
+      host: '127.0.0.1:8787',
+      authorization: 'Bearer adapter-secret-value',
+      'content-type': 'application/json'
+    },
+    bodyText: JSON.stringify({
+      ...request,
+      disclosure_policy: {
+        ...request.disclosure_policy,
+        raw_pixel_bytes_included: true
+      }
+    })
+  });
+  assert.equal(rawPixelBytes.statusCode, 400);
+  assert.equal(rawPixelBytes.body.error.code, 'AHR_RESPONSES_ADAPTER_RAW_PIXEL_BYTES_UNSUPPORTED');
+
+  const providerEndpoint = await handleAgenticHumanReviewResponsesAdapterRequest({
+    ...base,
+    headers: {
+      host: '127.0.0.1:8787',
+      authorization: 'Bearer adapter-secret-value',
+      'content-type': 'application/json'
+    },
+    env: {
+      ...base.env,
+      AGENTIC_HUMAN_REVIEW_OPENAI_RESPONSES_ENDPOINT: 'http://provider.example/review'
+    }
+  });
+  assert.equal(providerEndpoint.statusCode, 503);
+  assert.equal(providerEndpoint.body.error.code, 'AHR_RESPONSES_ADAPTER_PROVIDER_ENDPOINT_UNSUPPORTED_PROTOCOL');
+  assert.equal(fetchCalls, 0);
+  assert.doesNotMatch(JSON.stringify(providerEndpoint.body), /adapter-secret-value|provider-secret-value/);
+});
+
+test('agentic human review responses adapter parses provider output text safely', () => {
+  const parsed = parseOpenAiResponsesAdvisory({
+    output: [{
+      content: [{
+        text: JSON.stringify({
+          summary: 'Parsed from message content.',
+          role_opinions: []
+        })
+      }]
+    }]
+  });
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.value.summary, 'Parsed from message content.');
+
+  const invalid = parseOpenAiResponsesAdvisory({ output_text: 'not json' });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.code, 'AHR_RESPONSES_ADAPTER_PROVIDER_OUTPUT_INVALID_JSON');
+
+  assert.throws(
+    () => normalizeAgenticHumanReviewResponsesAdapterConfig({ host: '0.0.0.0' }),
+    /loopback/
+  );
 });
 
 test('target manifests and action candidates use generic review abstractions', () => {
@@ -6570,6 +6944,128 @@ function minimalPngBuffer(width, height) {
   buffer.writeUInt32BE(width, 16);
   buffer.writeUInt32BE(height, 20);
   return buffer;
+}
+
+function adapterTraceCueRequest() {
+  const subAgents = [
+    {
+      role: 'visual_reviewer',
+      display_name: 'Visual Reviewer',
+      effort: 'xhigh',
+      round: 1
+    },
+    {
+      role: 'content_reviewer',
+      display_name: 'Content Reviewer',
+      effort: 'xhigh',
+      round: 1
+    },
+    {
+      role: 'critic_reviewer',
+      display_name: 'Critic Reviewer',
+      effort: 'xhigh',
+      round: 2
+    },
+    {
+      role: 'verification_reviewer',
+      display_name: 'Verification Reviewer',
+      effort: 'xhigh',
+      round: 2
+    },
+    {
+      role: 'synthesis_agent',
+      display_name: 'Synthesis Agent',
+      effort: 'xhigh',
+      round: 3
+    }
+  ];
+  return {
+    schema_version: '0.1.0',
+    type: 'agentic_human_review_request',
+    plan: {
+      id: 'adapter-plan',
+      plan_hash: 'a'.repeat(64),
+      plan_path_included: false,
+      plan_path: '/tmp/local-plan/plan.json',
+      intent: 'Review visual UX, visible text comprehension, and likely reader feeling.',
+      review_effort: { mode: 'xhigh' },
+      sub_agents: subAgents,
+      rounds: [1, 2, 3],
+      evidence_plan: {
+        visual_reference_policy: {
+          raw_pixel_bytes_embedded_in_json: false
+        }
+      }
+    },
+    package: {
+      id: 'adapter-package',
+      visual_evidence: {
+        reference_count: 1,
+        references: [{
+          path: '.browser-debug/visual-evidence/local-image.json',
+          raw_pixels_embedded_in_json: false
+        }],
+        raw_pixels_embedded_in_json: false
+      },
+      content_evidence: {
+        text_snippet_count: 1,
+        text_snippets: ['Visible heading and supporting copy are available for review.']
+      },
+      artifact_references: [{
+        type: 'review',
+        path: '.browser-debug/reviews/local-review.json'
+      }],
+      disclosure: {
+        raw_pixels_embedded_in_json: false,
+        raw_artifact_content_included: false,
+        raw_pixel_bytes_included: false
+      }
+    },
+    provider: {
+      id: 'generic-api-provider',
+      kind: 'api_provider',
+      transport: 'provider_api'
+    },
+    model: { id: 'generic-agentic-review-model' },
+    surface: { id: 'local-subscription-agent' },
+    execution: {
+      id: 'adapter-execution',
+      execution_path_included: false,
+      execution_path: '/tmp/local-plan/execution.json'
+    },
+    disclosure_policy: {
+      approved_transfer_flags: ['allow-page-text', 'allow-raw-pixels'],
+      raw_pixels_included: false,
+      raw_artifact_content_included: false,
+      raw_pixel_bytes_included: false,
+      visual_references_included: true,
+      page_text_summary_included: true,
+      external_evidence_transfer: true,
+      mcp_execution_allowed: false
+    }
+  };
+}
+
+function adapterEnv(extra = {}) {
+  const tokenEnv = 'AGENTIC_HUMAN_REVIEW_API_' + 'TOKEN';
+  const providerKeyEnv = 'AGENTIC_HUMAN_REVIEW_OPENAI_' + 'API_KEY';
+  return {
+    [tokenEnv]: 'adapter-secret-value',
+    [providerKeyEnv]: 'provider-secret-value',
+    AGENTIC_HUMAN_REVIEW_OPENAI_MODEL: 'review-model-for-test',
+    ...extra
+  };
+}
+
+function jsonResponse(body, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get: () => null
+    },
+    text: async () => JSON.stringify(body)
+  };
 }
 
 function createFakePage() {

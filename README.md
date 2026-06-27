@@ -35,6 +35,7 @@ The goal is to provide an agent-independent Playwright interface that can observ
 - Run explicit CLI-only visual review provider adapters from preparation artifacts and normalize untrusted advisory output without raw pixel transfer, existing review mutation, release gate changes, raw provider response storage, or MCP exposure.
 - Review existing screen, window, and desktop app screenshots through caller-declared capture handoff metadata, with path and SHA-256 matching before provenance reaches visual evidence records.
 - Aggregate multiple existing local visual review results into bounded, source-attributed advisory groups and conflicts without running providers, reading raw pixels, writing artifacts, or exposing MCP execution.
+- Run a loopback-only Agentic Human Review Responses adapter so the existing generic provider contract can dogfood a live Responses-compatible model without sending credentials through CLI arguments, storing raw provider responses, exposing MCP execution, or changing deterministic gates.
 
 ## Current Status
 
@@ -43,6 +44,8 @@ This repository has completed the Free Development scaffold, local Git initializ
 Slice 5 / Phase 74-78 additionally exposes the existing agent execution plan/run flow through the stdio `admin` MCP profile for deterministic fake providers, configured local runner callbacks, and env-only generic API providers. Safe and full MCP profiles remain non-execution profiles, HTTP MCP remains safe-only, and provider readiness still reports status/list metadata without calling providers.
 
 Slices 6-25 / Phase 79-155 add cleanup plan hardening, capture readiness, provider-free localization and translation readiness, local release readiness, artifact-root policy and migration readiness, legacy alias audit/removal readiness, constrained shell readiness, and final hardening readiness. These surfaces are local bounded reports, schemas, dry-run metadata, compatibility helpers, or fail-closed gates. They do not authorize npm publication, real artifact-root migration, legacy alias removal, constrained shell execution, capture execution, translation execution, remote CI triggering, `docs/product/` roadmap promotion, or MCP write/execute expansion beyond the approved stdio `admin` agent execution bridge.
+
+Agentic Human Review now includes a local Responses-compatible adapter for manual live dogfood. Start it with `npm run ahr:responses-adapter`; point the generic provider endpoint at the loopback adapter URL, not directly at the upstream provider. The adapter reads the local bearer token and provider key from environment variables, converts the TraceCue AHR request into a bounded Responses request with `store: false`, and returns normalized advisory JSON only.
 
 ## Integration Modes
 
@@ -96,6 +99,11 @@ node ./bin/trace-cue.js agent execution plan --package .browser-debug/agent-pack
 node ./bin/trace-cue.js agent execution run --execution .browser-debug/agent-executions/<id>/execution.json --package .browser-debug/agent-packages/<id>/packet.json --surface local-subscription-agent --provider fake-agent --model fake-model --execute --json
 node ./bin/trace-cue.js agent execution status --execution .browser-debug/agent-executions/<id>/execution.json --json
 node ./bin/trace-cue.js agent execution list --json
+node ./bin/trace-cue.js agentic review propose --brief "Review first impression, UI/UX, visible text, trust, and likely reader feeling." --review-index .browser-debug/review-artifacts/<id>.json --effort standard --json
+node ./bin/trace-cue.js agentic review plan --proposal .browser-debug/agentic-human-review-proposals/<id>/proposal.json --json
+node ./bin/trace-cue.js agentic review provider-readiness --plan .browser-debug/agentic-human-review-plans/<id>/plan.json --provider generic-api-provider --json
+node ./bin/trace-cue.js agentic review run --plan .browser-debug/agentic-human-review-plans/<id>/plan.json --plan-hash <sha256> --allow-page-text --allow-url --allow-artifact-refs --allow-accessibility-summary --execute --json
+AGENTIC_HUMAN_REVIEW_API_TOKEN=<tok> AGENTIC_HUMAN_REVIEW_OPENAI_API_KEY=<key> AGENTIC_HUMAN_REVIEW_OPENAI_MODEL=<model> npm run ahr:responses-adapter -- --json
 node ./bin/trace-cue.js visual review prepare --review-index .browser-debug/review-artifacts/<id>.json --json
 node ./bin/trace-cue.js visual review run --preparation .browser-debug/visual-review-results/<id>/preparation.json --surface local-subscription-agent --provider fake-agent --model fake-model --execute --json
 node ./bin/trace-cue.js visual review aggregate --preparation .browser-debug/visual-review-results/<id>/preparation.json --json

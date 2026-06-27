@@ -11,6 +11,7 @@ const DEFAULT_MAX_REQUEST_BYTES = 128 * 1024;
 const DEFAULT_MAX_RESPONSE_BYTES = 256 * 1024;
 const CAPABILITY_CONTRACT_VERSION = '2.0.0';
 const REAL_PROVIDER_ADAPTER_CONTRACT_VERSION = '1.0.0';
+const LIVE_DOGFOOD_GATE_VERSION = '1.0.0';
 const KNOWN_PROVIDER_KINDS = new Set(['fake_provider', 'injected_runner', 'api_provider']);
 const KNOWN_TRANSPORTS = new Set(['local_function', 'local_callback', 'provider_api']);
 const KNOWN_TRANSFER_CLASSES = new Set(['raw_pixels', 'page_text', 'dom_summary', 'url', 'artifact_refs', 'accessibility_summary']);
@@ -368,14 +369,52 @@ export function buildAgenticDogfoodSetupReadiness({ provider, context = {} } = {
     endpoint_env: endpointEnv,
     credential_env: credentialEnv,
     live_dogfood_env: AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
-    endpoint_configured: Boolean(endpointEnv && env[endpointEnv]),
-    credential_configured: Boolean(credentialEnv && env[credentialEnv]),
+    endpoint_configured: hasEnvKey(env, endpointEnv),
+    credential_configured: hasEnvKey(env, credentialEnv),
     live_dogfood_enabled: liveDogfoodValue === '1' || String(liveDogfoodValue ?? '').toLowerCase() === 'true',
     manual_live_provider_default: false,
     ci_live_provider_default: false,
     credential_values_read_by_readiness: false,
     credential_values_recorded: false,
     raw_provider_response_stored: false
+  });
+}
+
+export function buildAgenticLiveDogfoodExecutionGate({ provider, plan = {}, context = {}, phase = 'run' } = {}) {
+  const normalized = normalizeProviderDescriptor(provider);
+  const benchmark = plan.review_quality_benchmark ?? {};
+  const dogfood = plan.dogfood_metadata ?? {};
+  const caseId = dogfood.case_id ?? benchmark.case_id ?? null;
+  const dogfoodRequested = Boolean(dogfood.enabled || dogfood.case_id || benchmark.enabled || benchmark.case_id);
+  const providerApi = normalized.transport === 'provider_api' || normalized.external_evidence_transfer === true;
+  const optInEnabled = isLiveDogfoodOptInEnabled(context);
+  const requiredForExecution = providerApi && dogfoodRequested;
+  const status = requiredForExecution
+    ? (optInEnabled ? 'manual_live_dogfood_authorized' : 'blocked_manual_live_dogfood_opt_in_required')
+    : (dogfoodRequested ? 'local_or_non_api_dogfood_ready' : 'not_dogfood_run');
+  return redact({
+    schema_version: SCHEMA_VERSION,
+    gate_version: LIVE_DOGFOOD_GATE_VERSION,
+    phase,
+    status,
+    provider_id: normalized.id,
+    provider_transport: normalized.transport,
+    provider_api: providerApi,
+    dogfood_requested: dogfoodRequested,
+    benchmark_case_id: caseId,
+    required_for_execution: requiredForExecution,
+    live_dogfood_env: AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
+    live_dogfood_opt_in_enabled: requiredForExecution ? optInEnabled : null,
+    manual_live_provider_default: false,
+    ci_live_provider_default: false,
+    provider_call_performed: false,
+    api_call_performed: false,
+    credential_values_recorded: false,
+    raw_provider_response_stored: false,
+    deterministic_findings_mutated: false,
+    release_gate_mutated: false,
+    advisory_only: true,
+    gate_effect: 'none'
   });
 }
 
@@ -758,6 +797,7 @@ function normalizeProviderDescriptor(provider) {
 }
 
 function buildAgenticApiPayload({ plan, planPath, reviewPackage, transferFlags, provider, model, surface, execution }) {
+  const filteredPackage = filterReviewPackageForTransfer(reviewPackage, transferFlags);
   return redact({
     schema_version: SCHEMA_VERSION,
     type: 'agentic_human_review_request',
@@ -773,8 +813,10 @@ function buildAgenticApiPayload({ plan, planPath, reviewPackage, transferFlags, 
       rubric: plan.rubric,
       rubric_profile: plan.rubric_profile ?? null,
       evidence_plan: plan.evidence_plan ?? reviewPackage?.evidence_plan ?? null,
-      visual_evidence_package_v2: reviewPackage?.visual_evidence_package_v2 ?? null,
-      visible_text_reading_contract: reviewPackage?.visible_text_reading_contract ?? null,
+      visual_evidence_package_v2: filteredPackage.visual_evidence_package_v2 ?? null,
+      visible_text_reading_contract: filteredPackage.visible_text_reading_contract ?? null,
+      visible_text_provenance: filteredPackage.visible_text_provenance ?? null,
+      screen_text_understanding_contract: filteredPackage.screen_text_understanding_contract ?? null,
       human_review_contract: plan.human_review_contract ?? null,
       provider_instruction_contract: plan.provider_instruction_contract ?? null,
       role_instruction_contracts: plan.role_instruction_contracts ?? null,
@@ -784,7 +826,7 @@ function buildAgenticApiPayload({ plan, planPath, reviewPackage, transferFlags, 
       provider_capability_hash: plan.provider_capability_hash ?? null,
       dogfood_metadata: plan.dogfood_metadata ?? null
     },
-    package: filterReviewPackageForTransfer(reviewPackage, transferFlags),
+    package: filteredPackage,
     provider: {
       id: provider.id,
       kind: provider.kind,
@@ -873,6 +915,12 @@ function filterReviewPackageForTransfer(reviewPackage, transferFlags) {
           advisory_only: true,
           gate_effect: 'none'
         },
+    visible_text_provenance: flags.has('allow-page-text')
+      ? reviewPackage?.visible_text_provenance ?? null
+      : buildFilteredVisibleTextProvenance(reviewPackage?.visible_text_provenance),
+    screen_text_understanding_contract: flags.has('allow-page-text')
+      ? reviewPackage?.screen_text_understanding_contract ?? null
+      : buildFilteredScreenTextUnderstandingContract(reviewPackage?.screen_text_understanding_contract),
     semantic_evidence: flags.has('allow-accessibility-summary') ? reviewPackage?.semantic_evidence ?? null : null,
     artifact_references: flags.has('allow-artifact-refs') ? reviewPackage?.artifact_references ?? [] : [],
     rubric_profile: reviewPackage?.rubric_profile ?? null,
@@ -888,6 +936,37 @@ function filterReviewPackageForTransfer(reviewPackage, transferFlags) {
   };
 }
 
+function buildFilteredVisibleTextProvenance(provenance) {
+  return {
+    schema_version: SCHEMA_VERSION,
+    provenance_version: provenance?.provenance_version ?? null,
+    source_count: 0,
+    sources: [],
+    source_separation: {
+      page_text_transferred: false,
+      local_ocr_performed: false,
+      provider_ocr_performed: false,
+      raw_dom_included: false,
+      raw_report_body_included: false
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildFilteredScreenTextUnderstandingContract(contract) {
+  return {
+    schema_version: SCHEMA_VERSION,
+    contract_version: contract?.contract_version ?? null,
+    snippet_count: 0,
+    reviewer_tasks: contract?.reviewer_tasks ?? [],
+    external_ocr_performed: false,
+    provider_ocr_allowed_only_after_approved_visual_transfer: true,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
 function filterExistingReviewState(existingReviewState) {
   if (!existingReviewState || typeof existingReviewState !== 'object') {
     return null;
@@ -899,6 +978,19 @@ function filterExistingReviewState(existingReviewState) {
     deterministic_review_path_included: false,
     deterministic_review_mutation_allowed: false
   };
+}
+
+function hasEnvKey(env, key) {
+  if (!env || !key) {
+    return false;
+  }
+  return Object.prototype.hasOwnProperty.call(env, key);
+}
+
+function isLiveDogfoodOptInEnabled(context = {}) {
+  const env = context.env ?? process.env;
+  const value = env[AGENTIC_REVIEW_LIVE_DOGFOOD_ENV];
+  return value === '1' || String(value ?? '').toLowerCase() === 'true';
 }
 
 function isLoopbackHost(hostname) {

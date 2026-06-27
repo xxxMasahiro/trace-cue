@@ -15,6 +15,7 @@ import { CLI_NAME, DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js'
 import { redact, redactString, truncateText } from './redaction.js';
 import {
   AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
+  buildAgenticLiveDogfoodExecutionGate,
   agenticProviderCapabilityContract,
   agenticProviderCapabilityHash,
   buildAgenticDogfoodSetupReadiness,
@@ -32,6 +33,10 @@ export const HUMAN_REVIEW_COMPLETION_ROADMAP_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EVIDENCE_PACKAGE_VERSION = '2.0.0';
 export const HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION = '3.0.0';
 export const HUMAN_REPORT_VERSION = '3.0.0';
+export const HUMAN_REVIEW_TEXT_PROVENANCE_VERSION = '1.0.0';
+export const HUMAN_REVIEW_LIVE_DOGFOOD_GATE_VERSION = '1.0.0';
+export const HUMAN_REVIEW_BENCHMARK_COMPLETION_VERSION = '1.0.0';
+export const HUMAN_REVIEW_XHIGH_COMPLETION_VERSION = '1.0.0';
 
 const DEFAULT_PROVIDER_ID = 'fake-agent';
 const DEFAULT_MODEL_ID = 'fake-model';
@@ -560,7 +565,14 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
     targetAudience: planOptions['target-audience'],
     expectedImpression: planOptions['expected-impression']
   });
-  const benchmarkCase = resolveBenchmarkCase(planOptions['benchmark-case'] ?? planOptions['case-id']);
+  const requestedBenchmarkCaseId = planOptions['benchmark-case'] ?? planOptions['case-id'];
+  const benchmarkCase = resolveBenchmarkCase(requestedBenchmarkCaseId);
+  if (requestedBenchmarkCaseId && !benchmarkCase) {
+    return errorResult('AGENTIC_REVIEW_BENCHMARK_CASE_NOT_FOUND', 'No agentic human review benchmark case matched the requested id.', {
+      case: requestedBenchmarkCaseId,
+      available_cases: BENCHMARK_CASES.map((item) => item.case_id)
+    });
+  }
   const rubricProfile = resolveRubricProfile({
     profileId: planOptions['rubric-profile'],
     benchmarkCase,
@@ -577,6 +589,11 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
     ...reviewPackageBase,
     rubric_profile: rubricProfile,
     evidence_plan: evidencePlan,
+    benchmark_completion_readiness: buildBenchmarkCompletionReadiness({
+      benchmarkCase,
+      rubricProfile,
+      dogfoodMetadata: buildDogfoodMetadataFromOptions(planOptions)
+    }),
     privacy_disclosure_audit: buildPrivacyDisclosureAudit({
       stage: 'package',
       provider: provider.provider,
@@ -656,6 +673,19 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
     orchestration_contract: orchestrationContract,
     role_instruction_contracts: roleInstructionContracts,
     dogfood_metadata: buildDogfoodMetadataFromOptions(planOptions),
+    live_dogfood_execution_gate: buildAgenticLiveDogfoodExecutionGate({
+      provider: provider.provider,
+      plan: {
+        dogfood_metadata: buildDogfoodMetadataFromOptions(planOptions),
+        review_quality_benchmark: buildReviewQualityBenchmarkContract({
+          dogfoodMetadata: buildDogfoodMetadataFromOptions(planOptions),
+          benchmarkCase,
+          rubricProfile
+        })
+      },
+      context,
+      phase: 'plan'
+    }),
     transfer_permissions: transferPermissions,
     evidence_plan: evidencePlan,
     disclosure: {
@@ -690,6 +720,11 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
       dogfoodMetadata: buildDogfoodMetadataFromOptions(planOptions),
       benchmarkCase,
       rubricProfile
+    }),
+    benchmark_completion_readiness: buildBenchmarkCompletionReadiness({
+      benchmarkCase,
+      rubricProfile,
+      dogfoodMetadata: buildDogfoodMetadataFromOptions(planOptions)
     }),
     result_contract: {
       required_output_schema: 'agentic_human_review_advisory',
@@ -1334,6 +1369,7 @@ export async function runAgenticHumanReviewBenchmarkList(options = {}, context =
           advisory_only: true,
           gate_effect: 'none'
         },
+        benchmark_completion_readiness: buildBenchmarkCompletionReadiness(),
         boundary: agenticHumanReviewBoundary({ read_only: true })
       },
       boundary: agenticHumanReviewBoundary({ read_only: true })
@@ -1363,6 +1399,7 @@ export async function runAgenticHumanReviewBenchmarkShow(options = {}, context =
         case: benchmarkCase,
         rubric_profile: rubricProfile,
         calibration_contract: buildCalibrationContractForCase(benchmarkCase, rubricProfile),
+        benchmark_completion_readiness: buildBenchmarkCompletionReadiness({ benchmarkCase, rubricProfile }),
         boundary: agenticHumanReviewBoundary({ read_only: true })
       },
       boundary: agenticHumanReviewBoundary({ read_only: true })
@@ -1541,6 +1578,7 @@ function buildReviewPackage({
   const artifactRefs = normalizeArtifactReferences(reviewIndex.artifacts);
   const review = reviewArtifact.value ?? {};
   const textSnippets = extractTextSnippets(review);
+  const visibleTextProvenance = buildVisibleTextProvenance({ textSnippets, review });
   const route = stringOrNull(review.review?.final_url ?? review.review?.input_url ?? review.final_url ?? review.input_url);
   const viewport = review.review?.viewport ?? review.environment?.viewport ?? null;
   return redact({
@@ -1590,7 +1628,18 @@ function buildReviewPackage({
       raw_dom_included: false,
       raw_report_body_included: false
     },
-    visible_text_reading_contract: buildVisibleTextReadingContract({ textSnippets, review, intent }),
+    visible_text_provenance: visibleTextProvenance,
+    visible_text_reading_contract: buildVisibleTextReadingContract({
+      textSnippets,
+      review,
+      intent,
+      visibleTextProvenance
+    }),
+    screen_text_understanding_contract: buildScreenTextUnderstandingContract({
+      textSnippets,
+      intent,
+      visibleTextProvenance
+    }),
     semantic_evidence: {
       accessibility_summary: summarizeAccessibility(review),
       information_architecture_summary: summarizeInformationArchitecture(review),
@@ -1672,19 +1721,89 @@ function buildVisualEvidencePackageV2({ artifactRefs, review, viewport }) {
   };
 }
 
-function buildVisibleTextReadingContract({ textSnippets, review, intent }) {
-  const headings = normalizeStringArray(review.evidence_summary?.headings ?? review.layout?.headings)
+function buildVisibleTextProvenance({ textSnippets, review }) {
+  const visibleText = stringOrNull(review.evidence_summary?.visible_text ?? review.page?.visible_text);
+  const headings = visibleTextItems(review.evidence_summary?.headings ?? review.layout?.headings);
+  const actionTexts = visibleTextItems(review.evidence_summary?.action_texts ?? review.action_candidates);
+  const sources = [
+    visibleText
+      ? {
+          source: 'dom_visible_text_bounded_summary',
+          item_count: 1,
+          character_count: visibleText.length,
+          bounded: true,
+          content_included: true
+        }
+      : null,
+    headings.length > 0
+      ? {
+          source: 'heading_text',
+          item_count: headings.length,
+          character_count: headings.join(' ').length,
+          bounded: true,
+          content_included: true
+        }
+      : null,
+    actionTexts.length > 0
+      ? {
+          source: 'action_text',
+          item_count: actionTexts.length,
+          character_count: actionTexts.join(' ').length,
+          bounded: true,
+          content_included: true
+        }
+      : null,
+    textSnippets.length > 0
+      ? {
+          source: 'deterministic_review_summary',
+          item_count: textSnippets.length,
+          character_count: textSnippets.map((item) => item.text).join(' ').length,
+          bounded: true,
+          content_included: true
+        }
+      : null
+  ].filter(Boolean);
+  return {
+    schema_version: SCHEMA_VERSION,
+    provenance_version: HUMAN_REVIEW_TEXT_PROVENANCE_VERSION,
+    source_count: sources.length,
+    sources,
+    source_separation: {
+      dom_visible_text_included_as_bounded_summary: Boolean(visibleText),
+      headings_included: headings.length > 0,
+      action_text_included: actionTexts.length > 0,
+      deterministic_review_text_included: textSnippets.length > 0,
+      local_ocr_performed: false,
+      provider_ocr_performed: false,
+      raw_dom_included: false,
+      raw_report_body_included: false
+    },
+    ocr_status: {
+      external_ocr_performed: false,
+      local_ocr_performed: false,
+      provider_ocr_performed: false,
+      provider_ocr_requires_approved_visual_transfer: true
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildVisibleTextReadingContract({ textSnippets, review, intent, visibleTextProvenance }) {
+  const headings = visibleTextItems(review.evidence_summary?.headings ?? review.layout?.headings)
     .slice(0, 20)
     .map((text) => truncateText(text, 180));
-  const actionTexts = normalizeStringArray(review.evidence_summary?.action_texts ?? review.action_candidates?.map?.((item) => item.text))
+  const actionTexts = visibleTextItems(review.evidence_summary?.action_texts ?? review.action_candidates)
     .slice(0, 20)
     .map((text) => truncateText(text, 180));
   return {
     schema_version: SCHEMA_VERSION,
     reading_contract_version: HUMAN_REVIEW_EVIDENCE_PACKAGE_VERSION,
+    text_provenance_version: visibleTextProvenance?.provenance_version ?? HUMAN_REVIEW_TEXT_PROVENANCE_VERSION,
     intent: truncateText(intent, 900),
     snippet_count: textSnippets.length,
     bounded_text_snippets: textSnippets.slice(0, MAX_TEXT_SNIPPETS),
+    source_provenance: visibleTextProvenance ?? null,
     heading_summary: {
       count: headings.length,
       items: headings
@@ -1705,6 +1824,31 @@ function buildVisibleTextReadingContract({ textSnippets, review, intent }) {
       raw_dom_included: false,
       raw_report_body_included: false
     },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildScreenTextUnderstandingContract({ textSnippets, intent, visibleTextProvenance }) {
+  return {
+    schema_version: SCHEMA_VERSION,
+    contract_version: HUMAN_REVIEW_TEXT_PROVENANCE_VERSION,
+    intent: truncateText(intent, 900),
+    snippet_count: textSnippets.length,
+    text_source_count: visibleTextProvenance?.source_count ?? 0,
+    reviewer_tasks: [
+      'read the bounded visible text before making subjective claims',
+      'separate what the page says from how the UI makes that message feel',
+      'call out likely reader confusion, trust gaps, and missing context',
+      'state when OCR or raw-pixel inspection was not performed'
+    ],
+    source_requirements: {
+      distinguish_dom_visible_text_from_review_summary: true,
+      distinguish_heading_and_action_text: true,
+      do_not_claim_ocr_when_external_ocr_performed_is_false: true
+    },
+    external_ocr_performed: false,
+    provider_ocr_allowed_only_after_approved_visual_transfer: true,
     advisory_only: true,
     gate_effect: 'none'
   };
@@ -1820,6 +1964,10 @@ function buildCalibrationResult({ result, resultPath, benchmarkCase, now }) {
     required_mentions: requiredMentionHits,
     forbidden_claims: forbiddenClaimHits,
     required_dimensions: requiredDimensionHits,
+    benchmark_completion_readiness: buildBenchmarkCompletionReadiness({
+      benchmarkCase,
+      rubricProfile: { id: benchmarkCase.rubric_profile_id }
+    }),
     passed,
     warnings,
     advisory_only: true,
@@ -2651,9 +2799,23 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     actionPlan: input.agentic_human_review_action_plan
   });
   const dogfoodMetadata = buildDogfoodMetadata({ plan, resultId: id });
+  const benchmarkCase = resolveBenchmarkCase(plan.review_quality_benchmark?.case_id ?? plan.dogfood_metadata?.case_id);
+  const benchmarkCompletionReadiness = buildBenchmarkCompletionReadiness({
+    benchmarkCase,
+    rubricProfile: plan.rubric_profile ?? null,
+    dogfoodMetadata: plan.dogfood_metadata ?? null
+  });
   const roleInstructionCoverage = buildRoleInstructionCoverage({ plan, roleOpinions });
   const consensusAnalysis = buildConsensusAnalysis({ roleOpinions, findings, claims, input });
   const dissentAnalysis = buildDissentAnalysis({ roleOpinions, claims, critiqueRecords, input });
+  const xhighCompletion = buildXhighCompletionAssessment({
+    plan,
+    roleOpinions,
+    roundRecords,
+    critiqueRecords,
+    integrationRecord,
+    roleInstructionCoverage
+  });
   const qualityPreview = buildReportQualityFromParts({
     roleOpinions,
     findings,
@@ -2669,6 +2831,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     roleInstructionCoverage,
     consensusAnalysis,
     dissentAnalysis,
+    xhighCompletion,
     plan
   });
   const calibrationMetadata = buildCalibrationMetadata({ plan, input, quality: qualityPreview });
@@ -2751,9 +2914,12 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     rebuttal_records: rebuttalRecords,
     integration_record: integrationRecord,
     dogfood_metadata: dogfoodMetadata,
+    live_dogfood_execution_gate: transferFlags.live_dogfood_execution_gate ?? plan.live_dogfood_execution_gate ?? null,
+    benchmark_completion_readiness: benchmarkCompletionReadiness,
     calibration_metadata: calibrationMetadata,
     report_quality: qualityPreview,
     review_quality_evaluation: reviewQualityEvaluation,
+    xhigh_multi_round_review: xhighCompletion,
     human_report_v3: humanReportV3,
     consensus_summary: buildConsensusSummary({ roleOpinions, findings, input }),
     dissent_summary: buildDissentSummary({ roleOpinions, input }),
@@ -2849,6 +3015,7 @@ function buildExecutionRecord({
     model,
     surface: surfaceSummary(surface),
     transfer_permissions: transferFlags,
+    live_dogfood_execution_gate: transferFlags.live_dogfood_execution_gate ?? null,
     steps: {
       plan_validation: {
         status: 'completed',
@@ -3052,6 +3219,22 @@ function validateRunRequest({ plan, planPath, suppliedPlanHash, options, context
       current_provider_capability_hash: currentCapabilityHash
     });
   }
+  const liveDogfoodExecutionGate = buildAgenticLiveDogfoodExecutionGate({
+    provider: provider.provider,
+    plan,
+    context,
+    phase: 'run'
+  });
+  if (liveDogfoodExecutionGate.status === 'blocked_manual_live_dogfood_opt_in_required') {
+    return validationError('AGENTIC_REVIEW_LIVE_DOGFOOD_OPT_IN_REQUIRED', 'Real provider dogfood execution requires explicit live dogfood opt-in before the provider API can be called.', {
+      provider: provider.provider.id,
+      live_dogfood_env: liveDogfoodExecutionGate.live_dogfood_env,
+      benchmark_case_id: liveDogfoodExecutionGate.benchmark_case_id,
+      provider_call_performed: false,
+      api_call_performed: false,
+      raw_provider_response_stored: false
+    });
+  }
   return {
     ok: true,
     planHash: recomputedHash,
@@ -3064,7 +3247,8 @@ function validateRunRequest({ plan, planPath, suppliedPlanHash, options, context
       supplied_flags: suppliedFlagNames,
       classes: plan.transfer_permissions?.classes ?? {},
       approved_by_cli_execute: true,
-      mcp_transfer_allowed: false
+      mcp_transfer_allowed: false,
+      live_dogfood_execution_gate: liveDogfoodExecutionGate
     }
   };
 }
@@ -3131,6 +3315,7 @@ function buildRunReceipt({ execution, providerResult }) {
     mcp_execution_exposed: false,
     provider_error_code: providerResult.error?.code ?? null,
     failure_diagnostics: providerResult.failure_diagnostics ?? null,
+    live_dogfood_execution_gate: execution.live_dogfood_execution_gate ?? null,
     gate_effect: 'none'
   });
 }
@@ -3839,6 +4024,16 @@ function isVisualReference(artifact) {
 
 function extractTextSnippets(review) {
   const snippets = [];
+  const visibleText = truncateText(review.evidence_summary?.visible_text ?? review.page?.visible_text ?? '', 400);
+  if (visibleText) {
+    snippets.push({ source: 'dom_visible_text_bounded_summary', text: visibleText, content_included: true });
+  }
+  for (const text of visibleTextItems(review.evidence_summary?.headings ?? review.layout?.headings).slice(0, 5)) {
+    snippets.push({ source: 'heading_text', text: truncateText(text, 220), content_included: true });
+  }
+  for (const text of visibleTextItems(review.evidence_summary?.action_texts ?? review.action_candidates).slice(0, 5)) {
+    snippets.push({ source: 'action_text', text: truncateText(text, 220), content_included: true });
+  }
   for (const finding of Array.isArray(review.findings) ? review.findings : []) {
     const text = truncateText(finding.message ?? finding.summary ?? finding.recommendation ?? '', 400);
     if (text) {
@@ -3856,6 +4051,21 @@ function extractTextSnippets(review) {
     snippets.push({ source: 'review_summary', text: reviewSummary, content_included: true });
   }
   return snippets.slice(0, MAX_TEXT_SNIPPETS);
+}
+
+function visibleTextItems(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return values
+    .map((value) => {
+      if (typeof value === 'string') {
+        return value;
+      }
+      return value?.text ?? value?.accessible_name ?? value?.label ?? value?.name ?? null;
+    })
+    .map((value) => truncateText(value ?? '', 300))
+    .filter(Boolean);
 }
 
 function summarizeAccessibility(review) {
@@ -4032,13 +4242,16 @@ function buildProviderInstructionContract({ intent, reviewPackage, orchestration
   };
 }
 
-function buildReviewQualityBenchmarkContract({ dogfoodMetadata = null } = {}) {
+function buildReviewQualityBenchmarkContract({ dogfoodMetadata = null, benchmarkCase = null, rubricProfile = null } = {}) {
+  const caseId = benchmarkCase?.case_id ?? dogfoodMetadata?.case_id ?? null;
   return {
     schema_version: SCHEMA_VERSION,
     benchmark_version: HUMAN_REVIEW_SCHEMA_VERSION,
-    enabled: Boolean(dogfoodMetadata),
-    case_id: dogfoodMetadata?.case_id ?? null,
+    enabled: Boolean(caseId),
+    case_id: caseId,
     fixture_id: dogfoodMetadata?.fixture_id ?? null,
+    fixture_type: benchmarkCase?.fixture_type ?? null,
+    rubric_profile_id: rubricProfile?.id ?? benchmarkCase?.rubric_profile_id ?? null,
     supported_fixture_types: ['blog', 'landing_page', 'commerce_page', 'dashboard', 'article_page', 'image_or_screenshot'],
     quality_dimensions: [
       'human_review_dimension_coverage',
@@ -4049,6 +4262,63 @@ function buildReviewQualityBenchmarkContract({ dogfoodMetadata = null } = {}) {
       'dissent_or_uncertainty',
       'actionability'
     ],
+    required_dimensions: benchmarkCase?.required_dimensions ?? [],
+    required_mentions: benchmarkCase?.required_mentions ?? [],
+    forbidden_claims: benchmarkCase?.forbidden_claims ?? [],
+    thresholds: benchmarkCase?.thresholds ?? { coverage_score: 0.75, actionability_score: 0.6, forbidden_claim_score: 1 },
+    allowed_evidence_classes: benchmarkCase?.allowed_evidence_classes ?? [],
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildBenchmarkCompletionReadiness({ benchmarkCase = null, rubricProfile = null, dogfoodMetadata = null } = {}) {
+  const requiredFixtureTypes = ['blog', 'landing_page', 'commerce_page', 'dashboard', 'article_page', 'image_or_screenshot'];
+  const coveredFixtureTypes = [...new Set(BENCHMARK_CASES.map((item) => item.fixture_type))]
+    .filter((item) => requiredFixtureTypes.includes(item))
+    .sort();
+  const missingFixtureTypes = requiredFixtureTypes.filter((item) => !coveredFixtureTypes.includes(item));
+  const thresholds = benchmarkCase?.thresholds ?? { coverage_score: 0.75, actionability_score: 0.6, forbidden_claim_score: 1 };
+  const activeCaseId = benchmarkCase?.case_id ?? dogfoodMetadata?.case_id ?? null;
+  return {
+    schema_version: SCHEMA_VERSION,
+    completion_version: HUMAN_REVIEW_BENCHMARK_COMPLETION_VERSION,
+    status: missingFixtureTypes.length === 0 ? 'benchmark_corpus_ready' : 'benchmark_corpus_incomplete',
+    active_case_id: activeCaseId,
+    active_fixture_type: benchmarkCase?.fixture_type ?? null,
+    active_rubric_profile_id: rubricProfile?.id ?? benchmarkCase?.rubric_profile_id ?? null,
+    corpus_coverage: {
+      required_fixture_types: requiredFixtureTypes,
+      covered_fixture_types: coveredFixtureTypes,
+      missing_fixture_types: missingFixtureTypes,
+      case_count: BENCHMARK_CASES.length
+    },
+    active_case_requirements: benchmarkCase
+      ? {
+          required_dimensions: benchmarkCase.required_dimensions,
+          required_mentions: benchmarkCase.required_mentions,
+          forbidden_claims: benchmarkCase.forbidden_claims,
+          allowed_evidence_classes: benchmarkCase.allowed_evidence_classes
+        }
+      : null,
+    quality_thresholds: {
+      coverage_score: Number(thresholds.coverage_score ?? 0.75),
+      actionability_score: Number(thresholds.actionability_score ?? 0.6),
+      forbidden_claim_score: Number(thresholds.forbidden_claim_score ?? 1)
+    },
+    live_provider_dogfood_policy: {
+      manual_live_provider_required_for_real_provider_dogfood: true,
+      manual_live_provider_default: false,
+      ci_live_provider_default: false,
+      live_dogfood_env: AGENTIC_REVIEW_LIVE_DOGFOOD_ENV
+    },
+    release_gate_policy: {
+      advisory_only: true,
+      deterministic_gate_unchanged: true,
+      release_gate_mutated: false,
+      blocks_release: false,
+      gate_effect: 'none'
+    },
     advisory_only: true,
     gate_effect: 'none'
   };
@@ -4097,8 +4367,9 @@ function disclosureSummary(transferPermissions) {
 }
 
 function normalizeRoleOpinions(values, plannedAgents = []) {
-  const inputValues = Array.isArray(values) && values.length > 0
-    ? values
+  const actualValues = Array.isArray(values) && values.length > 0 ? values : [];
+  const inputValues = actualValues.length > 0
+    ? actualValues
     : plannedAgents.map((agent) => ({
         role: agent.role,
         display_name: agent.display_name,
@@ -4109,16 +4380,39 @@ function normalizeRoleOpinions(values, plannedAgents = []) {
         uncertainties: ['No role-specific output was returned.'],
         confidence: { evidence: 'inconclusive', judgment: 'inconclusive', implementation: 'inconclusive' }
       }));
-  return inputValues.slice(0, MAX_ROLE_OPINIONS).map((value, index) => ({
-    role: truncateText(value.role ?? plannedAgents[index]?.role ?? `reviewer_${index + 1}`, 120),
-    display_name: truncateText(value.display_name ?? plannedAgents[index]?.display_name ?? 'Reviewer', 160),
-    effort: normalizeSubagentEffort(value.effort).value ?? DEFAULT_SUBAGENT_EFFORT,
-    round: Number.isFinite(Number(value.round)) ? Number(value.round) : 1,
-    summary: secretSafeText(value.summary ?? 'Role-specific advisory review.', 900),
-    findings: normalizeFindings(value.findings, `${value.role ?? 'role'}-${index + 1}`).slice(0, 8),
-    uncertainties: normalizeStringArray(value.uncertainties),
-    confidence: normalizeConfidence(value.confidence)
-  }));
+  const plannedByRole = new Map(plannedAgents.map((agent) => [agent.role, agent]));
+  return inputValues.slice(0, MAX_ROLE_OPINIONS).map((value, index) => {
+    const role = truncateText(value.role ?? plannedAgents[index]?.role ?? `reviewer_${index + 1}`, 120);
+    const planned = plannedByRole.get(role) ?? plannedAgents[index] ?? null;
+    const round = Number.isFinite(Number(value.round))
+      ? Number(value.round)
+      : Number(planned?.round ?? 1);
+    const placeholderGenerated = actualValues.length === 0 || value.placeholder_generated === true || value.reported_by_provider === false;
+    const reportedByProvider = !placeholderGenerated;
+    return {
+      role,
+      display_name: truncateText(value.display_name ?? planned?.display_name ?? 'Reviewer', 160),
+      effort: normalizeSubagentEffort(value.effort ?? planned?.effort).value ?? DEFAULT_SUBAGENT_EFFORT,
+      round,
+      planned_round: Number.isFinite(Number(planned?.round)) ? Number(planned.round) : null,
+      round_matches_plan: planned ? Number(planned.round) === Number(round) : null,
+      planned_role: Boolean(planned),
+      reported_by_provider: reportedByProvider,
+      placeholder_generated: placeholderGenerated,
+      summary: secretSafeText(value.summary ?? 'Role-specific advisory review.', 900),
+      findings: normalizeFindings(value.findings, `${value.role ?? 'role'}-${index + 1}`).slice(0, 8),
+      uncertainties: normalizeStringArray(value.uncertainties),
+      confidence: normalizeConfidence(value.confidence)
+    };
+  });
+}
+
+function isReportedRoleOpinion(opinion) {
+  return Boolean(opinion) && opinion.reported_by_provider !== false && opinion.placeholder_generated !== true;
+}
+
+function reportedRoleOpinions(roleOpinions) {
+  return (roleOpinions ?? []).filter(isReportedRoleOpinion);
 }
 
 function normalizeFindings(values, resultId) {
@@ -4156,7 +4450,7 @@ function normalizeOwnerDecisionRequests(values) {
 
 function buildReaderExperienceReview({ input, plan, findings, roleOpinions }) {
   const explicit = input.reader_experience_review ?? {};
-  const firstOpinionSummary = roleOpinions.find((opinion) => opinion.summary)?.summary;
+  const firstOpinionSummary = reportedRoleOpinions(roleOpinions).find((opinion) => opinion.summary)?.summary;
   const firstFinding = findings[0]?.message;
   return {
     first_impression: normalizeStringArray(explicit.first_impression ?? input.subjective_perception?.first_impression).slice(0, 6),
@@ -4248,7 +4542,7 @@ function buildHumanReviewCoverage({ input, findings, roleOpinions, readerExperie
     human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
     dimensions,
     coverage_score: computeDimensionCoverageScore(dimensions),
-    role_count: roleOpinions.length,
+    role_count: reportedRoleOpinions(roleOpinions).length,
     advisory_finding_count: findings.length,
     missing_dimensions: dimensions.filter((dimension) => dimension.status !== 'covered').map((dimension) => dimension.id),
     advisory_only: true,
@@ -4264,8 +4558,9 @@ function computeDimensionCoverageScore(dimensions) {
 }
 
 function buildConsensusSummary({ roleOpinions, findings, input }) {
+  const actualRoleCount = reportedRoleOpinions(roleOpinions).length;
   return {
-    agreement_count: Number(input.consensus_summary?.agreement_count ?? (roleOpinions.length > 1 ? 1 : 0)),
+    agreement_count: Number(input.consensus_summary?.agreement_count ?? (actualRoleCount > 1 ? 1 : 0)),
     corroborated_findings: normalizeStringArray(input.consensus_summary?.corroborated_findings).slice(0, 10),
     shared_positive_observations: normalizeStringArray(input.consensus_summary?.shared_positive_observations ?? input.strengths).slice(0, 10),
     shared_risks: normalizeStringArray(input.consensus_summary?.shared_risks).slice(0, 10),
@@ -4274,11 +4569,12 @@ function buildConsensusSummary({ roleOpinions, findings, input }) {
 }
 
 function buildDissentSummary({ roleOpinions, input }) {
+  const actualRoleCount = reportedRoleOpinions(roleOpinions).length;
   return {
     disagreement_count: Number(input.dissent_summary?.disagreement_count ?? 0),
     contradictions: normalizeStringArray(input.dissent_summary?.contradictions).slice(0, 10),
     minority_opinions: normalizeStringArray(input.dissent_summary?.minority_opinions).slice(0, 10),
-    owner_decision_required: roleOpinions.length > 1
+    owner_decision_required: actualRoleCount > 1
   };
 }
 
@@ -4286,15 +4582,20 @@ function buildRoleExecutionRecords({ plan, roleOpinions, boundary }) {
   const opinionByRole = new Map(roleOpinions.map((opinion) => [opinion.role, opinion]));
   return (plan.sub_agents ?? []).slice(0, MAX_ROLE_OPINIONS).map((agent) => {
     const opinion = opinionByRole.get(agent.role);
+    const reported = isReportedRoleOpinion(opinion);
+    const roundMatches = opinion ? Number(opinion.round) === Number(agent.round) : false;
     return {
       role: agent.role,
       display_name: agent.display_name,
       planned_effort: agent.effort,
       round: agent.round,
-      status: opinion ? 'reported' : 'missing_output',
+      status: reported && roundMatches ? 'reported' : (reported ? 'round_mismatch' : 'missing_output'),
       independent_review: agent.independent_review !== false,
       confidence: opinion?.confidence ?? { evidence: 'inconclusive', judgment: 'inconclusive', implementation: 'inconclusive' },
       finding_count: opinion?.findings?.length ?? 0,
+      reported_by_provider: reported,
+      placeholder_generated: opinion?.placeholder_generated === true,
+      round_matches_plan: roundMatches,
       provider_call_performed: boundary.provider_call_performed,
       api_call_performed: boundary.api_call_performed,
       gate_effect: 'none'
@@ -4303,6 +4604,7 @@ function buildRoleExecutionRecords({ plan, roleOpinions, boundary }) {
 }
 
 function buildReviewClaims({ resultId, input, findings, roleOpinions }) {
+  const reportedRoles = reportedRoleOpinions(roleOpinions).map((opinion) => opinion.role);
   const claimValues = Array.isArray(input.review_claims) ? input.review_claims : [];
   const explicitClaims = claimValues.slice(0, 25).map((item, index) => ({
     id: truncateText(item?.id ?? `${resultId}-claim-${index + 1}`, 120),
@@ -4317,7 +4619,7 @@ function buildReviewClaims({ resultId, input, findings, roleOpinions }) {
     id: `${finding.id}-claim`,
     claim: finding.message,
     evidence_refs: finding.evidence_refs,
-    supported_by_roles: roleOpinions.map((opinion) => opinion.role).slice(0, 5),
+    supported_by_roles: reportedRoles.slice(0, 5),
     confidence: finding.confidence,
     subjective_judgment: finding.subjective_judgment,
     gate_effect: 'none'
@@ -4330,12 +4632,16 @@ function buildRoundRecords({ plan, roleOpinions }) {
     ? plan.rounds
     : [...new Set(roleOpinions.map((item) => item.round))];
   return plannedRounds.map((round) => {
-    const opinions = roleOpinions.filter((opinion) => Number(opinion.round) === Number(round));
+    const plannedRoles = (plan.sub_agents ?? []).filter((agent) => Number(agent.round) === Number(round)).map((agent) => agent.role);
+    const opinions = reportedRoleOpinions(roleOpinions).filter((opinion) => Number(opinion.round) === Number(round));
+    const reportedRoles = opinions.map((opinion) => opinion.role);
+    const missingRoles = plannedRoles.filter((roleName) => !reportedRoles.includes(roleName));
     return {
       round: Number(round),
-      planned_roles: (plan.sub_agents ?? []).filter((agent) => Number(agent.round) === Number(round)).map((agent) => agent.role),
-      reported_roles: opinions.map((opinion) => opinion.role),
-      status: opinions.length > 0 ? 'reported' : 'missing_output',
+      planned_roles: plannedRoles,
+      reported_roles: reportedRoles,
+      missing_roles: missingRoles,
+      status: plannedRoles.length > 0 && missingRoles.length === 0 ? 'reported' : (reportedRoles.length > 0 ? 'partial_output' : 'missing_output'),
       gate_effect: 'none'
     };
   });
@@ -4355,9 +4661,10 @@ function buildCritiqueRecords({ plan, claims, roleOpinions }) {
   }
   return criticRoles.map((agent) => {
     const opinion = roleOpinions.find((item) => item.role === agent.role);
+    const reported = Boolean(opinion) && isReportedRoleOpinion(opinion) && Number(opinion.round) === Number(agent.round);
     return {
       role: agent.role,
-      status: opinion ? 'reported' : 'missing_output',
+      status: reported ? 'reported' : 'missing_output',
       critique: opinion?.summary ?? 'Dedicated critique role did not return separate output.',
       weak_claim_count: weakClaimCount,
       gate_effect: 'none'
@@ -4378,13 +4685,17 @@ function buildRebuttalRecords({ critiqueRecords }) {
 }
 
 function buildIntegrationRecord({ roleOpinions, findings, critiqueRecords, input }) {
+  const reportedOpinions = reportedRoleOpinions(roleOpinions);
+  const synthesisOpinion = reportedOpinions.find((opinion) => opinion.role === 'synthesis_agent');
+  const explicitIntegration = input.integration_record?.summary;
+  const status = synthesisOpinion || explicitIntegration ? 'integrated' : 'missing_synthesis';
   return {
-    status: 'integrated',
+    status,
     summary: secretSafeText(input.integration_record?.summary ?? input.consensus_summary?.summary ?? 'Role opinions were normalized into one advisory-only report for owner review.', 900),
-    role_count: roleOpinions.length,
+    role_count: reportedOpinions.length,
     finding_count: findings.length,
     critique_count: critiqueRecords.length,
-    unresolved_uncertainties: roleOpinions.flatMap((opinion) => opinion.uncertainties).slice(0, 12),
+    unresolved_uncertainties: reportedOpinions.flatMap((opinion) => opinion.uncertainties).slice(0, 12),
     owner_review_required: true,
     gate_effect: 'none'
   };
@@ -4412,7 +4723,9 @@ function buildDogfoodMetadata({ plan, resultId }) {
 
 function buildRoleInstructionCoverage({ plan, roleOpinions }) {
   const plannedContracts = Array.isArray(plan.role_instruction_contracts) ? plan.role_instruction_contracts : [];
-  const reportedRoles = new Set(roleOpinions.map((item) => item.role));
+  const reportedRoles = new Set(reportedRoleOpinions(roleOpinions)
+    .filter((item) => item.round_matches_plan !== false)
+    .map((item) => item.role));
   const roleRecords = plannedContracts.map((contract) => ({
     role: contract.role,
     display_name: contract.display_name,
@@ -4437,15 +4750,16 @@ function buildRoleInstructionCoverage({ plan, roleOpinions }) {
 
 function buildConsensusAnalysis({ roleOpinions, findings, claims, input }) {
   const supportedClaimCount = claims.filter((claim) => claim.supported_by_roles?.length > 0).length;
-  const confidenceValues = roleOpinions.map((opinion) => opinion.confidence?.judgment ?? 'inconclusive');
+  const actualOpinions = reportedRoleOpinions(roleOpinions);
+  const confidenceValues = actualOpinions.map((opinion) => opinion.confidence?.judgment ?? 'inconclusive');
   const highOrMedium = confidenceValues.filter((value) => value === 'high' || value === 'medium').length;
   return {
     schema_version: SCHEMA_VERSION,
     analysis_version: HUMAN_REVIEW_ORCHESTRATION_VERSION,
     agreement_count: Number(input.consensus_summary?.agreement_count ?? supportedClaimCount),
     supported_claim_count: supportedClaimCount,
-    role_count: roleOpinions.length,
-    confidence_alignment_score: roleOpinions.length === 0 ? 0 : clampScore(highOrMedium / roleOpinions.length),
+    role_count: actualOpinions.length,
+    confidence_alignment_score: actualOpinions.length === 0 ? 0 : clampScore(highOrMedium / actualOpinions.length),
     corroborated_findings: normalizeStringArray(input.consensus_summary?.corroborated_findings).slice(0, 12),
     shared_risks: normalizeStringArray(input.consensus_summary?.shared_risks).slice(0, 12),
     finding_count: findings.length,
@@ -4455,7 +4769,7 @@ function buildConsensusAnalysis({ roleOpinions, findings, claims, input }) {
 }
 
 function buildDissentAnalysis({ roleOpinions, claims, critiqueRecords, input }) {
-  const uncertainties = roleOpinions.flatMap((opinion) => normalizeStringArray(opinion.uncertainties)).slice(0, 16);
+  const uncertainties = reportedRoleOpinions(roleOpinions).flatMap((opinion) => normalizeStringArray(opinion.uncertainties)).slice(0, 16);
   const weakClaimCount = claims.filter((claim) => claim.evidence_refs.length === 0 && claim.supported_by_roles.length === 0).length;
   const dedicatedCritiqueReported = critiqueRecords.some((record) => record.status === 'reported' || record.status === 'integrated');
   return {
@@ -4473,10 +4787,59 @@ function buildDissentAnalysis({ roleOpinions, claims, critiqueRecords, input }) 
   };
 }
 
-function buildReviewQualityEvaluation({ quality, roleInstructionCoverage, consensusAnalysis, dissentAnalysis, plan }) {
+function buildXhighCompletionAssessment({ plan, roleOpinions, roundRecords, critiqueRecords, integrationRecord, roleInstructionCoverage }) {
+  const xhighExpected = plan.review_effort?.mode === 'xhigh';
+  const plannedAgents = Array.isArray(plan.sub_agents) ? plan.sub_agents : [];
+  const reported = reportedRoleOpinions(roleOpinions)
+    .filter((opinion) => opinion.round_matches_plan !== false);
+  const reportedByRole = new Set(reported.map((opinion) => opinion.role));
+  const requiredRoles = plannedAgents.map((agent) => agent.role);
+  const missingRoles = requiredRoles.filter((roleName) => !reportedByRole.has(roleName));
+  const plannedRounds = Array.isArray(plan.rounds) ? plan.rounds.map(Number) : [];
+  const missingRounds = plannedRounds.filter((round) => {
+    const record = roundRecords.find((item) => Number(item.round) === Number(round));
+    return !record || record.status !== 'reported';
+  });
+  const missingCritiqueRoles = (plan.sub_agents ?? [])
+    .filter((agent) => ['critic_reviewer', 'verification_reviewer'].includes(agent.role))
+    .filter((agent) => !critiqueRecords.some((record) => record.role === agent.role && record.status === 'reported'))
+    .map((agent) => agent.role);
+  const synthesisIntegrated = integrationRecord?.status === 'integrated';
+  const missingConditions = [
+    ...(plannedRounds.length >= 3 ? [] : ['xhigh requires at least three planned rounds.']),
+    ...(missingRoles.length === 0 ? [] : [`Missing provider output for planned role(s): ${missingRoles.join(', ')}.`]),
+    ...(missingRounds.length === 0 ? [] : [`Missing complete provider output for planned round(s): ${missingRounds.join(', ')}.`]),
+    ...(missingCritiqueRoles.length === 0 ? [] : [`Missing dedicated critique or verification role(s): ${missingCritiqueRoles.join(', ')}.`]),
+    ...(synthesisIntegrated ? [] : ['Missing synthesis output or explicit integration record.'])
+  ];
+  const complete = !xhighExpected || missingConditions.length === 0;
+  return {
+    schema_version: SCHEMA_VERSION,
+    completion_version: HUMAN_REVIEW_XHIGH_COMPLETION_VERSION,
+    required: xhighExpected,
+    status: xhighExpected ? (complete ? 'complete' : 'incomplete') : 'not_required',
+    planned_role_count: requiredRoles.length,
+    reported_role_count: reported.length,
+    required_roles: requiredRoles,
+    missing_roles: missingRoles,
+    planned_rounds: plannedRounds,
+    missing_rounds: missingRounds,
+    missing_critique_roles: missingCritiqueRoles,
+    synthesis_integrated: synthesisIntegrated,
+    role_instruction_coverage_score: roleInstructionCoverage.coverage_score,
+    provider_round_execution_mode: plan.orchestration_contract?.provider_round_execution_mode ?? null,
+    true_multi_call_execution_performed: false,
+    single_call_multi_role_output_only: plan.orchestration_contract?.provider_round_execution_mode === 'single_provider_call_with_required_multi_role_round_output',
+    missing_conditions: xhighExpected ? missingConditions : [],
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildReviewQualityEvaluation({ quality, roleInstructionCoverage, consensusAnalysis, dissentAnalysis, xhighCompletion, plan }) {
   const xhighExpected = plan.review_effort?.mode === 'xhigh';
   const multiRoundSatisfied = !xhighExpected
-    || (Array.isArray(plan.rounds) && plan.rounds.length >= 3 && dissentAnalysis.dedicated_critique_reported);
+    || xhighCompletion?.status === 'complete';
   const calibrationReadyScore = clampScore(
     (quality.human_review_coverage_score * 0.3)
     + (quality.actionability_score * 0.2)
@@ -4497,12 +4860,15 @@ function buildReviewQualityEvaluation({ quality, roleInstructionCoverage, consen
     specific_fix_score: quality.actionability_score,
     safety_boundary_score: 1,
     multi_round_expectation_satisfied: multiRoundSatisfied,
+    xhigh_completion_status: xhighCompletion?.status ?? null,
+    true_multi_call_execution_performed: xhighCompletion?.true_multi_call_execution_performed ?? false,
     role_instruction_coverage_score: roleInstructionCoverage.coverage_score,
     consensus_confidence_alignment_score: consensusAnalysis.confidence_alignment_score,
     weak_claim_count: dissentAnalysis.weak_claim_count,
     quality_warnings: [
       ...normalizeStringArray(quality.quality_warnings),
-      ...(multiRoundSatisfied ? [] : ['xhigh review expected multiple rounds with dedicated critique or verification output.'])
+      ...(multiRoundSatisfied ? [] : ['xhigh review expected complete provider output for planned roles, critique/verification, and synthesis.']),
+      ...normalizeStringArray(xhighCompletion?.missing_conditions)
     ],
     advisory_only: true,
     gate_effect: 'none'
@@ -4585,6 +4951,8 @@ function buildReportQuality({ result, resultPath, execution, now }) {
     result_id: result.id ?? null,
     execution_id: execution?.id ?? null,
     ...quality,
+    benchmark_completion_readiness: result.benchmark_completion_readiness ?? null,
+    xhigh_multi_round_review: result.xhigh_multi_round_review ?? null,
     boundary: agenticHumanReviewBoundary({
       read_only: true,
       planning_only: false,
@@ -4594,8 +4962,9 @@ function buildReportQuality({ result, resultPath, execution, now }) {
 }
 
 function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, claims, critiqueRecords, integrationRecord, humanReviewCoverage = null, readerExperienceReview = null }) {
+  const actualRoleOpinions = reportedRoleOpinions(roleOpinions);
   const completenessScore = clampScore(
-    (roleOpinions.length > 0 ? 0.25 : 0)
+    (actualRoleOpinions.length > 0 ? 0.25 : 0)
     + (claims.length > 0 || findings.length > 0 ? 0.25 : 0)
     + (ownerDecisions.length > 0 ? 0.2 : 0)
     + (integrationRecord ? 0.15 : 0)
@@ -4626,7 +4995,7 @@ function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, c
     verification_score: verificationScore,
     human_review_coverage_score: humanCoverageScore,
     actionability_score: actionabilityScore,
-    role_count: roleOpinions.length,
+    role_count: actualRoleOpinions.length,
     finding_count: findings.length,
     claim_count: claims.length,
     owner_decision_count: ownerDecisions.length,
@@ -4638,7 +5007,7 @@ function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, c
 
 function reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueRecords, humanReviewCoverage = null, actionabilityScore = 0 }) {
   const warnings = [];
-  if (roleOpinions.length === 0) {
+  if (reportedRoleOpinions(roleOpinions).length === 0) {
     warnings.push('No role-specific opinions were present.');
   }
   if (claims.length === 0) {

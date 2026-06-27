@@ -18,6 +18,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "ahr:responses-adapter": "node ./bin/trace-cue-ahr-responses-adapter.js",
     "doctor": "node ./bin/trace-cue.js doctor --json",
     "test": "node --test tests/architecture.test.js tests/cli.test.js",
     "test:browser": "TRACE_CUE_BROWSER_SMOKE=1 node --test tests/browser-smoke.test.js",

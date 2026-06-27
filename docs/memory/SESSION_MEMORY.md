@@ -681,3 +681,64 @@ Preserved boundaries:
 - Dogfood readiness and dogfood plan are read-only and perform no provider calls, browser launches, credential-value reads, evidence transfer, artifact writes, or release-gate changes.
 - Real provider execution still goes only through `agentic review run` with a valid plan, matching plan hash, package hash validation, provider capability hash, explicit `--execute`, provider/model/surface match, and exact transfer flags.
 - Deterministic review findings, metrics, release gates, existing review artifacts, MCP permissions, raw provider response storage, credential storage, and generic `agent execution` routing remain unchanged.
+
+## 2026-06-27 Implementation Note: Agentic Human Review Responses Adapter
+
+TraceCue now includes an optional local Responses-compatible adapter for manual Agentic Human Review live dogfood.
+
+Implemented scope:
+- A loopback-only HTTP adapter started with `npm run ahr:responses-adapter`.
+- The adapter accepts TraceCue's existing `generic-api-provider` request contract.
+- The adapter validates a local bearer token, then uses a separate upstream provider credential environment variable.
+- The adapter converts the TraceCue AHR request into a bounded Responses-compatible request with provider-side storage disabled and provider tools disabled.
+- The adapter rejects raw pixel bytes and local plan/execution path disclosure, strips local path values before upstream dispatch, parses provider output text into advisory JSON, redacts normalized output, and stores no raw provider response or credential values.
+- API helpers are exported for startup, request handling, request building, and provider output parsing.
+- No-browser tests cover request conversion, credential non-disclosure, local path stripping, unsafe request rejection, output parsing, architecture isolation, and packed-install coverage.
+
+Persistent boundaries:
+- This adapter does not replace `agentic review run`.
+- The existing AHR plan hash, exact transfer flags, explicit `--execute`, package/provider validation, advisory-only result contract, and report-quality checks remain the execution authority.
+- The adapter is not exposed through MCP.
+- The adapter does not mutate deterministic findings, metrics, release gates, existing review artifacts, visual review artifacts, or MCP permissions.
+- Live upstream calls remain manual-only and environment-configured; CI uses injected transports.
+
+## 2026-06-27 Live Upstream Dogfood Result
+
+The manual live upstream dogfood run completed successfully after the adapter implementation and local verification.
+
+Executed flow:
+- Started the local adapter with `npm run ahr:responses-adapter -- --json`.
+- Created an Agentic Human Review plan for `gpt-5.4-nano`, `quick` effort, and `generic-api-provider`.
+- Ran upstream provider execution through `agentic review run` via the loopback adapter endpoint.
+- Ran `agentic review report-quality` against the resulting advisory artifact.
+- Stopped the adapter and confirmed no listener remained on port 8787.
+
+Run result:
+- `agentic review run`: `ok`.
+- `execution_status`: `completed`.
+- `provider_id`: `generic-api-provider`.
+- `model_id`: `gpt-5.4-nano`.
+- `api_call_performed`: `true`.
+- `external_evidence_transfer`: `true`.
+- `raw_provider_response_stored`: `false`.
+- `credential_values_recorded`: `false`.
+- `gate_effect`: `none`.
+- `advisory_only`: `true`.
+
+Report-quality result:
+- `status`: `ok`.
+- `completeness_score`: `1`.
+- `evidence_coverage_score`: `1`.
+- `verification_score`: `0.35`.
+- `human_review_coverage_score`: `0.7142857142857143`.
+- `actionability_score`: `1`.
+- Warnings were consistent with `quick` effort: no dedicated critique or verification output, and incomplete human-review dimension coverage.
+
+Local artifacts were created under ignored `.browser-debug/` result, receipt, and report directories. The checked target artifacts and temporary outputs did not contain secret-like patterns. Git-managed changes did not increase beyond the pre-existing adapter implementation dirty state.
+
+Persistent boundaries:
+- Do not print or store credential values.
+- Do not store raw provider responses.
+- Do not bypass `agentic review run`, plan hash validation, exact transfer flags, or explicit `--execute`.
+- Do not expose Agentic Human Review through MCP.
+- Do not mutate deterministic findings, metrics, release gates, existing review artifacts, visual review artifacts, or MCP permissions.

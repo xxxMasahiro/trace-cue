@@ -9,6 +9,16 @@
 
 ## Phase Plan
 
+### Agentic Human Review Responses Adapter: Local Responses-Compatible Live Dogfood Bridge
+
+Purpose: close the manual live-provider dogfood gap without weakening the existing Agentic Human Review owner-layer. The adapter lets the existing `generic-api-provider` endpoint target a loopback local HTTP bridge, while the bridge performs the upstream Responses-compatible request conversion, provider credential loading, JSON advisory parsing, and normalized advisory return.
+
+Implemented scope: add `src/agentic-human-review-responses-adapter.js`, `bin/trace-cue-ahr-responses-adapter.js`, and `npm run ahr:responses-adapter`; enforce loopback host, exact path, POST-only, bearer-token, Host/Origin, request-size, provider-response-size, no-raw-pixel, no-local-path, no-provider-tool, and provider-side no-store boundaries; read provider credentials from environment variables only; keep inbound adapter tokens separate from upstream provider credentials; parse provider `output_text` or output content text into advisory JSON; return normalized advisory data only; export API helpers; add CLI, architecture, pack-install, product-security, and documentation coverage. Non-scope: MCP exposure, generic `agent execution` routing, direct deterministic review mutation, release-gate mutation, provider SDK dependency, persistent credential storage, raw provider response storage, raw pixel transfer, browser capture, or CI-default live provider calls.
+
+Implementation order: preserve the current Agentic Human Review plan/run gate; add the isolated adapter module; add the startup bin and package script; export pure adapter helpers; add injected-fetch tests for conversion, credential non-disclosure, local path stripping, unsafe request rejection, and provider output parsing; add architecture and pack-install coverage; update product/security/verification/README/session-memory docs; then run no-browser, package, security, docs, release, and product gates.
+
+Recovery: this slice is additive and local. Existing review, content UX, visual review, agent execution, Agentic Human Review proposal/plan/run/report-quality, safe HTTP MCP, stdio MCP, release readiness, artifact-root policy, alias compatibility, deterministic findings, and release gates remain compatible. Rollback is a standard Git revert of the adapter changes; no artifact migration, publication, credential persistence, raw response persistence, release gate change, or MCP permission expansion is involved.
+
 ### Agentic Human Review Roadmap AHR-13-24: Provider Dogfood, Benchmark Calibration, And Orchestration Quality
 
 Purpose: make Agentic Human Review quality measurable and safely improvable after the AHR-01-12 schema v2 foundation. This slice adds provider capability contracts, evidence planning, page-type rubric profiles, benchmark fixtures, calibration comparisons, xhigh orchestration diagnostics, direct-vs-TraceCue comparison metadata, privacy/disclosure audit output, and live-provider dogfood readiness while preserving the existing plan-hash, exact-transfer-flag, advisory-only, no-MCP-execution boundary.
@@ -1387,3 +1397,11 @@ Phase 39 records the external-repository dogfood lesson that Browser Debug CLI c
 - AHR-32-35 add xhigh round-plan v2, Quality Evaluator v3, and Human Report v3. Results now expose human likeness, visual specificity, content reading, sensibility, specific-fix, safety-boundary scores, and non-engineer-facing report sections for reader story, what works, what gets lost, and priority fix.
 - AHR-36-40 add transfer approval preview, provider failure diagnostics, dogfood plan schemas, product manifest/schema/API/CLI/parser/test coverage, and production-readiness documentation sync.
 - Verification must include `node --check` for changed runtime files, `npm test`, `npm run test:pack`, `npm run test:pack-install`, `npm run release:check`, product security/docs checks, product gate, and `git diff --check`.
+
+## Agentic Human Review AHR-41-44 Completion Enforcement
+
+- AHR-41 enforces real-provider dogfood execution opt-in at run validation time. Provider-API benchmark/dogfood runs are rejected before fetch unless the manual live dogfood environment flag is enabled; ordinary non-dogfood API runs keep the existing approval path.
+- AHR-42 adds bounded visible-text provenance and screen-text understanding contracts to packages and API payloads. The implementation records DOM-visible text summaries, headings, action text, deterministic-review text, and OCR non-execution without embedding raw DOM, raw report bodies, raw pixels, credentials, or raw provider responses.
+- AHR-43 completes benchmark-readiness metadata for plans, packages, benchmark list/show, calibration, report-quality, and advisory results. The readiness contract records fixture coverage, active case requirements, thresholds, manual-live-provider policy, and release-gate non-mutation without changing deterministic gates.
+- AHR-44 makes `xhigh` completion mechanical by distinguishing real provider role output from synthesized placeholders. Missing planned roles, incomplete rounds, missing critic/verifier output, and missing synthesis keep `xhigh_multi_round_review.status` incomplete and prevent calibration-ready multi-round satisfaction.
+- Verification must include focused Agentic Human Review CLI coverage for live dogfood blocking, plan/package/API visible-text transfer filtering, unknown benchmark rejection, fake-provider complete `xhigh`, injected-runner incomplete `xhigh`, and full local release checks.

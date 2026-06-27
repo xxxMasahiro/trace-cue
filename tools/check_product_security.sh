@@ -64,7 +64,7 @@ scan_runtime_pattern() {
 }
 
 scan_runtime_pattern 'launchPersistentContext|userDataDir|storageState' 'browser profile or persistent storage reuse'
-scan_runtime_pattern 'createServer|listen\(|WebSocket|EventSource' 'unapproved external control channel' 'src/mcp-http-transport\.js:'
+scan_runtime_pattern 'createServer|listen\(|WebSocket|EventSource' 'unapproved external control channel' 'src/mcp-http-transport\.js:|src/agentic-human-review-responses-adapter\.js:'
 scan_runtime_pattern "node:child_process|from ['\"]child_process|require\\(['\"]child_process|execFile|spawn\\(" 'arbitrary shell execution' 'src/daemon\.js:'
 scan_runtime_pattern 'npm publish|gh repo|curl |wget ' 'publication or external transfer'
 
