@@ -1176,6 +1176,53 @@ const schemas = Object.freeze({
     },
     additionalProperties: true
   }),
+  agentic_human_review_human_baseline: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/agentic-human-review-human-baseline.schema.json',
+    title: 'TraceCue Agentic Human Review Human Baseline',
+    type: 'object',
+    required: ['schema_version', 'type', 'human_baseline_version', 'generated_at', 'baseline', 'summary', 'validation', 'warnings', 'boundary', 'advisory_only', 'gate_effect'],
+    properties: {
+      schema_version: { type: 'string' },
+      type: { const: 'agentic_human_review_human_baseline' },
+      human_baseline_version: { type: 'string' },
+      generated_at: { type: 'string' },
+      input_path: { type: ['string', 'null'] },
+      input_hash: { type: ['string', 'null'] },
+      baseline: { type: 'object' },
+      summary: { type: 'object' },
+      validation: { type: 'object' },
+      warnings: { type: 'array' },
+      boundary: { type: 'object' },
+      advisory_only: { const: true },
+      gate_effect: { const: 'none' }
+    },
+    additionalProperties: true
+  }),
+  agentic_human_review_human_baseline_comparison: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/agentic-human-review-human-baseline-comparison.schema.json',
+    title: 'TraceCue Agentic Human Review Human Baseline Comparison',
+    type: 'object',
+    required: ['schema_version', 'type', 'human_baseline_comparison_version', 'generated_at', 'comparison_kind', 'baseline', 'candidate', 'scores', 'matches', 'summary', 'warnings', 'boundary', 'advisory_only', 'gate_effect'],
+    properties: {
+      schema_version: { type: 'string' },
+      type: { const: 'agentic_human_review_human_baseline_comparison' },
+      human_baseline_comparison_version: { type: 'string' },
+      generated_at: { type: 'string' },
+      comparison_kind: { const: 'owner-labeled-human-baseline' },
+      baseline: { type: 'object' },
+      candidate: { type: 'object' },
+      scores: { type: 'object' },
+      matches: { type: 'object' },
+      summary: { type: 'object' },
+      warnings: { type: 'array' },
+      boundary: { type: 'object' },
+      advisory_only: { const: true },
+      gate_effect: { const: 'none' }
+    },
+    additionalProperties: true
+  }),
   agentic_human_review_evaluator_policy: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     $id: 'https://trace-cue.local/schemas/agentic-human-review-evaluator-policy.schema.json',

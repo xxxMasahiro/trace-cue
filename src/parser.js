@@ -1032,7 +1032,7 @@ function parseAgentic(args, globals) {
   }
   const scope = args[0];
   const action = args[1];
-  const reviewActions = ['propose', 'plan', 'run', 'status', 'list', 'provider-readiness', 'report-quality', 'benchmark', 'dogfood', 'calibrate', 'compare', 'evidence-set', 'evaluator', 'xhigh', 'quality', 'claim'];
+  const reviewActions = ['propose', 'plan', 'run', 'status', 'list', 'provider-readiness', 'report-quality', 'benchmark', 'dogfood', 'calibrate', 'compare', 'evidence-set', 'human-baseline', 'evaluator', 'xhigh', 'quality', 'claim'];
   if (scope !== 'review' || !reviewActions.includes(action)) {
     return parseError('agentic', globals.json, {
       code: scope ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
@@ -1447,6 +1447,44 @@ function parseAgentic(args, globals) {
       code: evidenceSetAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
       message: evidenceSetAction ? `Unknown agentic review evidence-set subcommand: ${evidenceSetAction}` : 'agentic review evidence-set requires validate or summarize.',
       details: { subcommands: ['validate', 'summarize'] }
+    });
+  }
+  if (action === 'human-baseline') {
+    const humanBaselineAction = args[2];
+    if (humanBaselineAction === 'validate') {
+      const parsed = parseRequiredOptions('agentic review human-baseline validate', args.slice(3), globals, ['input']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['input', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review human-baseline validate', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_HUMAN_BASELINE_VALIDATE_OPTION',
+          message: `agentic review human-baseline validate does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
+    if (humanBaselineAction === 'compare') {
+      const parsed = parseRequiredOptions('agentic review human-baseline compare', args.slice(3), globals, ['baseline', 'result']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['baseline', 'result', 'case', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review human-baseline compare', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_HUMAN_BASELINE_COMPARE_OPTION',
+          message: `agentic review human-baseline compare does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
+    return parseError('agentic review human-baseline', globals.json, {
+      code: humanBaselineAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: humanBaselineAction ? `Unknown agentic review human-baseline subcommand: ${humanBaselineAction}` : 'agentic review human-baseline requires validate or compare.',
+      details: { subcommands: ['validate', 'compare'] }
     });
   }
   if (action === 'evaluator') {

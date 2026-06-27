@@ -18,6 +18,8 @@ import {
   runAgenticHumanReviewEvaluatorPolicy,
   runAgenticHumanReviewEvidenceSetSummarize,
   runAgenticHumanReviewEvidenceSetValidate,
+  runAgenticHumanReviewHumanBaselineCompare,
+  runAgenticHumanReviewHumanBaselineValidate,
   runAgenticHumanReviewList,
   runAgenticHumanReviewLongitudinalQuality,
   runAgenticHumanReviewPlan,
@@ -331,6 +333,14 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'agentic review evidence-set summarize') {
       return runtimeResult(parsed.command, await (context.agenticHumanReviewEvidenceSetSummarizeRunner ?? runAgenticHumanReviewEvidenceSetSummarize)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review human-baseline validate') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewHumanBaselineValidateRunner ?? runAgenticHumanReviewHumanBaselineValidate)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review human-baseline compare') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewHumanBaselineCompareRunner ?? runAgenticHumanReviewHumanBaselineCompare)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'agentic review evaluator policy') {
@@ -853,6 +863,7 @@ function usageText(topic) {
     || topic === 'agentic review calibrate'
     || topic === 'agentic review compare'
     || topic === 'agentic review evidence-set'
+    || topic === 'agentic review human-baseline'
     || topic === 'agentic review evaluator'
     || topic === 'agentic review xhigh'
     || topic === 'agentic review quality'
@@ -873,6 +884,8 @@ function usageText(topic) {
       `       ${CLI_NAME} agentic review compare batch --dataset <workspace-json> [--json]`,
       `       ${CLI_NAME} agentic review evidence-set validate --input <workspace-json> [--json]`,
       `       ${CLI_NAME} agentic review evidence-set summarize --input <workspace-json> [--json]`,
+      `       ${CLI_NAME} agentic review human-baseline validate --input <workspace-json> [--json]`,
+      `       ${CLI_NAME} agentic review human-baseline compare --baseline <owner-labeled-human-baseline> --result <agentic-human-review-result> [--case <benchmark-case-id>] [--json]`,
       `       ${CLI_NAME} agentic review evaluator policy [--input <workspace-json>] [--json]`,
       `       ${CLI_NAME} agentic review xhigh plan --plan <agentic-human-review-plan> [--json]`,
       `       ${CLI_NAME} agentic review xhigh simulate --plan <agentic-human-review-plan> --round-input <workspace-json> [--json]`,
@@ -882,7 +895,7 @@ function usageText(topic) {
       `       ${CLI_NAME} agentic review status --execution <agentic-human-review-execution> [--json]`,
       `       ${CLI_NAME} agentic review list [--json]`,
       '',
-      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider and dogfood readiness perform no provider call; running requires matching hash, explicit --execute, and exact flags; report quality, benchmark, dogfood planning, calibration, comparison, evidence-set, xhigh, longitudinal, evaluator, and claim-policy commands are read-only advisory checks. MCP execution remains excluded.'
+      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider and dogfood readiness perform no provider call; running requires matching hash, explicit --execute, and exact flags; report quality, benchmark, dogfood planning, calibration, comparison, evidence-set, human-baseline, xhigh, longitudinal, evaluator, and claim-policy commands are read-only advisory checks. MCP execution remains excluded.'
     ].join('\n');
   }
 
