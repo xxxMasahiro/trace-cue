@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added read-only Agentic Human Review owner-labeled human baseline validation/comparison, evidence-set baseline coverage, longitudinal owner-label requirements, schema/API/package coverage, and no-provider/no-MCP/no-gate-mutation boundaries for human-review comparison evidence.
 - Added optional `AGENTIC_HUMAN_REVIEW_API_TIMEOUT_MS` support for the Agentic Human Review generic API provider while preserving the 30000 ms default, provider capability-hash validation, env-only configuration, and no raw-response/credential/MCP expansion boundaries.
 - Added Agentic Human Review quality-gate foundation for structured benchmark requirement coverage, stricter calibration readiness, risk/misleading-content dimension coverage, evidence-set validation and summary, batch comparison, evaluator policy warnings, xhigh round planning and simulation, longitudinal quality rollups, claim policy/audit diagnostics, schema/API/package coverage, and continued no-provider-call/no-artifact-write/no-MCP-exposure/no-gate-mutation boundaries for diagnostic surfaces.
 - Added the Agentic Human Review Responses adapter with `npm run ahr:responses-adapter`, loopback-only bearer-token gating, separate upstream provider credential loading, no-store/no-tools provider request conversion, advisory JSON normalization, local path and raw-pixel safeguards, API exports, pack-install coverage, and no MCP exposure, raw provider response storage, credential persistence, deterministic review mutation, or release-gate changes.

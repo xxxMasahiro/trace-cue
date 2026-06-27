@@ -2081,6 +2081,8 @@ test('schema commands expose machine-readable contracts', async () => {
     ['agentic_human_review_comparison', '../schemas/agentic-human-review-comparison.schema.json'],
     ['agentic_human_review_batch_comparison', '../schemas/agentic-human-review-batch-comparison.schema.json'],
     ['agentic_human_review_evidence_set', '../schemas/agentic-human-review-evidence-set.schema.json'],
+    ['agentic_human_review_human_baseline', '../schemas/agentic-human-review-human-baseline.schema.json'],
+    ['agentic_human_review_human_baseline_comparison', '../schemas/agentic-human-review-human-baseline-comparison.schema.json'],
     ['agentic_human_review_evaluator_policy', '../schemas/agentic-human-review-evaluator-policy.schema.json'],
     ['agentic_human_review_xhigh_plan', '../schemas/agentic-human-review-xhigh-plan.schema.json'],
     ['agentic_human_review_xhigh_simulation', '../schemas/agentic-human-review-xhigh-simulation.schema.json'],
@@ -4406,11 +4408,77 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(typeof comparisonBody.data.agentic_human_review_comparison.deltas.actionability_score, 'number');
   assert.equal(typeof comparisonBody.data.agentic_human_review_comparison.deltas.benchmark_structured_record_completeness_score, 'number');
 
+  const humanBaselinePath = path.join(cwd, 'owner-human-baseline.json');
+  await writeFile(humanBaselinePath, JSON.stringify({
+    type: 'agentic_human_review_human_baseline_input',
+    baseline_id: 'owner-baseline-fixed',
+    case_id: 'blog-content-value',
+    owner_labeled: true,
+    reviewed_at: '2026-06-27T00:00:00.000Z',
+    review_artifact_ref: reviewIndexPath,
+    required_dimensions: ['content_comprehension', 'trust_and_credibility'],
+    required_mentions: ['content value', 'trust or credibility'],
+    forbidden_claims: ['release is approved'],
+    owner_label_set: {
+      reviewer_id: 'owner-reviewer-fixed',
+      owner_labeled: true,
+      labels: [{
+        id: 'owner-proof-gap',
+        dimension: 'trust_and_credibility',
+        summary: 'The trust claim needs visible evidence.',
+        match_terms: ['trust claim needs visible evidence'],
+        evidence_refs: [{ path: reviewIndexPath, description: 'Owner-reviewed local review artifact.' }],
+        severity: 'medium'
+      }]
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  }, null, 2), 'utf8');
+
+  const humanBaselineValidation = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'validate',
+    '--input',
+    'owner-human-baseline.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(humanBaselineValidation.exitCode, 0);
+  const humanBaselineValidationBody = JSON.parse(humanBaselineValidation.stdout);
+  assert.equal(humanBaselineValidationBody.command, 'agentic review human-baseline validate');
+  assert.equal(humanBaselineValidationBody.data.agentic_human_review_human_baseline.validation.owner_labeled_baseline_verified, true);
+  assert.equal(humanBaselineValidationBody.data.agentic_human_review_human_baseline.boundary.read_only, true);
+
+  const humanBaselineComparison = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'compare',
+    '--baseline',
+    'owner-human-baseline.json',
+    '--result',
+    '.browser-debug/agentic-human-review-results/agentic-execution-api/result.json',
+    '--case',
+    'blog-content-value',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(humanBaselineComparison.exitCode, 0);
+  const humanBaselineComparisonBody = JSON.parse(humanBaselineComparison.stdout);
+  assert.equal(humanBaselineComparisonBody.command, 'agentic review human-baseline compare');
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.comparison_kind, 'owner-labeled-human-baseline');
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.summary.owner_labeled_baseline_verified, true);
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.owner_label_coverage_score, 1);
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.summary.human_equivalent_claim_allowed, false);
+
   const evidenceSetPath = path.join(cwd, 'agentic-evidence-set.json');
   await writeFile(evidenceSetPath, JSON.stringify({
     type: 'agentic_human_review_evidence_set_manifest',
     results: [
       { path: '.browser-debug/agentic-human-review-results/agentic-execution-fixed/result.json' }
+    ],
+    human_baselines: [
+      { path: 'owner-human-baseline.json' }
     ],
     calibrations: [],
     comparisons: []
@@ -4428,6 +4496,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   const evidenceSetBody = JSON.parse(evidenceSet.stdout);
   assert.equal(evidenceSetBody.command, 'agentic review evidence-set summarize');
   assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.observed_efforts.includes('xhigh'), true);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.owner_labeled_baseline_count, 1);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.observed_human_baseline_case_ids.includes('blog-content-value'), true);
   assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.human_equivalent_claim_allowed, false);
 
   const comparisonDatasetPath = path.join(cwd, 'agentic-comparison-dataset.json');
@@ -4490,6 +4560,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(longitudinal.exitCode, 0);
   const longitudinalBody = JSON.parse(longitudinal.stdout);
   assert.equal(longitudinalBody.data.agentic_human_review_longitudinal_quality.claim_policy.human_equivalent_claim_allowed, false);
+  assert.equal(longitudinalBody.data.agentic_human_review_longitudinal_quality.claim_policy.owner_labeled_evidence_required, true);
 
   const claimAudit = await executeCli([
     'agentic',

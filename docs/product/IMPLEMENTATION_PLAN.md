@@ -9,6 +9,16 @@
 
 ## Phase Plan
 
+### Agentic Human Review Human Baseline Comparison Foundation
+
+Purpose: make the next dogfood phase compare Agentic Human Review output against explicit owner-labeled human-review baseline evidence instead of treating human-equivalent or human-superior claims as free text. The slice adds local read-only validation and comparison diagnostics for owner-labeled human baselines and lets evidence sets track whether required benchmark cases have owner baseline coverage.
+
+Implemented scope: add `agentic review human-baseline validate|compare` CLI/API/schema surfaces; normalize owner-labeled human baseline JSON from manifest-driven inputs; compare required human-review dimensions, owner labels, required mentions, and forbidden claims against an Agentic Human Review advisory result; extend evidence-set summaries and longitudinal rollups with owner-labeled baseline counts and missing baseline case IDs; add schema registry, package smoke, and no-browser test coverage. Non-scope: creating human labels without owner input, authorizing human-equivalent or human-superior claims, provider execution approval, MCP exposure, deterministic review mutation, release-gate mutation, raw provider response storage, credential persistence, parent-repository changes, consumer-repository changes, or package publication.
+
+Implementation order: synchronize product and workflow documents; add human-baseline parser and CLI/API runners; add validation/comparison normalization helpers; extend evidence-set and longitudinal summaries; add schema files and schema registry entries; extend no-browser and pack-install tests; run product document, security, package, and repository gates; then continue to the remaining benchmark-case standard/deep/xhigh dogfood execution prep.
+
+Recovery: this slice is additive and local. Existing Agentic Human Review proposal, plan, run, report-quality, benchmark, calibrate, compare, evidence-set, dogfood readiness, Responses adapter, visual review, agent execution, MCP profiles, safe HTTP MCP, release readiness, artifact-root policy, alias compatibility, deterministic findings, and release gates remain compatible. Rollback is a standard Git revert of the human-baseline comparison changes; no artifact migration, publication, credential storage, raw response persistence, release gate change, or MCP permission expansion is involved.
+
 ### Agentic Human Review Quality Gate Foundation: Structured Benchmark, Evidence Sets, And Claim Audit
 
 Purpose: move the next Agentic Human Review dogfood phase from one-off live output checks toward repeatable quality evidence. The slice makes benchmark calibration depend on structured, evidence-backed requirement records, then adds local read-only diagnostics for comparing standard/deep/xhigh real-page dogfood results, evaluator policy thresholds, longitudinal quality, and claim safety.

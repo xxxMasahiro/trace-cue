@@ -36,7 +36,7 @@ The goal is to provide an agent-independent Playwright interface that can observ
 - Review existing screen, window, and desktop app screenshots through caller-declared capture handoff metadata, with path and SHA-256 matching before provenance reaches visual evidence records.
 - Aggregate multiple existing local visual review results into bounded, source-attributed advisory groups and conflicts without running providers, reading raw pixels, writing artifacts, or exposing MCP execution.
 - Run a loopback-only Agentic Human Review Responses adapter so the existing generic provider contract can dogfood a live Responses-compatible model without sending credentials through CLI arguments, storing raw provider responses, exposing MCP execution, or changing deterministic gates.
-- Evaluate Agentic Human Review dogfood quality with structured benchmark coverage, evidence-set summaries, batch comparison, evaluator policy warnings, xhigh round planning, longitudinal rollups, and claim audit diagnostics without calling providers, writing artifacts, exposing MCP execution, or turning advisory output into release gates.
+- Evaluate Agentic Human Review dogfood quality with structured benchmark coverage, owner-labeled human baseline comparison, evidence-set summaries, batch comparison, evaluator policy warnings, xhigh round planning, longitudinal rollups, and claim audit diagnostics without calling providers, writing artifacts, exposing MCP execution, or turning advisory output into release gates.
 
 ## Current Status
 
@@ -48,7 +48,7 @@ Slices 6-25 / Phase 79-155 add cleanup plan hardening, capture readiness, provid
 
 Agentic Human Review now includes a local Responses-compatible adapter for manual live dogfood. Start it with `npm run ahr:responses-adapter`; point the generic provider endpoint at the loopback adapter URL, not directly at the upstream provider. The adapter reads the local bearer token and provider key from environment variables, converts the TraceCue AHR request into a bounded Responses request with `store: false`, and returns normalized advisory JSON only.
 
-Agentic Human Review quality evaluation now also has read-only local commands for the dogfood phase after a manual run. Use evidence-set validation/summary, batch comparison, evaluator policy, xhigh planning/simulation, longitudinal quality, and claim policy/audit commands to compare standard/deep/xhigh runs and benchmark cases before making any quality claim. These commands read local result metadata only; they do not approve live provider execution and do not permit human-equivalent or human-superior claims by themselves.
+Agentic Human Review quality evaluation now also has read-only local commands for the dogfood phase after a manual run. Use evidence-set validation/summary, owner-labeled human baseline validation/comparison, batch comparison, evaluator policy, xhigh planning/simulation, longitudinal quality, and claim policy/audit commands to compare standard/deep/xhigh runs and benchmark cases before making any quality claim. These commands read local result metadata only; they do not approve live provider execution and do not permit human-equivalent or human-superior claims by themselves.
 
 ## Integration Modes
 
