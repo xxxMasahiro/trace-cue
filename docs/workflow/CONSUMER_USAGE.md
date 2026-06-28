@@ -58,6 +58,8 @@ AGENTIC_HUMAN_REVIEW_API_TOKEN=<tok> AGENTIC_HUMAN_REVIEW_OPENAI_API_KEY=<key> A
 
 The adapter stores no provider key, no adapter token, and no raw provider response. Live upstream calls are manual and should not be enabled in CI.
 
+After dogfood results exist, use the read-only human-baseline lifecycle to prepare reusable owner evidence before any quality claim: `agentic review human-baseline registry`, `overlay`, `draft`, `approval`, `validate`, `compare`, and `claim-readiness`. AI drafts are preparation only; only owner-approved baselines with approval metadata can verify as `owner_labeled` evidence. These diagnostics do not run providers, expose MCP execution, mutate deterministic review output, or permit human-equivalent or human-superior claims by themselves.
+
 ## MCP Stdio Quickstart
 
 Use MCP stdio when an MCP client can launch a local command. Ask the CLI to generate client metadata instead of reading source files:

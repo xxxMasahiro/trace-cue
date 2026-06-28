@@ -12,6 +12,7 @@
     "plan_path": { "type": "string" },
     "round_input_path": { "type": "string" },
     "status": { "type": "string" },
+    "xhigh_mechanical_enforcement": { "type": "object" },
     "warnings": { "type": "array" },
     "boundary": { "type": "object" },
     "advisory_only": { "const": true },

@@ -2083,9 +2083,15 @@ test('schema commands expose machine-readable contracts', async () => {
     ['agentic_human_review_evidence_set', '../schemas/agentic-human-review-evidence-set.schema.json'],
     ['agentic_human_review_human_baseline', '../schemas/agentic-human-review-human-baseline.schema.json'],
     ['agentic_human_review_human_baseline_comparison', '../schemas/agentic-human-review-human-baseline-comparison.schema.json'],
+    ['agentic_human_review_human_baseline_registry', '../schemas/agentic-human-review-human-baseline-registry.schema.json'],
+    ['agentic_human_review_human_baseline_overlay', '../schemas/agentic-human-review-human-baseline-overlay.schema.json'],
+    ['agentic_human_review_human_baseline_draft', '../schemas/agentic-human-review-human-baseline-draft.schema.json'],
+    ['agentic_human_review_human_baseline_approval_packet', '../schemas/agentic-human-review-human-baseline-approval-packet.schema.json'],
+    ['agentic_human_review_human_baseline_claim_readiness', '../schemas/agentic-human-review-human-baseline-claim-readiness.schema.json'],
     ['agentic_human_review_evaluator_policy', '../schemas/agentic-human-review-evaluator-policy.schema.json'],
     ['agentic_human_review_xhigh_plan', '../schemas/agentic-human-review-xhigh-plan.schema.json'],
     ['agentic_human_review_xhigh_simulation', '../schemas/agentic-human-review-xhigh-simulation.schema.json'],
+    ['agentic_human_review_xhigh_completion', '../schemas/agentic-human-review-xhigh-completion.schema.json'],
     ['agentic_human_review_longitudinal_quality', '../schemas/agentic-human-review-longitudinal-quality.schema.json'],
     ['agentic_human_review_claim_policy', '../schemas/agentic-human-review-claim-policy.schema.json'],
     ['agentic_human_review_claim_audit', '../schemas/agentic-human-review-claim-audit.schema.json'],
@@ -3586,7 +3592,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(planBody.data.agentic_human_review_plan.human_review_schema_version, '2.0.0');
   assert.equal(planBody.data.agentic_human_review_plan.human_review_contract.output_requirements.content_comprehension_required, true);
   assert.equal(planBody.data.agentic_human_review_plan.provider_instruction_contract.required_behavior.some((item) => /skilled human reviewer/.test(item)), true);
+  assert.equal(planBody.data.agentic_human_review_plan.provider_instruction_contract.required_behavior.some((item) => /local evidence_refs/.test(item)), true);
   assert.equal(planBody.data.agentic_human_review_plan.provider_instruction_contract.output_sections.includes('benchmark_requirement_coverage'), true);
+  assert.equal(planBody.data.agentic_human_review_plan.provider_instruction_contract.output_sections.includes('agentic_human_review_findings'), true);
   assert.equal(planBody.data.agentic_human_review_plan.result_contract.benchmark_requirement_coverage_required, true);
   assert.equal(planBody.data.agentic_human_review_plan.review_quality_benchmark.quality_dimensions.includes('mechanical_vs_human_distinction'), true);
   assert.equal(planBody.data.agentic_human_review_plan.benchmark_completion_readiness.completion_version, '1.0.0');
@@ -3595,6 +3603,13 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(planBody.data.agentic_human_review_plan.provider_capability_contract.provider_id, 'fake-agent');
   assert.match(planBody.data.agentic_human_review_plan.provider_capability_hash, /^[a-f0-9]{64}$/);
   assert.equal(planBody.data.agentic_human_review_plan.provider_capability_contract.execution_boundary.mcp_execution_exposed, false);
+  assert.equal(planBody.data.agentic_human_review_plan.provider_capability_contract.effort_capability.xhigh_supported, true);
+  assert.equal(planBody.data.agentic_human_review_plan.effort_execution_contract.review_effort, 'xhigh');
+  assert.equal(planBody.data.agentic_human_review_plan.effort_execution_contract.xhigh_required, true);
+  assert.equal(planBody.data.agentic_human_review_plan.provider_effort_binding.tracecue_contract_validation_required, true);
+  assert.equal(planBody.data.agentic_human_review_plan.strict_output_contract.placeholder_output_counts_as_provider_output, false);
+  assert.equal(planBody.data.agentic_human_review_plan.repair_retry_contract.fallback_behavior, 'mark_incomplete_and_emit_repair_plan');
+  assert.equal(planBody.data.agentic_human_review_plan.xhigh_multi_step_contract.automatic_live_multi_call_enabled, false);
   assert.equal(planBody.data.agentic_human_review_plan.rubric_profile.advisory_only, true);
   assert.equal(planBody.data.agentic_human_review_plan.evidence_plan.visual_reference_policy.raw_pixel_bytes_embedded_in_json, false);
   assert.equal(planBody.data.agentic_human_review_plan.evidence_plan.visual_evidence_package_version, '2.0.0');
@@ -3806,6 +3821,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiPlanBody.data.agentic_human_review_plan.provider.timeout_ms, 90000);
   assert.equal(apiPlanBody.data.agentic_human_review_plan.provider_capability_contract.timeout_env, AGENTIC_REVIEW_API_TIMEOUT_ENV);
   assert.equal(apiPlanBody.data.agentic_human_review_plan.provider_capability_contract.timeout_ms, 90000);
+  assert.equal(apiPlanBody.data.agentic_human_review_plan.provider_capability_contract.effort_capability.native_effort_binding.request_field, 'reasoning.effort');
+  assert.equal(apiPlanBody.data.agentic_human_review_plan.provider_effort_binding.native_effort_applied_value, 'medium');
   const apiRequiredFlags = apiPlanBody.data.agentic_human_review_plan.transfer_permissions.required_flags.slice().sort();
   assert.deepEqual(apiRequiredFlags, ['allow-accessibility-summary', 'allow-artifact-refs', 'allow-page-text']);
   assert.equal(apiPlanBody.data.agentic_human_review_plan.transfer_permissions.default_external_transfer, true);
@@ -3946,7 +3963,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
             category: 'trust_and_credibility',
             severity: 'medium',
             message: 'The trust claim needs visible evidence.',
-            recommendation: 'Add a short proof point near the claim.'
+            recommendation: 'Add a short proof point near the claim.',
+            evidence_refs: [{ path: reviewIndexPath, description: 'Local review artifact used for the proof-gap finding.' }]
           }],
           review_claims: [{
             id: 'api-claim-1',
@@ -3978,6 +3996,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiRequestPayload.disclosure_policy.control_metadata_included, true);
   assert.equal(apiRequestPayload.plan.plan_path_included, false);
   assert.match(apiRequestPayload.plan.provider_capability_hash, /^[a-f0-9]{64}$/);
+  assert.equal(apiRequestPayload.plan.effort_execution_contract.tracecue_contract_validation_required, true);
+  assert.equal(apiRequestPayload.plan.provider_effort_binding.native_effort_request_field, 'reasoning.effort');
+  assert.equal(apiRequestPayload.plan.strict_output_contract.tracecue_post_validation_required, true);
   assert.equal(apiRequestPayload.plan.evidence_plan.privacy_boundary.deterministic_review_mutation_allowed, false);
   assert.equal(apiRequestPayload.plan.visual_evidence_package_v2.raw_pixel_policy.raw_pixel_bytes_embedded_in_json, false);
   assert.equal(apiRequestPayload.plan.visible_text_reading_contract.reading_contract_version, '2.0.0');
@@ -3994,6 +4015,66 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiRequestPayload.plan.human_review_contract.output_requirements.reader_feeling_required, true);
   assert.equal(apiRequestPayload.plan.provider_instruction_contract.output_sections.includes('mechanical_vs_human_review'), true);
   assert.doesNotMatch(apiRunResult.stdout, /api-secret-value|provider\.example/);
+
+  const loopbackAdapterFailure = await executeCli(apiRunArgs, {
+    cwd,
+    now: fixedNow,
+    env: {
+      [AGENTIC_REVIEW_API_ENDPOINT_ENV]: 'http://127.0.0.1:8787/review',
+      [AGENTIC_REVIEW_API_CREDENTIAL_ENV]: 'api-secret-value',
+      [AGENTIC_REVIEW_API_TIMEOUT_ENV]: '90000'
+    },
+    fetch: async () => jsonResponse({
+      schema_version: '0.1.0',
+      ok: false,
+      error: {
+        code: 'AHR_RESPONSES_ADAPTER_BENCHMARK_CONTRACT_INCOMPLETE',
+        message: 'The upstream advisory did not satisfy the benchmark contract.',
+        details: {
+          missing_required_mentions: ['visible owner-approved proof condition'],
+          forbidden_claims: [{ claim: 'secret api-secret-value should be redacted' }]
+        }
+      }
+    }, 502)
+  });
+  assert.equal(loopbackAdapterFailure.exitCode, 1);
+  const loopbackAdapterFailureBody = JSON.parse(loopbackAdapterFailure.stdout);
+  assert.equal(loopbackAdapterFailureBody.errors[0].code, 'AGENTIC_REVIEW_API_RESPONSE_NOT_OK');
+  const loopbackDiagnostics = loopbackAdapterFailureBody
+    .data.agentic_human_review_execution.failure_diagnostics.details;
+  assert.equal(loopbackDiagnostics.loopback_adapter_error_observed, true);
+  assert.equal(
+    loopbackDiagnostics.loopback_adapter_error_code,
+    'AHR_RESPONSES_ADAPTER_BENCHMARK_CONTRACT_INCOMPLETE'
+  );
+  assert.equal(loopbackDiagnostics.raw_provider_response_stored, false);
+  assert.doesNotMatch(loopbackAdapterFailure.stdout, /api-secret-value/);
+  assert.match(loopbackAdapterFailure.stdout, /\[REDACTED\]/);
+
+  const externalProviderFailure = await executeCli(apiRunArgs, {
+    cwd,
+    now: fixedNow,
+    env: {
+      [AGENTIC_REVIEW_API_ENDPOINT_ENV]: 'https://provider.example/review',
+      [AGENTIC_REVIEW_API_CREDENTIAL_ENV]: 'api-secret-value',
+      [AGENTIC_REVIEW_API_TIMEOUT_ENV]: '90000'
+    },
+    fetch: async () => jsonResponse({
+      schema_version: '0.1.0',
+      ok: false,
+      error: {
+        code: 'AHR_RESPONSES_ADAPTER_BENCHMARK_CONTRACT_INCOMPLETE',
+        message: 'A non-loopback endpoint must not surface adapter diagnostics.'
+      }
+    }, 502)
+  });
+  assert.equal(externalProviderFailure.exitCode, 1);
+  const externalProviderFailureBody = JSON.parse(externalProviderFailure.stdout);
+  assert.equal(externalProviderFailureBody.errors[0].code, 'AGENTIC_REVIEW_API_RESPONSE_NOT_OK');
+  const externalDiagnostics = externalProviderFailureBody
+    .data.agentic_human_review_execution.failure_diagnostics.details;
+  assert.equal(Object.hasOwn(externalDiagnostics, 'loopback_adapter_error_observed'), false);
+  assert.doesNotMatch(externalProviderFailure.stdout, /AHR_RESPONSES_ADAPTER_BENCHMARK_CONTRACT_INCOMPLETE/);
 
   const noTextProvider = {
     id: 'metadata-only-api-provider',
@@ -4240,7 +4321,12 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(resultFile.human_review_coverage.coverage_score > 0.5, true);
   assert.equal(resultFile.benchmark_requirement_coverage.status, 'passed');
   assert.equal(resultFile.benchmark_requirement_coverage.summary.structured_record_completeness_score, 1);
+  assert.equal(resultFile.benchmark_requirement_coverage.summary.evidence_backed_record_score, 1);
   assert.equal(resultFile.benchmark_requirement_coverage.required_mentions.every((item) => item.present === true), true);
+  assert.equal(resultFile.agentic_human_review_findings.length > 0, true);
+  assert.equal(resultFile.agentic_human_review_findings.every((finding) => finding.evidence_refs.length > 0), true);
+  assert.equal(resultFile.agentic_human_review_findings.every((finding) => finding.origin_kind === 'deterministic_fake_provider'), true);
+  assert.equal(resultFile.agentic_human_review_findings.every((finding) => finding.claim_numerator_eligible === false), true);
   assert.equal(resultFile.agentic_human_review_readiness.advisory_only, true);
   assert.equal(resultFile.agentic_human_review_readiness.deterministic_findings_unchanged, true);
   assert.equal(resultFile.agentic_human_review_readiness.gate_effect, 'none');
@@ -4408,7 +4494,156 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(typeof comparisonBody.data.agentic_human_review_comparison.deltas.actionability_score, 'number');
   assert.equal(typeof comparisonBody.data.agentic_human_review_comparison.deltas.benchmark_structured_record_completeness_score, 'number');
 
+  const humanBaselineRegistry = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'registry',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(humanBaselineRegistry.exitCode, 0);
+  const humanBaselineRegistryBody = JSON.parse(humanBaselineRegistry.stdout);
+  assert.equal(humanBaselineRegistryBody.command, 'agentic review human-baseline registry');
+  assert.equal(humanBaselineRegistryBody.data.agentic_human_review_human_baseline_registry.type, 'agentic_human_review_human_baseline_registry');
+  assert.equal(humanBaselineRegistryBody.data.agentic_human_review_human_baseline_registry.validation.owner_labeled_evidence_required, true);
+  assert.equal(humanBaselineRegistryBody.data.agentic_human_review_human_baseline_registry.boundary.read_only, true);
+
+  const humanBaselineMustNotMissCriteria = [{
+    id: 'owner-proof-gap',
+    dimension: 'trust_and_credibility',
+    summary: 'The trust claim needs visible evidence.',
+    match_terms: ['trust claim needs visible evidence'],
+    severity: 'medium',
+    evidence_refs: [{ path: reviewIndexPath, description: 'Owner-reviewed local review artifact.' }],
+    target_specific: true,
+    source_kind: 'target_specific_owner_overlay'
+  }];
+  const humanBaselineOverlayInputPath = path.join(cwd, 'owner-human-baseline-overlay-input.json');
+  await writeFile(humanBaselineOverlayInputPath, JSON.stringify({
+    type: 'agentic_human_review_human_baseline_overlay_input',
+    case_id: 'blog-content-value',
+    must_not_miss_criteria: humanBaselineMustNotMissCriteria,
+    acceptance_conditions: [
+      'The candidate review must preserve the owner-approved trust proof gap as an evidence-backed structured finding.',
+      'The candidate review must keep forbidden claims absent.'
+    ],
+    advisory_only: true,
+    gate_effect: 'none'
+  }, null, 2), 'utf8');
+
+  const humanBaselineOverlay = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'overlay',
+    '--case',
+    'blog-content-value',
+    '--input',
+    'owner-human-baseline-overlay-input.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(humanBaselineOverlay.exitCode, 0);
+  const humanBaselineOverlayBody = JSON.parse(humanBaselineOverlay.stdout);
+  assert.equal(humanBaselineOverlayBody.command, 'agentic review human-baseline overlay');
+  assert.equal(humanBaselineOverlayBody.data.agentic_human_review_human_baseline_overlay.case_overlay.case_id, 'blog-content-value');
+  assert.equal(humanBaselineOverlayBody.data.agentic_human_review_human_baseline_overlay.case_overlay.must_not_miss_criteria[0].id, 'owner-proof-gap');
+  assert.equal(humanBaselineOverlayBody.data.agentic_human_review_human_baseline_overlay.case_overlay.must_not_miss_criteria[0].target_specific, true);
+  assert.equal(humanBaselineOverlayBody.data.agentic_human_review_human_baseline_overlay.validation.ready_for_ai_draft, true);
+  assert.equal(humanBaselineOverlayBody.data.agentic_human_review_human_baseline_overlay.validation.owner_labeled, false);
+  const humanBaselineOverlayPath = path.join(cwd, 'owner-human-baseline-overlay.json');
+  await writeFile(humanBaselineOverlayPath, JSON.stringify(humanBaselineOverlayBody.data.agentic_human_review_human_baseline_overlay, null, 2), 'utf8');
+
+  const humanBaselineDraft = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'draft',
+    '--overlay',
+    'owner-human-baseline-overlay.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(humanBaselineDraft.exitCode, 0);
+  const humanBaselineDraftBody = JSON.parse(humanBaselineDraft.stdout);
+  assert.equal(humanBaselineDraftBody.command, 'agentic review human-baseline draft');
+  assert.equal(humanBaselineDraftBody.data.agentic_human_review_human_baseline_draft.validation.owner_labeled, false);
+  assert.equal(humanBaselineDraftBody.data.agentic_human_review_human_baseline_draft.validation.human_equivalent_claim_allowed, false);
+  assert.equal(humanBaselineDraftBody.data.agentic_human_review_human_baseline_draft.draft.must_not_miss_criteria[0].id, 'owner-proof-gap');
+  assert.equal(humanBaselineDraftBody.data.agentic_human_review_human_baseline_draft.draft.must_not_miss_criteria[0].target_specific, true);
+  assert.equal(humanBaselineDraftBody.data.agentic_human_review_human_baseline_draft.draft.owner_label_set.labels[0].must_not_miss_criterion_id, 'owner-proof-gap');
+  assert.equal(humanBaselineDraftBody.data.agentic_human_review_human_baseline_draft.draft.owner_label_set.labels[0].target_specific, true);
+  assert.equal(humanBaselineDraftBody.data.agentic_human_review_human_baseline_draft.draft.owner_label_set.labels[0].evidence_refs.length, 1);
+  assert.equal(humanBaselineDraftBody.data.agentic_human_review_human_baseline_draft.warnings.some((warning) => warning.code === 'AHR_HUMAN_BASELINE_DRAFT_NOT_OWNER_EVIDENCE'), true);
+  const humanBaselineDraftPath = path.join(cwd, 'owner-human-baseline-draft.json');
+  await writeFile(humanBaselineDraftPath, JSON.stringify(humanBaselineDraftBody.data.agentic_human_review_human_baseline_draft, null, 2), 'utf8');
+
+  const genericOnlyHumanBaselineDraftInput = JSON.parse(JSON.stringify(humanBaselineDraftBody.data.agentic_human_review_human_baseline_draft));
+  genericOnlyHumanBaselineDraftInput.draft.must_not_miss_criteria = genericOnlyHumanBaselineDraftInput.draft.must_not_miss_criteria.map((criterion) => ({
+    ...criterion,
+    target_specific: false,
+    source_kind: 'generic_requirement'
+  }));
+  genericOnlyHumanBaselineDraftInput.draft.owner_label_set.labels = genericOnlyHumanBaselineDraftInput.draft.owner_label_set.labels.map((label) => ({
+    ...label,
+    target_specific: false
+  }));
+  const genericOnlyHumanBaselineDraftPath = path.join(cwd, 'owner-human-baseline-generic-draft.json');
+  await writeFile(genericOnlyHumanBaselineDraftPath, JSON.stringify(genericOnlyHumanBaselineDraftInput, null, 2), 'utf8');
+  const genericOnlyHumanBaselineApproval = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'approval',
+    '--draft',
+    'owner-human-baseline-generic-draft.json',
+    '--decision',
+    'approved',
+    '--approver',
+    'owner-reviewer-fixed',
+    '--approved-at',
+    '2026-06-27T00:00:00.000Z',
+    '--edit-diff',
+    'accepted-after-owner-review',
+    '--baseline-id',
+    'owner-baseline-generic-only',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(genericOnlyHumanBaselineApproval.exitCode, 0);
+  const genericOnlyHumanBaselineApprovalBody = JSON.parse(genericOnlyHumanBaselineApproval.stdout);
+  assert.equal(genericOnlyHumanBaselineApprovalBody.data.agentic_human_review_human_baseline_approval_packet.approved_baseline.owner_labeled, false);
+  assert.equal(genericOnlyHumanBaselineApprovalBody.data.agentic_human_review_human_baseline_approval_packet.validation.target_specific_must_not_miss_criteria_complete, false);
+  assert.equal(genericOnlyHumanBaselineApprovalBody.data.agentic_human_review_human_baseline_approval_packet.warnings.some((warning) => warning.code === 'AHR_HUMAN_BASELINE_TARGET_SPECIFIC_MUST_NOT_MISS_REQUIRED'), true);
+
+  const humanBaselineApproval = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'approval',
+    '--draft',
+    'owner-human-baseline-draft.json',
+    '--decision',
+    'approved',
+    '--approver',
+    'owner-reviewer-fixed',
+    '--approved-at',
+    '2026-06-27T00:00:00.000Z',
+    '--edit-diff',
+    'accepted-after-owner-review',
+    '--baseline-id',
+    'owner-baseline-fixed',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(humanBaselineApproval.exitCode, 0);
+  const humanBaselineApprovalBody = JSON.parse(humanBaselineApproval.stdout);
+  assert.equal(humanBaselineApprovalBody.command, 'agentic review human-baseline approval');
+  assert.equal(humanBaselineApprovalBody.data.agentic_human_review_human_baseline_approval_packet.validation.approval_metadata_complete, true);
+  assert.equal(humanBaselineApprovalBody.data.agentic_human_review_human_baseline_approval_packet.validation.target_specific_must_not_miss_criteria_complete, true);
+  assert.equal(humanBaselineApprovalBody.data.agentic_human_review_human_baseline_approval_packet.approved_baseline.owner_labeled, true);
+  assert.equal(humanBaselineApprovalBody.data.agentic_human_review_human_baseline_approval_packet.approved_baseline.must_not_miss_criteria[0].id, 'owner-proof-gap');
+  assert.equal(humanBaselineApprovalBody.data.agentic_human_review_human_baseline_approval_packet.validation.human_equivalent_claim_allowed, false);
+
   const humanBaselinePath = path.join(cwd, 'owner-human-baseline.json');
+  const overlayHash = humanBaselineOverlayBody.data.agentic_human_review_human_baseline_overlay.overlay_hash;
+  const draftHash = humanBaselineDraftBody.data.agentic_human_review_human_baseline_draft.draft_hash;
   await writeFile(humanBaselinePath, JSON.stringify({
     type: 'agentic_human_review_human_baseline_input',
     baseline_id: 'owner-baseline-fixed',
@@ -4416,11 +4651,28 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     owner_labeled: true,
     reviewed_at: '2026-06-27T00:00:00.000Z',
     review_artifact_ref: reviewIndexPath,
+    overlay_hash: overlayHash,
+    draft_hash: draftHash,
+    approval: {
+      decision: 'approved',
+      approver_id: 'owner-reviewer-fixed',
+      approved_at: '2026-06-27T00:00:00.000Z',
+      rubric_version: '1.0.0',
+      template_version: '1.0.0',
+      overlay_hash: overlayHash,
+      draft_hash: draftHash,
+      edit_diff: 'accepted-after-owner-review',
+      advisory_only: true,
+      gate_effect: 'none'
+    },
     required_dimensions: ['content_comprehension', 'trust_and_credibility'],
     required_mentions: ['content value', 'trust or credibility'],
     forbidden_claims: ['release is approved'],
+    must_not_miss_criteria: humanBaselineMustNotMissCriteria,
     owner_label_set: {
       reviewer_id: 'owner-reviewer-fixed',
+      reviewed_at: '2026-06-27T00:00:00.000Z',
+      rubric_version: '1.0.0',
       owner_labeled: true,
       labels: [{
         id: 'owner-proof-gap',
@@ -4428,7 +4680,10 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
         summary: 'The trust claim needs visible evidence.',
         match_terms: ['trust claim needs visible evidence'],
         evidence_refs: [{ path: reviewIndexPath, description: 'Owner-reviewed local review artifact.' }],
-        severity: 'medium'
+        severity: 'medium',
+        must_not_miss_criterion_id: 'owner-proof-gap',
+        criteria_refs: ['owner-proof-gap'],
+        target_specific: true
       }]
     },
     advisory_only: true,
@@ -4448,7 +4703,81 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   const humanBaselineValidationBody = JSON.parse(humanBaselineValidation.stdout);
   assert.equal(humanBaselineValidationBody.command, 'agentic review human-baseline validate');
   assert.equal(humanBaselineValidationBody.data.agentic_human_review_human_baseline.validation.owner_labeled_baseline_verified, true);
+  assert.equal(humanBaselineValidationBody.data.agentic_human_review_human_baseline.validation.approval_metadata_complete, true);
+  assert.equal(humanBaselineValidationBody.data.agentic_human_review_human_baseline.validation.target_specific_must_not_miss_criteria_complete, true);
+  assert.equal(humanBaselineValidationBody.data.agentic_human_review_human_baseline.summary.must_not_miss_owner_label_count, 1);
   assert.equal(humanBaselineValidationBody.data.agentic_human_review_human_baseline.boundary.read_only, true);
+
+  const syntheticHumanBaselinePath = path.join(cwd, 'owner-human-baseline-synthetic.json');
+  const syntheticHumanBaselineInput = JSON.parse(await readFile(humanBaselinePath, 'utf8'));
+  syntheticHumanBaselineInput.baseline_id = 'owner-baseline-synthetic';
+  syntheticHumanBaselineInput.synthetic_owner_labeled_fixture = true;
+  syntheticHumanBaselineInput.approval = {
+    ...syntheticHumanBaselineInput.approval,
+    approver_id: 'synthetic-dogfood-owner',
+    edit_diff: 'Synthetic fixture generated for local pipeline validation only.'
+  };
+  syntheticHumanBaselineInput.owner_label_set = {
+    ...syntheticHumanBaselineInput.owner_label_set,
+    reviewer_id: 'synthetic-dogfood-owner'
+  };
+  await writeFile(syntheticHumanBaselinePath, JSON.stringify(syntheticHumanBaselineInput, null, 2), 'utf8');
+  const syntheticHumanBaselineValidation = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'validate',
+    '--input',
+    'owner-human-baseline-synthetic.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(syntheticHumanBaselineValidation.exitCode, 0);
+  const syntheticHumanBaselineValidationBody = JSON.parse(syntheticHumanBaselineValidation.stdout);
+  assert.equal(syntheticHumanBaselineValidationBody.data.agentic_human_review_human_baseline.validation.owner_labeled_baseline_verified, false);
+  assert.equal(syntheticHumanBaselineValidationBody.data.agentic_human_review_human_baseline.validation.synthetic_or_fixture_only_marker_present, true);
+  assert.equal(syntheticHumanBaselineValidationBody.data.agentic_human_review_human_baseline.warnings.some((warning) => warning.code === 'AHR_HUMAN_BASELINE_SYNTHETIC_OWNER_LABEL_NOT_PROOF'), true);
+
+  const unapprovedHumanBaselinePath = path.join(cwd, 'owner-human-baseline-unapproved.json');
+  await writeFile(unapprovedHumanBaselinePath, JSON.stringify({
+    type: 'agentic_human_review_human_baseline_input',
+    baseline_id: 'owner-baseline-unapproved',
+    case_id: 'blog-content-value',
+    owner_labeled: true,
+    required_dimensions: ['trust_and_credibility'],
+    required_mentions: ['content value'],
+    forbidden_claims: [],
+    must_not_miss_criteria: humanBaselineMustNotMissCriteria,
+    owner_label_set: {
+      reviewer_id: 'owner-reviewer-fixed',
+      owner_labeled: true,
+      labels: [{
+        id: 'owner-proof-gap',
+        dimension: 'trust_and_credibility',
+        summary: 'The trust claim needs visible evidence.',
+        match_terms: ['trust claim needs visible evidence'],
+        evidence_refs: [{ path: reviewIndexPath, description: 'Owner-reviewed local review artifact.' }],
+        severity: 'medium',
+        must_not_miss_criterion_id: 'owner-proof-gap',
+        criteria_refs: ['owner-proof-gap'],
+        target_specific: true
+      }]
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  }, null, 2), 'utf8');
+  const unapprovedHumanBaselineValidation = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'validate',
+    '--input',
+    'owner-human-baseline-unapproved.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(unapprovedHumanBaselineValidation.exitCode, 0);
+  const unapprovedHumanBaselineValidationBody = JSON.parse(unapprovedHumanBaselineValidation.stdout);
+  assert.equal(unapprovedHumanBaselineValidationBody.data.agentic_human_review_human_baseline.validation.owner_labeled_baseline_verified, false);
+  assert.equal(unapprovedHumanBaselineValidationBody.data.agentic_human_review_human_baseline.warnings.some((warning) => warning.code === 'AHR_HUMAN_BASELINE_APPROVER_MISSING'), true);
 
   const humanBaselineComparison = await executeCli([
     'agentic',
@@ -4469,7 +4798,134 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.comparison_kind, 'owner-labeled-human-baseline');
   assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.summary.owner_labeled_baseline_verified, true);
   assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.owner_label_coverage_score, 1);
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.must_not_miss_criterion_coverage_score, 1);
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.miss_count, 0);
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.must_not_miss_miss_count, 0);
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.matches.classifications.misses.length, 0);
   assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.summary.human_equivalent_claim_allowed, false);
+  const humanBaselineComparisonPath = path.join(cwd, 'owner-human-baseline-comparison.json');
+  await writeFile(humanBaselineComparisonPath, JSON.stringify(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison, null, 2), 'utf8');
+
+  const textOnlyHumanBaselineResultPath = path.join(cwd, 'agentic-text-only-owner-label-result.json');
+  const textOnlyHumanBaselineResult = JSON.parse(await readFile(path.join(cwd, '.browser-debug/agentic-human-review-results/agentic-execution-api/result.json'), 'utf8'));
+  textOnlyHumanBaselineResult.non_engineer_summary = {
+    ...(textOnlyHumanBaselineResult.non_engineer_summary ?? {}),
+    main_takeaway: 'The trust claim needs visible evidence.'
+  };
+  textOnlyHumanBaselineResult.agentic_human_review_findings = [];
+  await writeFile(textOnlyHumanBaselineResultPath, JSON.stringify(textOnlyHumanBaselineResult, null, 2), 'utf8');
+  const textOnlyHumanBaselineComparison = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'compare',
+    '--baseline',
+    'owner-human-baseline.json',
+    '--result',
+    'agentic-text-only-owner-label-result.json',
+    '--case',
+    'blog-content-value',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(textOnlyHumanBaselineComparison.exitCode, 0);
+  const textOnlyHumanBaselineComparisonBody = JSON.parse(textOnlyHumanBaselineComparison.stdout);
+  assert.equal(textOnlyHumanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.owner_label_coverage_score, 0);
+  assert.equal(textOnlyHumanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.must_not_miss_criterion_coverage_score, 0);
+  assert.equal(textOnlyHumanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.insufficient_evidence_count, 1);
+  assert.equal(textOnlyHumanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.summary.ready_for_owner_review, false);
+  assert.equal(textOnlyHumanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.warnings.some((warning) => warning.code === 'AHR_HUMAN_BASELINE_COMPARISON_INSUFFICIENT_EVIDENCE'), true);
+  assert.equal(textOnlyHumanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.warnings.some((warning) => warning.code === 'AHR_HUMAN_BASELINE_COMPARISON_MUST_NOT_MISS_INCOMPLETE'), true);
+
+  const uppercaseForbiddenClaimBaselinePath = path.join(cwd, 'owner-human-baseline-uppercase-forbidden.json');
+  await writeFile(uppercaseForbiddenClaimBaselinePath, JSON.stringify({
+    type: 'agentic_human_review_human_baseline_input',
+    baseline_id: 'owner-baseline-uppercase-forbidden',
+    case_id: 'blog-content-value',
+    owner_labeled: true,
+    reviewed_at: '2026-06-27T00:00:00.000Z',
+    approval: {
+      decision: 'approved',
+      approver_id: 'owner-reviewer-fixed',
+      approved_at: '2026-06-27T00:00:00.000Z',
+      rubric_version: '1.0.0',
+      template_version: '1.0.0',
+      overlay_hash: overlayHash,
+      draft_hash: draftHash,
+      edit_diff: 'accepted-after-owner-review',
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    required_dimensions: ['content_comprehension'],
+    required_mentions: ['content value'],
+    forbidden_claims: ['raw image bytes were embedded in JSON'],
+    must_not_miss_criteria: [{
+      id: 'owner-content-value',
+      dimension: 'content_comprehension',
+      summary: 'The review should cover content value.',
+      match_terms: ['content value'],
+      severity: 'medium',
+      evidence_refs: [{ path: reviewIndexPath, description: 'Owner-reviewed local review artifact.' }],
+      target_specific: true,
+      source_kind: 'target_specific_owner_overlay'
+    }],
+    owner_label_set: {
+      reviewer_id: 'owner-reviewer-fixed',
+      reviewed_at: '2026-06-27T00:00:00.000Z',
+      rubric_version: '1.0.0',
+      owner_labeled: true,
+      labels: [{
+        id: 'owner-content-value',
+        dimension: 'content_comprehension',
+        summary: 'The review should cover content value.',
+        match_terms: ['content value'],
+        evidence_refs: [{ path: reviewIndexPath, description: 'Owner-reviewed local review artifact.' }],
+        severity: 'medium',
+        must_not_miss_criterion_id: 'owner-content-value',
+        criteria_refs: ['owner-content-value'],
+        target_specific: true
+      }]
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  }, null, 2), 'utf8');
+  const uppercaseForbiddenClaimResultPath = path.join(cwd, 'agentic-uppercase-forbidden-claim-result.json');
+  const uppercaseForbiddenClaimResult = JSON.parse(await readFile(path.join(cwd, '.browser-debug/agentic-human-review-results/agentic-execution-api/result.json'), 'utf8'));
+  uppercaseForbiddenClaimResult.benchmark_requirement_coverage = {
+    ...(uppercaseForbiddenClaimResult.benchmark_requirement_coverage ?? {}),
+    forbidden_claims: [{
+      claim: 'raw image bytes were embedded in JSON',
+      present: false,
+      status: 'absent',
+      evidence: 'The advisory output does not claim that raw image bytes were embedded in JSON.',
+      structured_record_present: true,
+      evidence_backed: true
+    }],
+    summary: {
+      ...(uppercaseForbiddenClaimResult.benchmark_requirement_coverage?.summary ?? {}),
+      forbidden_claim_score: 1
+    }
+  };
+  await writeFile(uppercaseForbiddenClaimResultPath, JSON.stringify(uppercaseForbiddenClaimResult, null, 2), 'utf8');
+  const uppercaseForbiddenClaimComparison = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'compare',
+    '--baseline',
+    'owner-human-baseline-uppercase-forbidden.json',
+    '--result',
+    'agentic-uppercase-forbidden-claim-result.json',
+    '--case',
+    'blog-content-value',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(uppercaseForbiddenClaimComparison.exitCode, 0);
+  const uppercaseForbiddenClaimComparisonBody = JSON.parse(uppercaseForbiddenClaimComparison.stdout);
+  const uppercaseForbiddenClaimMatch = uppercaseForbiddenClaimComparisonBody.data.agentic_human_review_human_baseline_comparison.matches.forbidden_claims
+    .find((claim) => claim.claim === 'raw image bytes were embedded in JSON');
+  assert.equal(uppercaseForbiddenClaimMatch.present, false);
+  assert.equal(uppercaseForbiddenClaimMatch.source, 'benchmark_requirement_coverage');
+  assert.equal(uppercaseForbiddenClaimComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.forbidden_claim_score, 1);
 
   const evidenceSetPath = path.join(cwd, 'agentic-evidence-set.json');
   await writeFile(evidenceSetPath, JSON.stringify({
@@ -4481,7 +4937,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
       { path: 'owner-human-baseline.json' }
     ],
     calibrations: [],
-    comparisons: []
+    comparisons: [
+      { path: 'owner-human-baseline-comparison.json' }
+    ]
   }, null, 2), 'utf8');
   const evidenceSet = await executeCli([
     'agentic',
@@ -4497,8 +4955,310 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(evidenceSetBody.command, 'agentic review evidence-set summarize');
   assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.observed_efforts.includes('xhigh'), true);
   assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.owner_labeled_baseline_count, 1);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.human_baseline_comparison_count, 1);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.human_baseline_comparison_ready_count, 0);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.human_baseline_comparison_ready_case_count, 0);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.claim_numerator_eligible_result_count, 0);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.real_provider_claim_numerator_matrix_complete, false);
   assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.observed_human_baseline_case_ids.includes('blog-content-value'), true);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.missing_human_baseline_comparison_case_ids.includes('blog-content-value'), true);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.results[0].origin_kind, 'deterministic_fake_provider');
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.results[0].claim_numerator_eligible, false);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.results[0].proof_eligible, false);
   assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.human_equivalent_claim_allowed, false);
+
+  const evidenceSetAliasPath = path.join(cwd, 'agentic-evidence-set-aliases.json');
+  await writeFile(evidenceSetAliasPath, JSON.stringify({
+    type: 'agentic_human_review_evidence_set_manifest',
+    results: [
+      { result_path: '.browser-debug/agentic-human-review-results/agentic-execution-fixed/result.json' }
+    ],
+    human_baselines: [
+      { human_baseline_path: 'owner-human-baseline.json' }
+    ],
+    calibrations: [],
+    comparisons: [
+      { comparison_path: 'owner-human-baseline-comparison.json' }
+    ]
+  }, null, 2), 'utf8');
+  const evidenceSetValidate = await executeCli([
+    'agentic',
+    'review',
+    'evidence-set',
+    'validate',
+    '--input',
+    'agentic-evidence-set-aliases.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(evidenceSetValidate.exitCode, 0);
+  const evidenceSetValidateBody = JSON.parse(evidenceSetValidate.stdout);
+  assert.equal(evidenceSetValidateBody.command, 'agentic review evidence-set validate');
+  assert.equal(evidenceSetValidateBody.data.agentic_human_review_evidence_set.summary.result_count, 1);
+  assert.equal(evidenceSetValidateBody.data.agentic_human_review_evidence_set.summary.claim_numerator_eligible_result_count, 0);
+
+  await writeFile(path.join(cwd, 'agentic-calibration-wrapper.json'), calibrationResult.stdout, 'utf8');
+  await writeFile(path.join(cwd, 'agentic-comparison-wrapper.json'), comparisonResult.stdout, 'utf8');
+  await writeFile(path.join(cwd, 'owner-human-baseline-validation-wrapper.json'), humanBaselineValidation.stdout, 'utf8');
+  await writeFile(path.join(cwd, 'owner-human-baseline-comparison-wrapper.json'), humanBaselineComparison.stdout, 'utf8');
+  const wrappedEvidenceSetPath = path.join(cwd, 'agentic-evidence-set-wrapped-artifacts.json');
+  await writeFile(wrappedEvidenceSetPath, JSON.stringify({
+    type: 'agentic_human_review_evidence_set_manifest',
+    results: [
+      { path: '.browser-debug/agentic-human-review-results/agentic-execution-fixed/result.json' }
+    ],
+    calibrations: [
+      { path: 'agentic-calibration-wrapper.json', effort: 'xhigh' }
+    ],
+    comparisons: [
+      { path: 'agentic-comparison-wrapper.json', case_id: 'blog-content-value' },
+      { path: 'owner-human-baseline-comparison-wrapper.json', case_id: 'blog-content-value' }
+    ],
+    human_baselines: [
+      { path: 'owner-human-baseline-validation-wrapper.json' }
+    ]
+  }, null, 2), 'utf8');
+  const wrappedEvidenceSet = await executeCli([
+    'agentic',
+    'review',
+    'evidence-set',
+    'summarize',
+    '--input',
+    'agentic-evidence-set-wrapped-artifacts.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(wrappedEvidenceSet.exitCode, 0);
+  const wrappedSummary = JSON.parse(wrappedEvidenceSet.stdout).data.agentic_human_review_evidence_set.summary;
+  assert.equal(wrappedSummary.calibration_count, 1);
+  assert.equal(wrappedSummary.calibration_pass_count, 1);
+  assert.equal(wrappedSummary.observed_comparison_kinds.includes('direct-vs-tracecue'), true);
+  assert.equal(wrappedSummary.observed_comparison_kinds.includes('owner-labeled-human-baseline'), true);
+  assert.equal(wrappedSummary.owner_labeled_baseline_count, 1);
+  assert.equal(wrappedSummary.human_baseline_comparison_count, 1);
+
+  const evidenceSetExecuteRejected = await executeCli([
+    'agentic',
+    'review',
+    'evidence-set',
+    'summarize',
+    '--input',
+    'agentic-evidence-set.json',
+    '--execute',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(evidenceSetExecuteRejected.exitCode, 2);
+  assert.equal(JSON.parse(evidenceSetExecuteRejected.stdout).errors[0].code, 'CONFLICTING_OPTIONS');
+
+  const humanBaselineClaimReadiness = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'claim-readiness',
+    '--evidence-set',
+    'agentic-evidence-set.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(humanBaselineClaimReadiness.exitCode, 0);
+  const humanBaselineClaimReadinessBody = JSON.parse(humanBaselineClaimReadiness.stdout);
+  assert.equal(humanBaselineClaimReadinessBody.command, 'agentic review human-baseline claim-readiness');
+  assert.equal(humanBaselineClaimReadinessBody.data.agentic_human_review_human_baseline_claim_readiness.summary.human_equivalent_claim_allowed, false);
+  assert.equal(humanBaselineClaimReadinessBody.data.agentic_human_review_human_baseline_claim_readiness.summary.human_superior_claim_allowed, false);
+  assert.equal(humanBaselineClaimReadinessBody.data.agentic_human_review_human_baseline_claim_readiness.conditions.real_provider_claim_numerator_matrix_complete, false);
+  assert.equal(humanBaselineClaimReadinessBody.data.agentic_human_review_human_baseline_claim_readiness.status, 'claim_readiness_incomplete');
+
+  const benchmarkCaseIds = [
+    'blog-content-value',
+    'landing-trust-clarity',
+    'commerce-decision-confidence',
+    'dashboard-empty-state',
+    'image-visual-hierarchy',
+    'article-comprehension-risk'
+  ];
+  const requiredEfforts = ['standard', 'deep', 'xhigh'];
+  const matrixResultEntries = [];
+  const matrixBaseResult = JSON.parse(await readFile(path.join(cwd, '.browser-debug/agentic-human-review-results/agentic-execution-api/result.json'), 'utf8'));
+  for (const caseId of benchmarkCaseIds) {
+    for (const effort of requiredEfforts) {
+      const matrixResult = {
+        ...matrixBaseResult,
+        id: `matrix-${caseId}-${effort}`,
+        provider: { id: 'generic-api-provider' },
+        model: { id: 'matrix-provider-model' },
+        execution: {
+          ...(matrixBaseResult.execution ?? {}),
+          api_call_performed: true,
+          external_evidence_transfer: true,
+          raw_provider_response_stored: false,
+          credential_values_recorded: false
+        },
+        agentic_human_review_advisory: {
+          ...(matrixBaseResult.agentic_human_review_advisory ?? {}),
+          review_effort: effort,
+          gate_effect: 'none'
+        },
+        calibration_metadata: {
+          ...(matrixBaseResult.calibration_metadata ?? {}),
+          benchmark_case_id: caseId
+        },
+        benchmark_requirement_coverage: {
+          ...(matrixBaseResult.benchmark_requirement_coverage ?? {}),
+          case_id: caseId
+        },
+        dogfood_metadata: {
+          ...(matrixBaseResult.dogfood_metadata ?? {}),
+          case_id: caseId
+        },
+        xhigh_multi_round_review: effort === 'xhigh'
+          ? {
+              ...(matrixBaseResult.xhigh_multi_round_review ?? {}),
+              required: true,
+              status: 'complete',
+              mechanical_contract_enforced: true,
+              required_roles: matrixBaseResult.xhigh_multi_round_review?.required_roles ?? [],
+              missing_roles: [],
+              planned_rounds: matrixBaseResult.xhigh_multi_round_review?.planned_rounds ?? [1, 2, 3],
+              missing_rounds: [],
+              missing_critique_roles: [],
+              synthesis_integrated: true,
+              missing_conditions: [],
+              completion_score: 1,
+              repair_plan: matrixBaseResult.xhigh_multi_round_review?.repair_plan ?? {},
+              multi_step_plan: matrixBaseResult.xhigh_multi_round_review?.multi_step_plan ?? {},
+              evidence_provenance: matrixBaseResult.xhigh_multi_round_review?.evidence_provenance ?? {},
+              advisory_only: true,
+              gate_effect: 'none'
+            }
+          : {
+              ...(matrixBaseResult.xhigh_multi_round_review ?? {}),
+              required: false,
+              status: 'not_required',
+              advisory_only: true,
+              gate_effect: 'none'
+            },
+        xhigh_mechanical_enforcement: effort === 'xhigh'
+          ? {
+              ...(matrixBaseResult.xhigh_mechanical_enforcement ?? {}),
+              required: true,
+              status: 'complete',
+              mechanical_contract_enforced: true,
+              completion_score: 1,
+              missing_conditions: [],
+              repair_plan: matrixBaseResult.xhigh_mechanical_enforcement?.repair_plan ?? {},
+              multi_step_plan: matrixBaseResult.xhigh_mechanical_enforcement?.multi_step_plan ?? {},
+              evidence_provenance: matrixBaseResult.xhigh_mechanical_enforcement?.evidence_provenance ?? {},
+              advisory_only: true,
+              gate_effect: 'none'
+            }
+          : {
+              ...(matrixBaseResult.xhigh_mechanical_enforcement ?? {}),
+              required: false,
+              status: 'not_required',
+              advisory_only: true,
+              gate_effect: 'none'
+            },
+        advisory_only: true,
+        gate_effect: 'none'
+      };
+      const relativePath = `matrix-${caseId}-${effort}.json`;
+      await writeFile(path.join(cwd, relativePath), JSON.stringify(matrixResult, null, 2), 'utf8');
+      matrixResultEntries.push({
+        path: relativePath,
+        case_id: caseId,
+        effort,
+        provider_id: 'generic-api-provider'
+      });
+    }
+  }
+  const matrixDirectComparisonPath = path.join(cwd, 'matrix-direct-vs-tracecue.json');
+  await writeFile(matrixDirectComparisonPath, JSON.stringify(comparisonBody.data.agentic_human_review_comparison, null, 2), 'utf8');
+  const matrixEvidenceSetPath = path.join(cwd, 'agentic-real-provider-matrix-evidence-set.json');
+  await writeFile(matrixEvidenceSetPath, JSON.stringify({
+    type: 'agentic_human_review_evidence_set_manifest',
+    results: matrixResultEntries,
+    calibrations: [],
+    comparisons: [
+      { path: 'matrix-direct-vs-tracecue.json', case_id: 'blog-content-value' }
+    ],
+    human_baselines: []
+  }, null, 2), 'utf8');
+  const matrixEvidenceSet = await executeCli([
+    'agentic',
+    'review',
+    'evidence-set',
+    'summarize',
+    '--input',
+    'agentic-real-provider-matrix-evidence-set.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(matrixEvidenceSet.exitCode, 0);
+  const matrixEvidenceSetBody = JSON.parse(matrixEvidenceSet.stdout);
+  const matrixSummary = matrixEvidenceSetBody.data.agentic_human_review_evidence_set.summary;
+  assert.equal(matrixSummary.result_count, benchmarkCaseIds.length * requiredEfforts.length);
+  assert.equal(matrixSummary.claim_numerator_eligible_result_count, benchmarkCaseIds.length * requiredEfforts.length);
+  assert.equal(matrixSummary.real_provider_claim_numerator_matrix_complete, true);
+  assert.equal(matrixSummary.missing_real_provider_claim_numerator_case_efforts.length, 0);
+  assert.equal(matrixSummary.calibration_pass_matrix_complete, false);
+  assert.equal(matrixSummary.missing_calibration_case_efforts.length, benchmarkCaseIds.length * requiredEfforts.length);
+  assert.equal(matrixSummary.missing_direct_vs_tracecue_case_ids.includes('landing-trust-clarity'), true);
+  assert.equal(matrixSummary.missing_direct_vs_tracecue_case_ids.includes('blog-content-value'), false);
+  assert.equal(matrixEvidenceSetBody.data.agentic_human_review_evidence_set.warnings.some((warning) => warning.code === 'AHR_EVIDENCE_SET_CALIBRATION_MATRIX_INCOMPLETE'), true);
+
+  const matrixClaimReadiness = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'claim-readiness',
+    '--evidence-set',
+    'agentic-real-provider-matrix-evidence-set.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(matrixClaimReadiness.exitCode, 0);
+  const matrixClaimReadinessBody = JSON.parse(matrixClaimReadiness.stdout);
+  const matrixClaimReadinessData = matrixClaimReadinessBody.data.agentic_human_review_human_baseline_claim_readiness;
+  assert.equal(matrixClaimReadinessData.conditions.real_provider_claim_numerator_matrix_complete, true);
+  assert.equal(matrixClaimReadinessData.conditions.calibration_pass_matrix_complete, false);
+  assert.equal(matrixClaimReadinessData.conditions.direct_vs_tracecue_case_matrix_complete, false);
+  assert.equal(matrixClaimReadinessData.warnings.some((warning) => warning.code === 'AHR_HUMAN_BASELINE_CLAIM_READINESS_CALIBRATION_MATRIX_INCOMPLETE'), true);
+
+  const duplicateEvidenceSetPath = path.join(cwd, 'agentic-duplicate-real-provider-evidence-set.json');
+  await writeFile(duplicateEvidenceSetPath, JSON.stringify({
+    type: 'agentic_human_review_evidence_set_manifest',
+    results: Array.from({ length: benchmarkCaseIds.length * requiredEfforts.length }, () => ({
+      path: matrixResultEntries[0].path,
+      case_id: 'blog-content-value',
+      effort: 'standard',
+      provider_id: 'generic-api-provider'
+    })),
+    calibrations: [],
+    comparisons: [],
+    human_baselines: []
+  }, null, 2), 'utf8');
+  const duplicateEvidenceSet = await executeCli([
+    'agentic',
+    'review',
+    'evidence-set',
+    'summarize',
+    '--input',
+    'agentic-duplicate-real-provider-evidence-set.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(duplicateEvidenceSet.exitCode, 0);
+  const duplicateSummary = JSON.parse(duplicateEvidenceSet.stdout).data.agentic_human_review_evidence_set.summary;
+  assert.equal(duplicateSummary.claim_numerator_eligible_result_count, benchmarkCaseIds.length * requiredEfforts.length);
+  assert.equal(duplicateSummary.real_provider_claim_numerator_required_count, benchmarkCaseIds.length * requiredEfforts.length);
+  assert.equal(duplicateSummary.real_provider_claim_numerator_matrix_complete, false);
+  assert.equal(duplicateSummary.missing_real_provider_claim_numerator_case_efforts.some((cell) => cell.case_id === 'landing-trust-clarity' && cell.effort === 'standard'), true);
+
+  const humanBaselineClaimReadinessOutside = await executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'claim-readiness',
+    '--evidence-set',
+    '../outside.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(humanBaselineClaimReadinessOutside.exitCode, 1);
+  assert.equal(JSON.parse(humanBaselineClaimReadinessOutside.stdout).errors[0].code, 'AGENTIC_REVIEW_INPUT_OUTSIDE_WORKSPACE');
 
   const comparisonDatasetPath = path.join(cwd, 'agentic-comparison-dataset.json');
   await writeFile(comparisonDatasetPath, JSON.stringify({
@@ -4607,8 +5367,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(listResult.exitCode, 0);
   const listBody = JSON.parse(listResult.stdout);
   assert.equal(listBody.command, 'agentic review list');
-  assert.equal(listBody.data.summary.total, 6);
+  assert.equal(listBody.data.summary.total, 8);
   assert.equal(listBody.data.summary.completed, 3);
+  assert.equal(listBody.data.summary.failed, 2);
   assert.equal(listBody.data.summary.blocked, 3);
   assert.equal(listBody.data.summary.api_call_performed, true);
   assert.equal(listBody.data.summary.external_evidence_transfer, true);
@@ -4732,6 +5493,13 @@ test('agentic human review injected runner redacts sensitive advisory text', asy
 
 test('agentic human review responses adapter converts requests without leaking credentials or local paths', async () => {
   const request = adapterTraceCueRequest();
+  request.plan.review_quality_benchmark = {
+    enabled: true,
+    case_id: 'blog-content-value',
+    required_mentions: ['content value'],
+    required_dimensions: ['content_comprehension'],
+    forbidden_claims: ['release is approved']
+  };
   let observedFetch = null;
   const result = await handleAgenticHumanReviewResponsesAdapterRequest({
     method: 'POST',
@@ -4767,13 +5535,37 @@ test('agentic human review responses adapter converts requests without leaking c
             findings: [],
             uncertainties: []
           })),
-          findings: [{
+          agentic_human_review_findings: [{
             id: 'adapter-review-gap',
             category: 'copy_and_comprehension',
             severity: 'medium',
             message: 'The visible content needs clearer evidence support.',
-            recommendation: 'Connect the main claim to the strongest visible proof.'
+            recommendation: 'Connect the main claim to the strongest visible proof.',
+            evidence_ref_ids: ['text-snippet-1']
           }],
+          benchmark_requirement_coverage: {
+            mentions: [{
+              requirement: 'content value',
+              covered: true,
+              status: 'covered',
+              evidence: 'The review explicitly discusses the content value of the visible page.',
+              evidence_ref_ids: ['benchmark-required-mention-1']
+            }],
+            dimensions: {
+              content_comprehension: {
+                covered: true,
+                evidence: 'The review explains how the main message would be understood.',
+                source_refs: ['benchmark-required-dimension-1']
+              }
+            },
+            forbidden_claim_checks: [{
+              forbidden_claim: 'release is approved',
+              covered: true,
+              status: 'absent',
+              evidence: 'No deterministic release approval is claimed.',
+              citations: ['benchmark-forbidden-claim-1']
+            }]
+          },
           improvement_suggestions: ['Clarify the main claim and evidence order.'],
           owner_decision_requests: [{
             id: 'owner-evidence-priority',
@@ -4790,6 +5582,14 @@ test('agentic human review responses adapter converts requests without leaking c
   assert.equal(result.headers['cache-control'], 'no-store');
   assert.equal(result.body.summary, 'The adapter provider produced a human-facing review.');
   assert.equal(result.body.role_opinions.length, request.plan.sub_agents.length);
+  assert.equal(result.body.agentic_human_review_findings.length, 1);
+  assert.equal(result.body.agentic_human_review_findings[0].evidence_refs[0].id, 'text-snippet-1');
+  assert.equal(result.body.benchmark_requirement_coverage.required_mentions[0].mention, 'content value');
+  assert.equal(result.body.benchmark_requirement_coverage.required_mentions[0].evidence_refs[0].id, 'benchmark-required-mention-1');
+  assert.equal(result.body.benchmark_requirement_coverage.required_dimensions[0].dimension, 'content_comprehension');
+  assert.equal(result.body.benchmark_requirement_coverage.forbidden_claims[0].claim, 'release is approved');
+  assert.equal(result.body.benchmark_requirement_coverage.forbidden_claims[0].present, false);
+  assert.equal(result.body.benchmark_requirement_coverage.forbidden_claims[0].forbidden_claim_absence_confirmed, true);
   assert.equal(result.body.adapter_boundary.raw_provider_response_stored, false);
   assert.equal(result.body.adapter_boundary.credential_values_recorded, false);
   assert.equal(observedFetch.url, 'https://api.openai.com/v1/responses');
@@ -4798,9 +5598,20 @@ test('agentic human review responses adapter converts requests without leaking c
   assert.equal(observedFetch.body.model, 'review-model-for-test');
   assert.equal(observedFetch.body.store, false);
   assert.deepEqual(observedFetch.body.tools, []);
+  assert.equal(observedFetch.body.reasoning.effort, 'high');
+  assert.equal(observedFetch.body.metadata.tracecue_review_effort, 'xhigh');
+  assert.equal(observedFetch.body.metadata.tracecue_native_effort_applied, 'true');
+  assert.equal(observedFetch.body.metadata.tracecue_contract_validation_required, 'true');
   assert.equal(observedFetch.body.text.format.type, 'json_schema');
   assert.equal(observedFetch.body.text.format.name, 'tracecue_agentic_human_review_advisory');
+  assert.equal(observedFetch.body.text.format.schema.required.includes('benchmark_requirement_coverage'), true);
+  assert.equal(observedFetch.body.text.format.schema.required.includes('agentic_human_review_findings'), true);
+  assert.match(observedFetch.body.instructions, /without paraphrasing keys/);
+  assert.match(observedFetch.body.instructions, /Do not claim human-equivalent or human-superior quality/);
+  assert.doesNotMatch(observedFetch.body.instructions, /expert human-equivalent reviewer/);
   assert.doesNotMatch(observedFetch.body.input, /adapter-secret-value|provider-secret-value|\.browser-debug|\/tmp\/local-plan/);
+  assert.match(observedFetch.body.input, /evidence_reference_catalog/);
+  assert.match(observedFetch.body.input, /text-snippet-1/);
   assert.doesNotMatch(JSON.stringify(result.body), /adapter-secret-value|provider-secret-value|output_text/);
 
   const directRequest = buildOpenAiResponsesRequest({
@@ -4810,7 +5621,277 @@ test('agentic human review responses adapter converts requests without leaking c
   });
   assert.equal(directRequest.model, 'direct-model');
   assert.equal(directRequest.store, false);
+  assert.equal(directRequest.reasoning.effort, 'high');
   assert.doesNotMatch(directRequest.input, /\.browser-debug|\/tmp\/local-plan/);
+  const benchmarkSchema = directRequest.text.format.schema.properties.benchmark_requirement_coverage.properties;
+  assert.equal(benchmarkSchema.required_mentions.items.required.includes('evidence'), true);
+  assert.equal(benchmarkSchema.required_mentions.items.required.includes('evidence_refs'), true);
+  assert.equal(benchmarkSchema.required_mentions.items.properties.evidence.minLength, 1);
+  assert.equal(benchmarkSchema.required_mentions.items.properties.evidence_refs.minItems, 1);
+  assert.deepEqual(benchmarkSchema.forbidden_claims.items.properties.present.enum, [false]);
+});
+
+test('agentic human review responses adapter retries repairable benchmark contract gaps once', async () => {
+  const request = adapterTraceCueRequest();
+  request.plan.review_effort = { mode: 'standard' };
+  request.plan.review_quality_benchmark = {
+    enabled: true,
+    case_id: 'blog-content-value',
+    required_mentions: ['content value'],
+    required_dimensions: ['content_comprehension'],
+    forbidden_claims: ['release is approved']
+  };
+  const baseAdvisory = {
+    summary: 'The adapter provider produced a repairable human-facing review.',
+    role_opinions: request.plan.sub_agents.map((agent) => ({
+      role: agent.role,
+      display_name: agent.display_name,
+      effort: agent.effort,
+      round: agent.round,
+      summary: `${agent.display_name} reviewed the request through the adapter.`,
+      findings: [],
+      uncertainties: []
+    })),
+    agentic_human_review_findings: [{
+      message: 'The visible content needs clearer evidence support.',
+      evidence_ref_ids: ['text-snippet-1']
+    }],
+    benchmark_requirement_coverage: {
+      required_mentions: [{
+        mention: 'content value',
+        present: true,
+        status: 'covered',
+        evidence: 'The review discusses visible content value.',
+        evidence_ref_ids: ['benchmark-required-mention-1']
+      }],
+      required_dimensions: [{
+        dimension: 'content_comprehension',
+        present: true,
+        status: 'covered',
+        evidence: 'The review explains comprehension risk.',
+        evidence_ref_ids: ['benchmark-required-dimension-1']
+      }]
+    }
+  };
+  const repairedAdvisory = {
+    ...baseAdvisory,
+    benchmark_requirement_coverage: {
+      ...baseAdvisory.benchmark_requirement_coverage,
+      forbidden_claims: [{
+        claim: 'release is approved',
+        present: false,
+        status: 'absent',
+        evidence: 'The advisory does not claim a release approval.',
+        evidence_ref_ids: ['benchmark-forbidden-claim-1']
+      }]
+    }
+  };
+  const observedRequests = [];
+  const result = await handleAgenticHumanReviewResponsesAdapterRequest({
+    method: 'POST',
+    url: '/agentic-human-review',
+    headers: {
+      host: '127.0.0.1:8787',
+      authorization: 'Bearer adapter-secret-value',
+      'content-type': 'application/json'
+    },
+    remoteAddress: '127.0.0.1',
+    bodyText: JSON.stringify(request),
+    env: adapterEnv(),
+    config: { contractRepairAttempts: 1 },
+    fetchImpl: async (url, init) => {
+      observedRequests.push(JSON.parse(init.body));
+      return jsonResponse({
+        output_text: JSON.stringify(observedRequests.length === 1 ? baseAdvisory : repairedAdvisory)
+      });
+    },
+    now: fixedNow
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(observedRequests.length, 2);
+  assert.equal(result.body.adapter_boundary.contract_repair_attempts_performed, 1);
+  assert.equal(result.body.benchmark_requirement_coverage.forbidden_claims[0].claim, 'release is approved');
+  assert.match(observedRequests[1].instructions, /Contract repair retry is active/);
+  assert.match(observedRequests[1].input, /release is approved/);
+  assert.doesNotMatch(JSON.stringify(result.body), /adapter-secret-value|provider-secret-value|output_text/);
+});
+
+test('agentic human review responses adapter repairs forbidden claims that are marked present', async () => {
+  const request = adapterTraceCueRequest();
+  request.plan.review_effort = { mode: 'standard' };
+  request.plan.review_quality_benchmark = {
+    enabled: true,
+    case_id: 'blog-content-value',
+    required_mentions: [],
+    required_dimensions: [],
+    forbidden_claims: ['release is approved']
+  };
+  const invalidAdvisory = {
+    summary: 'The adapter provider returned an invalid forbidden claim state.',
+    role_opinions: [],
+    agentic_human_review_findings: [],
+    benchmark_requirement_coverage: {
+      forbidden_claims: [{
+        claim: 'release is approved',
+        present: true,
+        status: 'forbidden_claim_present',
+        evidence: 'The advisory states this claim is absent, but marked it present.',
+        evidence_ref_ids: ['benchmark-forbidden-claim-1']
+      }]
+    }
+  };
+  const repairedAdvisory = {
+    ...invalidAdvisory,
+    benchmark_requirement_coverage: {
+      forbidden_claims: [{
+        claim: 'release is approved',
+        present: false,
+        status: 'absent',
+        evidence: 'No release approval is claimed by the advisory.',
+        evidence_ref_ids: ['benchmark-forbidden-claim-1']
+      }]
+    }
+  };
+  const observedRequests = [];
+  const result = await handleAgenticHumanReviewResponsesAdapterRequest({
+    method: 'POST',
+    url: '/agentic-human-review',
+    headers: {
+      host: '127.0.0.1:8787',
+      authorization: 'Bearer adapter-secret-value',
+      'content-type': 'application/json'
+    },
+    remoteAddress: '127.0.0.1',
+    bodyText: JSON.stringify(request),
+    env: adapterEnv(),
+    config: { contractRepairAttempts: 1 },
+    fetchImpl: async (url, init) => {
+      observedRequests.push(JSON.parse(init.body));
+      return jsonResponse({
+        output_text: JSON.stringify(observedRequests.length === 1 ? invalidAdvisory : repairedAdvisory)
+      });
+    },
+    now: fixedNow
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(observedRequests.length, 2);
+  assert.equal(result.body.adapter_boundary.contract_repair_attempts_performed, 1);
+  assert.equal(result.body.benchmark_requirement_coverage.forbidden_claims[0].present, false);
+  assert.match(observedRequests[1].input, /forbidden claim record must set present=false/);
+});
+
+test('agentic human review responses adapter rejects unknown benchmark evidence references after repair', async () => {
+  const request = adapterTraceCueRequest();
+  request.plan.review_effort = { mode: 'standard' };
+  request.plan.review_quality_benchmark = {
+    enabled: true,
+    case_id: 'blog-content-value',
+    required_mentions: ['content value'],
+    required_dimensions: [],
+    forbidden_claims: ['release is approved']
+  };
+  const invalidAdvisory = {
+    summary: 'The adapter provider returned a benchmark record with an unknown evidence reference.',
+    role_opinions: [],
+    agentic_human_review_findings: [],
+    benchmark_requirement_coverage: {
+      required_mentions: [{
+        mention: 'content value',
+        present: true,
+        status: 'covered',
+        evidence: 'The review discusses content value.',
+        evidence_ref_ids: ['unknown-provider-reference']
+      }],
+      forbidden_claims: [{
+        claim: 'release is approved',
+        present: false,
+        status: 'absent',
+        evidence: 'No release approval is claimed by the advisory.',
+        evidence_ref_ids: ['benchmark-forbidden-claim-1']
+      }]
+    }
+  };
+  const observedRequests = [];
+  const result = await handleAgenticHumanReviewResponsesAdapterRequest({
+    method: 'POST',
+    url: '/agentic-human-review',
+    headers: {
+      host: '127.0.0.1:8787',
+      authorization: 'Bearer adapter-secret-value',
+      'content-type': 'application/json'
+    },
+    remoteAddress: '127.0.0.1',
+    bodyText: JSON.stringify(request),
+    env: adapterEnv(),
+    config: { contractRepairAttempts: 1 },
+    fetchImpl: async (url, init) => {
+      observedRequests.push(JSON.parse(init.body));
+      return jsonResponse({ output_text: JSON.stringify(invalidAdvisory) });
+    },
+    now: fixedNow
+  });
+
+  assert.equal(observedRequests.length, 2);
+  assert.equal(result.statusCode, 502);
+  assert.equal(result.body.error.code, 'AHR_RESPONSES_ADAPTER_BENCHMARK_CONTRACT_INCOMPLETE');
+  assert.equal(result.body.error.details.contract_repair_attempts_performed, 1);
+  assert.equal(result.body.error.details.missing_benchmark_records[0].missing_fields.includes('evidence_refs'), true);
+  assert.match(observedRequests[1].instructions, /evidence_reference_catalog/);
+  assert.doesNotMatch(JSON.stringify(result.body), /adapter-secret-value|provider-secret-value|output_text/);
+});
+
+test('agentic human review responses adapter preserves benchmark contract failure when repair is disabled', async () => {
+  const request = adapterTraceCueRequest();
+  request.plan.review_effort = { mode: 'standard' };
+  request.plan.review_quality_benchmark = {
+    enabled: true,
+    case_id: 'blog-content-value',
+    required_mentions: ['content value'],
+    required_dimensions: [],
+    forbidden_claims: ['release is approved']
+  };
+  let fetchCalls = 0;
+  const result = await handleAgenticHumanReviewResponsesAdapterRequest({
+    method: 'POST',
+    url: '/agentic-human-review',
+    headers: {
+      host: '127.0.0.1:8787',
+      authorization: 'Bearer adapter-secret-value',
+      'content-type': 'application/json'
+    },
+    remoteAddress: '127.0.0.1',
+    bodyText: JSON.stringify(request),
+    env: adapterEnv(),
+    config: { contractRepairAttempts: 0 },
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      return jsonResponse({
+        output_text: JSON.stringify({
+          summary: 'The adapter provider omitted a required forbidden-claim record.',
+          role_opinions: [],
+          agentic_human_review_findings: [],
+          benchmark_requirement_coverage: {
+            required_mentions: [{
+              mention: 'content value',
+              present: true,
+              status: 'covered',
+              evidence: 'The advisory mentions content value.',
+              evidence_ref_ids: ['benchmark-required-mention-1']
+            }]
+          }
+        })
+      });
+    },
+    now: fixedNow
+  });
+
+  assert.equal(fetchCalls, 1);
+  assert.equal(result.statusCode, 502);
+  assert.equal(result.body.error.code, 'AHR_RESPONSES_ADAPTER_BENCHMARK_CONTRACT_INCOMPLETE');
+  assert.equal(result.body.error.details.contract_repair_attempts_performed, 0);
+  assert.equal(result.body.error.details.raw_provider_response_stored, false);
 });
 
 test('agentic human review responses adapter rejects unsafe local requests before provider fetch', async () => {
@@ -4899,6 +5980,25 @@ test('agentic human review responses adapter parses provider output text safely'
   });
   assert.equal(parsed.ok, true);
   assert.equal(parsed.value.summary, 'Parsed from message content.');
+
+  const wrapped = parseOpenAiResponsesAdvisory({
+    output_text: JSON.stringify({
+      agentic_human_review_advisory: {
+        summary: 'Wrapped advisory.',
+        role_opinions: []
+      },
+      benchmark_requirement_coverage: {
+        required_mentions: [{ mention: 'content value', present: true, evidence: 'Covered.' }]
+      },
+      agentic_human_review_findings: [{
+        message: 'Finding outside wrapper.',
+        evidence_refs: [{ id: 'text-snippet-1', description: 'Bounded text evidence.' }]
+      }]
+    })
+  });
+  assert.equal(wrapped.ok, true);
+  assert.equal(wrapped.value.benchmark_requirement_coverage.required_mentions[0].mention, 'content value');
+  assert.equal(wrapped.value.agentic_human_review_findings[0].message, 'Finding outside wrapper.');
 
   const invalid = parseOpenAiResponsesAdvisory({ output_text: 'not json' });
   assert.equal(invalid.ok, false);

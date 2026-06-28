@@ -12,11 +12,13 @@ const MAX_TIMEOUT_MS = 2147483647;
 const DEFAULT_MAX_REQUEST_BYTES = 128 * 1024;
 const DEFAULT_MAX_RESPONSE_BYTES = 256 * 1024;
 const CAPABILITY_CONTRACT_VERSION = '2.0.0';
+const EFFORT_CAPABILITY_CONTRACT_VERSION = '1.0.0';
 const REAL_PROVIDER_ADAPTER_CONTRACT_VERSION = '1.0.0';
 const LIVE_DOGFOOD_GATE_VERSION = '1.0.0';
 const KNOWN_PROVIDER_KINDS = new Set(['fake_provider', 'injected_runner', 'api_provider']);
 const KNOWN_TRANSPORTS = new Set(['local_function', 'local_callback', 'provider_api']);
 const KNOWN_TRANSFER_CLASSES = new Set(['raw_pixels', 'page_text', 'dom_summary', 'url', 'artifact_refs', 'accessibility_summary']);
+const KNOWN_REVIEW_EFFORTS = new Set(['quick', 'standard', 'deep', 'xhigh']);
 const SENSITIVE_ENDPOINT_QUERY_PARAMS = new Set([
   'token',
   'api_key',
@@ -50,7 +52,26 @@ export const AGENTIC_HUMAN_REVIEW_PROVIDERS = Object.freeze([
     max_attempts: 1,
     max_request_bytes: DEFAULT_MAX_REQUEST_BYTES,
     max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
-    cost_policy: 'none'
+    cost_policy: 'none',
+    supported_review_efforts: Object.freeze(['quick', 'standard', 'deep', 'xhigh']),
+    native_effort_binding: Object.freeze({
+      supported: false,
+      request_field: null,
+      effort_map: Object.freeze({}),
+      unsupported_behavior: 'not_needed_for_deterministic_local_provider'
+    }),
+    structured_output_contract: Object.freeze({
+      json_schema_supported: true,
+      strict_schema_supported: true,
+      tracecue_post_validation_required: true
+    }),
+    xhigh_execution_contract: Object.freeze({
+      single_call_multi_role_output_supported: true,
+      repair_retry_supported: true,
+      true_multi_step_execution_supported: true,
+      true_multi_step_execution_default: false,
+      execution_surface: 'local_fake_provider_only'
+    })
   }),
   Object.freeze({
     id: 'injected-runner',
@@ -69,7 +90,26 @@ export const AGENTIC_HUMAN_REVIEW_PROVIDERS = Object.freeze([
     max_attempts: 1,
     max_request_bytes: DEFAULT_MAX_REQUEST_BYTES,
     max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
-    cost_policy: 'none'
+    cost_policy: 'none',
+    supported_review_efforts: Object.freeze(['quick', 'standard', 'deep', 'xhigh']),
+    native_effort_binding: Object.freeze({
+      supported: false,
+      request_field: null,
+      effort_map: Object.freeze({}),
+      unsupported_behavior: 'local_runner_controls_its_own_reasoning'
+    }),
+    structured_output_contract: Object.freeze({
+      json_schema_supported: true,
+      strict_schema_supported: false,
+      tracecue_post_validation_required: true
+    }),
+    xhigh_execution_contract: Object.freeze({
+      single_call_multi_role_output_supported: true,
+      repair_retry_supported: false,
+      true_multi_step_execution_supported: false,
+      true_multi_step_execution_default: false,
+      execution_surface: 'caller_supplied_local_runner'
+    })
   }),
   Object.freeze({
     id: 'generic-api-provider',
@@ -91,7 +131,31 @@ export const AGENTIC_HUMAN_REVIEW_PROVIDERS = Object.freeze([
     max_attempts: 1,
     max_request_bytes: DEFAULT_MAX_REQUEST_BYTES,
     max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
-    cost_policy: 'unknown_cost_requires_owner_review'
+    cost_policy: 'unknown_cost_requires_owner_review',
+    supported_review_efforts: Object.freeze(['quick', 'standard', 'deep', 'xhigh']),
+    native_effort_binding: Object.freeze({
+      supported: true,
+      request_field: 'reasoning.effort',
+      effort_map: Object.freeze({
+        quick: 'low',
+        standard: 'medium',
+        deep: 'high',
+        xhigh: 'high'
+      }),
+      unsupported_behavior: 'record_not_supported_and_require_tracecue_contract_validation'
+    }),
+    structured_output_contract: Object.freeze({
+      json_schema_supported: true,
+      strict_schema_supported: false,
+      tracecue_post_validation_required: true
+    }),
+    xhigh_execution_contract: Object.freeze({
+      single_call_multi_role_output_supported: true,
+      repair_retry_supported: true,
+      true_multi_step_execution_supported: false,
+      true_multi_step_execution_default: false,
+      execution_surface: 'approved_agentic_review_run_only'
+    })
   })
 ]);
 
@@ -100,9 +164,15 @@ export function agenticProviderCapabilityContract(provider) {
   const supportedModalities = uniqueSorted(normalized.supported_modalities);
   const transferableEvidenceClasses = uniqueSorted(normalized.transferable_evidence_classes)
     .filter((item) => KNOWN_TRANSFER_CLASSES.has(item));
+  const supportedReviewEfforts = uniqueSorted(normalized.supported_review_efforts)
+    .filter((item) => KNOWN_REVIEW_EFFORTS.has(item));
+  const nativeEffortBinding = normalizeNativeEffortBinding(normalized.native_effort_binding);
+  const structuredOutputContract = normalizeStructuredOutputContract(normalized.structured_output_contract);
+  const xhighExecutionContract = normalizeXhighExecutionContract(normalized.xhigh_execution_contract);
   return redact({
     schema_version: SCHEMA_VERSION,
     capability_contract_version: CAPABILITY_CONTRACT_VERSION,
+    effort_capability_contract_version: EFFORT_CAPABILITY_CONTRACT_VERSION,
     provider_id: normalized.id,
     kind: normalized.kind,
     transport: normalized.transport,
@@ -122,9 +192,18 @@ export function agenticProviderCapabilityContract(provider) {
     max_request_bytes: normalized.max_request_bytes,
     max_response_bytes: normalized.max_response_bytes,
     cost_policy: normalized.cost_policy,
+    effort_capability: {
+      supported_review_efforts: supportedReviewEfforts,
+      xhigh_supported: supportedReviewEfforts.includes('xhigh'),
+      native_effort_binding: nativeEffortBinding,
+      structured_output_contract: structuredOutputContract,
+      xhigh_execution_contract: xhighExecutionContract,
+      tracecue_contract_validation_required: true
+    },
     supports_vision: supportedModalities.some((item) => /image|pixel|vision|screenshot/i.test(item))
       || transferableEvidenceClasses.includes('raw_pixels'),
-    supports_json_schema: true,
+    supports_json_schema: structuredOutputContract.json_schema_supported,
+    supports_strict_json_schema: structuredOutputContract.strict_schema_supported,
     endpoint_policy: {
       https_required_for_external: true,
       loopback_http_allowed: true,
@@ -222,6 +301,18 @@ export function validateAgenticProviderDescriptor(provider, { builtInIds = new S
       }
     };
   }
+  const unsupportedEfforts = uniqueSorted(normalized.supported_review_efforts)
+    .filter((item) => !KNOWN_REVIEW_EFFORTS.has(item));
+  if (unsupportedEfforts.length > 0) {
+    return {
+      ok: false,
+      error: {
+        code: 'AGENTIC_REVIEW_PROVIDER_DESCRIPTOR_INVALID',
+        message: 'Agentic human review provider descriptors declared unsupported review efforts.',
+        details: { provider: normalized.id, unsupported_efforts: unsupportedEfforts, allowed_efforts: [...KNOWN_REVIEW_EFFORTS] }
+      }
+    };
+  }
   if (normalized.transport === 'provider_api' && normalized.credential_mode !== 'environment_variable_only') {
     return {
       ok: false,
@@ -251,6 +342,7 @@ export function agenticProviderSummary(provider) {
     default_model: normalized.default_model,
     supported_modalities: [...(normalized.supported_modalities ?? [])],
     transferable_evidence_classes: [...(normalized.transferable_evidence_classes ?? [])],
+    supported_review_efforts: [...(normalized.supported_review_efforts ?? [])],
     external_evidence_transfer: normalized.external_evidence_transfer === true,
     api_call_performed: false,
     raw_provider_response_stored: false,
@@ -261,6 +353,8 @@ export function agenticProviderSummary(provider) {
     cost_policy: normalized.cost_policy ?? 'unknown_cost_requires_owner_review',
     supports_vision: capability.supports_vision,
     supports_json_schema: capability.supports_json_schema,
+    supports_strict_json_schema: capability.supports_strict_json_schema,
+    effort_capability: capability.effort_capability,
     endpoint_policy: capability.endpoint_policy,
     capability_contract: capability,
     capability_hash: agenticProviderCapabilityHash(normalized)
@@ -605,7 +699,11 @@ export async function executeAgenticHumanReviewApiProvider({
     duration_ms: Date.now() - started
   };
   if (!response.ok) {
-    await discardResponseBody(response, provider.max_response_bytes);
+    const adapterDiagnostics = redactExactSecrets(await readLoopbackAdapterDiagnostics({
+      response,
+      endpointUrl,
+      maxResponseBytes: provider.max_response_bytes
+    }), [credential, endpoint]);
     return providerFailure({
       status: 'failed',
       code: 'AGENTIC_REVIEW_API_RESPONSE_NOT_OK',
@@ -613,6 +711,7 @@ export async function executeAgenticHumanReviewApiProvider({
       details: {
         provider: provider.id,
         ...responseMeta,
+        ...adapterDiagnostics,
         credential_values_recorded: false,
         raw_provider_response_stored: false
       },
@@ -807,6 +906,14 @@ function normalizeProviderDescriptor(provider) {
     transferable_evidence_classes: Array.isArray(provider.transferable_evidence_classes)
       ? provider.transferable_evidence_classes
       : ['page_text', 'url', 'artifact_refs', 'accessibility_summary'],
+    supported_review_efforts: Array.isArray(provider.supported_review_efforts)
+      ? provider.supported_review_efforts
+      : Array.isArray(provider.effort_capability?.supported_review_efforts)
+        ? provider.effort_capability.supported_review_efforts
+      : ['quick', 'standard', 'deep'],
+    native_effort_binding: provider.native_effort_binding ?? provider.effort_capability?.native_effort_binding ?? null,
+    structured_output_contract: provider.structured_output_contract ?? provider.effort_capability?.structured_output_contract ?? null,
+    xhigh_execution_contract: provider.xhigh_execution_contract ?? provider.effort_capability?.xhigh_execution_contract ?? null,
     external_evidence_transfer: provider.external_evidence_transfer === true,
     api_call_performed: provider.api_call_performed === true,
     raw_provider_response_stored: false,
@@ -815,6 +922,47 @@ function normalizeProviderDescriptor(provider) {
     max_request_bytes: Number.isFinite(Number(provider.max_request_bytes)) ? Number(provider.max_request_bytes) : DEFAULT_MAX_REQUEST_BYTES,
     max_response_bytes: Number.isFinite(Number(provider.max_response_bytes)) ? Number(provider.max_response_bytes) : DEFAULT_MAX_RESPONSE_BYTES,
     cost_policy: provider.cost_policy ?? 'unknown_cost_requires_owner_review'
+  };
+}
+
+function normalizeNativeEffortBinding(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const map = source.effort_map && typeof source.effort_map === 'object' && !Array.isArray(source.effort_map)
+    ? source.effort_map
+    : {};
+  const normalizedMap = Object.fromEntries([...KNOWN_REVIEW_EFFORTS].map((effort) => [
+    effort,
+    typeof map[effort] === 'string' && map[effort].trim() ? map[effort].trim() : null
+  ]));
+  return {
+    supported: source.supported === true,
+    request_field: typeof source.request_field === 'string' && source.request_field.trim() ? source.request_field.trim() : null,
+    effort_map: normalizedMap,
+    unsupported_behavior: typeof source.unsupported_behavior === 'string' && source.unsupported_behavior.trim()
+      ? source.unsupported_behavior.trim()
+      : 'record_not_supported_and_continue_with_tracecue_contract_validation'
+  };
+}
+
+function normalizeStructuredOutputContract(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return {
+    json_schema_supported: source.json_schema_supported !== false,
+    strict_schema_supported: source.strict_schema_supported === true,
+    tracecue_post_validation_required: source.tracecue_post_validation_required !== false
+  };
+}
+
+function normalizeXhighExecutionContract(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return {
+    single_call_multi_role_output_supported: source.single_call_multi_role_output_supported !== false,
+    repair_retry_supported: source.repair_retry_supported === true,
+    true_multi_step_execution_supported: source.true_multi_step_execution_supported === true,
+    true_multi_step_execution_default: source.true_multi_step_execution_default === true,
+    execution_surface: typeof source.execution_surface === 'string' && source.execution_surface.trim()
+      ? source.execution_surface.trim()
+      : 'not_declared'
   };
 }
 
@@ -901,6 +1049,11 @@ function buildAgenticApiPayload({ plan, planPath, reviewPackage, transferFlags, 
       provider_instruction_contract: plan.provider_instruction_contract ?? null,
       role_instruction_contracts: plan.role_instruction_contracts ?? null,
       orchestration_contract: plan.orchestration_contract ?? null,
+      effort_execution_contract: plan.effort_execution_contract ?? null,
+      provider_effort_binding: plan.provider_effort_binding ?? null,
+      strict_output_contract: plan.strict_output_contract ?? null,
+      repair_retry_contract: plan.repair_retry_contract ?? null,
+      xhigh_multi_step_contract: plan.xhigh_multi_step_contract ?? null,
       review_quality_benchmark: plan.review_quality_benchmark ?? null,
       provider_capability_contract: plan.provider_capability_contract ?? null,
       provider_capability_hash: plan.provider_capability_hash ?? null,
@@ -1108,6 +1261,44 @@ function validateApiEndpointUrl(endpointUrl) {
   return { ok: true };
 }
 
+async function readLoopbackAdapterDiagnostics({ response, endpointUrl, maxResponseBytes }) {
+  if (!isLoopbackHost(endpointUrl.hostname)) {
+    await discardResponseBody(response, maxResponseBytes);
+    return {};
+  }
+  const parsed = await parseBoundedResponse(response, maxResponseBytes);
+  if (!parsed.ok) {
+    return {
+      loopback_adapter_error_observed: false,
+      loopback_adapter_response_code: parsed.code,
+      loopback_adapter_response_bytes: parsed.response_bytes ?? null
+    };
+  }
+  const value = parsed.value && typeof parsed.value === 'object' && !Array.isArray(parsed.value)
+    ? parsed.value
+    : {};
+  const error = value.error && typeof value.error === 'object' && !Array.isArray(value.error)
+    ? value.error
+    : null;
+  if (value.schema_version !== SCHEMA_VERSION
+    || typeof error?.code !== 'string'
+    || !error.code.startsWith('AHR_RESPONSES_ADAPTER_')) {
+    return {
+      loopback_adapter_error_observed: false,
+      loopback_adapter_response_bytes: parsed.response_bytes ?? null
+    };
+  }
+  return redact({
+    loopback_adapter_error_observed: true,
+    loopback_adapter_error_code: error.code,
+    loopback_adapter_error_message: truncateText(String(error.message ?? ''), 500),
+    loopback_adapter_error_details: error.details && typeof error.details === 'object' && !Array.isArray(error.details)
+      ? error.details
+      : {},
+    loopback_adapter_response_bytes: parsed.response_bytes ?? null
+  });
+}
+
 async function parseBoundedResponse(response, maxResponseBytes) {
   if (response.body && typeof response.body.getReader === 'function') {
     return parseReadableStreamResponse(response.body, maxResponseBytes);
@@ -1248,6 +1439,7 @@ function providerFailure({
       provider_id: provider?.id ?? null,
       status,
       message,
+      details: diagnosticDetails,
       next_actions: providerFailureNextActions(code),
       provider_call_performed: Boolean(providerCallPerformed),
       api_call_performed: Boolean(apiCallPerformed),

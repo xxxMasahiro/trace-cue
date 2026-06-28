@@ -18,7 +18,12 @@ import {
   runAgenticHumanReviewEvaluatorPolicy,
   runAgenticHumanReviewEvidenceSetSummarize,
   runAgenticHumanReviewEvidenceSetValidate,
+  runAgenticHumanReviewHumanBaselineApproval,
+  runAgenticHumanReviewHumanBaselineClaimReadiness,
   runAgenticHumanReviewHumanBaselineCompare,
+  runAgenticHumanReviewHumanBaselineDraft,
+  runAgenticHumanReviewHumanBaselineOverlay,
+  runAgenticHumanReviewHumanBaselineRegistry,
   runAgenticHumanReviewHumanBaselineValidate,
   runAgenticHumanReviewList,
   runAgenticHumanReviewLongitudinalQuality,
@@ -335,12 +340,32 @@ export async function executeCli(argv, context = {}) {
       return runtimeResult(parsed.command, await (context.agenticHumanReviewEvidenceSetSummarizeRunner ?? runAgenticHumanReviewEvidenceSetSummarize)(parsed.options, context), parsed.json, now);
     }
 
+    if (parsed.command === 'agentic review human-baseline registry') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewHumanBaselineRegistryRunner ?? runAgenticHumanReviewHumanBaselineRegistry)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review human-baseline overlay') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewHumanBaselineOverlayRunner ?? runAgenticHumanReviewHumanBaselineOverlay)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review human-baseline draft') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewHumanBaselineDraftRunner ?? runAgenticHumanReviewHumanBaselineDraft)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review human-baseline approval') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewHumanBaselineApprovalRunner ?? runAgenticHumanReviewHumanBaselineApproval)(parsed.options, context), parsed.json, now);
+    }
+
     if (parsed.command === 'agentic review human-baseline validate') {
       return runtimeResult(parsed.command, await (context.agenticHumanReviewHumanBaselineValidateRunner ?? runAgenticHumanReviewHumanBaselineValidate)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'agentic review human-baseline compare') {
       return runtimeResult(parsed.command, await (context.agenticHumanReviewHumanBaselineCompareRunner ?? runAgenticHumanReviewHumanBaselineCompare)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review human-baseline claim-readiness') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewHumanBaselineClaimReadinessRunner ?? runAgenticHumanReviewHumanBaselineClaimReadiness)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'agentic review evaluator policy') {
@@ -884,8 +909,13 @@ function usageText(topic) {
       `       ${CLI_NAME} agentic review compare batch --dataset <workspace-json> [--json]`,
       `       ${CLI_NAME} agentic review evidence-set validate --input <workspace-json> [--json]`,
       `       ${CLI_NAME} agentic review evidence-set summarize --input <workspace-json> [--json]`,
+      `       ${CLI_NAME} agentic review human-baseline registry [--input <workspace-json>] [--json]`,
+      `       ${CLI_NAME} agentic review human-baseline overlay --case <benchmark-case-id> [--registry <workspace-json>] [--input <workspace-json>] [--json]`,
+      `       ${CLI_NAME} agentic review human-baseline draft --overlay <case-overlay-json> [--registry <workspace-json>] [--json]`,
+      `       ${CLI_NAME} agentic review human-baseline approval --draft <baseline-draft-json> --decision approved|needs-edits|rejected [--approver <id>] [--approved-at <iso8601>] [--edit-diff <summary>] [--json]`,
       `       ${CLI_NAME} agentic review human-baseline validate --input <workspace-json> [--json]`,
       `       ${CLI_NAME} agentic review human-baseline compare --baseline <owner-labeled-human-baseline> --result <agentic-human-review-result> [--case <benchmark-case-id>] [--json]`,
+      `       ${CLI_NAME} agentic review human-baseline claim-readiness --evidence-set <workspace-json> [--policy <workspace-json>] [--json]`,
       `       ${CLI_NAME} agentic review evaluator policy [--input <workspace-json>] [--json]`,
       `       ${CLI_NAME} agentic review xhigh plan --plan <agentic-human-review-plan> [--json]`,
       `       ${CLI_NAME} agentic review xhigh simulate --plan <agentic-human-review-plan> --round-input <workspace-json> [--json]`,

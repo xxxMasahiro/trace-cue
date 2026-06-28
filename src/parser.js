@@ -2,8 +2,11 @@ const VALUE_OPTIONS = new Set([
   'action',
   'actions',
   'agent-result',
+  'approved-at',
+  'approver',
   'artifact-root',
   'baseline',
+  'baseline-id',
   'body-limit',
   'capture-handoff',
   'baseline-snapshot-hash',
@@ -17,8 +20,11 @@ const VALUE_OPTIONS = new Set([
   'comparison-run-id',
   'daemon',
   'dataset',
+  'decision',
   'default-subagent-effort',
+  'draft',
   'endpoint',
+  'edit-diff',
   'effort',
   'execution',
   'expected-impression',
@@ -45,6 +51,7 @@ const VALUE_OPTIONS = new Set([
   'name',
   'older-than',
   'operation',
+  'overlay',
   'package',
   'phase',
   'policy',
@@ -56,6 +63,7 @@ const VALUE_OPTIONS = new Set([
   'proposal',
   'provider',
   'region',
+  'registry',
   'resource-guard',
   'review-index',
   'review-effort',
@@ -1451,6 +1459,77 @@ function parseAgentic(args, globals) {
   }
   if (action === 'human-baseline') {
     const humanBaselineAction = args[2];
+    if (humanBaselineAction === 'registry') {
+      const command = 'agentic review human-baseline registry';
+      const parsed = parseOptions(command, args.slice(3), globals.json);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      if (parsed.positionals.length > 0) {
+        return parseError(command, globals.json, {
+          code: 'UNEXPECTED_ARGUMENT',
+          message: `${command} does not accept positional arguments.`,
+          details: { argument: parsed.positionals[0] }
+        });
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['input', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError(command, globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_HUMAN_BASELINE_REGISTRY_OPTION',
+          message: `${command} does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return { ok: true, command, json: globals.json, options: parsed.options };
+    }
+    if (humanBaselineAction === 'overlay') {
+      const command = 'agentic review human-baseline overlay';
+      const parsed = parseRequiredOptions(command, args.slice(3), globals, ['case']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['case', 'registry', 'input', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError(command, globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_HUMAN_BASELINE_OVERLAY_OPTION',
+          message: `${command} does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
+    if (humanBaselineAction === 'draft') {
+      const command = 'agentic review human-baseline draft';
+      const parsed = parseRequiredOptions(command, args.slice(3), globals, ['overlay']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['overlay', 'registry', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError(command, globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_HUMAN_BASELINE_DRAFT_OPTION',
+          message: `${command} does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
+    if (humanBaselineAction === 'approval') {
+      const command = 'agentic review human-baseline approval';
+      const parsed = parseRequiredOptions(command, args.slice(3), globals, ['draft', 'decision']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['draft', 'decision', 'approver', 'approved-at', 'edit-diff', 'baseline-id', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError(command, globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_HUMAN_BASELINE_APPROVAL_OPTION',
+          message: `${command} does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
     if (humanBaselineAction === 'validate') {
       const parsed = parseRequiredOptions('agentic review human-baseline validate', args.slice(3), globals, ['input']);
       if (!parsed.ok) {
@@ -1481,10 +1560,26 @@ function parseAgentic(args, globals) {
       }
       return parsed;
     }
+    if (humanBaselineAction === 'claim-readiness') {
+      const command = 'agentic review human-baseline claim-readiness';
+      const parsed = parseRequiredOptions(command, args.slice(3), globals, ['evidence-set']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['evidence-set', 'policy', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError(command, globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_HUMAN_BASELINE_CLAIM_READINESS_OPTION',
+          message: `${command} does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
     return parseError('agentic review human-baseline', globals.json, {
       code: humanBaselineAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
-      message: humanBaselineAction ? `Unknown agentic review human-baseline subcommand: ${humanBaselineAction}` : 'agentic review human-baseline requires validate or compare.',
-      details: { subcommands: ['validate', 'compare'] }
+      message: humanBaselineAction ? `Unknown agentic review human-baseline subcommand: ${humanBaselineAction}` : 'agentic review human-baseline requires registry, overlay, draft, approval, validate, compare, or claim-readiness.',
+      details: { subcommands: ['registry', 'overlay', 'draft', 'approval', 'validate', 'compare', 'claim-readiness'] }
     });
   }
   if (action === 'evaluator') {
@@ -2280,6 +2375,13 @@ function plannedCommands() {
     'agentic review compare batch',
     'agentic review evidence-set validate',
     'agentic review evidence-set summarize',
+    'agentic review human-baseline registry',
+    'agentic review human-baseline overlay',
+    'agentic review human-baseline draft',
+    'agentic review human-baseline approval',
+    'agentic review human-baseline validate',
+    'agentic review human-baseline compare',
+    'agentic review human-baseline claim-readiness',
     'agentic review evaluator policy',
     'agentic review xhigh plan',
     'agentic review xhigh simulate',

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-human-baseline-registry.schema.json",
+  "title": "TraceCue Agentic Human Review Human Baseline Registry",
+  "type": "object",
+  "required": ["schema_version", "type", "human_baseline_operations_version", "generated_at", "registry_hash", "common_rubric", "target_type_templates", "benchmark_cases", "summary", "validation", "warnings", "boundary", "advisory_only", "gate_effect"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "const": "agentic_human_review_human_baseline_registry" },
+    "human_baseline_operations_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "input_path": { "type": ["string", "null"] },
+    "input_hash": { "type": ["string", "null"] },
+    "registry_hash": { "type": "string" },
+    "common_rubric": { "type": "object" },
+    "target_type_templates": { "type": "array" },
+    "benchmark_cases": { "type": "array" },
+    "summary": { "type": "object" },
+    "validation": { "type": "object" },
+    "warnings": { "type": "array" },
+    "boundary": { "type": "object" },
+    "advisory_only": { "const": true },
+    "gate_effect": { "const": "none" }
+  },
+  "additionalProperties": true
+}

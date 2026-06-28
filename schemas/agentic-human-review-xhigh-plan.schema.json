@@ -11,6 +11,7 @@
     "generated_at": { "type": "string" },
     "plan_path": { "type": "string" },
     "status": { "type": "string" },
+    "xhigh_mechanical_enforcement": { "type": "object" },
     "rounds": { "type": "array" },
     "execution_boundary": { "type": "object" },
     "warnings": { "type": "array" },

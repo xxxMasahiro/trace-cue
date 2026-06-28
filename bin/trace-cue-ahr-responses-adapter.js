@@ -109,7 +109,8 @@ function assignOption(options, key, value) {
     'provider-model': 'providerModel',
     'max-request-bytes': 'maxRequestBytes',
     'max-provider-response-bytes': 'maxProviderResponseBytes',
-    timeout: 'timeoutMs'
+    timeout: 'timeoutMs',
+    'contract-repair-attempts': 'contractRepairAttempts'
   };
   if (!map[key]) {
     throw new Error(`Unknown option: --${key}`);
@@ -133,6 +134,7 @@ function printHelp() {
     '  --provider-endpoint <url>             Provider endpoint default when env is unset.',
     '  --provider-model <id>                 Provider model default when env and request model are unset.',
     '  --timeout <ms>                        Provider request timeout.',
+    `  --contract-repair-attempts <count>    Contract repair retries. Default: ${AGENTIC_HUMAN_REVIEW_RESPONSES_ADAPTER_DEFAULTS.contractRepairAttempts}`,
     '  --help                                Show this help.'
   ].join('\n'));
 }

@@ -39,6 +39,7 @@
     "longitudinal_quality_evaluation": { "type": "object" },
     "benchmark_completion_readiness": { "type": ["object", "null"] },
     "xhigh_multi_round_review": { "type": ["object", "null"] },
+    "xhigh_mechanical_enforcement": { "type": ["object", "null"] },
     "evaluator_policy": { "type": "object" },
     "policy_warnings": { "type": "array" },
     "advisory_only": { "const": true },

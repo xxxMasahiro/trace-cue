@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-human-baseline-draft.schema.json",
+  "title": "TraceCue Agentic Human Review Human Baseline Draft",
+  "type": "object",
+  "required": ["schema_version", "type", "human_baseline_operations_version", "generated_at", "overlay_path", "overlay_hash", "source_overlay_hash", "draft_hash", "draft", "validation", "warnings", "boundary", "advisory_only", "gate_effect"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "type": { "const": "agentic_human_review_human_baseline_draft" },
+    "human_baseline_operations_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "overlay_path": { "type": "string" },
+    "overlay_hash": { "type": "string" },
+    "source_overlay_hash": { "type": "string" },
+    "draft_hash": { "type": "string" },
+    "draft": { "type": "object" },
+    "validation": { "type": "object" },
+    "warnings": { "type": "array" },
+    "boundary": { "type": "object" },
+    "advisory_only": { "const": true },
+    "gate_effect": { "const": "none" }
+  },
+  "additionalProperties": true
+}
