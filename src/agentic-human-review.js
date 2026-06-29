@@ -4034,6 +4034,18 @@ async function buildEvidenceRegenerationTarget({ cwd, evidenceSet, registry, raw
     : { value: null, warnings: [] };
   warnings.push(...sourceArtifact.warnings);
   const sourceValue = sourceArtifact.value;
+  const approvedPlan = ['result', 'claim_audit'].includes(targetType)
+    ? await resolveEvidenceRegenerationApprovedPlan({
+        cwd,
+        sourceValue,
+        resultRecord,
+        sourcePath,
+        caseId,
+        effort,
+        maxBytes
+      })
+    : { record: null, warnings: [] };
+  warnings.push(...approvedPlan.warnings);
   const commandTemplates = buildEvidenceRegenerationCommandTemplates({
     targetType,
     reasonCode,
@@ -4046,6 +4058,7 @@ async function buildEvidenceRegenerationTarget({ cwd, evidenceSet, registry, raw
     comparisonRecord,
     humanBaselineComparisonRecord,
     sourceValue,
+    approvedPlanRecord: approvedPlan.record,
     registry
   });
   const unresolvedInputs = commandTemplates.flatMap((command) => command.unresolved_inputs ?? []);
@@ -4071,6 +4084,11 @@ async function buildEvidenceRegenerationTarget({ cwd, evidenceSet, registry, raw
       resolved_inputs: {
         result_path: resultRecord?.path ?? resultRecord?.result_path ?? null,
         result_id: resultRecord?.result_id ?? null,
+        execution_path: approvedPlan.record?.execution_path ?? null,
+        approved_plan_path: approvedPlan.record?.plan_path ?? null,
+        approved_plan_hash: approvedPlan.record?.plan_hash ?? null,
+        approved_transfer_flags: approvedPlan.record?.required_flags ?? [],
+        approved_plan_source: approvedPlan.record?.source ?? null,
         baseline_path: commandTemplates.find((command) => command.intent === 'comparison')?.inputs?.baseline ?? null,
         candidate_path: commandTemplates.find((command) => command.intent === 'comparison')?.inputs?.candidate ?? null,
         human_baseline_path: commandTemplates.find((command) => command.intent === 'human_baseline_comparison')?.inputs?.baseline ?? null
@@ -4111,7 +4129,357 @@ function unwrapEvidenceRegenerationEnvelope(value) {
     ?? value.data?.agentic_human_review_calibration
     ?? value.data?.agentic_human_review_claim_audit
     ?? value.data?.agentic_human_review_claim_standard_gate
+    ?? value.data?.agentic_human_review_advisory
     ?? value;
+}
+
+async function resolveEvidenceRegenerationApprovedPlan({
+  cwd,
+  sourceValue,
+  resultRecord,
+  sourcePath,
+  caseId,
+  effort,
+  maxBytes
+}) {
+  const explicitCandidate = evidenceRegenerationApprovedPlanCandidateFromRecord(resultRecord, 'target_registry_or_result_record');
+  if (explicitCandidate) {
+    return validateEvidenceRegenerationApprovedPlanCandidate({
+      cwd,
+      candidate: explicitCandidate,
+      sourcePath,
+      caseId,
+      effort,
+      maxBytes
+    });
+  }
+
+  const executionPath = evidenceRegenerationExecutionPath({ sourceValue, resultRecord });
+  if (!executionPath) {
+    return { record: null, warnings: [] };
+  }
+  const executionRead = await readWorkspaceJson({
+    cwd,
+    inputPath: executionPath,
+    label: 'agentic human review evidence regeneration execution artifact',
+    maxBytes
+  });
+  if (!executionRead.ok) {
+    return {
+      record: null,
+      warnings: [{
+        code: 'AHR_EVIDENCE_REGENERATION_EXECUTION_ARTIFACT_UNREADABLE',
+        message: 'A regeneration target could not read its linked execution artifact; the approved rerun plan remains unresolved.',
+        details: { execution_path: executionPath, error_code: executionRead.error.code }
+      }]
+    };
+  }
+
+  const execution = normalizeEvidenceRegenerationExecutionArtifact(executionRead.value);
+  if (execution?.mode !== 'agentic_human_review_run') {
+    return {
+      record: null,
+      warnings: [{
+        code: 'AHR_EVIDENCE_REGENERATION_EXECUTION_CONTRACT_MISMATCH',
+        message: 'A regeneration target linked to an execution artifact that is not an agentic review run.',
+        details: { execution_path: executionPath, mode: execution?.mode ?? null }
+      }]
+    };
+  }
+  if (sourcePath && execution.result_path && execution.result_path !== sourcePath) {
+    return {
+      record: null,
+      warnings: [{
+        code: 'AHR_EVIDENCE_REGENERATION_EXECUTION_RESULT_MISMATCH',
+        message: 'A regeneration target linked to an execution artifact for a different result path.',
+        details: { source_path: sourcePath, execution_path: executionPath, expected_result_path: execution.result_path }
+      }]
+    };
+  }
+
+  const candidate = evidenceRegenerationApprovedPlanCandidateFromExecution(execution, executionPath);
+  return validateEvidenceRegenerationApprovedPlanCandidate({
+    cwd,
+    candidate,
+    sourcePath,
+    caseId,
+    effort,
+    maxBytes
+  });
+}
+
+function normalizeEvidenceRegenerationExecutionArtifact(value) {
+  return value?.data?.agentic_human_review_execution ?? value;
+}
+
+function evidenceRegenerationExecutionPath({ sourceValue, resultRecord }) {
+  return firstStringValue([
+    sourceValue?.execution?.execution_path,
+    sourceValue?.execution_path,
+    resultRecord?.execution?.execution_path,
+    resultRecord?.execution_path
+  ]);
+}
+
+function evidenceRegenerationApprovedPlanCandidateFromRecord(record, source) {
+  const approvedPlan = record?.approved_plan && typeof record.approved_plan === 'object' ? record.approved_plan : {};
+  const planValue = record?.plan && typeof record.plan === 'object' ? record.plan : {};
+  const planPath = firstStringValue([
+    record?.plan_path,
+    typeof record?.plan === 'string' ? record.plan : null,
+    approvedPlan.path,
+    approvedPlan.plan_path,
+    planValue.path,
+    planValue.plan_path
+  ]);
+  const planHash = firstStringValue([
+    record?.plan_hash,
+    approvedPlan.hash,
+    approvedPlan.plan_hash,
+    planValue.hash,
+    planValue.plan_hash
+  ]);
+  const requiredFlags = firstStringArrayValue([
+    record?.required_flags,
+    record?.transfer_flags,
+    record?.transfer_permissions?.required_flags,
+    approvedPlan.required_flags,
+    approvedPlan.transfer_flags,
+    approvedPlan.transfer_permissions?.required_flags,
+    planValue.required_flags,
+    planValue.transfer_flags,
+    planValue.transfer_permissions?.required_flags
+  ]);
+  if (!planPath && !planHash && requiredFlags.length === 0) {
+    return null;
+  }
+  return {
+    source,
+    plan_path: planPath,
+    plan_hash: planHash,
+    required_flags: requiredFlags,
+    execution_path: firstStringValue([record?.execution_path, record?.execution?.execution_path])
+  };
+}
+
+function evidenceRegenerationApprovedPlanCandidateFromExecution(execution, executionPath) {
+  const requiredFlags = firstStringArrayValue([
+    execution?.transfer_permissions?.required_flags,
+    execution?.required_transfer_flags,
+    execution?.approval?.required_transfer_flags,
+    execution?.run_approval?.required_transfer_flags,
+    execution?.approval_receipt?.required_transfer_flags
+  ]);
+  return {
+    source: 'source_execution_artifact',
+    execution_path: firstStringValue([execution?.execution_path, executionPath]),
+    result_path: firstStringValue([execution?.result_path]),
+    plan_path: firstStringValue([execution?.plan_path]),
+    plan_hash: firstStringValue([execution?.plan_hash]),
+    required_flags: requiredFlags.length > 0
+      ? requiredFlags
+      : transferFlagsFromRunCommand(execution?.dashboard_handoff?.rerun_command)
+  };
+}
+
+async function validateEvidenceRegenerationApprovedPlanCandidate({
+  cwd,
+  candidate,
+  sourcePath,
+  caseId,
+  effort,
+  maxBytes
+}) {
+  if (!candidate?.plan_path || !candidate?.plan_hash) {
+    return {
+      record: null,
+      warnings: [{
+        code: 'AHR_EVIDENCE_REGENERATION_APPROVED_PLAN_UNRESOLVED',
+        message: 'A regeneration target did not provide both an approved plan path and plan hash.',
+        details: {
+          source_path: sourcePath,
+          plan_path_present: Boolean(candidate?.plan_path),
+          plan_hash_present: Boolean(candidate?.plan_hash),
+          source: candidate?.source ?? null
+        }
+      }]
+    };
+  }
+
+  const planRead = await readWorkspaceJson({
+    cwd,
+    inputPath: candidate.plan_path,
+    label: 'agentic human review approved regeneration plan',
+    maxBytes
+  });
+  if (!planRead.ok) {
+    return {
+      record: null,
+      warnings: [{
+        code: 'AHR_EVIDENCE_REGENERATION_APPROVED_PLAN_UNREADABLE',
+        message: 'A regeneration target approved plan artifact could not be read; the rerun command remains unresolved.',
+        details: { plan_path: candidate.plan_path, error_code: planRead.error.code, source: candidate.source }
+      }]
+    };
+  }
+
+  const plan = normalizeEvidenceRegenerationPlanArtifact(planRead.value);
+  const planValidation = validatePlanArtifact({ plan, planPath: candidate.plan_path });
+  if (!planValidation.ok) {
+    return {
+      record: null,
+      warnings: [{
+        code: planValidation.error.code,
+        message: planValidation.error.message,
+        details: { ...planValidation.error.details, source: candidate.source }
+      }]
+    };
+  }
+  if (candidate.plan_hash !== planValidation.planHash) {
+    return {
+      record: null,
+      warnings: [{
+        code: 'AHR_EVIDENCE_REGENERATION_PLAN_HASH_MISMATCH',
+        message: 'A regeneration target approved plan hash did not match the validated plan artifact.',
+        details: {
+          plan_path: candidate.plan_path,
+          supplied_plan_hash: candidate.plan_hash,
+          validated_plan_hash: planValidation.planHash,
+          source: candidate.source
+        }
+      }]
+    };
+  }
+
+  const requiredFlags = normalizeStringArray(plan.transfer_permissions?.required_flags).sort();
+  const candidateFlags = normalizeStringArray(candidate.required_flags).sort();
+  if (candidateFlags.length > 0 && JSON.stringify(candidateFlags) !== JSON.stringify(requiredFlags)) {
+    return {
+      record: null,
+      warnings: [{
+        code: 'AHR_EVIDENCE_REGENERATION_PLAN_TRANSFER_FLAGS_MISMATCH',
+        message: 'A regeneration target approved transfer flags did not match the validated plan artifact.',
+        details: {
+          plan_path: candidate.plan_path,
+          supplied_flags: candidateFlags,
+          validated_flags: requiredFlags,
+          source: candidate.source
+        }
+      }]
+    };
+  }
+
+  const targetMatch = evidenceRegenerationApprovedPlanTargetMatch({ plan, caseId, effort });
+  if (!targetMatch.ok) {
+    return {
+      record: null,
+      warnings: [{
+        code: 'AHR_EVIDENCE_REGENERATION_PLAN_TARGET_MISMATCH',
+        message: 'A regeneration target approved plan did not match the target case or effort.',
+        details: { ...targetMatch.details, plan_path: candidate.plan_path, source: candidate.source }
+      }]
+    };
+  }
+
+  const expectedCommand = buildRunCommand({
+    planPath: candidate.plan_path,
+    planHash: planValidation.planHash,
+    requiredFlags
+  });
+  if (plan.human_explanation?.exact_run_command && plan.human_explanation.exact_run_command !== expectedCommand) {
+    return {
+      record: null,
+      warnings: [{
+        code: 'AHR_EVIDENCE_REGENERATION_PLAN_COMMAND_MISMATCH',
+        message: 'A regeneration target approved plan command does not match the current plan path, hash, and transfer flags.',
+        details: {
+          plan_path: candidate.plan_path,
+          expected_command: expectedCommand,
+          source: candidate.source
+        }
+      }]
+    };
+  }
+
+  return {
+    record: {
+      source: candidate.source,
+      execution_path: candidate.execution_path ?? null,
+      plan_path: candidate.plan_path,
+      plan_hash: planValidation.planHash,
+      required_flags: requiredFlags
+    },
+    warnings: []
+  };
+}
+
+function normalizeEvidenceRegenerationPlanArtifact(value) {
+  return value?.data?.agentic_human_review_plan ?? value;
+}
+
+function evidenceRegenerationApprovedPlanTargetMatch({ plan, caseId, effort }) {
+  const planEffort = normalizeObservedReviewEffort(
+    plan?.review_effort?.mode
+      ?? plan?.effort_execution_contract?.review_effort
+      ?? plan?.effort
+  );
+  if (effort && planEffort && planEffort !== effort) {
+    return {
+      ok: false,
+      details: { target_effort: effort, plan_effort: planEffort }
+    };
+  }
+  const planCaseId = stringOrNull(
+    plan?.review_quality_benchmark?.case_id
+      ?? plan?.benchmark_completion_readiness?.active_case_id
+      ?? plan?.benchmark_case?.case_id
+      ?? plan?.case_id
+  );
+  if (caseId && planCaseId && planCaseId !== caseId) {
+    return {
+      ok: false,
+      details: { target_case_id: caseId, plan_case_id: planCaseId }
+    };
+  }
+  return { ok: true, details: {} };
+}
+
+function transferFlagsFromRunCommand(command) {
+  if (typeof command !== 'string' || command.trim() === '') {
+    return [];
+  }
+  const tokens = command.trim().split(/\s+/);
+  const flags = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (['--plan', '--plan-hash', '--provider', '--model', '--surface'].includes(token)) {
+      index += 1;
+      continue;
+    }
+    if (token.startsWith('--allow-')) {
+      flags.push(token.slice(2));
+    }
+  }
+  return [...new Set(flags)].sort();
+}
+
+function firstStringValue(values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim() !== '') {
+      return secretSafeText(value, 600);
+    }
+  }
+  return null;
+}
+
+function firstStringArrayValue(values) {
+  for (const value of values) {
+    const normalized = normalizeStringArray(value);
+    if (normalized.length > 0) {
+      return normalized;
+    }
+  }
+  return [];
 }
 
 function normalizeEvidenceRegenerationTargetRegistry(input) {
@@ -4173,15 +4541,16 @@ function buildEvidenceRegenerationCommandTemplates({
   comparisonRecord,
   humanBaselineComparisonRecord,
   sourceValue,
+  approvedPlanRecord,
   registry
 }) {
   if (targetType === 'result') {
-    return [buildResultRegenerationCommand({ caseId, effort, rawTarget, resultRecord, registry })];
+    return [buildResultRegenerationCommand({ caseId, effort, rawTarget, resultRecord, approvedPlanRecord, registry })];
   }
   if (targetType === 'claim_audit') {
     const resultPath = sourcePath ?? resultRecord?.path ?? resultRecord?.result_path ?? '<agentic-review-result.json>';
     return [
-      buildResultRegenerationCommand({ caseId, effort, rawTarget, resultRecord, registry }),
+      buildResultRegenerationCommand({ caseId, effort, rawTarget, resultRecord, approvedPlanRecord, registry }),
       buildTraceCueCommand({
         intent: 'claim_audit_after_result_repair',
         args: ['agentic', 'review', 'claim', 'audit', '--result', resultPath, '--json'],
@@ -4250,15 +4619,11 @@ function buildEvidenceRegenerationCommandTemplates({
   })];
 }
 
-function buildResultRegenerationCommand({ caseId, effort, rawTarget, resultRecord, registry }) {
-  const planRecord = resultRecord ?? registry.results.find((item) => item.case_id === caseId && item.effort === effort) ?? {};
+function buildResultRegenerationCommand({ caseId, effort, rawTarget, approvedPlanRecord }) {
+  const planRecord = approvedPlanRecord ?? {};
   const planPath = planRecord.plan_path ?? planRecord.plan ?? '<approved-agentic-review-plan.json>';
   const planHash = planRecord.plan_hash ?? '<approved-plan-hash>';
-  const requiredFlags = Array.isArray(planRecord.required_flags)
-    ? planRecord.required_flags
-    : Array.isArray(planRecord.transfer_flags)
-      ? planRecord.transfer_flags
-      : [];
+  const requiredFlags = normalizeStringArray(planRecord.required_flags ?? planRecord.transfer_flags);
   const normalizedFlags = requiredFlags.map((flag) => String(flag).replace(/^--/, '')).filter(Boolean).sort();
   const args = [
     'agentic', 'review', 'run',

@@ -4114,6 +4114,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   });
   assert.equal(noTextPlanResult.exitCode, 0);
   const noTextPlanBody = JSON.parse(noTextPlanResult.stdout);
+  const noTextPlanPath = '.browser-debug/agentic-human-review-plans/agentic-plan-api-no-text/plan.json';
   const noTextRequiredFlags = noTextPlanBody.data.agentic_human_review_plan.transfer_permissions.required_flags.slice().sort();
   assert.deepEqual(noTextRequiredFlags, ['allow-artifact-refs']);
   let noTextPayload = null;
@@ -4122,7 +4123,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     'review',
     'run',
     '--plan',
-    '.browser-debug/agentic-human-review-plans/agentic-plan-api-no-text/plan.json',
+    noTextPlanPath,
     '--plan-hash',
     noTextPlanBody.data.plan_hash,
     '--allow-artifact-refs',
@@ -4191,6 +4192,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   });
   assert.equal(apiDogfoodPlanResult.exitCode, 0);
   const apiDogfoodPlanBody = JSON.parse(apiDogfoodPlanResult.stdout);
+  const apiDogfoodPlanPath = '.browser-debug/agentic-human-review-plans/agentic-plan-api-dogfood/plan.json';
+  const apiDogfoodPlanHash = apiDogfoodPlanBody.data.plan_hash;
   assert.equal(apiDogfoodPlanBody.data.agentic_human_review_plan.review_quality_benchmark.case_id, 'blog-content-value');
   assert.equal(apiDogfoodPlanBody.data.agentic_human_review_plan.live_dogfood_execution_gate.status, 'blocked_manual_live_dogfood_opt_in_required');
   const apiDogfoodFlags = apiDogfoodPlanBody.data.agentic_human_review_plan.transfer_permissions.required_flags.slice().sort();
@@ -4199,9 +4202,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     'review',
     'run',
     '--plan',
-    '.browser-debug/agentic-human-review-plans/agentic-plan-api-dogfood/plan.json',
+    apiDogfoodPlanPath,
     '--plan-hash',
-    apiDogfoodPlanBody.data.plan_hash,
+    apiDogfoodPlanHash,
     ...apiDogfoodFlags.map((flag) => `--${flag}`),
     '--provider',
     'generic-api-provider',
@@ -5753,6 +5756,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     provider: { id: 'generic-api-provider' },
     execution: {
       ...(matrixBaseResult.execution ?? {}),
+      execution_path: 'invalid-claim-execution.json',
+      result_path: 'invalid-claim-result.json',
       api_call_performed: true,
       external_evidence_transfer: true,
       raw_provider_response_stored: false,
@@ -5767,6 +5772,25 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     advisory_only: true,
     gate_effect: 'none'
   };
+  const apiExecution = JSON.parse(await readFile(path.join(cwd, '.browser-debug/agentic-human-review-results/agentic-execution-api/execution.json'), 'utf8'));
+  const invalidClaimExecution = {
+    ...apiExecution,
+    id: 'invalid-claim-execution',
+    execution_path: 'invalid-claim-execution.json',
+    result_path: 'invalid-claim-result.json',
+    plan_path: apiDogfoodPlanPath,
+    plan_hash: apiDogfoodPlanHash,
+    transfer_permissions: {
+      ...(apiExecution.transfer_permissions ?? {}),
+      required_flags: apiDogfoodFlags,
+      supplied_flags: apiDogfoodFlags
+    },
+    dashboard_handoff: {
+      ...(apiExecution.dashboard_handoff ?? {}),
+      rerun_command: `trace-cue agentic review run --plan ${apiDogfoodPlanPath} --plan-hash ${apiDogfoodPlanHash} ${apiDogfoodFlags.map((flag) => `--${flag}`).join(' ')} --execute --json`
+    }
+  };
+  await writeFile(path.join(cwd, 'invalid-claim-execution.json'), JSON.stringify(invalidClaimExecution, null, 2), 'utf8');
   await writeFile(path.join(cwd, 'invalid-claim-result.json'), JSON.stringify(invalidClaimResult, null, 2), 'utf8');
   const invalidClaimEvidenceSet = {
     ...completeClaimEvidenceSet,
@@ -5804,17 +5828,43 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(invalidClaimStandardGateData.rerun_plan.targets.some((target) => target.target_type === 'claim_audit'), true);
 
   await writeFile(path.join(cwd, 'invalid-claim-standard-gate.json'), invalidClaimStandardGate.stdout, 'utf8');
+  const providerRegenerationPlan = await executeCli([
+    'agentic',
+    'review',
+    'evidence-set',
+    'regenerate',
+    'plan',
+    '--evidence-set',
+    'invalid-claim-standard-gate-evidence-set.json',
+    '--claim-gate',
+    'invalid-claim-standard-gate.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(providerRegenerationPlan.exitCode, 0);
+  const providerRegenerationPlanData = JSON.parse(providerRegenerationPlan.stdout).data.agentic_human_review_evidence_regeneration_plan;
+  assert.equal(providerRegenerationPlanData.provider_execution_approval_required, true);
+  assert.equal(providerRegenerationPlanData.targets.some((target) => target.target_type === 'claim_audit'), true);
+  const providerClaimAuditTarget = providerRegenerationPlanData.targets.find((target) => target.target_type === 'claim_audit');
+  assert.equal(providerClaimAuditTarget.resolved_inputs.execution_path, 'invalid-claim-execution.json');
+  assert.equal(providerClaimAuditTarget.resolved_inputs.approved_plan_path, apiDogfoodPlanPath);
+  assert.equal(providerClaimAuditTarget.resolved_inputs.approved_plan_hash, apiDogfoodPlanHash);
+  assert.deepEqual(providerClaimAuditTarget.resolved_inputs.approved_transfer_flags, apiDogfoodFlags);
+  assert.deepEqual(providerClaimAuditTarget.unresolved_inputs, []);
+  assert.equal(providerClaimAuditTarget.command_templates.some((command) => command.intent === 'result_repair_or_rerun_for_claim_audit' && command.requires_provider_execution_approval === true), true);
+  assert.equal(providerClaimAuditTarget.command_templates.some((command) => command.command.includes(apiDogfoodPlanPath) && command.command.includes(apiDogfoodPlanHash) && command.command.includes('--execute')), true);
+  assert.equal(providerRegenerationPlanData.execution_boundary.provider_execution_performed, false);
+
   await writeFile(path.join(cwd, 'regeneration-target-registry.json'), JSON.stringify({
     results: [{
       case_id: benchmarkCaseIds[0],
       effort: requiredEfforts[0],
       result_path: 'invalid-claim-result.json',
-      plan_path: 'approved-plan.json',
-      plan_hash: 'approved-plan-hash',
-      required_flags: ['allow-page-text', 'allow-url']
+      plan_path: noTextPlanPath,
+      plan_hash: noTextPlanBody.data.plan_hash,
+      required_flags: noTextRequiredFlags
     }]
   }, null, 2), 'utf8');
-  const providerRegenerationPlan = await executeCli([
+  const registryProviderRegenerationPlan = await executeCli([
     'agentic',
     'review',
     'evidence-set',
@@ -5828,13 +5878,49 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     'regeneration-target-registry.json',
     '--json'
   ], { cwd, now: fixedNow });
-  assert.equal(providerRegenerationPlan.exitCode, 0);
-  const providerRegenerationPlanData = JSON.parse(providerRegenerationPlan.stdout).data.agentic_human_review_evidence_regeneration_plan;
-  assert.equal(providerRegenerationPlanData.provider_execution_approval_required, true);
-  assert.equal(providerRegenerationPlanData.targets.some((target) => target.target_type === 'claim_audit'), true);
-  assert.equal(providerRegenerationPlanData.targets.some((target) => target.command_templates.some((command) => command.intent === 'result_repair_or_rerun_for_claim_audit' && command.requires_provider_execution_approval === true)), true);
-  assert.equal(providerRegenerationPlanData.targets.some((target) => target.command_templates.some((command) => command.command.includes('approved-plan.json') && command.command.includes('--execute'))), true);
-  assert.equal(providerRegenerationPlanData.execution_boundary.provider_execution_performed, false);
+  assert.equal(registryProviderRegenerationPlan.exitCode, 0);
+  const registryProviderRegenerationPlanData = JSON.parse(registryProviderRegenerationPlan.stdout).data.agentic_human_review_evidence_regeneration_plan;
+  const registryClaimAuditTarget = registryProviderRegenerationPlanData.targets.find((target) => target.target_type === 'claim_audit');
+  assert.equal(registryProviderRegenerationPlanData.provider_execution_approval_required, true);
+  assert.equal(registryClaimAuditTarget.resolved_inputs.approved_plan_path, noTextPlanPath);
+  assert.equal(registryClaimAuditTarget.resolved_inputs.approved_plan_hash, noTextPlanBody.data.plan_hash);
+  assert.deepEqual(registryClaimAuditTarget.resolved_inputs.approved_transfer_flags, noTextRequiredFlags);
+  assert.deepEqual(registryClaimAuditTarget.unresolved_inputs, []);
+  assert.equal(registryClaimAuditTarget.command_templates.some((command) => command.intent === 'result_repair_or_rerun_for_claim_audit' && command.requires_provider_execution_approval === true), true);
+  assert.equal(registryClaimAuditTarget.command_templates.some((command) => command.command.includes(noTextPlanPath) && command.command.includes('--execute')), true);
+  assert.equal(registryProviderRegenerationPlanData.execution_boundary.provider_execution_performed, false);
+
+  await writeFile(path.join(cwd, 'bad-regeneration-target-registry.json'), JSON.stringify({
+    results: [{
+      case_id: benchmarkCaseIds[0],
+      effort: requiredEfforts[0],
+      result_path: 'invalid-claim-result.json',
+      plan_path: apiDogfoodPlanPath,
+      plan_hash: '0'.repeat(64),
+      required_flags: apiDogfoodFlags
+    }]
+  }, null, 2), 'utf8');
+  const badRegistryProviderRegenerationPlan = await executeCli([
+    'agentic',
+    'review',
+    'evidence-set',
+    'regenerate',
+    'plan',
+    '--evidence-set',
+    'invalid-claim-standard-gate-evidence-set.json',
+    '--claim-gate',
+    'invalid-claim-standard-gate.json',
+    '--target-registry',
+    'bad-regeneration-target-registry.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(badRegistryProviderRegenerationPlan.exitCode, 0);
+  const badRegistryProviderRegenerationPlanData = JSON.parse(badRegistryProviderRegenerationPlan.stdout).data.agentic_human_review_evidence_regeneration_plan;
+  const badRegistryClaimAuditTarget = badRegistryProviderRegenerationPlanData.targets.find((target) => target.target_type === 'claim_audit');
+  assert.equal(badRegistryClaimAuditTarget.unresolved_inputs.includes('plan'), true);
+  assert.equal(badRegistryClaimAuditTarget.unresolved_inputs.includes('plan_hash'), true);
+  assert.equal(badRegistryProviderRegenerationPlanData.warnings.some((warning) => warning.code === 'AHR_EVIDENCE_REGENERATION_PLAN_HASH_MISMATCH'), true);
+  assert.equal(badRegistryProviderRegenerationPlanData.warnings.some((warning) => warning.code === 'AHR_EVIDENCE_REGENERATION_INPUT_UNRESOLVED'), true);
 
   await writeFile(path.join(cwd, 'permissive-claim-policy.json'), JSON.stringify({
     equality_or_superiority_claims_allowed: true,
