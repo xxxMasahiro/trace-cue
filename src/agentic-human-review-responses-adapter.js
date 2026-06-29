@@ -390,6 +390,7 @@ export async function handleAgenticHumanReviewResponsesAdapterRequest({
       return adapterError(413, 'AHR_RESPONSES_ADAPTER_PROVIDER_REQUEST_TOO_LARGE', 'Generated provider request exceeds the configured request-size limit.', {
         request_bytes: Buffer.byteLength(providerRequestText, 'utf8'),
         max_request_bytes: config.maxRequestBytes,
+        request_section_bytes: providerRequestSectionByteCounts(providerRequest),
         contract_repair_attempts_performed: contractRepairAttemptsPerformed,
         boundary
       });
@@ -503,6 +504,23 @@ export function buildOpenAiResponsesRequest({ traceCueRequest, model, generatedA
   return request;
 }
 
+function providerRequestSectionByteCounts(providerRequest) {
+  const input = safeJsonParse(providerRequest?.input);
+  return {
+    total: jsonByteLength(providerRequest),
+    instructions: jsonByteLength(providerRequest?.instructions ?? ''),
+    input: jsonByteLength(providerRequest?.input ?? ''),
+    text: jsonByteLength(providerRequest?.text),
+    metadata: jsonByteLength(providerRequest?.metadata),
+    reasoning: jsonByteLength(providerRequest?.reasoning),
+    input_review_request: jsonByteLength(input?.review_request),
+    input_evidence_reference_catalog: jsonByteLength(input?.evidence_reference_catalog),
+    input_required_owner_baseline_findings: jsonByteLength(input?.required_owner_baseline_findings),
+    input_required_owner_baseline_coverage: jsonByteLength(input?.required_owner_baseline_coverage),
+    input_contract_repair_request: jsonByteLength(input?.contract_repair_request)
+  };
+}
+
 export function parseOpenAiResponsesAdvisory(responseJson) {
   const text = extractOpenAiOutputText(responseJson);
   if (!text.trim()) {
@@ -537,7 +555,6 @@ function buildAdapterInstructions(traceCueRequest, repairContext = null) {
   const roles = Array.isArray(traceCueRequest?.plan?.sub_agents)
     ? traceCueRequest.plan.sub_agents.map((agent) => `${agent.role}:${agent.display_name}:round-${agent.round}`).join(', ')
     : 'planned reviewer roles';
-  const ownerBaselineContract = ownerBaselineRequirementContract(traceCueRequest);
   const benchmark = isBenchmarkEnabled(traceCueRequest)
     ? [
         'Benchmark output contract is mandatory.',
@@ -557,8 +574,8 @@ function buildAdapterInstructions(traceCueRequest, repairContext = null) {
         'Return one structured agentic_human_review_findings record for each target-specific must-not-miss criterion in review_request.plan.owner_baseline_requirement_contract.must_not_miss_criteria.',
         'Copy every record from required_owner_baseline_findings into provider-authored structured agentic_human_review_findings, preserving must_not_miss_criterion_id, criteria_refs, owner_label_ids, required fields, and catalog-backed evidence_refs.',
         'Copy every record from required_owner_baseline_coverage into benchmark_requirement_coverage.required_mentions, required_dimensions, and forbidden_claims, preserving exact mention/dimension/claim strings and catalog-backed evidence_refs.',
-        `Use this compact target-specific owner baseline id map for required ids, owner label ids, required fields, and preferred evidence refs: ${JSON.stringify(compactOwnerBaselineInstructionMap(traceCueRequest, ownerBaselineContract))}.`,
-        `Use this compact owner baseline coverage map for additional exact required_mentions, required_dimensions, and forbidden_claims: ${JSON.stringify(compactOwnerBaselineCoverageInstructionMap(traceCueRequest))}.`,
+        'Use input.required_owner_baseline_findings as the compact target-specific id map for required ids, owner label ids, required fields, and preferred evidence refs.',
+        'Use input.required_owner_baseline_coverage as the compact owner-baseline coverage map for additional exact required_mentions, required_dimensions, and forbidden_claims.',
         'Each owner-baseline finding must include a non-empty message, recommendation, evidence_refs from evidence_reference_catalog, owner_label_ids when the contract has owner labels for that criterion, and either must_not_miss_criterion_id or criteria_refs matching the contract.',
         'Each owner-baseline required mention or dimension must be an evidence-backed structured coverage record; each owner-baseline forbidden claim must be a structured absence record with present=false, status=absent or not_present, non-empty evidence, and evidence_refs.',
         'Do not satisfy owner-approved must-not-miss criteria through free text only; TraceCue will post-validate structured ids and evidence references.'
@@ -1345,7 +1362,7 @@ function buildProviderEvidenceReferenceCatalog(traceCueRequest) {
     id: reference.id,
     type: reference.type,
     evidence_class: reference.evidence_class,
-    description: reference.description,
+    description: truncateText(reference.description, 180),
     content_included: reference.content_included === true,
     local_reference: true
   }));
@@ -1794,25 +1811,775 @@ function compactTraceCuePayloadForProvider(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return payload;
   }
-  const output = { ...payload };
-  if (payload.plan && typeof payload.plan === 'object' && !Array.isArray(payload.plan)) {
-    output.plan = compactProviderPlanPayload(payload.plan);
+  if (payload.type !== 'agentic_human_review_request') {
+    const output = { ...payload };
+    if (payload.plan && typeof payload.plan === 'object' && !Array.isArray(payload.plan)) {
+      output.plan = compactProviderPlanPayload(payload.plan, payload.package);
+    }
+    return output;
   }
-  return output;
+  return compactAdapterObject({
+    schema_version: payload.schema_version,
+    type: payload.type,
+    plan: compactProviderPlanPayload(payload.plan, payload.package),
+    package: compactProviderPackagePayload(payload.package),
+    provider: compactProviderDescriptorForPayload(payload.provider),
+    model: payload.model?.id ? { id: payload.model.id } : payload.model,
+    surface: compactAdapterObject({
+      id: payload.surface?.id,
+      kind: payload.surface?.kind
+    }),
+    execution: compactAdapterObject({
+      id: payload.execution?.id,
+      execution_path_included: false
+    }),
+    disclosure_policy: compactProviderDisclosurePolicy(payload.disclosure_policy)
+  });
 }
 
-function compactProviderPlanPayload(plan) {
-  const output = { ...plan };
-  if (plan.owner_baseline_requirement_contract) {
-    output.owner_baseline_requirement_contract = compactProviderOwnerBaselineContract(plan.owner_baseline_requirement_contract);
+function compactProviderPlanPayload(plan, reviewPackage = null) {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+    return plan;
   }
-  if (plan.review_quality_benchmark && typeof plan.review_quality_benchmark === 'object' && !Array.isArray(plan.review_quality_benchmark)) {
-    output.review_quality_benchmark = { ...plan.review_quality_benchmark };
-    if (plan.review_quality_benchmark.owner_baseline_requirement_contract) {
-      output.review_quality_benchmark.owner_baseline_requirement_contract = compactProviderOwnerBaselineContract(plan.review_quality_benchmark.owner_baseline_requirement_contract);
-    }
+  return compactAdapterObject({
+    id: plan.id,
+    plan_path_included: false,
+    plan_hash: plan.plan_hash,
+    intent: truncateText(firstString(plan.intent, plan.review_scope?.intent, null), 1000),
+    review_scope: compactProviderReviewScope(plan.review_scope),
+    review_effort: compactReviewEffort(plan.review_effort),
+    sub_agents: compactProviderSubAgents(plan.sub_agents),
+    rounds: normalizeNumericArray(plan.rounds).slice(0, 12),
+    rubric: compactProviderRubric(plan.rubric),
+    rubric_profile: compactProviderRubricProfile(plan.rubric_profile ?? reviewPackage?.rubric_profile),
+    evidence_plan: compactProviderEvidencePlan(plan.evidence_plan ?? reviewPackage?.evidence_plan),
+    human_review_contract: compactProviderHumanReviewContract(plan.human_review_contract ?? reviewPackage?.human_review_input_contract),
+    provider_instruction_contract: compactProviderInstructionContract(plan.provider_instruction_contract),
+    role_instruction_contracts: compactProviderRoleInstructionContracts(plan.role_instruction_contracts),
+    orchestration_contract: compactProviderOrchestrationContract(plan.orchestration_contract),
+    effort_execution_contract: compactProviderEffortExecutionContract(plan.effort_execution_contract),
+    provider_effort_binding: compactProviderEffortBinding(plan.provider_effort_binding ?? plan.effort_execution_contract?.provider_effort_binding),
+    strict_output_contract: compactProviderStrictOutputContract(plan.strict_output_contract ?? plan.effort_execution_contract?.strict_output_contract),
+    repair_retry_contract: compactProviderRepairRetryContract(plan.repair_retry_contract),
+    xhigh_multi_step_contract: compactProviderXhighMultiStepContract(plan.xhigh_multi_step_contract),
+    review_quality_benchmark: compactProviderBenchmarkContract(plan.review_quality_benchmark),
+    owner_baseline_requirement_contract: compactProviderOwnerBaselineContract(plan.owner_baseline_requirement_contract),
+    provider_capability_contract: compactProviderCapabilityContract(plan.provider_capability_contract),
+    provider_capability_hash: plan.provider_capability_hash,
+    dogfood_metadata: compactProviderDogfoodMetadata(plan.dogfood_metadata)
+  });
+}
+
+function compactProviderPackagePayload(reviewPackage) {
+  if (!reviewPackage || typeof reviewPackage !== 'object' || Array.isArray(reviewPackage)) {
+    return reviewPackage;
   }
-  return output;
+  return compactAdapterObject({
+    schema_version: reviewPackage.schema_version,
+    package_version: reviewPackage.package_version,
+    human_review_schema_version: reviewPackage.human_review_schema_version,
+    package_kind: reviewPackage.package_kind,
+    id: reviewPackage.id,
+    task: compactAdapterObject({
+      type: reviewPackage.task?.type,
+      intent: truncateText(firstString(reviewPackage.task?.intent, null), 1000),
+      target_audience: truncateText(firstString(reviewPackage.task?.target_audience, null), 500),
+      expected_impression: truncateText(firstString(reviewPackage.task?.expected_impression, null), 700)
+    }),
+    source: compactProviderSource(reviewPackage.source),
+    visual_evidence: compactProviderVisualEvidence(reviewPackage.visual_evidence),
+    visual_evidence_package_v2: compactProviderVisualEvidencePackage(reviewPackage.visual_evidence_package_v2),
+    content_evidence: compactProviderContentEvidence(reviewPackage.content_evidence),
+    visible_text_provenance: compactProviderVisibleTextProvenance(reviewPackage.visible_text_provenance),
+    visible_text_reading_contract: compactProviderVisibleTextReadingContract(reviewPackage.visible_text_reading_contract),
+    screen_text_understanding_contract: compactProviderScreenTextUnderstandingContract(reviewPackage.screen_text_understanding_contract),
+    semantic_evidence: compactProviderSemanticEvidence(reviewPackage.semantic_evidence),
+    technical_evidence: compactProviderTechnicalEvidence(reviewPackage.technical_evidence),
+    mechanical_review_summary: compactProviderMechanicalReviewSummary(reviewPackage.mechanical_review_summary),
+    artifact_references: compactProviderArtifactReferences(reviewPackage.artifact_references),
+    existing_review_state: compactProviderExistingReviewState(reviewPackage.existing_review_state),
+    disclosure: compactProviderDisclosure(reviewPackage.disclosure),
+    boundary: compactProviderBoundary(reviewPackage.boundary),
+    rubric_profile: compactProviderRubricProfile(reviewPackage.rubric_profile),
+    evidence_plan: compactProviderEvidencePlan(reviewPackage.evidence_plan),
+    benchmark_completion_readiness: compactProviderBenchmarkReadiness(reviewPackage.benchmark_completion_readiness),
+    privacy_disclosure_audit: compactProviderPrivacyAudit(reviewPackage.privacy_disclosure_audit)
+  });
+}
+
+function compactAdapterObject(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  const entries = Object.entries(value)
+    .filter(([, item]) => item !== undefined && item !== null)
+    .filter(([, item]) => !Array.isArray(item) || item.length > 0)
+    .filter(([, item]) => !isEmptyPlainObject(item));
+  return Object.fromEntries(entries);
+}
+
+function isEmptyPlainObject(value) {
+  return Boolean(value)
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && Object.keys(value).length === 0;
+}
+
+function compactTextArray(values, maxItems, maxLength) {
+  return normalizeStringArray(values)
+    .slice(0, maxItems)
+    .map((value) => truncateText(redactString(value), maxLength));
+}
+
+function normalizeNumericArray(values) {
+  return arrayOrEmpty(values)
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+}
+
+function safeJsonParse(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function jsonByteLength(value) {
+  if (value === undefined || value === null) {
+    return 0;
+  }
+  return Buffer.byteLength(typeof value === 'string' ? value : JSON.stringify(value), 'utf8');
+}
+
+function compactProviderReviewScope(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    intent: truncateText(firstString(value.intent, null), 1000),
+    review_targets: compactTextArray(value.review_targets, 20, 160),
+    likely_reader_questions: compactTextArray(value.likely_reader_questions, 12, 180)
+  });
+}
+
+function compactReviewEffort(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    mode: value.mode,
+    effort: value.effort,
+    label: truncateText(firstString(value.label, null), 120)
+  });
+}
+
+function compactProviderSubAgents(values) {
+  return arrayOrEmpty(values).slice(0, 32).map((agent) => compactAdapterObject({
+    role: agent?.role,
+    display_name: truncateText(firstString(agent?.display_name, agent?.role, null), 120),
+    effort: agent?.effort,
+    round: Number.isFinite(Number(agent?.round)) ? Number(agent.round) : undefined
+  }));
+}
+
+function compactProviderRubric(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    rubric_version: value.rubric_version,
+    human_review_schema_version: value.human_review_schema_version,
+    output_schema: value.output_schema,
+    areas: arrayOrEmpty(value.areas).slice(0, 40).map((area) => compactAdapterObject({
+      id: area?.id,
+      required: area?.required === true,
+      evidence_required: area?.evidence_required === true,
+      subjective_judgment_allowed: area?.subjective_judgment_allowed === true,
+      uncertainty_required: area?.uncertainty_required === true
+    })),
+    output_requirements: compactAdapterObject({
+      role_opinions_required: value.output_requirements?.role_opinions_required,
+      findings_required: value.output_requirements?.findings_required,
+      evidence_refs_required: value.output_requirements?.evidence_refs_required,
+      uncertainty_required: value.output_requirements?.uncertainty_required
+    })
+  });
+}
+
+function compactProviderRubricProfile(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    id: value.id ?? value.rubric_profile_id,
+    rubric_profile_id: value.rubric_profile_id,
+    fixture_type: value.fixture_type,
+    required_dimensions: compactTextArray(value.required_dimensions, 20, 120),
+    quality_dimensions: compactTextArray(value.quality_dimensions, 20, 120),
+    advisory_only: value.advisory_only === true,
+    gate_effect: value.gate_effect
+  });
+}
+
+function compactProviderEvidencePlan(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    evidence_plan_version: value.evidence_plan_version,
+    transferable_evidence_classes: compactTextArray(value.transferable_evidence_classes, 12, 80),
+    included_evidence_classes: compactTextArray(value.included_evidence_classes, 12, 80),
+    required_transfer_flags: compactTextArray(value.required_transfer_flags, 12, 80),
+    visual_reference_policy: compactAdapterObject({
+      raw_pixel_bytes_embedded_in_json: value.visual_reference_policy?.raw_pixel_bytes_embedded_in_json === true,
+      raw_pixels_transferred: value.visual_reference_policy?.raw_pixels_transferred === true
+    }),
+    privacy_boundary: compactAdapterObject({
+      deterministic_review_mutation_allowed: value.privacy_boundary?.deterministic_review_mutation_allowed === true,
+      raw_provider_response_storage_allowed: value.privacy_boundary?.raw_provider_response_storage_allowed === true,
+      credential_value_storage_allowed: value.privacy_boundary?.credential_value_storage_allowed === true
+    })
+  });
+}
+
+function compactProviderHumanReviewContract(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    human_review_schema_version: value.human_review_schema_version,
+    review_model: value.review_model,
+    intent: truncateText(firstString(value.intent, null), 1000),
+    dimensions: arrayOrEmpty(value.dimensions).slice(0, 20).map((dimension) => compactAdapterObject({
+      id: dimension?.id,
+      label: truncateText(firstString(dimension?.label, null), 120),
+      evidence_required: dimension?.evidence_required === true,
+      uncertainty_required: dimension?.uncertainty_required === true,
+      subjective_judgment_allowed: dimension?.subjective_judgment_allowed === true
+    })),
+    output_requirements: compactAdapterObject({
+      reader_feeling_required: value.output_requirements?.reader_feeling_required,
+      evidence_refs_required: value.output_requirements?.evidence_refs_required,
+      uncertainty_required: value.output_requirements?.uncertainty_required,
+      owner_decision_requests_allowed: value.output_requirements?.owner_decision_requests_allowed
+    })
+  });
+}
+
+function compactProviderInstructionContract(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    human_review_schema_version: value.human_review_schema_version,
+    contract_kind: value.contract_kind,
+    intent: truncateText(firstString(value.intent, null), 1000),
+    role_count: Number.isFinite(Number(value.role_count)) ? Number(value.role_count) : undefined,
+    round_count: Number.isFinite(Number(value.round_count)) ? Number(value.round_count) : undefined,
+    required_behavior: compactTextArray(value.required_behavior, 12, 220),
+    output_sections: compactTextArray(value.output_sections, 20, 120),
+    input_summary: value.input_summary
+  });
+}
+
+function compactProviderRoleInstructionContracts(values) {
+  return arrayOrEmpty(values).slice(0, 32).map((contract) => compactAdapterObject({
+    schema_version: contract?.schema_version,
+    instruction_contract_version: contract?.instruction_contract_version,
+    role: contract?.role,
+    display_name: truncateText(firstString(contract?.display_name, contract?.role, null), 120),
+    effort: contract?.effort,
+    round: Number.isFinite(Number(contract?.round)) ? Number(contract.round) : undefined,
+    independent_review: contract?.independent_review === true,
+    rubric_profile_id: contract?.rubric_profile_id,
+    required_focus: compactTextArray(contract?.required_focus, 12, 120),
+    evidence_plan_classes: compactTextArray(contract?.evidence_plan_classes, 12, 80),
+    must_report: compactTextArray(contract?.must_report, 8, 180),
+    must_not: compactTextArray(contract?.must_not, 8, 180),
+    advisory_only: contract?.advisory_only === true,
+    gate_effect: contract?.gate_effect
+  }));
+}
+
+function compactProviderOrchestrationContract(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    orchestration_version: value.orchestration_version,
+    round_plan_version: value.round_plan_version,
+    mode: value.mode,
+    role_count: Number.isFinite(Number(value.role_count)) ? Number(value.role_count) : undefined,
+    round_count: Number.isFinite(Number(value.round_count)) ? Number(value.round_count) : undefined,
+    rounds: normalizeNumericArray(value.rounds).slice(0, 12),
+    round_plan_v2: arrayOrEmpty(value.round_plan_v2).slice(0, 20).map((round) => compactAdapterObject({
+      round: Number.isFinite(Number(round?.round)) ? Number(round.round) : undefined,
+      phase: round?.phase,
+      roles: compactTextArray(round?.roles, 20, 100),
+      independent_output_required: round?.independent_output_required === true,
+      contradiction_check_required: round?.contradiction_check_required === true,
+      synthesis_required: round?.synthesis_required === true,
+      required_output: truncateText(firstString(round?.required_output, null), 220)
+    })),
+    provider_round_execution_mode: value.provider_round_execution_mode,
+    independent_first_round_required: value.independent_first_round_required === true,
+    critic_or_verifier_included: value.critic_or_verifier_included === true,
+    synthesis_required: value.synthesis_required === true,
+    required_outputs: compactTextArray(value.required_outputs, 20, 120),
+    advisory_only: value.advisory_only === true,
+    gate_effect: value.gate_effect
+  });
+}
+
+function compactProviderEffortExecutionContract(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    effort_contract_version: value.effort_contract_version,
+    review_effort: value.review_effort,
+    xhigh_required: value.xhigh_required === true,
+    provider_id: value.provider_id,
+    model_id: value.model_id,
+    provider_capability_hash: value.provider_capability_hash,
+    supported_review_efforts: compactTextArray(value.supported_review_efforts, 12, 80),
+    provider_effort_binding: compactProviderEffortBinding(value.provider_effort_binding),
+    strict_output_contract: compactProviderStrictOutputContract(value.strict_output_contract),
+    advisory_only: value.advisory_only === true,
+    gate_effect: value.gate_effect
+  });
+}
+
+function compactProviderEffortBinding(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    binding_version: value.binding_version,
+    requested_review_effort: value.requested_review_effort,
+    provider_id: value.provider_id,
+    model_id: value.model_id,
+    native_effort_supported: value.native_effort_supported === true,
+    native_effort_request_field: value.native_effort_request_field,
+    native_effort_applied_value: value.native_effort_applied_value,
+    lossy_mapping: value.lossy_mapping === true,
+    tracecue_contract_validation_required: value.tracecue_contract_validation_required !== false,
+    advisory_only: value.advisory_only === true,
+    gate_effect: value.gate_effect
+  });
+}
+
+function compactProviderStrictOutputContract(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    strict_output_contract_version: value.strict_output_contract_version,
+    provider_json_schema_supported: value.provider_json_schema_supported === true,
+    provider_strict_schema_supported: value.provider_strict_schema_supported === true,
+    tracecue_post_validation_required: value.tracecue_post_validation_required !== false,
+    required_output_sections: compactTextArray(value.required_output_sections, 20, 120),
+    required_roles: arrayOrEmpty(value.required_roles).slice(0, 32).map((role) => compactAdapterObject({
+      role: role?.role,
+      round: Number.isFinite(Number(role?.round)) ? Number(role.round) : undefined,
+      required_focus: compactTextArray(role?.required_focus, 12, 120),
+      must_report: compactTextArray(role?.must_report, 8, 180)
+    })),
+    required_rounds: normalizeNumericArray(value.required_rounds).slice(0, 12),
+    required_critique_roles: compactTextArray(value.required_critique_roles, 12, 100),
+    synthesis_role: value.synthesis_role,
+    benchmark_requirement_coverage_required: value.benchmark_requirement_coverage_required === true,
+    placeholder_output_counts_as_provider_output: value.placeholder_output_counts_as_provider_output === true,
+    unknown_evidence_refs_allowed_for_completion: value.unknown_evidence_refs_allowed_for_completion === true,
+    advisory_only: value.advisory_only === true,
+    gate_effect: value.gate_effect
+  });
+}
+
+function compactProviderRepairRetryContract(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    repair_retry_version: value.repair_retry_version,
+    enabled_for_effort: value.enabled_for_effort === true,
+    provider_declares_repair_retry_supported: value.provider_declares_repair_retry_supported === true,
+    repair_retry_automatic_provider_calls_enabled: value.repair_retry_automatic_provider_calls_enabled === true,
+    repairable_missing_sections: compactTextArray(value.repairable_missing_sections, 20, 120),
+    retry_scope: value.retry_scope,
+    retry_requires_same_plan_hash_and_transfer_flags: value.retry_requires_same_plan_hash_and_transfer_flags !== false,
+    fallback_behavior: value.fallback_behavior,
+    advisory_only: value.advisory_only === true,
+    gate_effect: value.gate_effect
+  });
+}
+
+function compactProviderXhighMultiStepContract(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    multi_step_xhigh_version: value.multi_step_xhigh_version,
+    xhigh_required: value.xhigh_required === true,
+    provider_declares_true_multi_step_supported: value.provider_declares_true_multi_step_supported === true,
+    true_multi_step_execution_default: value.true_multi_step_execution_default === true,
+    live_multi_call_execution_performed_by_plan: value.live_multi_call_execution_performed_by_plan === true,
+    automatic_live_multi_call_enabled: value.automatic_live_multi_call_enabled === true,
+    execution_surface: value.execution_surface,
+    steps: arrayOrEmpty(value.steps).slice(0, 20).map((step) => compactAdapterObject({
+      round: Number.isFinite(Number(step?.round)) ? Number(step.round) : undefined,
+      roles: compactTextArray(step?.roles, 20, 100),
+      provider_call_policy: step?.provider_call_policy,
+      depends_on_rounds: normalizeNumericArray(step?.depends_on_rounds).slice(0, 12),
+      expected_output_sections: compactTextArray(step?.expected_output_sections, 20, 120)
+    })),
+    synthesis_step: value.synthesis_step,
+    advisory_only: value.advisory_only === true,
+    gate_effect: value.gate_effect
+  });
+}
+
+function compactProviderBenchmarkContract(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    benchmark_version: value.benchmark_version,
+    enabled: value.enabled === true,
+    case_id: value.case_id,
+    fixture_id: value.fixture_id,
+    fixture_type: value.fixture_type,
+    rubric_profile_id: value.rubric_profile_id,
+    supported_fixture_types: compactTextArray(value.supported_fixture_types, 20, 80),
+    quality_dimensions: compactTextArray(value.quality_dimensions, 20, 120),
+    required_dimensions: compactTextArray(value.required_dimensions, 40, 180),
+    required_mentions: compactTextArray(value.required_mentions, 80, 500),
+    forbidden_claims: compactTextArray(value.forbidden_claims, 80, 500),
+    thresholds: value.thresholds,
+    owner_baseline_requirement_contract_present: Boolean(value.owner_baseline_requirement_contract)
+  });
+}
+
+function compactProviderCapabilityContract(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    capability_contract_version: value.capability_contract_version,
+    effort_capability_contract_version: value.effort_capability_contract_version,
+    provider_id: value.provider_id,
+    kind: value.kind,
+    transport: value.transport,
+    implemented: value.implemented === true,
+    credential_mode: value.credential_mode,
+    supported_modalities: compactTextArray(value.supported_modalities, 12, 80),
+    transferable_evidence_classes: compactTextArray(value.transferable_evidence_classes, 12, 80),
+    external_evidence_transfer: value.external_evidence_transfer === true,
+    raw_provider_response_stored: value.raw_provider_response_stored === true,
+    timeout_ms: Number.isFinite(Number(value.timeout_ms)) ? Number(value.timeout_ms) : undefined,
+    max_request_bytes: Number.isFinite(Number(value.max_request_bytes)) ? Number(value.max_request_bytes) : undefined,
+    max_response_bytes: Number.isFinite(Number(value.max_response_bytes)) ? Number(value.max_response_bytes) : undefined,
+    effort_capability: compactAdapterObject({
+      supported_review_efforts: compactTextArray(value.effort_capability?.supported_review_efforts, 12, 80),
+      xhigh_supported: value.effort_capability?.xhigh_supported === true,
+      native_effort_binding: compactProviderEffortBinding(value.effort_capability?.native_effort_binding),
+      tracecue_contract_validation_required: value.effort_capability?.tracecue_contract_validation_required !== false
+    }),
+    supports_json_schema: value.supports_json_schema === true,
+    supports_strict_json_schema: value.supports_strict_json_schema === true
+  });
+}
+
+function compactProviderDogfoodMetadata(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    case_id: value.case_id,
+    legacy_case_id: value.legacy_case_id,
+    fixture_id: value.fixture_id,
+    repeatable_quality_check: value.repeatable_quality_check === true,
+    gate_effect: value.gate_effect
+  });
+}
+
+function compactProviderSource(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    route: value.route,
+    url: value.url,
+    final_url: value.final_url,
+    input_url: value.input_url,
+    viewport: value.viewport,
+    review_id: value.review_id,
+    review_artifact_index_path_included: false
+  });
+}
+
+function compactProviderVisualEvidence(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    reference_count: Number.isFinite(Number(value.reference_count)) ? Number(value.reference_count) : undefined,
+    references: compactProviderArtifactReferences(value.references),
+    raw_pixels_embedded_in_json: value.raw_pixels_embedded_in_json === true
+  });
+}
+
+function compactProviderVisualEvidencePackage(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    package_version: value.package_version,
+    reference_count: Number.isFinite(Number(value.reference_count)) ? Number(value.reference_count) : undefined,
+    raw_pixel_policy: compactAdapterObject({
+      raw_pixel_bytes_embedded_in_json: value.raw_pixel_policy?.raw_pixel_bytes_embedded_in_json === true,
+      raw_pixels_transferred: value.raw_pixel_policy?.raw_pixels_transferred === true
+    }),
+    references: compactProviderArtifactReferences(value.references)
+  });
+}
+
+function compactProviderContentEvidence(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    text_snippet_count: Number.isFinite(Number(value.text_snippet_count)) ? Number(value.text_snippet_count) : undefined,
+    text_snippets: compactTextArray(value.text_snippets, 24, 900),
+    headings: compactTextArray(value.headings, 24, 240),
+    action_text: compactTextArray(value.action_text, 24, 180)
+  });
+}
+
+function compactProviderVisibleTextProvenance(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    provenance_version: value.provenance_version,
+    source_count: Number.isFinite(Number(value.source_count)) ? Number(value.source_count) : undefined,
+    sources: arrayOrEmpty(value.sources).slice(0, 24).map((source) => compactAdapterObject({
+      id: source?.id,
+      type: source?.type,
+      text: truncateText(firstString(source?.text, source?.summary, null), 500),
+      text_included: source?.text_included === true
+    }))
+  });
+}
+
+function compactProviderVisibleTextReadingContract(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    reading_contract_version: value.reading_contract_version,
+    snippet_count: Number.isFinite(Number(value.snippet_count)) ? Number(value.snippet_count) : undefined,
+    visible_text_included: value.visible_text_included === true,
+    raw_dom_included: value.raw_dom_included === true,
+    ocr_performed: value.ocr_performed === true
+  });
+}
+
+function compactProviderScreenTextUnderstandingContract(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    schema_version: value.schema_version,
+    contract_version: value.contract_version,
+    visible_text_review_required: value.visible_text_review_required === true,
+    image_text_ocr_performed: value.image_text_ocr_performed === true,
+    raw_dom_included: value.raw_dom_included === true
+  });
+}
+
+function compactProviderSemanticEvidence(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    headings: compactTextArray(value.headings, 24, 240),
+    landmarks: compactTextArray(value.landmarks, 24, 160),
+    images: arrayOrEmpty(value.images).slice(0, 24).map((image) => compactAdapterObject({
+      alt: truncateText(firstString(image?.alt, null), 240),
+      role: image?.role,
+      visible: image?.visible === true
+    }))
+  });
+}
+
+function compactProviderTechnicalEvidence(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    finding_count: Number.isFinite(Number(value.finding_count)) ? Number(value.finding_count) : undefined,
+    findings: arrayOrEmpty(value.findings).slice(0, 16).map((finding) => compactAdapterObject({
+      id: finding?.id,
+      category: finding?.category,
+      severity: finding?.severity,
+      message: truncateText(firstString(finding?.message, finding?.summary, null), 320)
+    })),
+    release_readiness: value.release_readiness,
+    local_release_gate: value.local_release_gate
+  });
+}
+
+function compactProviderMechanicalReviewSummary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    finding_count: Number.isFinite(Number(value.finding_count)) ? Number(value.finding_count) : undefined,
+    top_findings: arrayOrEmpty(value.top_findings).slice(0, 12).map((finding) => compactAdapterObject({
+      id: finding?.id,
+      category: finding?.category,
+      severity: finding?.severity,
+      message: truncateText(firstString(finding?.message, finding?.summary, null), 320)
+    })),
+    quality_signal_summary: value.quality_signal_summary,
+    local_release_gate: value.local_release_gate
+  });
+}
+
+function compactProviderArtifactReferences(values) {
+  return arrayOrEmpty(values).slice(0, 32).map((reference, index) => compactAdapterObject({
+    id: truncateText(firstString(reference?.id, reference?.ref_id, `artifact-reference-${index + 1}`), 100),
+    type: truncateText(firstString(reference?.type, reference?.evidence_class, reference?.kind, 'artifact_reference'), 100),
+    description: truncateText(firstString(reference?.description, reference?.summary, reference?.label, null), 220),
+    content_included: reference?.content_included === true,
+    local_reference: true
+  }));
+}
+
+function compactProviderExistingReviewState(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    deterministic_review_path_included: false,
+    deterministic_findings_mutated: value.deterministic_findings_mutated === true,
+    metrics_finding_count_mutated: value.metrics_finding_count_mutated === true,
+    local_release_gate: value.local_release_gate,
+    finding_count: Number.isFinite(Number(value.finding_count)) ? Number(value.finding_count) : undefined
+  });
+}
+
+function compactProviderDisclosure(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    raw_pixels_embedded_in_json: value.raw_pixels_embedded_in_json === true,
+    raw_artifact_content_included: value.raw_artifact_content_included === true,
+    raw_pixel_bytes_included: value.raw_pixel_bytes_included === true,
+    raw_provider_response_stored: value.raw_provider_response_stored === true,
+    credential_values_recorded: value.credential_values_recorded === true
+  });
+}
+
+function compactProviderBoundary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    local_only: value.local_only !== false,
+    browser_launched: value.browser_launched === true,
+    provider_call_performed: value.provider_call_performed === true,
+    external_evidence_transfer: value.external_evidence_transfer === true,
+    raw_pixels_transferred: value.raw_pixels_transferred === true,
+    raw_provider_response_stored: value.raw_provider_response_stored === true,
+    credential_values_recorded: value.credential_values_recorded === true,
+    deterministic_findings_mutated: value.deterministic_findings_mutated === true,
+    release_gate_mutated: value.release_gate_mutated === true,
+    mcp_execution_exposed: value.mcp_execution_exposed === true,
+    advisory_only: value.advisory_only !== false,
+    gate_effect: value.gate_effect
+  });
+}
+
+function compactProviderBenchmarkReadiness(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    status: value.status,
+    benchmark_case_id: value.benchmark_case_id,
+    case_id: value.case_id,
+    required_mentions: compactTextArray(value.required_mentions, 80, 500),
+    required_dimensions: compactTextArray(value.required_dimensions, 40, 180),
+    forbidden_claims: compactTextArray(value.forbidden_claims, 80, 500),
+    ready: value.ready === true
+  });
+}
+
+function compactProviderPrivacyAudit(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    status: value.status,
+    raw_pixels_included: value.raw_pixels_included === true,
+    raw_artifact_content_included: value.raw_artifact_content_included === true,
+    raw_provider_response_stored: value.raw_provider_response_stored === true,
+    credential_values_recorded: value.credential_values_recorded === true,
+    warnings: compactTextArray(value.warnings, 12, 180)
+  });
+}
+
+function compactProviderDescriptorForPayload(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    id: value.id,
+    kind: value.kind,
+    transport: value.transport,
+    raw_provider_response_stored: value.raw_provider_response_stored === true
+  });
+}
+
+function compactProviderDisclosurePolicy(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    approved_transfer_flags: compactTextArray(value.approved_transfer_flags, 20, 100),
+    raw_pixels_included: value.raw_pixels_included === true,
+    raw_artifact_content_included: value.raw_artifact_content_included === true,
+    raw_pixel_bytes_included: value.raw_pixel_bytes_included === true,
+    visual_references_included: value.visual_references_included === true,
+    page_text_summary_included: value.page_text_summary_included === true,
+    artifact_references_included: value.artifact_references_included === true,
+    accessibility_summary_included: value.accessibility_summary_included === true,
+    control_metadata_included: value.control_metadata_included === true,
+    external_evidence_transfer: value.external_evidence_transfer === true,
+    mcp_execution_allowed: value.mcp_execution_allowed === true
+  });
 }
 
 function compactProviderOwnerBaselineContract(contract) {

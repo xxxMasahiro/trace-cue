@@ -6640,7 +6640,7 @@ test('agentic human review responses adapter retries repairable owner baseline c
   assert.equal(repairInput.contract_repair_request.required_owner_baseline_findings[0].must_not_miss_criterion_id, 'owner-final-ambiguity');
   assert.equal(repairInput.contract_repair_request.required_owner_baseline_findings[0].recommended_evidence_ref_ids.includes('owner-final-ambiguity'), true);
   assert.match(observedRequests[0].instructions, /Owner-approved human baseline contract is mandatory/);
-  assert.match(observedRequests[0].instructions, /compact target-specific owner baseline id map/);
+  assert.match(observedRequests[0].instructions, /input\.required_owner_baseline_findings/);
   assert.match(observedRequests[0].instructions, /required_owner_baseline_findings/);
   assert.doesNotMatch(observedRequests[0].instructions, /must remain visible to the reviewer/);
   assert.doesNotMatch(JSON.stringify(initialInput.required_owner_baseline_findings), /must remain visible to the reviewer/);
@@ -6796,6 +6796,163 @@ test('agentic human review responses adapter retries repairable owner baseline c
   assert.equal(ownerForbidden.evidence_refs[0].id, 'owner-baseline-forbidden-claim-1');
   assert.equal(result.body.adapter_boundary.contract_repair_attempts_performed, 1);
   assert.doesNotMatch(JSON.stringify(result.body), /adapter-secret-value|provider-secret-value|output_text/);
+});
+
+test('agentic human review responses adapter compacts real-shaped owner-baseline provider requests under budget', () => {
+  const request = adapterTraceCueRequest();
+  request.plan.review_effort = { mode: 'standard' };
+  request.plan.sub_agents = request.plan.sub_agents.slice(0, 3).map((agent) => ({
+    ...agent,
+    effort: 'medium',
+    round: 1
+  }));
+  request.plan.rounds = [1];
+  const longOwnerSummary = 'This owner-approved target-specific criterion must not be copied verbatim into provider requests. '.repeat(80);
+  const ownerCriteria = Array.from({ length: 8 }, (_value, index) => ({
+    id: `owner-specific-${index + 1}`,
+    dimension: index % 2 === 0 ? 'content_comprehension' : 'risk_and_misleading_content',
+    summary: `${longOwnerSummary} criterion ${index + 1}`,
+    severity: 'high',
+    target_specific: true,
+    match_terms: [`specific-term-${index + 1}`]
+  }));
+  const ownerLabels = ownerCriteria.map((criterion, index) => ({
+    id: `owner-label-${index + 1}`,
+    must_not_miss_criterion_id: criterion.id,
+    criteria_refs: [criterion.id],
+    target_specific: true,
+    evidence_ref_count: 1,
+    summary: `${longOwnerSummary} label ${index + 1}`
+  }));
+  const ownerMentions = Array.from({ length: 12 }, (_value, index) => `Owner-approved exact required mention ${index + 1} that must remain exact for coverage validation.`);
+  const ownerDimensions = [
+    'accessibility_comprehension',
+    'content_comprehension',
+    'first_impression',
+    'improvement_priority',
+    'reader_emotion',
+    'risk_and_misleading_content',
+    'trust_and_credibility'
+  ];
+  const ownerForbiddenClaims = Array.from({ length: 5 }, (_value, index) => `forbidden owner claim ${index + 1} must remain absent`);
+  request.plan.owner_baseline_requirement_contract = {
+    schema_version: '0.1.0',
+    contract_version: '1.0.0',
+    type: 'agentic_human_review_owner_baseline_requirement_contract',
+    baseline_id: 'owner-baseline-large-contract',
+    case_id: 'large-owner-baseline-case',
+    approval: {
+      decision: 'approved',
+      approved_at: '2026-06-29T00:00:00.000Z',
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    must_not_miss_criteria: ownerCriteria,
+    owner_labels: ownerLabels,
+    required_mentions: ownerMentions,
+    required_dimensions: ownerDimensions,
+    forbidden_claims: ownerForbiddenClaims,
+    required_structured_finding_fields: ['must_not_miss_criterion_id', 'owner_label_ids', 'evidence_refs'],
+    target_specific_must_not_miss_required: true,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  request.plan.review_quality_benchmark = {
+    enabled: true,
+    case_id: 'large-owner-baseline-case',
+    fixture_type: 'landing_page',
+    rubric_profile_id: 'landing-trust',
+    required_mentions: ['first impression', 'trust proof', 'next action', 'copy clarity'],
+    required_dimensions: ['first_impression', 'reader_emotion', 'trust_and_credibility', 'content_comprehension', 'improvement_priority'],
+    forbidden_claims: ['release is approved', 'provider output changed the gate'],
+    owner_baseline_requirement_contract: request.plan.owner_baseline_requirement_contract,
+    thresholds: {
+      coverage_score: 0.75,
+      actionability_score: 0.6,
+      forbidden_claim_score: 1
+    }
+  };
+  request.plan.provider_instruction_contract = {
+    schema_version: '0.1.0',
+    human_review_schema_version: '2.0.0',
+    contract_kind: 'stable_agentic_human_review_instruction',
+    intent: request.plan.intent,
+    role_count: request.plan.sub_agents.length,
+    round_count: 1,
+    required_behavior: Array.from({ length: 18 }, (_value, index) => `Required behavior ${index + 1}: preserve owner labels and exact benchmark coverage while avoiding unsupported claims.`),
+    output_sections: ['summary', 'role_opinions', 'agentic_human_review_findings', 'benchmark_requirement_coverage', 'mechanical_vs_human_review'],
+    owner_baseline_requirement_contract: request.plan.owner_baseline_requirement_contract,
+    benchmark_requirement_contract: request.plan.review_quality_benchmark,
+    input_summary: {
+      text_snippet_count: 7,
+      artifact_reference_count: 80,
+      deterministic_finding_count: 1
+    }
+  };
+  request.plan.strict_output_contract = {
+    tracecue_post_validation_required: true,
+    required_output_sections: ['summary', 'role_opinions', 'agentic_human_review_findings', 'benchmark_requirement_coverage'],
+    required_roles: request.plan.sub_agents.map((agent) => ({
+      role: agent.role,
+      round: agent.round,
+      required_focus: ['visible text', 'trust', 'first impression', 'copy clarity'],
+      must_report: ['one plain-language human-reader observation', 'evidence or uncertainty for each important claim']
+    })),
+    required_rounds: [1],
+    required_critique_roles: [],
+    benchmark_requirement_coverage_required: true
+  };
+  request.package.content_evidence = {
+    text_snippet_count: 7,
+    text_snippets: Array.from({ length: 7 }, (_value, index) => `Visible page text snippet ${index + 1} gives bounded evidence for human review without raw DOM.`)
+  };
+  request.package.artifact_references = Array.from({ length: 80 }, (_value, index) => ({
+    id: `large-artifact-${index + 1}`,
+    type: 'review_artifact_reference',
+    path: `.browser-debug/reviews/local-review-${index + 1}.json`,
+    description: `Verbose artifact reference ${index + 1} that should be represented compactly in provider-facing payloads.`,
+    content_included: false
+  }));
+  request.package.human_review_input_contract = {
+    human_review_schema_version: '2.0.0',
+    review_model: 'agentic_human_review_v2',
+    intent: request.plan.intent,
+    dimensions: ownerDimensions.map((dimension) => ({
+      id: dimension,
+      label: dimension,
+      evidence_required: true,
+      uncertainty_required: true,
+      subjective_judgment_allowed: true
+    })),
+    output_requirements: {
+      reader_feeling_required: true,
+      evidence_refs_required: true,
+      uncertainty_required: true
+    }
+  };
+
+  const providerRequest = buildOpenAiResponsesRequest({
+    traceCueRequest: request,
+    model: 'review-model-for-test',
+    generatedAt: fixedNow
+  });
+  const serialized = JSON.stringify(providerRequest);
+  const input = JSON.parse(providerRequest.input);
+
+  assert.ok(Buffer.byteLength(serialized, 'utf8') <= 131072);
+  assert.equal(input.required_owner_baseline_findings.length, ownerCriteria.length);
+  assert.equal(input.required_owner_baseline_coverage.required_mentions.length, ownerMentions.length);
+  assert.equal(input.required_owner_baseline_coverage.forbidden_claims.length, ownerForbiddenClaims.length);
+  assert.equal(input.review_request.plan.owner_baseline_requirement_contract.must_not_miss_criteria.length, ownerCriteria.length);
+  assert.equal(input.review_request.plan.review_quality_benchmark.owner_baseline_requirement_contract_present, true);
+  assert.equal(input.review_request.plan.review_quality_benchmark.owner_baseline_requirement_contract, undefined);
+  assert.equal(input.review_request.plan.provider_instruction_contract.owner_baseline_requirement_contract, undefined);
+  assert.match(providerRequest.instructions, /input\.required_owner_baseline_coverage/);
+  assert.match(serialized, /owner-specific-1/);
+  assert.match(serialized, /owner-label-1/);
+  assert.match(serialized, /Owner-approved exact required mention 1/);
+  assert.doesNotMatch(serialized, /must not be copied verbatim into provider requests/);
+  assert.doesNotMatch(serialized, /\.browser-debug|adapter-secret-value|provider-secret-value/);
 });
 
 test('agentic human review responses adapter accepts role-level owner-baseline structured findings', async () => {
@@ -7046,11 +7203,16 @@ test('agentic human review responses adapter keeps xhigh repair retry compact un
 
   assert.equal(result.statusCode, 200);
   assert.equal(observedRequests.length, 2);
+  const initialInput = JSON.parse(observedRequests[0].input);
+  assert.ok(Buffer.byteLength(JSON.stringify(observedRequests[0]), 'utf8') <= 131072);
+  assert.equal(initialInput.required_owner_baseline_findings.length, 12);
+  assert.equal(initialInput.review_request.plan.owner_baseline_requirement_contract.must_not_miss_criteria.length, 12);
   assert.equal(observedRequests[1].metadata.tracecue_review_effort, 'xhigh');
   assert.equal(observedRequests[1].store, false);
   assert.deepEqual(observedRequests[1].tools, []);
   assert.ok(Buffer.byteLength(JSON.stringify(observedRequests[1]), 'utf8') <= 131072);
   assert.match(observedRequests[1].input, /evidence_reference_ids/);
+  assert.doesNotMatch(observedRequests[0].input, /long human wording/);
   assert.doesNotMatch(observedRequests[1].input, /long human wording/);
   assert.doesNotMatch(JSON.stringify(observedRequests[1]), /\.browser-debug|adapter-secret-value|provider-secret-value|output_text/);
   assert.equal(result.body.adapter_boundary.contract_repair_attempts_performed, 1);
