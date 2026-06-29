@@ -170,7 +170,22 @@ function buildAdvisoryResponseSchema(traceCueRequest) {
       agentic_human_review_findings: { type: 'array', items: findingSchema },
       strengths: { type: 'array', items: { type: 'string' } },
       improvement_suggestions: { type: 'array', items: { type: 'string' } },
-      owner_decision_requests: { type: 'array' }
+      owner_decision_requests: { type: 'array' },
+      review_claims: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            id: { type: 'string' },
+            claim: { type: 'string', minLength: 1 },
+            message: { type: 'string', minLength: 1 },
+            evidence_refs: { type: 'array', items: evidenceRefSchema },
+            evidence_ref_ids: { type: 'array', items: { type: 'string' } },
+            supported_by_roles: { type: 'array', items: { type: 'string' } }
+          }
+        }
+      }
     },
     required: ['summary', 'role_opinions']
   };
@@ -519,6 +534,7 @@ function buildAdapterInstructions(traceCueRequest, repairContext = null) {
     'Return only JSON that matches the requested advisory object. Do not include Markdown or prose outside JSON.',
     'Focus on first impression, visible text comprehension, UX clarity, trust, emotional reception, accessibility comprehension, risks, strengths, and prioritized fixes.',
     'Keep every claim tied to the evidence in the request. State uncertainty when evidence is incomplete.',
+    'If you return review_claims, every claim must have non-placeholder claim text plus evidence_refs from evidence_reference_catalog or supported_by_roles from the planned role_opinions.',
     `Return role_opinions for these planned roles whenever possible: ${roles}.`,
     buildAdapterEffortContractInstruction(traceCueRequest),
     benchmark,
@@ -552,7 +568,8 @@ function isRepairableAdapterContractValidation(validation) {
   return [
     'AHR_RESPONSES_ADAPTER_BENCHMARK_CONTRACT_INCOMPLETE',
     'AHR_RESPONSES_ADAPTER_OWNER_BASELINE_CONTRACT_INCOMPLETE',
-    'AHR_RESPONSES_ADAPTER_XHIGH_CONTRACT_INCOMPLETE'
+    'AHR_RESPONSES_ADAPTER_XHIGH_CONTRACT_INCOMPLETE',
+    'AHR_RESPONSES_ADAPTER_REVIEW_CLAIM_CONTRACT_INCOMPLETE'
   ].includes(validation?.code);
 }
 
@@ -564,6 +581,7 @@ function buildAdapterContractRepairContext(validation, attempt) {
     instruction: 'Return a complete replacement advisory JSON object, not a diff or partial patch.',
     missing_benchmark_records: validation?.details?.missing_benchmark_records ?? [],
     missing_owner_baseline_records: validation?.details?.missing_owner_baseline_records ?? [],
+    invalid_review_claims: validation?.details?.invalid_review_claims ?? [],
     owner_baseline_criterion_hints: validation?.details?.owner_baseline_criterion_hints ?? [],
     evidence_reference_catalog: validation?.details?.evidence_reference_catalog ?? [],
     missing_roles: validation?.details?.missing_roles ?? [],
@@ -584,6 +602,9 @@ function buildAdapterContractRepairInstruction(repairContext) {
     : [];
   const missingOwnerBaselineRecords = Array.isArray(repairContext.missing_owner_baseline_records)
     ? repairContext.missing_owner_baseline_records
+    : [];
+  const invalidReviewClaims = Array.isArray(repairContext.invalid_review_claims)
+    ? repairContext.invalid_review_claims
     : [];
   const missingConditions = Array.isArray(repairContext.missing_conditions)
     ? repairContext.missing_conditions
@@ -607,6 +628,9 @@ function buildAdapterContractRepairInstruction(repairContext) {
     missingOwnerBaselineRecords.length > 0
       ? `Add structured agentic_human_review_findings for these missing owner-approved must-not-miss criteria, preserving ids and owner label ids: ${JSON.stringify(missingOwnerBaselineRecords)}.`
       : '',
+    invalidReviewClaims.length > 0
+      ? `Repair these review_claims by replacing placeholders, adding catalog-backed evidence_refs, adding planned supported_by_roles, or removing unsupported claims: ${JSON.stringify(invalidReviewClaims)}.`
+      : '',
     ownerBaselineCriterionHints.length > 0
       ? `Owner-baseline criterion repair hints: ${JSON.stringify(ownerBaselineCriterionHints)}.`
       : '',
@@ -615,6 +639,7 @@ function buildAdapterContractRepairInstruction(repairContext) {
       : '',
     'Every benchmark record must include the exact label string, present, status, non-empty evidence, and non-empty evidence_refs using ids from evidence_reference_catalog.',
     'Every owner-baseline finding must include must_not_miss_criterion_id or criteria_refs, owner_label_ids when applicable, recommendation, and non-empty evidence_refs using ids from evidence_reference_catalog.',
+    'Every review_claim must include non-placeholder claim text and either non-empty evidence_refs using ids from evidence_reference_catalog or supported_by_roles matching planned role_opinions.',
     'A repaired forbidden_claims record is an absence record: include the exact claim, present=false, status=absent or not_present, concise evidence that the advisory did not make the claim, and a relevant evidence_reference_catalog id.'
   ].filter(Boolean).join(' ');
 }
@@ -677,6 +702,10 @@ function validateAdapterAdvisoryAgainstTraceCueContract(advisory, traceCueReques
   const ownerBaselineValidation = validateAdapterOwnerBaselineCoverage(advisory, traceCueRequest);
   if (!ownerBaselineValidation.ok) {
     return ownerBaselineValidation;
+  }
+  const claimValidation = validateAdapterReviewClaims(advisory, traceCueRequest);
+  if (!claimValidation.ok) {
+    return claimValidation;
   }
   if (effort !== 'xhigh') {
     return { ok: true };
@@ -836,6 +865,69 @@ function findingUsesExpectedOwnerLabelIds(finding, ownerLabelIds) {
   return arrayOrEmpty(finding?.owner_label_ids).some((id) => expected.has(String(id).trim()));
 }
 
+function validateAdapterReviewClaims(advisory, traceCueRequest) {
+  const claimValues = Array.isArray(advisory?.review_claims) ? advisory.review_claims : [];
+  if (claimValues.length === 0) {
+    return { ok: true };
+  }
+  const evidenceCatalog = buildLocalEvidenceReferenceCatalog(traceCueRequest);
+  const plannedRoles = new Set(arrayOrEmpty(traceCueRequest?.plan?.sub_agents).map((agent) => String(agent?.role ?? '').trim()).filter(Boolean));
+  const invalid = [];
+  for (const [index, value] of claimValues.slice(0, 25).entries()) {
+    const claimText = truncateText(redactString(firstString(value?.claim, value?.message, '')), 300);
+    const evidenceRefs = normalizeAdapterEvidenceRefs(value?.evidence_refs ?? value?.evidence_ref_ids ?? value?.citations ?? value?.source_refs ?? value?.references ?? value?.artifacts, evidenceCatalog);
+    const supportedRoles = normalizeStringArray(value?.supported_by_roles)
+      .filter((role) => plannedRoles.size === 0 || plannedRoles.has(role));
+    const missingFields = [];
+    if (!claimText) {
+      missingFields.push('claim');
+    }
+    if (adapterPlaceholderClaimText(claimText)) {
+      missingFields.push('non_placeholder_claim');
+    }
+    if (evidenceRefs.length === 0 && supportedRoles.length === 0) {
+      missingFields.push('evidence_refs_or_supported_by_roles');
+    }
+    if (missingFields.length > 0) {
+      invalid.push({
+        index,
+        claim_id: truncateText(firstString(value?.id, `review-claim-${index + 1}`), 120),
+        missing_fields: missingFields,
+        evidence_ref_count: evidenceRefs.length,
+        supported_role_count: supportedRoles.length,
+        reason: 'review claims must be non-placeholder and evidence-backed or supported by planned review roles'
+      });
+    }
+  }
+  if (invalid.length > 0) {
+    return {
+      ok: false,
+      code: 'AHR_RESPONSES_ADAPTER_REVIEW_CLAIM_CONTRACT_INCOMPLETE',
+      message: 'Provider output did not satisfy the review-claim evidence contract.',
+      details: {
+        invalid_review_claims: invalid,
+        evidence_reference_catalog: summarizeAdapterEvidenceReferenceCatalog(evidenceCatalog),
+        raw_provider_response_stored: false
+      }
+    };
+  }
+  return { ok: true };
+}
+
+function adapterPlaceholderClaimText(value) {
+  const normalized = String(value ?? '')
+    .toLowerCase()
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.!?]+$/g, '');
+  return normalized === 'agentic review claim'
+    || normalized === 'review claim'
+    || normalized === 'advisory claim'
+    || normalized === 'claim'
+    || /^claim\s+\d+$/.test(normalized);
+}
+
 function unknownOwnerLabelIdsForCriterion(findings, contract) {
   const approved = new Set(arrayOrEmpty(contract?.owner_labels).map((label) => String(label?.id ?? '').trim()).filter(Boolean));
   return uniqueAdapterStrings(findings
@@ -993,7 +1085,7 @@ function normalizeAdvisoryForTraceCue(advisory, traceCueRequest) {
     improvement_suggestions: normalizeStringArray(advisory.improvement_suggestions ?? advisory.suggested_fixes),
     suggested_fixes: normalizeStringArray(advisory.suggested_fixes ?? advisory.improvement_suggestions),
     owner_decision_requests: Array.isArray(advisory.owner_decision_requests) ? advisory.owner_decision_requests : [],
-    review_claims: Array.isArray(advisory.review_claims) ? advisory.review_claims : [],
+    review_claims: normalizeAdapterReviewClaims(advisory, evidenceCatalog),
     critique_records: Array.isArray(advisory.critique_records) ? advisory.critique_records : [],
     integration_record: advisory.integration_record ?? null,
     agentic_human_review_action_plan: advisory.agentic_human_review_action_plan ?? {
@@ -1275,6 +1367,21 @@ function normalizeAdapterFindings(advisory, evidenceCatalog) {
       owner_label_ids: normalizeStringArray(item.owner_label_ids ?? item.owner_labels ?? item.label_ids).slice(0, 12),
       target_specific: item.target_specific === true,
       evidence_refs: normalizeAdapterEvidenceRefs(item.evidence_refs ?? item.evidence_ref_ids ?? item.citations ?? item.source_refs ?? item.references ?? item.artifacts, evidenceCatalog)
+    };
+  });
+}
+
+function normalizeAdapterReviewClaims(advisory, evidenceCatalog) {
+  return arrayOrEmpty(advisory?.review_claims).slice(0, 25).map((claim, index) => {
+    const item = claim && typeof claim === 'object' && !Array.isArray(claim) ? claim : {};
+    return {
+      id: truncateText(firstString(item.id, `adapter-review-claim-${index + 1}`), 120),
+      claim: truncateText(redactString(firstString(item.claim, item.message, '')), 700),
+      evidence_refs: normalizeAdapterEvidenceRefs(item.evidence_refs ?? item.evidence_ref_ids ?? item.citations ?? item.source_refs ?? item.references ?? item.artifacts, evidenceCatalog),
+      supported_by_roles: normalizeStringArray(item.supported_by_roles).slice(0, 12),
+      confidence: item.confidence ?? null,
+      subjective_judgment: item.subjective_judgment !== false,
+      gate_effect: 'none'
     };
   });
 }

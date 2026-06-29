@@ -70,6 +70,14 @@ const MAX_PROPOSAL_BRIEF_BYTES = 32 * 1024;
 const REVIEW_EFFORTS = new Set(['quick', 'standard', 'deep', 'xhigh']);
 const HUMAN_REVIEW_CLAIM_EFFORTS = Object.freeze(['standard', 'deep', 'xhigh']);
 const HUMAN_REVIEW_REQUIRED_COMPARISON_KINDS = Object.freeze(['direct-vs-tracecue', 'provider-dogfood', 'benchmark-regression']);
+const HUMAN_REVIEW_CRITICAL_COMPARISON_METRICS = Object.freeze([
+  'human_review_coverage_score',
+  'actionability_score',
+  'calibration_ready_score',
+  'benchmark_required_mention_coverage_score',
+  'benchmark_dimension_coverage_score',
+  'benchmark_structured_record_completeness_score'
+]);
 const EVIDENCE_SET_ARTIFACT_DATA_KEYS = Object.freeze({
   calibration: Object.freeze(['agentic_human_review_calibration']),
   comparison: Object.freeze([
@@ -2636,6 +2644,7 @@ function evidenceSetResultRecord({ entry, result, resultPath, resultHash }) {
     result,
     providerId: entry.provider_id ?? result.provider?.id ?? null
   });
+  const claimIntegrity = buildResultClaimIntegrity(result);
   return {
     path: resultPath,
     hash: resultHash,
@@ -2651,6 +2660,7 @@ function evidenceSetResultRecord({ entry, result, resultPath, resultHash }) {
     provider_execution_class: proofEligibility.provider_execution_class,
     claim_numerator_eligible: proofEligibility.claim_numerator_eligible,
     strict_claim_numerator_eligible: proofEligibility.strict_claim_numerator_eligible,
+    claim_integrity: claimIntegrity,
     mechanical_contract_satisfied: proofEligibility.mechanical_contract_satisfied,
     strict_eligibility_checks: proofEligibility.strict_eligibility_checks,
     proof_eligible: false,
@@ -2697,6 +2707,7 @@ function resultProofEligibility({ entry, result, providerId }) {
     ? result.benchmark_requirement_coverage?.status === 'passed'
       && Number(result.benchmark_requirement_coverage?.summary?.evidence_ref_backed_record_score ?? 0) === 1
     : true;
+  const claimIntegrity = buildResultClaimIntegrity(result);
   const mechanicalContractSatisfied = roleCoverageSatisfied && xhighComplete && benchmarkReady;
   const strictChecks = {
     api_call_performed: apiCallPerformed,
@@ -2709,6 +2720,7 @@ function resultProofEligibility({ entry, result, providerId }) {
     role_contract_satisfied: roleCoverageSatisfied,
     xhigh_contract_satisfied: xhighComplete,
     benchmark_contract_satisfied: benchmarkReady,
+    claim_integrity_satisfied: claimIntegrity.claim_numerator_safe,
     mechanical_contract_satisfied: mechanicalContractSatisfied
   };
   const strictClaimNumeratorEligible = Object.values(strictChecks).every(Boolean);
@@ -2757,9 +2769,14 @@ function evidenceSetComparisonRecord({ entry, comparison, comparisonPath, compar
     case_id: caseId,
     baseline_case_id: comparison.baseline?.case_id ?? null,
     candidate_case_id: comparison.candidate?.case_id ?? null,
+    baseline_effort: comparison.baseline?.effort ?? null,
+    candidate_effort: comparison.candidate?.effort ?? null,
     baseline_result_id: comparison.baseline?.result_id ?? null,
     candidate_result_id: comparison.candidate?.result_id ?? null,
     deltas: comparison.deltas ?? {},
+    regression_diagnostics: Array.isArray(comparison.regression_diagnostics) ? comparison.regression_diagnostics : [],
+    critical_regressed_score_count: Number(comparison.summary?.critical_regressed_score_count ?? 0),
+    critical_regressed_metrics: Array.isArray(comparison.summary?.critical_regressed_metrics) ? comparison.summary.critical_regressed_metrics : [],
     regressed_score_count: Number(comparison.summary?.regressed_score_count ?? 0),
     improved_score_count: Number(comparison.summary?.improved_score_count ?? 0),
     human_baseline_overall_alignment_score: Number(comparison.scores?.overall_alignment_score ?? 0),
@@ -2774,6 +2791,7 @@ function evidenceSetComparisonRecord({ entry, comparison, comparisonPath, compar
     human_baseline_over_report_count: Number(comparison.scores?.over_report_count ?? comparison.matches?.classifications?.over_reports?.length ?? 0),
     human_baseline_severity_mismatch_count: Number(comparison.scores?.severity_mismatch_count ?? comparison.matches?.classifications?.severity_mismatches?.length ?? 0),
     human_baseline_insufficient_evidence_count: Number(comparison.scores?.insufficient_evidence_count ?? comparison.matches?.classifications?.insufficient_evidence?.length ?? 0),
+    human_baseline_diagnostics: comparison.diagnostics ?? {},
     advisory_only: comparison.advisory_only !== false,
     gate_effect: comparison.gate_effect ?? 'none'
   };
@@ -3568,7 +3586,13 @@ async function buildClaimStandardClaimAuditSummary({ cwd, evidenceSet, policy, n
       failures.push({
         code: 'AHR_CLAIM_STANDARD_GATE_RESULT_AUDIT_READ_FAILED',
         message: 'A result could not be read for claim audit.',
-        details: { path: resultRecord.path, reason: resultRead.error.message }
+        details: {
+          path: resultRecord.path,
+          result_id: resultRecord.result_id ?? null,
+          case_id: resultRecord.case_id ?? null,
+          effort: resultRecord.effort ?? null,
+          reason: resultRead.error.message
+        }
       });
       continue;
     }
@@ -3577,7 +3601,12 @@ async function buildClaimStandardClaimAuditSummary({ cwd, evidenceSet, policy, n
       failures.push({
         code: 'AHR_CLAIM_STANDARD_GATE_RESULT_AUDIT_CONTRACT_FAILED',
         message: 'A result could not be audited because it did not satisfy the advisory-result contract.',
-        details: validation.error.details
+        details: {
+          result_id: resultRecord.result_id ?? null,
+          case_id: resultRecord.case_id ?? null,
+          effort: resultRecord.effort ?? null,
+          ...(validation.error.details ?? {})
+        }
       });
       continue;
     }
@@ -3591,15 +3620,20 @@ async function buildClaimStandardClaimAuditSummary({ cwd, evidenceSet, policy, n
       now
     });
     audits.push(audit);
-    if (audit.forbidden_claim_matches.length > 0 || audit.missing_evidence_claim_count > 0 || audit.equality_or_superiority_text_present) {
+    if (audit.forbidden_claim_matches.length > 0 || audit.missing_evidence_claim_count > 0 || audit.equality_or_superiority_text_present || audit.claim_integrity?.claim_numerator_safe !== true) {
       failures.push({
         code: 'AHR_CLAIM_STANDARD_GATE_RESULT_CLAIM_AUDIT_FAILED',
         message: 'A result claim audit found forbidden, unsupported, or evidence-missing claim text.',
         details: {
           path: resultRead.relativePath,
           result_id: audit.result_id ?? null,
+          case_id: resultRecord.case_id ?? null,
+          effort: resultRecord.effort ?? null,
           forbidden_claim_match_count: audit.forbidden_claim_matches.length,
           missing_evidence_claim_count: audit.missing_evidence_claim_count,
+          claim_integrity_status: audit.claim_integrity?.status ?? null,
+          rejected_claim_count: audit.claim_integrity?.rejected_claim_count ?? 0,
+          placeholder_claim_count: audit.claim_integrity?.placeholder_claim_count ?? 0,
           equality_or_superiority_text_present: audit.equality_or_superiority_text_present
         }
       });
@@ -3610,6 +3644,7 @@ async function buildClaimStandardClaimAuditSummary({ cwd, evidenceSet, policy, n
     failed_result_count: failures.length,
     forbidden_claim_match_count: audits.reduce((sum, audit) => sum + audit.forbidden_claim_matches.length, 0),
     missing_evidence_claim_count: audits.reduce((sum, audit) => sum + Number(audit.missing_evidence_claim_count ?? 0), 0),
+    claim_integrity_failed_count: audits.filter((audit) => audit.claim_integrity?.claim_numerator_safe !== true).length,
     equality_or_superiority_text_present_count: audits.filter((audit) => audit.equality_or_superiority_text_present).length,
     failures
   };
@@ -3695,6 +3730,15 @@ function buildClaimStandardGate({
     ...(conditions.owner_baselines_verified ? [] : [claimStandardBlocker('AHR_CLAIM_STANDARD_GATE_OWNER_BASELINE_INVALID', 'At least one human baseline is not verified owner-labeled evidence.', { baselines: invalidBaselines.map((baseline) => ({ path: baseline.path, case_id: baseline.case_id, baseline_id: baseline.baseline_id })) })]),
     ...(conditions.claim_audits_passed ? [] : claimAuditSummary.failures)
   ];
+  const rerunPlan = buildClaimStandardRerunPlan({
+    readiness,
+    ineligibleResults,
+    incompleteXhighResults,
+    directRegressions,
+    providerOrBenchmarkRegressions,
+    ownerBaselineComparisonBlockers,
+    claimAuditSummary
+  });
   const passed = Object.values(conditions).every(Boolean) && blockers.length === 0;
   const equalityPolicyBlocker = claimStandardBlocker(
     'AHR_CLAIM_STANDARD_EQUALITY_OR_SUPERIORITY_DISABLED',
@@ -3759,9 +3803,11 @@ function buildClaimStandardGate({
       comparison_count: Number(summary.comparison_count ?? 0),
       owner_labeled_baseline_count: Number(summary.owner_labeled_baseline_count ?? 0),
       claim_numerator_eligible_result_count: Number(summary.claim_numerator_eligible_result_count ?? 0),
+      minimal_rerun_target_count: rerunPlan.target_count,
       human_equivalent_claim_allowed: false,
       human_superior_claim_allowed: false
     },
+    rerun_plan: rerunPlan,
     blockers,
     warnings: [
       ...evidenceWarnings,
@@ -3792,6 +3838,161 @@ function claimStandardConditionBlockers(readiness) {
   return conditionMessages.flatMap(([condition, code, message, details]) => readiness.conditions?.[condition] === true
     ? []
     : [claimStandardBlocker(code, message, details)]);
+}
+
+function buildClaimStandardRerunPlan({
+  readiness,
+  ineligibleResults,
+  incompleteXhighResults,
+  directRegressions,
+  providerOrBenchmarkRegressions,
+  ownerBaselineComparisonBlockers,
+  claimAuditSummary
+}) {
+  const targets = new Map();
+  const addTarget = (target) => {
+    const normalized = {
+      target_type: target.target_type,
+      reason_code: target.reason_code,
+      case_id: target.case_id ?? null,
+      effort: target.effort ?? null,
+      comparison_kind: target.comparison_kind ?? null,
+      source_path: target.source_path ?? null,
+      action: target.action,
+      requires_provider_execution_approval: target.requires_provider_execution_approval === true,
+      advisory_only: true,
+      gate_effect: 'none'
+    };
+    const key = [
+      normalized.target_type,
+      normalized.reason_code,
+      normalized.case_id,
+      normalized.effort,
+      normalized.comparison_kind,
+      normalized.source_path
+    ].join('|');
+    if (!targets.has(key)) {
+      targets.set(key, normalized);
+    }
+  };
+  for (const result of ineligibleResults) {
+    addTarget({
+      target_type: 'result',
+      reason_code: 'claim_numerator_ineligible',
+      case_id: result.case_id,
+      effort: result.effort,
+      source_path: result.path,
+      action: 'regenerate_result_for_case_effort_after fixing failed strict eligibility checks',
+      requires_provider_execution_approval: true
+    });
+  }
+  for (const result of incompleteXhighResults) {
+    addTarget({
+      target_type: 'result',
+      reason_code: 'xhigh_mechanical_incomplete',
+      case_id: result.case_id,
+      effort: result.effort,
+      source_path: result.path,
+      action: 'rerun_or_repair_xhigh_result_until mechanical completion is satisfied',
+      requires_provider_execution_approval: true
+    });
+  }
+  for (const comparison of [...directRegressions, ...providerOrBenchmarkRegressions]) {
+    addTarget({
+      target_type: 'comparison',
+      reason_code: 'comparison_regression',
+      case_id: comparison.case_id ?? comparison.baseline_case_id ?? comparison.candidate_case_id,
+      effort: comparison.candidate_effort ?? null,
+      comparison_kind: comparison.comparison_kind,
+      source_path: comparison.path,
+      action: 'regenerate_comparison_after affected result quality or evaluator diagnostics are repaired',
+      requires_provider_execution_approval: false
+    });
+  }
+  for (const comparison of ownerBaselineComparisonBlockers) {
+    addTarget({
+      target_type: 'human_baseline_comparison',
+      reason_code: 'owner_baseline_alignment_incomplete',
+      case_id: comparison.case_id ?? comparison.baseline_case_id ?? comparison.candidate_case_id,
+      effort: comparison.candidate_effort ?? null,
+      comparison_kind: comparison.comparison_kind,
+      source_path: comparison.path,
+      action: 'regenerate owner-baseline comparison after candidate result covers missing owner labels and criteria',
+      requires_provider_execution_approval: false
+    });
+  }
+  for (const failure of claimAuditSummary.failures ?? []) {
+    addTarget({
+      target_type: 'claim_audit',
+      reason_code: failure.code,
+      case_id: failure.details?.case_id ?? null,
+      effort: failure.details?.effort ?? null,
+      source_path: failure.details?.path ?? null,
+      action: 'repair or rerun the audited result so every persisted review claim is non-placeholder and evidence-backed or role-supported',
+      requires_provider_execution_approval: true
+    });
+  }
+  for (const cell of readiness.blocker_summary?.missing_result_case_efforts ?? []) {
+    addTarget({
+      target_type: 'result',
+      reason_code: 'missing_result_case_effort',
+      case_id: cell.case_id,
+      effort: cell.effort,
+      action: 'generate missing result cell before regenerating the evidence set',
+      requires_provider_execution_approval: true
+    });
+  }
+  for (const cell of readiness.blocker_summary?.calibration_failed_case_efforts ?? []) {
+    addTarget({
+      target_type: 'calibration',
+      reason_code: 'calibration_failed',
+      case_id: cell.case_id,
+      effort: cell.effort,
+      action: 'regenerate calibration after the affected result is repaired',
+      requires_provider_execution_approval: false
+    });
+  }
+  for (const cell of readiness.blocker_summary?.comparison_missing_case_matrix ?? []) {
+    addTarget({
+      target_type: 'comparison',
+      reason_code: 'missing_comparison_case_matrix',
+      case_id: cell.case_id,
+      comparison_kind: cell.comparison_kind,
+      action: 'generate missing comparison coverage before regenerating the evidence set',
+      requires_provider_execution_approval: false
+    });
+  }
+  const targetList = [...targets.values()].sort((left, right) => [
+    left.target_type,
+    left.comparison_kind ?? '',
+    left.case_id ?? '',
+    left.effort ?? '',
+    left.reason_code
+  ].join('|').localeCompare([
+    right.target_type,
+    right.comparison_kind ?? '',
+    right.case_id ?? '',
+    right.effort ?? '',
+    right.reason_code
+  ].join('|')));
+  return {
+    schema_version: SCHEMA_VERSION,
+    plan_version: HUMAN_REVIEW_CLAIM_STANDARD_VERSION,
+    status: targetList.length === 0 ? 'no_rerun_required' : 'minimal_rerun_targets_identified',
+    target_count: targetList.length,
+    targets: targetList,
+    evidence_set_regeneration_required: targetList.length > 0,
+    evidence_set_regeneration: {
+      required_after_targets_complete: targetList.length > 0,
+      summarize_command_template: `${CLI_NAME} agentic review evidence-set summarize --input <evidence-set-manifest.json> --json`,
+      claim_standard_gate_command_template: `${CLI_NAME} agentic review claim standard-gate --evidence-set <evidence-set-summary.json> --json`
+    },
+    provider_execution_approval_required: targetList.some((target) => target.requires_provider_execution_approval),
+    artifact_write_performed: false,
+    provider_execution_performed: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
 }
 
 function claimStandardPolicyInputDiagnostics(policyInput) {
@@ -3843,6 +4044,7 @@ function claimStandardResultDetails(result) {
     origin_kind: result.origin_kind ?? null,
     provider_execution_class: result.provider_execution_class ?? null,
     excluded_from_claim_reason: result.excluded_from_claim_reason ?? null,
+    claim_integrity: result.claim_integrity ?? {},
     strict_eligibility_checks: result.strict_eligibility_checks ?? {}
   };
 }
@@ -3852,15 +4054,21 @@ function claimStandardComparisonDetails(comparison) {
     path: comparison.path,
     comparison_kind: comparison.comparison_kind,
     case_id: comparison.case_id ?? comparison.baseline_case_id ?? comparison.candidate_case_id ?? null,
+    baseline_effort: comparison.baseline_effort ?? null,
+    candidate_effort: comparison.candidate_effort ?? null,
     regressed_score_count: Number(comparison.regressed_score_count ?? 0),
     improved_score_count: Number(comparison.improved_score_count ?? 0),
+    critical_regressed_score_count: Number(comparison.critical_regressed_score_count ?? 0),
+    critical_regressed_metrics: Array.isArray(comparison.critical_regressed_metrics) ? comparison.critical_regressed_metrics : [],
+    regression_diagnostics: Array.isArray(comparison.regression_diagnostics) ? comparison.regression_diagnostics : [],
     ready_for_owner_review: comparison.human_baseline_ready_for_owner_review ?? null,
     candidate_matches_owner_baseline: comparison.human_baseline_candidate_matches_owner_baseline ?? null,
     owner_labeled_baseline_verified: comparison.human_baseline_owner_labeled_baseline_verified ?? null,
     candidate_mechanical_contract_satisfied: comparison.candidate_mechanical_contract_satisfied ?? null,
     must_not_miss_miss_count: Number(comparison.human_baseline_must_not_miss_miss_count ?? 0),
     miss_count: Number(comparison.human_baseline_miss_count ?? 0),
-    insufficient_evidence_count: Number(comparison.human_baseline_insufficient_evidence_count ?? 0)
+    insufficient_evidence_count: Number(comparison.human_baseline_insufficient_evidence_count ?? 0),
+    human_baseline_diagnostics: comparison.human_baseline_diagnostics ?? {}
   };
 }
 
@@ -3895,6 +4103,7 @@ function normalizeClaimPolicy(input) {
 
 function buildClaimAudit({ result, resultPath, resultHash, policy, policyPath, policyHash, now }) {
   const claimRecords = normalizeReviewClaims(result.review_claims);
+  const claimIntegrity = buildResultClaimIntegrity(result);
   const claimTexts = [
     ...claimRecords.map((claim) => claim.claim),
     result.non_engineer_summary?.main_takeaway,
@@ -3915,6 +4124,17 @@ function buildClaimAudit({ result, resultPath, resultHash, policy, policyPath, p
   const warnings = [
     ...forbiddenMatches.map((match) => ({ code: 'AHR_CLAIM_POLICY_FORBIDDEN_CLAIM_PRESENT', message: 'A forbidden claim pattern was present.', details: match })),
     ...missingEvidenceClaims.map((claim) => ({ code: 'AHR_CLAIM_POLICY_EVIDENCE_MISSING', message: 'A review claim has no evidence refs or supporting roles.', details: { claim_id: claim.id } })),
+    ...(claimIntegrity.claim_numerator_safe ? [] : [{
+      code: 'AHR_CLAIM_POLICY_INTEGRITY_INCOMPLETE',
+      message: 'Review claims are not yet safe for future claim-numerator evidence.',
+      details: {
+        status: claimIntegrity.status,
+        supported_claim_count: claimIntegrity.supported_claim_count,
+        rejected_claim_count: claimIntegrity.rejected_claim_count,
+        missing_evidence_claim_count: claimIntegrity.missing_evidence_claim_count,
+        placeholder_claim_count: claimIntegrity.placeholder_claim_count
+      }
+    }]),
     ...(equalityTextPresent ? [{ code: 'AHR_CLAIM_POLICY_EQUALITY_OR_SUPERIORITY_UNSUPPORTED', message: 'Human-equivalent or human-superior wording is not supported by this result.' }] : [])
   ];
   return redact({
@@ -3930,6 +4150,7 @@ function buildClaimAudit({ result, resultPath, resultHash, policy, policyPath, p
     claim_count: claimRecords.length,
     forbidden_claim_matches: forbiddenMatches,
     missing_evidence_claim_count: missingEvidenceClaims.length,
+    claim_integrity: claimIntegrity,
     equality_or_superiority_text_present: equalityTextPresent,
     status: warnings.length === 0 ? 'claim_policy_passed_for_advisory_result' : 'claim_policy_warnings_present',
     human_equivalent_claim_allowed: false,
@@ -5345,10 +5566,12 @@ function buildComparisonResult({ baseline, baselinePath, candidate, candidatePat
   ]));
   const improved = Object.values(deltas).filter((value) => value > 0.0001).length;
   const regressed = Object.values(deltas).filter((value) => value < -0.0001).length;
+  const metricDiagnostics = buildComparisonMetricDiagnostics({ baselineQuality, candidateQuality, deltas });
   const directVsTraceCueAnalysis = buildDirectVsTraceCueAnalysis({
     baseline,
     candidate,
     deltas,
+    metricDiagnostics,
     comparisonKind: normalizedComparisonKind
   });
   const warnings = [
@@ -5368,17 +5591,26 @@ function buildComparisonResult({ baseline, baselinePath, candidate, candidatePat
     baseline: {
       result_path: baselinePath,
       result_id: baseline.id ?? null,
+      case_id: baseline.calibration_metadata?.benchmark_case_id ?? baseline.benchmark_requirement_coverage?.case_id ?? baseline.dogfood_metadata?.case_id ?? null,
+      effort: normalizeObservedReviewEffort(baseline.agentic_human_review_advisory?.review_effort),
       quality_scores: baselineQuality
     },
     candidate: {
       result_path: candidatePath,
       result_id: candidate.id ?? null,
+      case_id: candidate.calibration_metadata?.benchmark_case_id ?? candidate.benchmark_requirement_coverage?.case_id ?? candidate.dogfood_metadata?.case_id ?? null,
+      effort: normalizeObservedReviewEffort(candidate.agentic_human_review_advisory?.review_effort),
       quality_scores: candidateQuality
     },
     deltas,
+    regression_diagnostics: metricDiagnostics.regressions,
+    improvement_diagnostics: metricDiagnostics.improvements,
+    metric_diagnostics: metricDiagnostics.records,
     summary: {
       improved_score_count: improved,
       regressed_score_count: regressed,
+      critical_regressed_score_count: metricDiagnostics.critical_regressed_score_count,
+      critical_regressed_metrics: metricDiagnostics.critical_regressed_metrics,
       candidate_quality_improved: improved > regressed,
       direct_vs_tracecue_comparison: normalizedComparisonKind === 'direct-vs-tracecue',
       advisory_only: true,
@@ -5677,7 +5909,7 @@ function buildHumanBaselineComparison({ baseline, result, resultPath, resultHash
   const mentionScore = fractionPresent(mentionMatches);
   const forbiddenClaimScore = forbiddenClaimMatches.length === 0
     ? 1
-    : clampScore(forbiddenClaimMatches.filter((item) => item.present === false).length / forbiddenClaimMatches.length);
+    : clampScore(forbiddenClaimMatches.filter((item) => item.present === false && item.absence_evidence_backed === true).length / forbiddenClaimMatches.length);
   const candidateEligibility = resultProofEligibility({
     entry: { effort: result.agentic_human_review_advisory?.review_effort },
     result,
@@ -5733,6 +5965,12 @@ function buildHumanBaselineComparison({ baseline, result, resultPath, resultHash
   ];
   const ownerBaselineVerified = baseline.validation.owner_labeled_baseline_verified === true && !caseMismatch;
   const evidenceBackedOwnerLabelMatches = classification.insufficient_evidence.length === 0;
+  const diagnostics = buildHumanBaselineComparisonDiagnostics({
+    labelMatches,
+    mustNotMissMatches,
+    forbiddenClaimMatches,
+    classification
+  });
   const readyForOwnerReview = ownerBaselineVerified
     && overallAlignmentScore >= 0.75
     && mustNotMissScore === 1
@@ -5759,6 +5997,7 @@ function buildHumanBaselineComparison({ baseline, result, resultPath, resultHash
       result_hash: resultHash,
       result_id: result.id ?? null,
       case_id: resultCaseId,
+      effort: normalizeObservedReviewEffort(result.agentic_human_review_advisory?.review_effort),
       provider_id: result.provider?.id ?? null,
       model_id: result.model?.id ?? null,
       quality_scores: comparableQualityScores(result),
@@ -5787,6 +6026,7 @@ function buildHumanBaselineComparison({ baseline, result, resultPath, resultHash
       forbidden_claims: forbiddenClaimMatches,
       classifications: classification
     },
+    diagnostics,
     summary: {
       owner_labeled_baseline_verified: ownerBaselineVerified,
       ready_for_owner_review: readyForOwnerReview,
@@ -5815,7 +6055,33 @@ function normalizeComparisonKind(value) {
     : 'quality-delta';
 }
 
-function buildDirectVsTraceCueAnalysis({ baseline, candidate, deltas, comparisonKind }) {
+function buildComparisonMetricDiagnostics({ baselineQuality, candidateQuality, deltas }) {
+  const records = Object.keys(deltas).sort().map((metric) => {
+    const delta = Number(deltas[metric] ?? 0);
+    const critical = HUMAN_REVIEW_CRITICAL_COMPARISON_METRICS.includes(metric);
+    return {
+      metric,
+      baseline_score: clampScore(baselineQuality[metric] ?? 0),
+      candidate_score: clampScore(candidateQuality[metric] ?? 0),
+      delta,
+      direction: delta < -0.0001 ? 'regressed' : (delta > 0.0001 ? 'improved' : 'unchanged'),
+      critical_for_claim_readiness: critical,
+      severity: delta < -0.1 && critical ? 'high' : (delta < -0.0001 && critical ? 'medium' : (delta < -0.0001 ? 'low' : 'none'))
+    };
+  });
+  const regressions = records.filter((record) => record.direction === 'regressed');
+  const improvements = records.filter((record) => record.direction === 'improved');
+  const criticalRegressions = regressions.filter((record) => record.critical_for_claim_readiness);
+  return {
+    records,
+    regressions,
+    improvements,
+    critical_regressed_score_count: criticalRegressions.length,
+    critical_regressed_metrics: criticalRegressions.map((record) => record.metric)
+  };
+}
+
+function buildDirectVsTraceCueAnalysis({ baseline, candidate, deltas, metricDiagnostics, comparisonKind }) {
   if (comparisonKind !== 'direct-vs-tracecue') {
     return null;
   }
@@ -5859,6 +6125,8 @@ function buildDirectVsTraceCueAnalysis({ baseline, candidate, deltas, comparison
       role_instruction_coverage_delta: deltas.role_instruction_coverage_score ?? 0,
       calibration_ready_delta: deltas.calibration_ready_score ?? 0
     },
+    regression_diagnostics: metricDiagnostics?.regressions ?? [],
+    critical_regressed_metrics: metricDiagnostics?.critical_regressed_metrics ?? [],
     interpretation: [
       'Positive deltas suggest the TraceCue workflow preserved more structured evidence, role coverage, or actionability.',
       'Negative deltas suggest the direct review captured human nuance that the TraceCue run did not yet preserve.',
@@ -6297,14 +6565,36 @@ function compareHumanBaselineForbiddenClaims({ forbiddenClaims, result }) {
     : [];
   return forbiddenClaims.map((claim) => {
     const record = structured.find((item) => textIncludesLoose(item?.claim ?? item?.mention, claim));
+    const evidenceRefs = normalizeArtifactReferences(record?.evidence_refs ?? record?.artifacts);
+    const evidenceBacked = Boolean(record?.evidence_backed === true && evidenceRefs.length > 0);
     const present = record ? record.present === true : textIncludesLoose(searchText, claim);
     return {
       claim,
       present,
       structured_record_present: Boolean(record?.structured_record_present),
+      evidence_backed: evidenceBacked,
+      absence_evidence_backed: Boolean(record && present === false && evidenceBacked),
+      evidence_ref_count: evidenceRefs.length,
       source: record ? 'benchmark_requirement_coverage' : 'candidate_text_search'
     };
   });
+}
+
+function buildHumanBaselineComparisonDiagnostics({ labelMatches, mustNotMissMatches, forbiddenClaimMatches, classification }) {
+  return {
+    missing_owner_label_ids: labelMatches.filter((label) => !label.present).map((label) => label.id),
+    insufficient_evidence_owner_label_ids: classification.insufficient_evidence.map((item) => item.owner_label_id).filter(Boolean),
+    missing_must_not_miss_criterion_ids: mustNotMissMatches.filter((criterion) => !criterion.present).map((criterion) => criterion.id),
+    forbidden_claim_absence_evidence_missing: forbiddenClaimMatches
+      .filter((claim) => claim.present === false && claim.absence_evidence_backed !== true)
+      .map((claim) => claim.claim),
+    forbidden_claim_present: forbiddenClaimMatches
+      .filter((claim) => claim.present === true)
+      .map((claim) => claim.claim),
+    evidence_backed_owner_label_count: labelMatches.filter((label) => label.evidence_backed === true).length,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
 }
 
 function classifyHumanBaselineComparison({ labels, result }) {
@@ -6444,8 +6734,7 @@ function findMatchingStructuredCoverageRecord({ label, result }) {
   }
   const sections = [
     ['benchmark_requirement_coverage.required_mentions', result.benchmark_requirement_coverage?.required_mentions, ['mention', 'label', 'id', 'name']],
-    ['benchmark_requirement_coverage.required_dimensions', result.benchmark_requirement_coverage?.required_dimensions, ['dimension', 'label', 'id', 'name']],
-    ['benchmark_requirement_coverage.forbidden_claims', result.benchmark_requirement_coverage?.forbidden_claims, ['claim', 'label', 'id', 'name']]
+    ['benchmark_requirement_coverage.required_dimensions', result.benchmark_requirement_coverage?.required_dimensions, ['dimension', 'label', 'id', 'name']]
   ];
   for (const [source, records, keys] of sections) {
     for (const record of Array.isArray(records) ? records : []) {
@@ -7414,7 +7703,8 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
   const findings = normalizeFindings(input.findings ?? input.agentic_human_review_findings, id);
   const ownerDecisions = normalizeOwnerDecisionRequests(input.owner_decision_requests);
   const safeInputSummary = secretSafeText(input.summary ?? 'Agentic human review completed with advisory-only output.', 1200);
-  const claims = buildReviewClaims({ resultId: id, input, findings, roleOpinions });
+  const claimSet = buildReviewClaimSet({ resultId: id, input, findings, roleOpinions });
+  const claims = claimSet.claims;
   const roundRecords = buildRoundRecords({ plan, roleOpinions });
   const critiqueRecords = buildCritiqueRecords({ plan, claims, roleOpinions });
   const rebuttalRecords = buildRebuttalRecords({ critiqueRecords });
@@ -7558,6 +7848,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     role_opinions: roleOpinions,
     role_execution_records: buildRoleExecutionRecords({ plan, roleOpinions, boundary }),
     review_claims: claims,
+    claim_integrity: claimSet.integrity,
     round_records: roundRecords,
     critique_records: critiqueRecords,
     rebuttal_records: rebuttalRecords,
@@ -9333,18 +9624,24 @@ function buildRoleExecutionRecords({ plan, roleOpinions, boundary }) {
   });
 }
 
-function buildReviewClaims({ resultId, input, findings, roleOpinions }) {
+function buildReviewClaimSet({ resultId, input, findings, roleOpinions }) {
   const reportedRoles = reportedRoleOpinions(roleOpinions).map((opinion) => opinion.role);
   const claimValues = Array.isArray(input.review_claims) ? input.review_claims : [];
-  const explicitClaims = claimValues.slice(0, 25).map((item, index) => ({
-    id: truncateText(item?.id ?? `${resultId}-claim-${index + 1}`, 120),
-    claim: secretSafeText(item?.claim ?? item?.message ?? 'Agentic review claim.', 700),
-    evidence_refs: normalizeArtifactReferences(item?.evidence_refs ?? item?.artifacts),
-    supported_by_roles: normalizeStringArray(item?.supported_by_roles),
-    confidence: normalizeConfidence(item?.confidence),
-    subjective_judgment: item?.subjective_judgment !== false,
-    gate_effect: 'none'
-  }));
+  const rejectedClaims = [];
+  const explicitClaims = [];
+  for (const [index, item] of claimValues.slice(0, 25).entries()) {
+    const claim = normalizeReviewClaimRecord({
+      value: item,
+      id: item?.id ?? `${resultId}-claim-${index + 1}`,
+      source: 'provider_review_claim'
+    });
+    const reasons = unsupportedReviewClaimReasons(claim);
+    if (reasons.length > 0) {
+      rejectedClaims.push(rejectedReviewClaimDiagnostic({ claim, index, source: 'provider_review_claim', reasons }));
+      continue;
+    }
+    explicitClaims.push(claim);
+  }
   const findingClaims = findings.slice(0, 25 - explicitClaims.length).map((finding) => ({
     id: `${finding.id}-claim`,
     claim: finding.message,
@@ -9353,8 +9650,140 @@ function buildReviewClaims({ resultId, input, findings, roleOpinions }) {
     confidence: finding.confidence,
     subjective_judgment: finding.subjective_judgment,
     gate_effect: 'none'
-  }));
-  return [...explicitClaims, ...findingClaims];
+  })).filter((claim, index) => {
+    const reasons = unsupportedReviewClaimReasons(claim);
+    if (reasons.length > 0) {
+      rejectedClaims.push(rejectedReviewClaimDiagnostic({ claim, index, source: 'derived_finding_claim', reasons }));
+      return false;
+    }
+    return true;
+  });
+  const claims = [...explicitClaims, ...findingClaims];
+  return {
+    claims,
+    integrity: buildClaimIntegritySummary({
+      claims,
+      rejectedClaims,
+      explicit_claim_count: claimValues.length,
+      derived_finding_claim_count: findingClaims.length
+    })
+  };
+}
+
+function buildReviewClaims(args) {
+  return buildReviewClaimSet(args).claims;
+}
+
+function normalizeReviewClaimRecord({ value, id, source }) {
+  return {
+    id: truncateText(id ?? 'review-claim', 120),
+    claim: secretSafeText(value?.claim ?? value?.message ?? '', 700),
+    source,
+    evidence_refs: normalizeArtifactReferences(value?.evidence_refs ?? value?.artifacts),
+    supported_by_roles: normalizeStringArray(value?.supported_by_roles),
+    confidence: normalizeConfidence(value?.confidence),
+    subjective_judgment: value?.subjective_judgment !== false,
+    gate_effect: 'none'
+  };
+}
+
+function unsupportedReviewClaimReasons(claim) {
+  const reasons = [];
+  if (!String(claim?.claim ?? '').trim()) {
+    reasons.push('claim_text_missing');
+  }
+  if (isPlaceholderReviewClaimText(claim?.claim)) {
+    reasons.push('placeholder_claim_text');
+  }
+  if ((claim?.evidence_refs ?? []).length === 0 && (claim?.supported_by_roles ?? []).length === 0) {
+    reasons.push('claim_support_missing');
+  }
+  if ((claim?.gate_effect ?? 'none') !== 'none') {
+    reasons.push('gate_effect_not_none');
+  }
+  return reasons;
+}
+
+function isPlaceholderReviewClaimText(value) {
+  const normalized = String(value ?? '')
+    .toLowerCase()
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.!?]+$/g, '');
+  return normalized === 'agentic review claim'
+    || normalized === 'review claim'
+    || normalized === 'advisory claim'
+    || normalized === 'claim'
+    || /^claim\s+\d+$/.test(normalized);
+}
+
+function rejectedReviewClaimDiagnostic({ claim, index, source, reasons }) {
+  return {
+    index,
+    source,
+    claim_id: claim?.id ?? null,
+    reasons,
+    evidence_ref_count: Array.isArray(claim?.evidence_refs) ? claim.evidence_refs.length : 0,
+    supported_role_count: Array.isArray(claim?.supported_by_roles) ? claim.supported_by_roles.length : 0,
+    placeholder_text: isPlaceholderReviewClaimText(claim?.claim),
+    gate_effect: claim?.gate_effect ?? 'none'
+  };
+}
+
+function buildClaimIntegritySummary({ claims, rejectedClaims, explicit_claim_count = 0, derived_finding_claim_count = 0 }) {
+  const missingEvidenceClaims = claims.filter((claim) => claim.evidence_refs.length === 0 && claim.supported_by_roles.length === 0);
+  const placeholderClaims = claims.filter((claim) => isPlaceholderReviewClaimText(claim.claim));
+  const validClaims = claims.filter((claim) => unsupportedReviewClaimReasons(claim).length === 0);
+  const invalidCount = rejectedClaims.length + missingEvidenceClaims.length + placeholderClaims.length;
+  return {
+    schema_version: SCHEMA_VERSION,
+    version: HUMAN_REVIEW_CLAIM_POLICY_VERSION,
+    status: invalidCount === 0 && validClaims.length > 0 ? 'claim_integrity_satisfied' : 'claim_integrity_incomplete',
+    claim_numerator_safe: invalidCount === 0 && validClaims.length > 0,
+    supported_claim_count: validClaims.length,
+    explicit_claim_count: Number(explicit_claim_count),
+    derived_finding_claim_count: Number(derived_finding_claim_count),
+    rejected_claim_count: rejectedClaims.length,
+    missing_evidence_claim_count: missingEvidenceClaims.length,
+    placeholder_claim_count: placeholderClaims.length,
+    rejected_claims: rejectedClaims.slice(0, 25),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildResultClaimIntegrity(result) {
+  const claims = normalizeReviewClaims(result?.review_claims);
+  const derived = buildClaimIntegritySummary({
+    claims,
+    rejectedClaims: [],
+    explicit_claim_count: claims.length,
+    derived_finding_claim_count: 0
+  });
+  const source = isPlainObject(result?.claim_integrity) ? result.claim_integrity : {};
+  const rejectedClaims = Array.isArray(source.rejected_claims) ? source.rejected_claims : [];
+  const rejectedClaimCount = Number(source.rejected_claim_count ?? rejectedClaims.length ?? 0);
+  const missingEvidenceClaimCount = Number(source.missing_evidence_claim_count ?? derived.missing_evidence_claim_count);
+  const placeholderClaimCount = Number(source.placeholder_claim_count ?? derived.placeholder_claim_count);
+  const supportedClaimCount = Number(source.supported_claim_count ?? derived.supported_claim_count);
+  const invalidCount = rejectedClaimCount + missingEvidenceClaimCount + placeholderClaimCount;
+  const claimNumeratorSafe = invalidCount === 0 && supportedClaimCount > 0 && derived.claim_numerator_safe;
+  return {
+    schema_version: SCHEMA_VERSION,
+    version: HUMAN_REVIEW_CLAIM_POLICY_VERSION,
+    status: claimNumeratorSafe ? 'claim_integrity_satisfied' : 'claim_integrity_incomplete',
+    claim_numerator_safe: claimNumeratorSafe,
+    supported_claim_count: supportedClaimCount,
+    explicit_claim_count: Number(source.explicit_claim_count ?? derived.explicit_claim_count),
+    derived_finding_claim_count: Number(source.derived_finding_claim_count ?? derived.derived_finding_claim_count),
+    rejected_claim_count: rejectedClaimCount,
+    missing_evidence_claim_count: missingEvidenceClaimCount,
+    placeholder_claim_count: placeholderClaimCount,
+    rejected_claims: rejectedClaims.slice(0, 25),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
 }
 
 function buildRoundRecords({ plan, roleOpinions }) {

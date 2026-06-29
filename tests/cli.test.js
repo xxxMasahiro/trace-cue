@@ -4528,6 +4528,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(comparisonBody.data.agentic_human_review_comparison.direct_vs_tracecue_analysis.candidate_role, 'tracecue_agentic_human_review_workflow');
   assert.equal(typeof comparisonBody.data.agentic_human_review_comparison.deltas.actionability_score, 'number');
   assert.equal(typeof comparisonBody.data.agentic_human_review_comparison.deltas.benchmark_structured_record_completeness_score, 'number');
+  assert.equal(Array.isArray(comparisonBody.data.agentic_human_review_comparison.metric_diagnostics), true);
+  assert.equal(Array.isArray(comparisonBody.data.agentic_human_review_comparison.regression_diagnostics), true);
+  assert.equal(Array.isArray(comparisonBody.data.agentic_human_review_comparison.summary.critical_regressed_metrics), true);
 
   const humanBaselineRegistry = await executeCli([
     'agentic',
@@ -4889,6 +4892,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.miss_count, 0);
   assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.must_not_miss_miss_count, 0);
   assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.matches.classifications.misses.length, 0);
+  assert.equal(Array.isArray(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.diagnostics.missing_owner_label_ids), true);
+  assert.equal(Array.isArray(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.diagnostics.missing_must_not_miss_criterion_ids), true);
+  assert.equal(Array.isArray(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.diagnostics.forbidden_claim_absence_evidence_missing), true);
   assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.summary.human_equivalent_claim_allowed, false);
   await writeFile(path.join(cwd, 'owner-human-baseline-validation-wrapper.json'), humanBaselineValidation.stdout, 'utf8');
   const validationWrappedHumanBaselineComparison = await executeCli([
@@ -5076,7 +5082,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
       status: 'absent',
       evidence: 'The advisory output does not claim that raw image bytes were embedded in JSON.',
       structured_record_present: true,
-      evidence_backed: true
+      evidence_backed: true,
+      evidence_refs: [{ id: 'forbidden-absence-evidence', path: reviewIndexPath, description: 'Local review artifact used to verify absence.' }]
     }],
     summary: {
       ...(uppercaseForbiddenClaimResult.benchmark_requirement_coverage?.summary ?? {}),
@@ -5103,7 +5110,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     .find((claim) => claim.claim === 'raw image bytes were embedded in JSON');
   assert.equal(uppercaseForbiddenClaimMatch.present, false);
   assert.equal(uppercaseForbiddenClaimMatch.source, 'benchmark_requirement_coverage');
-  assert.equal(uppercaseForbiddenClaimComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.forbidden_claim_score, 1);
+  assert.equal(uppercaseForbiddenClaimMatch.absence_evidence_backed, true);
+  assert.equal(uppercaseForbiddenClaimComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.forbidden_claim_score < 1, true);
+  assert.equal(uppercaseForbiddenClaimComparisonBody.data.agentic_human_review_human_baseline_comparison.diagnostics.forbidden_claim_absence_evidence_missing.length > 0, true);
 
   const evidenceSetPath = path.join(cwd, 'agentic-evidence-set.json');
   await writeFile(evidenceSetPath, JSON.stringify({
@@ -5515,6 +5524,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(incompleteClaimStandardGateData.claim_states.human_superior_candidate.allowed, false);
   assert.equal(incompleteClaimStandardGateData.blockers.some((blocker) => blocker.code === 'AHR_CLAIM_STANDARD_GATE_CALIBRATION_MATRIX_INCOMPLETE'), true);
   assert.equal(incompleteClaimStandardGateData.blockers.some((blocker) => blocker.code === 'AHR_CLAIM_STANDARD_GATE_OWNER_BASELINE_MATRIX_INCOMPLETE'), true);
+  assert.equal(incompleteClaimStandardGateData.rerun_plan.status, 'minimal_rerun_targets_identified');
+  assert.equal(incompleteClaimStandardGateData.rerun_plan.evidence_set_regeneration_required, true);
+  assert.equal(incompleteClaimStandardGateData.rerun_plan.targets.some((target) => target.target_type === 'calibration'), true);
 
   const completeClaimComparisons = benchmarkCaseIds.flatMap((caseId) => [
     {
@@ -5686,6 +5698,64 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(completeClaimStandardGateData.claim_states.human_equivalent_candidate.allowed, false);
   assert.equal(completeClaimStandardGateData.claim_states.human_superior_candidate.allowed, false);
   assert.equal(completeClaimStandardGateData.blockers.length, 0);
+  assert.equal(completeClaimStandardGateData.rerun_plan.status, 'no_rerun_required');
+  assert.equal(completeClaimStandardGateData.rerun_plan.target_count, 0);
+
+  const invalidClaimResult = {
+    ...matrixBaseResult,
+    id: 'invalid-claim-result',
+    provider: { id: 'generic-api-provider' },
+    execution: {
+      ...(matrixBaseResult.execution ?? {}),
+      api_call_performed: true,
+      external_evidence_transfer: true,
+      raw_provider_response_stored: false,
+      credential_values_recorded: false
+    },
+    review_claims: [{
+      id: 'invalid-placeholder-claim',
+      claim: 'Agentic review claim.',
+      evidence_refs: [],
+      supported_by_roles: []
+    }],
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  await writeFile(path.join(cwd, 'invalid-claim-result.json'), JSON.stringify(invalidClaimResult, null, 2), 'utf8');
+  const invalidClaimEvidenceSet = {
+    ...completeClaimEvidenceSet,
+    results: completeClaimEvidenceSet.results.map((result, index) => index === 0
+      ? {
+          ...result,
+          path: 'invalid-claim-result.json',
+          result_id: 'invalid-claim-result',
+          claim_integrity: {
+            status: 'claim_integrity_satisfied',
+            claim_numerator_safe: true,
+            supported_claim_count: 1,
+            rejected_claim_count: 0,
+            missing_evidence_claim_count: 0,
+            placeholder_claim_count: 0,
+            advisory_only: true,
+            gate_effect: 'none'
+          }
+        }
+      : result)
+  };
+  await writeFile(path.join(cwd, 'invalid-claim-standard-gate-evidence-set.json'), JSON.stringify(invalidClaimEvidenceSet, null, 2), 'utf8');
+  const invalidClaimStandardGate = await executeCli([
+    'agentic',
+    'review',
+    'claim',
+    'standard-gate',
+    '--evidence-set',
+    'invalid-claim-standard-gate-evidence-set.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(invalidClaimStandardGate.exitCode, 1);
+  const invalidClaimStandardGateData = JSON.parse(invalidClaimStandardGate.stdout).data.agentic_human_review_claim_standard_gate;
+  assert.equal(invalidClaimStandardGateData.blockers.some((blocker) => blocker.code === 'AHR_CLAIM_STANDARD_GATE_RESULT_CLAIM_AUDIT_FAILED'), true);
+  assert.equal(invalidClaimStandardGateData.rerun_plan.targets.some((target) => target.target_type === 'claim_audit'), true);
 
   await writeFile(path.join(cwd, 'permissive-claim-policy.json'), JSON.stringify({
     equality_or_superiority_claims_allowed: true,
@@ -6532,6 +6602,64 @@ test('agentic human review responses adapter repairs forbidden claims that are m
   assert.equal(result.body.adapter_boundary.contract_repair_attempts_performed, 1);
   assert.equal(result.body.benchmark_requirement_coverage.forbidden_claims[0].present, false);
   assert.match(observedRequests[1].input, /forbidden claim record must set present=false/);
+});
+
+test('agentic human review responses adapter retries repairable review claim gaps once', async () => {
+  const request = adapterTraceCueRequest();
+  request.plan.review_effort = { mode: 'standard' };
+  const invalidAdvisory = {
+    summary: 'The adapter provider returned an unsupported review claim.',
+    role_opinions: [{
+      role: 'content_reviewer',
+      display_name: 'Content Reviewer',
+      effort: 'high',
+      round: 1,
+      summary: 'The content reviewer checked the visible copy.',
+      findings: [],
+      uncertainties: []
+    }],
+    review_claims: [{
+      id: 'placeholder-claim',
+      claim: 'Agentic review claim.'
+    }]
+  };
+  const repairedAdvisory = {
+    ...invalidAdvisory,
+    review_claims: [{
+      id: 'supported-claim',
+      claim: 'The visible copy is understandable but needs stronger supporting evidence.',
+      supported_by_roles: ['content_reviewer']
+    }]
+  };
+  const observedRequests = [];
+  const result = await handleAgenticHumanReviewResponsesAdapterRequest({
+    method: 'POST',
+    url: '/agentic-human-review',
+    headers: {
+      host: '127.0.0.1:8787',
+      authorization: 'Bearer adapter-secret-value',
+      'content-type': 'application/json'
+    },
+    remoteAddress: '127.0.0.1',
+    bodyText: JSON.stringify(request),
+    env: adapterEnv(),
+    config: { contractRepairAttempts: 1 },
+    fetchImpl: async (url, init) => {
+      observedRequests.push(JSON.parse(init.body));
+      return jsonResponse({
+        output_text: JSON.stringify(observedRequests.length === 1 ? invalidAdvisory : repairedAdvisory)
+      });
+    },
+    now: fixedNow
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(observedRequests.length, 2);
+  assert.equal(result.body.review_claims[0].id, 'supported-claim');
+  assert.equal(result.body.review_claims[0].supported_by_roles[0], 'content_reviewer');
+  assert.equal(result.body.adapter_boundary.contract_repair_attempts_performed, 1);
+  assert.match(observedRequests[1].input, /invalid_review_claims/);
+  assert.doesNotMatch(JSON.stringify(result.body), /adapter-secret-value|provider-secret-value|output_text/);
 });
 
 test('agentic human review responses adapter rejects unknown benchmark evidence references after repair', async () => {

@@ -51,6 +51,8 @@
     "repair_retry_contract": { "type": ["object", "null"] },
     "xhigh_multi_step_contract": { "type": ["object", "null"] },
     "role_opinions": { "type": "array" },
+    "review_claims": { "type": "array" },
+    "claim_integrity": { "type": "object" },
     "consensus_summary": { "type": "object" },
     "dissent_summary": { "type": "object" },
     "agentic_human_review_findings": { "type": "array" },
