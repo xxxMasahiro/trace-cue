@@ -42,6 +42,9 @@ const BLOCKED_MODEL_IDS = new Set([
 
 const MAX_ADAPTER_EVIDENCE_CATALOG_ITEMS = 32;
 const MAX_ADAPTER_EVIDENCE_REFS = 12;
+const MAX_ADAPTER_REPAIR_RECORDS = 32;
+const MAX_ADAPTER_REPAIR_EVIDENCE_IDS = 32;
+const MAX_ADAPTER_REPAIR_OWNER_HINTS = 32;
 
 const COVERAGE_ALIASES = Object.freeze({
   required_mentions: Object.freeze(['required_mentions', 'mentions', 'required_mention_coverage', 'mention_coverage', 'requirements']),
@@ -247,6 +250,9 @@ export async function startAgenticHumanReviewResponsesAdapter(options = {}, cont
     });
     writeAdapterResponse(response, result);
   });
+  server.requestTimeout = config.timeoutMs + 5000;
+  server.headersTimeout = Math.max(server.headersTimeout, config.timeoutMs + 10000);
+  server.keepAliveTimeout = Math.max(server.keepAliveTimeout, 5000);
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(config.port, config.host, () => {
@@ -579,18 +585,61 @@ function buildAdapterContractRepairContext(validation, attempt) {
     repair_attempt: attempt,
     reason_code: validation?.code ?? 'AHR_RESPONSES_ADAPTER_CONTRACT_INCOMPLETE',
     instruction: 'Return a complete replacement advisory JSON object, not a diff or partial patch.',
-    missing_benchmark_records: validation?.details?.missing_benchmark_records ?? [],
-    missing_owner_baseline_records: validation?.details?.missing_owner_baseline_records ?? [],
-    invalid_review_claims: validation?.details?.invalid_review_claims ?? [],
-    owner_baseline_criterion_hints: validation?.details?.owner_baseline_criterion_hints ?? [],
-    evidence_reference_catalog: validation?.details?.evidence_reference_catalog ?? [],
-    missing_roles: validation?.details?.missing_roles ?? [],
-    missing_rounds: validation?.details?.missing_rounds ?? [],
-    missing_critique_roles: validation?.details?.missing_critique_roles ?? [],
+    missing_benchmark_records: compactRepairRecords(validation?.details?.missing_benchmark_records),
+    missing_owner_baseline_records: compactRepairRecords(validation?.details?.missing_owner_baseline_records),
+    invalid_review_claims: compactRepairRecords(validation?.details?.invalid_review_claims),
+    owner_baseline_criterion_hints: compactRepairOwnerBaselineHints(validation?.details?.owner_baseline_criterion_hints),
+    evidence_reference_ids: compactRepairEvidenceReferenceIds(validation?.details?.evidence_reference_catalog),
+    missing_roles: compactRepairStrings(validation?.details?.missing_roles),
+    missing_rounds: compactRepairStrings(validation?.details?.missing_rounds),
+    missing_critique_roles: compactRepairStrings(validation?.details?.missing_critique_roles),
     synthesis_integrated: validation?.details?.synthesis_integrated ?? null,
-    missing_conditions: validation?.details?.missing_conditions ?? [],
+    missing_conditions: compactRepairStrings(validation?.details?.missing_conditions),
     raw_provider_response_stored: false
   });
+}
+
+function compactRepairRecords(values) {
+  return arrayOrEmpty(values).slice(0, MAX_ADAPTER_REPAIR_RECORDS).map((record) => {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      return truncateText(redactString(String(record ?? '')), 200);
+    }
+    return Object.fromEntries(Object.entries({
+      section: truncateText(firstString(record.section, null), 80),
+      expected: truncateText(firstString(record.expected, null), 220),
+      reason: truncateText(firstString(record.reason, null), 220),
+      required_present: record.required_present === undefined ? undefined : record.required_present,
+      missing_fields: compactRepairStrings(record.missing_fields),
+      criterion_id: truncateText(firstString(record.criterion_id, record.must_not_miss_criterion_id, null), 120),
+      owner_label_ids: compactRepairStrings(record.owner_label_ids),
+      criteria_refs: compactRepairStrings(record.criteria_refs),
+      claim_id: truncateText(firstString(record.claim_id, record.id, null), 120),
+      index: Number.isFinite(Number(record.index)) ? Number(record.index) : undefined,
+      supported_role_count: Number.isFinite(Number(record.supported_role_count)) ? Number(record.supported_role_count) : undefined,
+      evidence_ref_count: Number.isFinite(Number(record.evidence_ref_count)) ? Number(record.evidence_ref_count) : undefined
+    }).filter(([, value]) => value !== undefined && value !== null && !(Array.isArray(value) && value.length === 0)));
+  });
+}
+
+function compactRepairOwnerBaselineHints(values) {
+  return arrayOrEmpty(values).slice(0, MAX_ADAPTER_REPAIR_OWNER_HINTS).map((hint) => ({
+    criterion_id: truncateText(firstString(hint?.criterion_id, hint?.id, null), 120),
+    owner_label_ids: compactRepairStrings(hint?.owner_label_ids),
+    required_finding_fields: compactRepairStrings(hint?.required_finding_fields),
+    recommended_evidence_ref_ids: compactRepairStrings(hint?.recommended_evidence_ref_ids)
+  })).filter((hint) => hint.criterion_id || hint.owner_label_ids.length > 0 || hint.recommended_evidence_ref_ids.length > 0);
+}
+
+function compactRepairEvidenceReferenceIds(values) {
+  return uniqueAdapterStrings(arrayOrEmpty(values)
+    .map((reference) => firstString(reference?.id, reference?.ref_id, reference?.reference_id, null)))
+    .slice(0, MAX_ADAPTER_REPAIR_EVIDENCE_IDS);
+}
+
+function compactRepairStrings(values) {
+  return normalizeStringArray(values)
+    .slice(0, MAX_ADAPTER_REPAIR_RECORDS)
+    .map((value) => truncateText(redactString(value), 180));
 }
 
 function buildAdapterContractRepairInstruction(repairContext) {
@@ -609,8 +658,8 @@ function buildAdapterContractRepairInstruction(repairContext) {
   const missingConditions = Array.isArray(repairContext.missing_conditions)
     ? repairContext.missing_conditions
     : [];
-  const evidenceReferenceCatalog = Array.isArray(repairContext.evidence_reference_catalog)
-    ? repairContext.evidence_reference_catalog
+  const evidenceReferenceIds = Array.isArray(repairContext.evidence_reference_ids)
+    ? repairContext.evidence_reference_ids
     : [];
   const ownerBaselineCriterionHints = Array.isArray(repairContext.owner_baseline_criterion_hints)
     ? repairContext.owner_baseline_criterion_hints
@@ -619,8 +668,8 @@ function buildAdapterContractRepairInstruction(repairContext) {
     'Contract repair retry is active because the previous provider output failed TraceCue post-validation.',
     `Repair reason code: ${repairContext.reason_code}.`,
     'Return a complete replacement advisory JSON object, not a diff, patch, explanation, or partial object.',
-    evidenceReferenceCatalog.length > 0
-      ? `Use only these evidence_reference_catalog ids when repairing evidence_refs: ${JSON.stringify(evidenceReferenceCatalog)}.`
+    evidenceReferenceIds.length > 0
+      ? `Use only these evidence_reference_catalog ids when repairing evidence_refs: ${JSON.stringify(evidenceReferenceIds)}.`
       : '',
     missingBenchmarkRecords.length > 0
       ? `Add complete benchmark_requirement_coverage records for these missing items, preserving section and exact expected text: ${JSON.stringify(missingBenchmarkRecords)}.`

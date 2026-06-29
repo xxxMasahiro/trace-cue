@@ -142,7 +142,8 @@ import {
   buildOpenAiResponsesRequest,
   handleAgenticHumanReviewResponsesAdapterRequest,
   normalizeAgenticHumanReviewResponsesAdapterConfig,
-  parseOpenAiResponsesAdvisory
+  parseOpenAiResponsesAdvisory,
+  startAgenticHumanReviewResponsesAdapter
 } from '../src/agentic-human-review-responses-adapter.js';
 
 const fixedNow = '2026-06-17T00:00:00.000Z';
@@ -6640,6 +6641,183 @@ test('agentic human review responses adapter retries repairable owner baseline c
   assert.equal(result.body.agentic_human_review_findings[0].evidence_refs[0].id, 'owner-final-ambiguity');
   assert.equal(result.body.adapter_boundary.contract_repair_attempts_performed, 1);
   assert.doesNotMatch(JSON.stringify(result.body), /adapter-secret-value|provider-secret-value|output_text/);
+});
+
+test('agentic human review responses adapter keeps xhigh repair retry compact under request budget', async () => {
+  const request = adapterTraceCueRequest();
+  request.plan.review_effort = { mode: 'xhigh' };
+  request.plan.strict_output_contract = {
+    required_critique_roles: ['critic_reviewer', 'verification_reviewer']
+  };
+  request.plan.review_quality_benchmark = {
+    enabled: true,
+    case_id: 'landing-trust-clarity',
+    required_mentions: ['first impression', 'trust proof'],
+    required_dimensions: ['content_comprehension'],
+    forbidden_claims: ['release is approved']
+  };
+  request.package.artifact_references = Array.from({ length: 80 }, (_value, index) => ({
+    id: `bulk-artifact-${index + 1}`,
+    type: 'bulk_artifact_reference',
+    description: `Bulk artifact reference ${index + 1} with deliberately verbose context that should not be repeated in repair payloads.`,
+    content_included: false
+  }));
+  const longOwnerSummary = 'This target-specific criterion has long human wording that should not be copied into repair retry payloads. '.repeat(40);
+  request.plan.owner_baseline_requirement_contract = {
+    baseline_id: 'owner-baseline-xhigh-budget',
+    case_id: 'landing-trust-clarity',
+    must_not_miss_criteria: Array.from({ length: 12 }, (_value, index) => ({
+      id: `owner-criterion-${index + 1}`,
+      dimension: 'content_comprehension',
+      summary: longOwnerSummary,
+      severity: 'high',
+      target_specific: true
+    })),
+    owner_labels: Array.from({ length: 12 }, (_value, index) => ({
+      id: `owner-label-${index + 1}`,
+      must_not_miss_criterion_id: `owner-criterion-${index + 1}`,
+      criteria_refs: [`owner-criterion-${index + 1}`],
+      target_specific: true,
+      evidence_ref_count: 1
+    })),
+    required_structured_finding_fields: ['must_not_miss_criterion_id', 'owner_label_ids', 'evidence_refs'],
+    target_specific_must_not_miss_required: true,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  const incompleteAdvisory = {
+    summary: 'The xhigh advisory is missing required contract sections.',
+    role_opinions: [{
+      role: 'content_reviewer',
+      display_name: 'Content Reviewer',
+      effort: 'xhigh',
+      round: 1,
+      summary: 'The content reviewer checked the visible copy.',
+      findings: [],
+      uncertainties: []
+    }],
+    agentic_human_review_findings: [],
+    benchmark_requirement_coverage: {
+      required_mentions: [],
+      required_dimensions: [],
+      forbidden_claims: []
+    }
+  };
+  const repairedAdvisory = {
+    summary: 'The xhigh advisory now satisfies the required contract sections.',
+    role_opinions: request.plan.sub_agents.map((agent) => ({
+      role: agent.role,
+      display_name: agent.display_name,
+      effort: agent.effort,
+      round: agent.round,
+      summary: `${agent.display_name} completed the planned xhigh role output.`,
+      findings: [],
+      uncertainties: []
+    })),
+    critique_records: [{
+      role: 'critic_reviewer',
+      summary: 'The critic reviewer challenged weak conclusions.',
+      evidence_ref_ids: ['owner-criterion-1']
+    }, {
+      role: 'verification_reviewer',
+      summary: 'The verification reviewer checked evidence support.',
+      evidence_ref_ids: ['owner-criterion-1']
+    }],
+    integration_record: {
+      summary: 'The synthesis integrates role outputs, critique, and verification.',
+      synthesis_integrated: true
+    },
+    agentic_human_review_findings: request.plan.owner_baseline_requirement_contract.must_not_miss_criteria.map((criterion, index) => ({
+      id: `owner-finding-${index + 1}`,
+      category: 'content_comprehension',
+      severity: 'high',
+      message: `Owner criterion ${index + 1} is covered.`,
+      recommendation: `Keep owner criterion ${index + 1} visible in the review.`,
+      must_not_miss_criterion_id: criterion.id,
+      criteria_refs: [criterion.id],
+      owner_label_ids: [`owner-label-${index + 1}`],
+      evidence_ref_ids: [criterion.id],
+      target_specific: true
+    })),
+    benchmark_requirement_coverage: {
+      required_mentions: request.plan.review_quality_benchmark.required_mentions.map((mention, index) => ({
+        mention,
+        present: true,
+        status: 'covered',
+        evidence: `The advisory covers ${mention}.`,
+        evidence_ref_ids: [`benchmark-required-mention-${index + 1}`]
+      })),
+      required_dimensions: [{
+        dimension: 'content_comprehension',
+        present: true,
+        status: 'covered',
+        evidence: 'The advisory covers content comprehension.',
+        evidence_ref_ids: ['benchmark-required-dimension-1']
+      }],
+      forbidden_claims: [{
+        claim: 'release is approved',
+        present: false,
+        status: 'absent',
+        evidence: 'The advisory does not approve a release.',
+        evidence_ref_ids: ['benchmark-forbidden-claim-1']
+      }]
+    },
+    review_claims: [{
+      id: 'supported-xhigh-claim',
+      claim: 'The visible copy needs clearer evidence support.',
+      supported_by_roles: ['content_reviewer']
+    }]
+  };
+  const observedRequests = [];
+  const result = await handleAgenticHumanReviewResponsesAdapterRequest({
+    method: 'POST',
+    url: '/agentic-human-review',
+    headers: {
+      host: '127.0.0.1:8787',
+      authorization: 'Bearer adapter-secret-value',
+      'content-type': 'application/json'
+    },
+    remoteAddress: '127.0.0.1',
+    bodyText: JSON.stringify(request),
+    env: adapterEnv(),
+    config: { contractRepairAttempts: 1, maxRequestBytes: 131072 },
+    fetchImpl: async (url, init) => {
+      observedRequests.push(JSON.parse(init.body));
+      return jsonResponse({
+        output_text: JSON.stringify(observedRequests.length === 1 ? incompleteAdvisory : repairedAdvisory)
+      });
+    },
+    now: fixedNow
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(observedRequests.length, 2);
+  assert.equal(observedRequests[1].metadata.tracecue_review_effort, 'xhigh');
+  assert.equal(observedRequests[1].store, false);
+  assert.deepEqual(observedRequests[1].tools, []);
+  assert.ok(Buffer.byteLength(JSON.stringify(observedRequests[1]), 'utf8') <= 131072);
+  assert.match(observedRequests[1].input, /evidence_reference_ids/);
+  assert.doesNotMatch(observedRequests[1].input, /long human wording/);
+  assert.doesNotMatch(JSON.stringify(observedRequests[1]), /\.browser-debug|adapter-secret-value|provider-secret-value|output_text/);
+  assert.equal(result.body.adapter_boundary.contract_repair_attempts_performed, 1);
+  assert.equal(result.body.agentic_human_review_findings.length, 12);
+  assert.equal(result.body.critique_records.length, 2);
+});
+
+test('agentic human review responses adapter keeps HTTP request timeout above provider timeout', async () => {
+  const adapter = await startAgenticHumanReviewResponsesAdapter({
+    port: 0,
+    timeoutMs: 1800000
+  }, {
+    env: adapterEnv(),
+    fetch: async () => jsonResponse({ output_text: '{}' })
+  });
+  try {
+    assert.ok(adapter.server.requestTimeout > adapter.config.timeoutMs);
+    assert.ok(adapter.server.headersTimeout > adapter.config.timeoutMs);
+  } finally {
+    await adapter.close();
+  }
 });
 
 test('agentic human review responses adapter requires owner label ids for owner-baseline criteria', async () => {
