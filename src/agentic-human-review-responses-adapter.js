@@ -46,6 +46,40 @@ const MAX_ADAPTER_EVIDENCE_REFS = 12;
 const MAX_ADAPTER_REPAIR_RECORDS = 32;
 const MAX_ADAPTER_REPAIR_EVIDENCE_IDS = 32;
 const MAX_ADAPTER_REPAIR_OWNER_HINTS = 32;
+const PROVIDER_CONTEXT_LIMITS = Object.freeze({
+  intent: 700,
+  reviewTargets: 16,
+  readerQuestions: 8,
+  roleFocus: 6,
+  roleMustReport: 4,
+  roleMustNot: 4,
+  benchmarkRequirement: 320,
+  contentSnippets: 14,
+  contentSnippetText: 520,
+  headingText: 16,
+  visibleTextSources: 12,
+  visibleTextSourceText: 320,
+  semanticItems: 16,
+  technicalFindings: 8,
+  technicalMessage: 220,
+  mechanicalFindings: 8,
+  artifactReferences: 16,
+  artifactDescription: 160
+});
+const PROVIDER_OUTPUT_LIMITS = Object.freeze({
+  summary: 1200,
+  text: 700,
+  shortText: 320,
+  evidenceText: 700,
+  roleOpinions: 24,
+  roleFindings: 6,
+  findings: 48,
+  ownerBaselineFindingsPadding: 8,
+  claims: 16,
+  evidenceRefs: 6,
+  coverageRecords: 128,
+  smallArray: 8
+});
 
 const COVERAGE_ALIASES = Object.freeze({
   required_mentions: Object.freeze(['required_mentions', 'mentions', 'required_mention_coverage', 'mention_coverage', 'requirements']),
@@ -66,15 +100,25 @@ function buildAdvisoryResponseSchema(traceCueRequest) {
   const ownerBaselineCriterionCount = ownerBaselineEnabled
     ? targetSpecificOwnerBaselineCriteria(ownerBaselineRequirementContract(traceCueRequest)).length
     : 0;
+  const boundedString = (maxLength, options = {}) => ({
+    type: 'string',
+    maxLength,
+    ...(options.minLength ? { minLength: options.minLength } : {})
+  });
+  const boundedStringArray = (maxItems, maxLength) => ({
+    type: 'array',
+    maxItems,
+    items: boundedString(maxLength)
+  });
   const evidenceRefSchema = {
     type: 'object',
     additionalProperties: true,
     properties: {
-      id: { type: 'string' },
-      ref_id: { type: 'string' },
-      evidence_class: { type: 'string' },
-      type: { type: 'string' },
-      description: { type: 'string' },
+      id: boundedString(160),
+      ref_id: boundedString(160),
+      evidence_class: boundedString(120),
+      type: boundedString(120),
+      description: boundedString(PROVIDER_OUTPUT_LIMITS.shortText),
       content_included: { type: 'boolean' },
       local_reference: { type: 'boolean' }
     }
@@ -87,15 +131,15 @@ function buildAdvisoryResponseSchema(traceCueRequest) {
       [labelKey]: { type: 'string' },
       present: options.forbiddenClaim === true ? { enum: [false] } : { type: 'boolean' },
       covered: { type: 'boolean' },
-      status: { type: 'string' },
-      evidence: { type: 'string', minLength: 1 },
-      reason: { type: 'string' },
-      evidence_refs: { type: 'array', minItems: 1, items: evidenceRefSchema },
-      evidence_ref_ids: { type: 'array', items: { type: 'string' } },
-      evidence_reference_ids: { type: 'array', items: { type: 'string' } },
-      evidence_reference_id: { type: 'string' },
-      citations: { type: 'array' },
-      source_refs: { type: 'array' }
+      status: boundedString(80),
+      evidence: boundedString(PROVIDER_OUTPUT_LIMITS.evidenceText, { minLength: 1 }),
+      reason: boundedString(PROVIDER_OUTPUT_LIMITS.evidenceText),
+      evidence_refs: { type: 'array', minItems: 1, maxItems: PROVIDER_OUTPUT_LIMITS.evidenceRefs, items: evidenceRefSchema },
+      evidence_ref_ids: boundedStringArray(PROVIDER_OUTPUT_LIMITS.evidenceRefs, 160),
+      evidence_reference_ids: boundedStringArray(PROVIDER_OUTPUT_LIMITS.evidenceRefs, 160),
+      evidence_reference_id: boundedString(160),
+      citations: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.evidenceRefs },
+      source_refs: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.evidenceRefs }
     },
     required: [labelKey, 'present', 'status', 'evidence', 'evidence_refs']
   });
@@ -103,22 +147,22 @@ function buildAdvisoryResponseSchema(traceCueRequest) {
     type: 'object',
     additionalProperties: true,
     properties: {
-      id: { type: 'string' },
-      category: { type: 'string' },
-      severity: { type: 'string' },
-      confidence: { type: 'string' },
-      message: { type: 'string' },
-      summary: { type: 'string' },
-      recommendation: { type: 'string' },
-      must_not_miss_criterion_id: { type: 'string' },
-      criterion_id: { type: 'string' },
-      criteria_refs: { type: 'array', items: { type: 'string' } },
-      owner_label_ids: { type: 'array', items: { type: 'string' } },
+      id: boundedString(160),
+      category: boundedString(120),
+      severity: boundedString(80),
+      confidence: boundedString(80),
+      message: boundedString(PROVIDER_OUTPUT_LIMITS.text),
+      summary: boundedString(PROVIDER_OUTPUT_LIMITS.text),
+      recommendation: boundedString(PROVIDER_OUTPUT_LIMITS.text),
+      must_not_miss_criterion_id: boundedString(160),
+      criterion_id: boundedString(160),
+      criteria_refs: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, 160),
+      owner_label_ids: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, 160),
       target_specific: { type: 'boolean' },
-      evidence_refs: { type: 'array', items: evidenceRefSchema },
-      evidence_ref_ids: { type: 'array', items: { type: 'string' } },
-      citations: { type: 'array' },
-      source_refs: { type: 'array' }
+      evidence_refs: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.evidenceRefs, items: evidenceRefSchema },
+      evidence_ref_ids: boundedStringArray(PROVIDER_OUTPUT_LIMITS.evidenceRefs, 160),
+      citations: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.evidenceRefs },
+      source_refs: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.evidenceRefs }
     },
     required: ['message', 'evidence_refs']
   };
@@ -130,27 +174,27 @@ function buildAdvisoryResponseSchema(traceCueRequest) {
     type: 'object',
     additionalProperties: true,
     properties: {
-      summary: { type: 'string' },
+      summary: boundedString(PROVIDER_OUTPUT_LIMITS.summary),
       subjective_perception: {
         type: 'object',
         additionalProperties: true,
         properties: {
-          first_impression: { type: 'array', items: { type: 'string' } },
-          emotional_reception: { type: 'array', items: { type: 'string' } },
-          trust_and_credibility: { type: 'array', items: { type: 'string' } },
-          cognitive_load: { type: 'array', items: { type: 'string' } },
-          likely_user_questions: { type: 'array', items: { type: 'string' } }
+          first_impression: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, PROVIDER_OUTPUT_LIMITS.shortText),
+          emotional_reception: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, PROVIDER_OUTPUT_LIMITS.shortText),
+          trust_and_credibility: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, PROVIDER_OUTPUT_LIMITS.shortText),
+          cognitive_load: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, PROVIDER_OUTPUT_LIMITS.shortText),
+          likely_user_questions: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, PROVIDER_OUTPUT_LIMITS.shortText)
         }
       },
       readability_comprehension: {
         type: 'object',
         additionalProperties: true,
         properties: {
-          scanability: { type: 'string' },
-          reading_load: { type: 'string' },
-          terminology_risk: { type: 'array', items: { type: 'string' } },
-          meaning_gaps: { type: 'array', items: { type: 'string' } },
-          next_action_clarity: { type: 'array', items: { type: 'string' } }
+          scanability: boundedString(PROVIDER_OUTPUT_LIMITS.shortText),
+          reading_load: boundedString(PROVIDER_OUTPUT_LIMITS.shortText),
+          terminology_risk: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, PROVIDER_OUTPUT_LIMITS.shortText),
+          meaning_gaps: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, PROVIDER_OUTPUT_LIMITS.shortText),
+          next_action_clarity: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, PROVIDER_OUTPUT_LIMITS.shortText)
         }
       },
       reader_experience_review: { type: 'object', additionalProperties: true },
@@ -159,53 +203,81 @@ function buildAdvisoryResponseSchema(traceCueRequest) {
         type: 'object',
         additionalProperties: true,
         properties: {
-          required_mentions: { type: 'array', items: coverageRecordSchema('mention') },
-          required_dimensions: { type: 'array', items: coverageRecordSchema('dimension') },
-          forbidden_claims: { type: 'array', items: coverageRecordSchema('claim', { forbiddenClaim: true }) }
+          required_mentions: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.coverageRecords, items: coverageRecordSchema('mention') },
+          required_dimensions: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.coverageRecords, items: coverageRecordSchema('dimension') },
+          forbidden_claims: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.coverageRecords, items: coverageRecordSchema('claim', { forbiddenClaim: true }) }
         }
       },
       role_opinions: {
         type: 'array',
+        maxItems: PROVIDER_OUTPUT_LIMITS.roleOpinions,
         items: {
           type: 'object',
           additionalProperties: true,
           properties: {
-            role: { type: 'string' },
-            display_name: { type: 'string' },
-            effort: { type: 'string' },
+            role: boundedString(120),
+            display_name: boundedString(160),
+            effort: boundedString(80),
             round: { type: 'number' },
-            summary: { type: 'string' },
-            findings: { type: 'array', items: findingSchema },
-            uncertainties: { type: 'array', items: { type: 'string' } }
+            summary: boundedString(PROVIDER_OUTPUT_LIMITS.text),
+            findings: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.roleFindings, items: findingSchema },
+            uncertainties: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, PROVIDER_OUTPUT_LIMITS.shortText)
           }
         }
       },
-      findings: { type: 'array', items: findingSchema },
+      critique_records: {
+        type: 'array',
+        maxItems: PROVIDER_OUTPUT_LIMITS.smallArray,
+        items: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            role: boundedString(120),
+            summary: boundedString(PROVIDER_OUTPUT_LIMITS.text),
+            evidence_refs: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.evidenceRefs, items: evidenceRefSchema },
+            evidence_ref_ids: boundedStringArray(PROVIDER_OUTPUT_LIMITS.evidenceRefs, 160)
+          }
+        }
+      },
+      integration_record: {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+          summary: boundedString(PROVIDER_OUTPUT_LIMITS.text),
+          synthesis_integrated: { type: 'boolean' },
+          evidence_refs: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.evidenceRefs, items: evidenceRefSchema },
+          evidence_ref_ids: boundedStringArray(PROVIDER_OUTPUT_LIMITS.evidenceRefs, 160)
+        }
+      },
+      findings: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.findings, items: findingSchema },
       agentic_human_review_findings: {
         type: 'array',
         ...(ownerBaselineCriterionCount > 0 ? { minItems: ownerBaselineCriterionCount } : {}),
+        maxItems: Math.max(PROVIDER_OUTPUT_LIMITS.findings, ownerBaselineCriterionCount + PROVIDER_OUTPUT_LIMITS.ownerBaselineFindingsPadding),
         items: findingSchema
       },
       owner_baseline_findings: {
         type: 'array',
         ...(ownerBaselineCriterionCount > 0 ? { minItems: ownerBaselineCriterionCount } : {}),
+        maxItems: Math.max(PROVIDER_OUTPUT_LIMITS.findings, ownerBaselineCriterionCount + PROVIDER_OUTPUT_LIMITS.ownerBaselineFindingsPadding),
         items: ownerBaselineFindingSchema
       },
-      strengths: { type: 'array', items: { type: 'string' } },
-      improvement_suggestions: { type: 'array', items: { type: 'string' } },
-      owner_decision_requests: { type: 'array' },
+      strengths: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, PROVIDER_OUTPUT_LIMITS.shortText),
+      improvement_suggestions: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, PROVIDER_OUTPUT_LIMITS.shortText),
+      owner_decision_requests: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.smallArray },
       review_claims: {
         type: 'array',
+        maxItems: PROVIDER_OUTPUT_LIMITS.claims,
         items: {
           type: 'object',
           additionalProperties: true,
           properties: {
-            id: { type: 'string' },
-            claim: { type: 'string', minLength: 1 },
-            message: { type: 'string', minLength: 1 },
-            evidence_refs: { type: 'array', items: evidenceRefSchema },
-            evidence_ref_ids: { type: 'array', items: { type: 'string' } },
-            supported_by_roles: { type: 'array', items: { type: 'string' } }
+            id: boundedString(160),
+            claim: boundedString(PROVIDER_OUTPUT_LIMITS.text, { minLength: 1 }),
+            message: boundedString(PROVIDER_OUTPUT_LIMITS.text, { minLength: 1 }),
+            evidence_refs: { type: 'array', maxItems: PROVIDER_OUTPUT_LIMITS.evidenceRefs, items: evidenceRefSchema },
+            evidence_ref_ids: boundedStringArray(PROVIDER_OUTPUT_LIMITS.evidenceRefs, 160),
+            supported_by_roles: boundedStringArray(PROVIDER_OUTPUT_LIMITS.smallArray, 120)
           }
         }
       }
@@ -577,10 +649,8 @@ function buildAdapterInstructions(traceCueRequest, repairContext = null) {
   const benchmark = effectiveBenchmarkCoverageRequirements(traceCueRequest).enabled
     ? [
         'Benchmark output contract is mandatory.',
-        'Return benchmark_requirement_coverage.required_mentions with exactly one record for each string in review_request.plan.review_quality_benchmark.required_mentions, without paraphrasing keys.',
-        'Return benchmark_requirement_coverage.required_dimensions with exactly one record for each string in review_request.plan.review_quality_benchmark.required_dimensions, without paraphrasing keys.',
-        'Return benchmark_requirement_coverage.forbidden_claims with exactly one record for each string in review_request.plan.review_quality_benchmark.forbidden_claims, without paraphrasing keys.',
         'Use input.required_benchmark_coverage as the canonical exact row template for all effective benchmark_requirement_coverage records, including owner-baseline merged rows.',
+        'Return benchmark_requirement_coverage.required_mentions, required_dimensions, and forbidden_claims with exactly one record for each input.required_benchmark_coverage row, without paraphrasing keys.',
         'Each record must include the exact mention/dimension/claim string, present, status, non-empty evidence, and non-empty evidence_refs from evidence_reference_catalog.',
         'For required_mentions and required_dimensions, present means the item is covered by your advisory output.',
         'For forbidden_claims, present means the forbidden claim appears in your advisory output, not that the check was performed. Every forbidden_claims record must set present=false, status=absent or not_present, and cite evidence_refs from evidence_reference_catalog.',
@@ -593,9 +663,8 @@ function buildAdapterInstructions(traceCueRequest, repairContext = null) {
         'Owner-approved human baseline contract is mandatory.',
         'Return owner_baseline_findings as the canonical proof array for target-specific owner-approved must-not-miss criteria.',
         'For each input.required_owner_baseline_findings template, return exactly one owner_baseline_findings record that preserves must_not_miss_criterion_id, criteria_refs, owner_label_ids, adds provider-authored message and recommendation, and populates non-empty evidence_refs from evidence_reference_catalog using the template recommended_evidence_ref_ids.',
-        'Copy every record from required_owner_baseline_coverage into benchmark_requirement_coverage.required_mentions, required_dimensions, and forbidden_claims, preserving exact mention/dimension/claim strings and catalog-backed evidence_refs.',
         'Use input.required_owner_baseline_findings as the compact target-specific id map for required ids, owner label ids, required fields, and preferred evidence refs.',
-        'Use input.required_owner_baseline_coverage as the compact owner-baseline coverage map for additional exact required_mentions, required_dimensions, and forbidden_claims.',
+        'Use input.required_owner_baseline_coverage as owner-baseline provenance; the same coverage rows are already included in input.required_benchmark_coverage and must appear in benchmark_requirement_coverage.',
         'Each owner-baseline finding must include a non-empty message, recommendation, evidence_refs from evidence_reference_catalog, owner_label_ids when the contract has owner labels for that criterion, and either must_not_miss_criterion_id or criteria_refs matching the contract.',
         'Each owner-baseline required mention or dimension must be an evidence-backed structured coverage record; each owner-baseline forbidden claim must be a structured absence record with present=false, status=absent or not_present, non-empty evidence, and evidence_refs.',
         'Do not satisfy owner-approved must-not-miss criteria through free text only; TraceCue will post-validate structured ids and evidence references.'
@@ -1977,13 +2046,11 @@ function compactProviderPlanPayload(plan, reviewPackage = null) {
     id: plan.id,
     plan_path_included: false,
     plan_hash: plan.plan_hash,
-    intent: truncateText(firstString(plan.intent, plan.review_scope?.intent, null), 1000),
+    intent: truncateText(firstString(plan.intent, plan.review_scope?.intent, null), PROVIDER_CONTEXT_LIMITS.intent),
     review_scope: compactProviderReviewScope(plan.review_scope),
     review_effort: compactReviewEffort(plan.review_effort),
     sub_agents: compactProviderSubAgents(plan.sub_agents),
     rounds: normalizeNumericArray(plan.rounds).slice(0, 12),
-    rubric: compactProviderRubric(plan.rubric),
-    rubric_profile: compactProviderRubricProfile(plan.rubric_profile ?? reviewPackage?.rubric_profile),
     evidence_plan: compactProviderEvidencePlan(plan.evidence_plan ?? reviewPackage?.evidence_plan),
     human_review_contract: compactProviderHumanReviewContract(plan.human_review_contract ?? reviewPackage?.human_review_input_contract),
     provider_instruction_contract: compactProviderInstructionContract(plan.provider_instruction_contract),
@@ -2014,13 +2081,11 @@ function compactProviderPackagePayload(reviewPackage) {
     id: reviewPackage.id,
     task: compactAdapterObject({
       type: reviewPackage.task?.type,
-      intent: truncateText(firstString(reviewPackage.task?.intent, null), 1000),
-      target_audience: truncateText(firstString(reviewPackage.task?.target_audience, null), 500),
-      expected_impression: truncateText(firstString(reviewPackage.task?.expected_impression, null), 700)
+      intent: truncateText(firstString(reviewPackage.task?.intent, null), PROVIDER_CONTEXT_LIMITS.intent),
+      target_audience: truncateText(firstString(reviewPackage.task?.target_audience, null), PROVIDER_OUTPUT_LIMITS.shortText),
+      expected_impression: truncateText(firstString(reviewPackage.task?.expected_impression, null), PROVIDER_OUTPUT_LIMITS.shortText)
     }),
     source: compactProviderSource(reviewPackage.source),
-    visual_evidence: compactProviderVisualEvidence(reviewPackage.visual_evidence),
-    visual_evidence_package_v2: compactProviderVisualEvidencePackage(reviewPackage.visual_evidence_package_v2),
     content_evidence: compactProviderContentEvidence(reviewPackage.content_evidence),
     visible_text_provenance: compactProviderVisibleTextProvenance(reviewPackage.visible_text_provenance),
     visible_text_reading_contract: compactProviderVisibleTextReadingContract(reviewPackage.visible_text_reading_contract),
@@ -2028,11 +2093,10 @@ function compactProviderPackagePayload(reviewPackage) {
     semantic_evidence: compactProviderSemanticEvidence(reviewPackage.semantic_evidence),
     technical_evidence: compactProviderTechnicalEvidence(reviewPackage.technical_evidence),
     mechanical_review_summary: compactProviderMechanicalReviewSummary(reviewPackage.mechanical_review_summary),
-    artifact_references: compactProviderArtifactReferences(reviewPackage.artifact_references),
+    artifact_reference_count: arrayOrEmpty(reviewPackage.artifact_references).length,
     existing_review_state: compactProviderExistingReviewState(reviewPackage.existing_review_state),
     disclosure: compactProviderDisclosure(reviewPackage.disclosure),
     boundary: compactProviderBoundary(reviewPackage.boundary),
-    rubric_profile: compactProviderRubricProfile(reviewPackage.rubric_profile),
     evidence_plan: compactProviderEvidencePlan(reviewPackage.evidence_plan),
     benchmark_completion_readiness: compactProviderBenchmarkReadiness(reviewPackage.benchmark_completion_readiness),
     privacy_disclosure_audit: compactProviderPrivacyAudit(reviewPackage.privacy_disclosure_audit)
@@ -2092,9 +2156,9 @@ function compactProviderReviewScope(value) {
     return value;
   }
   return compactAdapterObject({
-    intent: truncateText(firstString(value.intent, null), 1000),
-    review_targets: compactTextArray(value.review_targets, 20, 160),
-    likely_reader_questions: compactTextArray(value.likely_reader_questions, 12, 180)
+    intent: truncateText(firstString(value.intent, null), PROVIDER_CONTEXT_LIMITS.intent),
+    review_targets: compactTextArray(value.review_targets, PROVIDER_CONTEXT_LIMITS.reviewTargets, 140),
+    likely_reader_questions: compactTextArray(value.likely_reader_questions, PROVIDER_CONTEXT_LIMITS.readerQuestions, 160)
   });
 }
 
@@ -2188,7 +2252,7 @@ function compactProviderHumanReviewContract(value) {
     schema_version: value.schema_version,
     human_review_schema_version: value.human_review_schema_version,
     review_model: value.review_model,
-    intent: truncateText(firstString(value.intent, null), 1000),
+    intent: truncateText(firstString(value.intent, null), PROVIDER_CONTEXT_LIMITS.intent),
     dimensions: arrayOrEmpty(value.dimensions).slice(0, 20).map((dimension) => compactAdapterObject({
       id: dimension?.id,
       label: truncateText(firstString(dimension?.label, null), 120),
@@ -2213,10 +2277,10 @@ function compactProviderInstructionContract(value) {
     schema_version: value.schema_version,
     human_review_schema_version: value.human_review_schema_version,
     contract_kind: value.contract_kind,
-    intent: truncateText(firstString(value.intent, null), 1000),
+    intent: truncateText(firstString(value.intent, null), PROVIDER_CONTEXT_LIMITS.intent),
     role_count: Number.isFinite(Number(value.role_count)) ? Number(value.role_count) : undefined,
     round_count: Number.isFinite(Number(value.round_count)) ? Number(value.round_count) : undefined,
-    required_behavior: compactTextArray(value.required_behavior, 12, 220),
+    required_behavior: compactTextArray(value.required_behavior, 8, 180),
     output_sections: compactTextArray(value.output_sections, 20, 120),
     input_summary: value.input_summary
   });
@@ -2232,10 +2296,10 @@ function compactProviderRoleInstructionContracts(values) {
     round: Number.isFinite(Number(contract?.round)) ? Number(contract.round) : undefined,
     independent_review: contract?.independent_review === true,
     rubric_profile_id: contract?.rubric_profile_id,
-    required_focus: compactTextArray(contract?.required_focus, 12, 120),
+    required_focus: compactTextArray(contract?.required_focus, PROVIDER_CONTEXT_LIMITS.roleFocus, 100),
     evidence_plan_classes: compactTextArray(contract?.evidence_plan_classes, 12, 80),
-    must_report: compactTextArray(contract?.must_report, 8, 180),
-    must_not: compactTextArray(contract?.must_not, 8, 180),
+    must_report: compactTextArray(contract?.must_report, PROVIDER_CONTEXT_LIMITS.roleMustReport, 140),
+    must_not: compactTextArray(contract?.must_not, PROVIDER_CONTEXT_LIMITS.roleMustNot, 140),
     advisory_only: contract?.advisory_only === true,
     gate_effect: contract?.gate_effect
   }));
@@ -2326,8 +2390,8 @@ function compactProviderStrictOutputContract(value) {
     required_roles: arrayOrEmpty(value.required_roles).slice(0, 32).map((role) => compactAdapterObject({
       role: role?.role,
       round: Number.isFinite(Number(role?.round)) ? Number(role.round) : undefined,
-      required_focus: compactTextArray(role?.required_focus, 12, 120),
-      must_report: compactTextArray(role?.must_report, 8, 180)
+      required_focus: compactTextArray(role?.required_focus, PROVIDER_CONTEXT_LIMITS.roleFocus, 100),
+      must_report: compactTextArray(role?.must_report, PROVIDER_CONTEXT_LIMITS.roleMustReport, 140)
     })),
     required_rounds: normalizeNumericArray(value.required_rounds).slice(0, 12),
     required_critique_roles: compactTextArray(value.required_critique_roles, 12, 100),
@@ -2397,11 +2461,9 @@ function compactProviderBenchmarkContract(value) {
     fixture_id: value.fixture_id,
     fixture_type: value.fixture_type,
     rubric_profile_id: value.rubric_profile_id,
-    supported_fixture_types: compactTextArray(value.supported_fixture_types, 20, 80),
-    quality_dimensions: compactTextArray(value.quality_dimensions, 20, 120),
-    required_dimensions: compactTextArray(value.required_dimensions, 40, 180),
-    required_mentions: compactTextArray(value.required_mentions, 80, 500),
-    forbidden_claims: compactTextArray(value.forbidden_claims, 80, 500),
+    required_dimension_count: normalizeStringArray(value.required_dimensions).length,
+    required_mention_count: normalizeStringArray(value.required_mentions).length,
+    forbidden_claim_count: normalizeStringArray(value.forbidden_claims).length,
     thresholds: value.thresholds,
     owner_baseline_requirement_contract_present: Boolean(value.owner_baseline_requirement_contract)
   });
@@ -2499,9 +2561,9 @@ function compactProviderContentEvidence(value) {
   }
   return compactAdapterObject({
     text_snippet_count: Number.isFinite(Number(value.text_snippet_count)) ? Number(value.text_snippet_count) : undefined,
-    text_snippets: compactTextArray(value.text_snippets, 24, 900),
-    headings: compactTextArray(value.headings, 24, 240),
-    action_text: compactTextArray(value.action_text, 24, 180)
+    text_snippets: compactTextArray(value.text_snippets, PROVIDER_CONTEXT_LIMITS.contentSnippets, PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+    headings: compactTextArray(value.headings, PROVIDER_CONTEXT_LIMITS.headingText, 180),
+    action_text: compactTextArray(value.action_text, PROVIDER_CONTEXT_LIMITS.headingText, 140)
   });
 }
 
@@ -2513,10 +2575,10 @@ function compactProviderVisibleTextProvenance(value) {
     schema_version: value.schema_version,
     provenance_version: value.provenance_version,
     source_count: Number.isFinite(Number(value.source_count)) ? Number(value.source_count) : undefined,
-    sources: arrayOrEmpty(value.sources).slice(0, 24).map((source) => compactAdapterObject({
+    sources: arrayOrEmpty(value.sources).slice(0, PROVIDER_CONTEXT_LIMITS.visibleTextSources).map((source) => compactAdapterObject({
       id: source?.id,
       type: source?.type,
-      text: truncateText(firstString(source?.text, source?.summary, null), 500),
+      text: truncateText(firstString(source?.text, source?.summary, null), PROVIDER_CONTEXT_LIMITS.visibleTextSourceText),
       text_included: source?.text_included === true
     }))
   });
@@ -2554,10 +2616,10 @@ function compactProviderSemanticEvidence(value) {
     return value;
   }
   return compactAdapterObject({
-    headings: compactTextArray(value.headings, 24, 240),
-    landmarks: compactTextArray(value.landmarks, 24, 160),
-    images: arrayOrEmpty(value.images).slice(0, 24).map((image) => compactAdapterObject({
-      alt: truncateText(firstString(image?.alt, null), 240),
+    headings: compactTextArray(value.headings, PROVIDER_CONTEXT_LIMITS.semanticItems, 180),
+    landmarks: compactTextArray(value.landmarks, PROVIDER_CONTEXT_LIMITS.semanticItems, 120),
+    images: arrayOrEmpty(value.images).slice(0, PROVIDER_CONTEXT_LIMITS.semanticItems).map((image) => compactAdapterObject({
+      alt: truncateText(firstString(image?.alt, null), 160),
       role: image?.role,
       visible: image?.visible === true
     }))
@@ -2570,11 +2632,11 @@ function compactProviderTechnicalEvidence(value) {
   }
   return compactAdapterObject({
     finding_count: Number.isFinite(Number(value.finding_count)) ? Number(value.finding_count) : undefined,
-    findings: arrayOrEmpty(value.findings).slice(0, 16).map((finding) => compactAdapterObject({
+    findings: arrayOrEmpty(value.findings).slice(0, PROVIDER_CONTEXT_LIMITS.technicalFindings).map((finding) => compactAdapterObject({
       id: finding?.id,
       category: finding?.category,
       severity: finding?.severity,
-      message: truncateText(firstString(finding?.message, finding?.summary, null), 320)
+      message: truncateText(firstString(finding?.message, finding?.summary, null), PROVIDER_CONTEXT_LIMITS.technicalMessage)
     })),
     release_readiness: value.release_readiness,
     local_release_gate: value.local_release_gate
@@ -2587,11 +2649,11 @@ function compactProviderMechanicalReviewSummary(value) {
   }
   return compactAdapterObject({
     finding_count: Number.isFinite(Number(value.finding_count)) ? Number(value.finding_count) : undefined,
-    top_findings: arrayOrEmpty(value.top_findings).slice(0, 12).map((finding) => compactAdapterObject({
+    top_findings: arrayOrEmpty(value.top_findings).slice(0, PROVIDER_CONTEXT_LIMITS.mechanicalFindings).map((finding) => compactAdapterObject({
       id: finding?.id,
       category: finding?.category,
       severity: finding?.severity,
-      message: truncateText(firstString(finding?.message, finding?.summary, null), 320)
+      message: truncateText(firstString(finding?.message, finding?.summary, null), PROVIDER_CONTEXT_LIMITS.technicalMessage)
     })),
     quality_signal_summary: value.quality_signal_summary,
     local_release_gate: value.local_release_gate
@@ -2599,10 +2661,10 @@ function compactProviderMechanicalReviewSummary(value) {
 }
 
 function compactProviderArtifactReferences(values) {
-  return arrayOrEmpty(values).slice(0, 32).map((reference, index) => compactAdapterObject({
+  return arrayOrEmpty(values).slice(0, PROVIDER_CONTEXT_LIMITS.artifactReferences).map((reference, index) => compactAdapterObject({
     id: truncateText(firstString(reference?.id, reference?.ref_id, `artifact-reference-${index + 1}`), 100),
     type: truncateText(firstString(reference?.type, reference?.evidence_class, reference?.kind, 'artifact_reference'), 100),
-    description: truncateText(firstString(reference?.description, reference?.summary, reference?.label, null), 220),
+    description: truncateText(firstString(reference?.description, reference?.summary, reference?.label, null), PROVIDER_CONTEXT_LIMITS.artifactDescription),
     content_included: reference?.content_included === true,
     local_reference: true
   }));
@@ -2662,9 +2724,9 @@ function compactProviderBenchmarkReadiness(value) {
     status: value.status,
     benchmark_case_id: value.benchmark_case_id,
     case_id: value.case_id,
-    required_mentions: compactTextArray(value.required_mentions, 80, 500),
-    required_dimensions: compactTextArray(value.required_dimensions, 40, 180),
-    forbidden_claims: compactTextArray(value.forbidden_claims, 80, 500),
+    required_mention_count: normalizeStringArray(value.required_mentions).length,
+    required_dimension_count: normalizeStringArray(value.required_dimensions).length,
+    forbidden_claim_count: normalizeStringArray(value.forbidden_claims).length,
     ready: value.ready === true
   });
 }
