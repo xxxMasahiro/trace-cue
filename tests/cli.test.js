@@ -4078,6 +4078,11 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
             claim: 'The page is readable but needs stronger trust support.',
             supported_by_roles: ['content_reviewer'],
             confidence: { evidence: 'medium', judgment: 'medium', implementation: 'medium' }
+          }, {
+            id: 'api-human-superior-claim',
+            claim: 'This review is human-superior for this page.',
+            supported_by_roles: ['content_reviewer'],
+            confidence: { evidence: 'medium', judgment: 'medium', implementation: 'medium' }
           }],
           owner_decision_requests: [{
             id: 'api-owner-proof',
@@ -4122,6 +4127,12 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiRequestPayload.plan.human_review_contract.output_requirements.reader_feeling_required, true);
   assert.equal(apiRequestPayload.plan.provider_instruction_contract.output_sections.includes('mechanical_vs_human_review'), true);
   assert.doesNotMatch(apiRunResult.stdout, /api-secret-value|provider\.example/);
+  const apiResultFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-api', 'result.json'), 'utf8'));
+  assert.equal(apiResultFile.review_claims.some((claim) => /human[- ]superior|human[- ]equivalent|better than human/i.test(claim.claim)), false);
+  assert.equal(apiResultFile.claim_integrity.rejected_claim_count, 1);
+  assert.equal(apiResultFile.claim_integrity.rejected_claims[0].source, 'provider_review_claim');
+  assert.equal(apiResultFile.claim_integrity.rejected_claims[0].reasons.includes('equality_or_superiority_claim_text'), true);
+  assert.equal(apiResultFile.claim_integrity.claim_numerator_safe, false);
 
   const loopbackAdapterFailure = await executeCli(apiRunArgs, {
     cwd,
@@ -5647,6 +5658,19 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
           ...(matrixBaseResult.dogfood_metadata ?? {}),
           case_id: caseId
         },
+        claim_integrity: {
+          ...(matrixBaseResult.claim_integrity ?? {}),
+          status: 'claim_integrity_satisfied',
+          claim_numerator_safe: true,
+          supported_claim_count: matrixBaseResult.review_claims.length,
+          explicit_claim_count: matrixBaseResult.review_claims.length,
+          rejected_claim_count: 0,
+          missing_evidence_claim_count: 0,
+          placeholder_claim_count: 0,
+          rejected_claims: [],
+          advisory_only: true,
+          gate_effect: 'none'
+        },
         xhigh_multi_round_review: effort === 'xhigh'
           ? {
               ...(matrixBaseResult.xhigh_multi_round_review ?? {}),
@@ -7153,6 +7177,87 @@ test('agentic human review responses adapter converts requests without leaking c
   assert.deepEqual(benchmarkSchema.forbidden_claims.items.properties.present.enum, [false]);
 });
 
+test('agentic human review responses adapter accepts staged claims supported by previous-stage roles', async () => {
+  const request = adapterTraceCueRequest();
+  request.plan.review_effort = { mode: 'standard' };
+  request.plan.sub_agents = [{
+    role: 'synthesis_agent',
+    display_name: 'Synthesis Agent',
+    effort: 'deep',
+    round: 3
+  }];
+  request.stage_execution = {
+    schema_version: '0.1.0',
+    staged_xhigh_execution_version: '1.0.0',
+    mode: 'staged_xhigh_provider_call',
+    stage_id: 'xhigh-round-3',
+    stage_kind: 'synthesis_and_contract',
+    final_contract_stage: true,
+    required_roles: ['synthesis_agent'],
+    required_round: 3,
+    previous_stage_summaries: [{
+      stage_id: 'xhigh-round-1',
+      stage_output_hash: 'e'.repeat(64),
+      roles: ['content_reviewer'],
+      role_summaries: [{
+        role: 'content_reviewer',
+        round: 1,
+        summary: 'The content reviewer identified a supportable clarity issue.'
+      }]
+    }],
+    stage_outputs_are_final_evidence: false,
+    final_advisory_required: true,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  const result = await handleAgenticHumanReviewResponsesAdapterRequest({
+    method: 'POST',
+    url: '/agentic-human-review',
+    headers: {
+      host: '127.0.0.1:8787',
+      authorization: 'Bearer adapter-secret-value',
+      'content-type': 'application/json'
+    },
+    remoteAddress: '127.0.0.1',
+    bodyText: JSON.stringify(request),
+    env: adapterEnv(),
+    config: { contractRepairAttempts: 0 },
+    fetchImpl: async () => jsonResponse({
+      output_text: JSON.stringify({
+        summary: 'The final staged advisory kept prior role support for optional claims.',
+        role_opinions: [{
+          role: 'synthesis_agent',
+          display_name: 'Synthesis Agent',
+          effort: 'deep',
+          round: 3,
+          summary: 'The synthesis agent integrated the prior content review.',
+          findings: [],
+          uncertainties: []
+        }],
+        review_claims: [{
+          id: 'prior-role-supported-claim',
+          claim: 'The article needs clearer support for the reader-facing conclusion.',
+          supported_by_roles: ['content_reviewer']
+        }, {
+          id: 'unknown-role-claim',
+          claim: 'The article claim was checked by an unknown reviewer.',
+          supported_by_roles: ['unplanned_reviewer']
+        }]
+      })
+    }),
+    now: fixedNow
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.deepEqual(result.body.review_claims.map((claim) => claim.id), ['prior-role-supported-claim']);
+  assert.deepEqual(result.body.review_claims[0].supported_by_roles, ['content_reviewer']);
+  assert.equal(result.body.adapter_claim_filtering.original_claim_count, 2);
+  assert.equal(result.body.adapter_claim_filtering.rejected_claim_count, 1);
+  assert.equal(result.body.adapter_claim_filtering.rejected_claims[0].unsupported_role_count, 1);
+  assert.equal(result.body.adapter_claim_filtering.rejected_claims[0].reasons.includes('evidence_refs_or_supported_by_roles'), true);
+  assert.doesNotMatch(JSON.stringify(result.body), /adapter-secret-value|provider-secret-value|output_text/);
+});
+
 test('agentic human review responses adapter rejects abstract request models before provider fetch', async () => {
   const request = adapterTraceCueRequest();
   let fetchCalls = 0;
@@ -8020,6 +8125,13 @@ test('agentic human review responses adapter keeps xhigh repair retry compact un
       id: 'supported-xhigh-claim',
       claim: 'The visible copy needs clearer evidence support.',
       supported_by_roles: ['content_reviewer']
+    }, {
+      id: 'unsupported-xhigh-placeholder-claim',
+      claim: 'Claim 1.'
+    }, {
+      id: 'unsupported-xhigh-superiority-claim',
+      claim: 'This xhigh review is better than human review.',
+      supported_by_roles: ['synthesis_agent']
     }]
   };
   const observedRequests = [];
@@ -8071,6 +8183,11 @@ test('agentic human review responses adapter keeps xhigh repair retry compact un
   assert.equal(result.body.adapter_boundary.contract_repair_attempts_performed, 1);
   assert.equal(result.body.agentic_human_review_findings.length, 12);
   assert.equal(result.body.critique_records.length, 2);
+  assert.deepEqual(result.body.review_claims.map((claim) => claim.id), ['supported-xhigh-claim']);
+  assert.equal(result.body.adapter_claim_filtering.original_claim_count, 3);
+  assert.equal(result.body.adapter_claim_filtering.rejected_claim_count, 2);
+  assert.equal(result.body.adapter_claim_filtering.rejected_claims.some((claim) => claim.reasons.includes('equality_or_superiority_claim_text')), true);
+  assert.doesNotMatch(JSON.stringify(result.body.review_claims), /better than human|placeholder|Claim 1/i);
 });
 
 test('agentic human review responses adapter keeps HTTP request timeout above provider timeout', async () => {
@@ -8250,11 +8367,11 @@ test('agentic human review responses adapter repairs forbidden claims that are m
   assert.match(observedRequests[1].input, /forbidden claim record must set present=false/);
 });
 
-test('agentic human review responses adapter retries repairable review claim gaps once', async () => {
+test('agentic human review responses adapter filters unsupported optional review claims without retrying', async () => {
   const request = adapterTraceCueRequest();
   request.plan.review_effort = { mode: 'standard' };
-  const invalidAdvisory = {
-    summary: 'The adapter provider returned an unsupported review claim.',
+  const advisory = {
+    summary: 'The adapter provider returned supported and unsupported optional review claims.',
     role_opinions: [{
       role: 'content_reviewer',
       display_name: 'Content Reviewer',
@@ -8265,15 +8382,15 @@ test('agentic human review responses adapter retries repairable review claim gap
       uncertainties: []
     }],
     review_claims: [{
-      id: 'placeholder-claim',
-      claim: 'Agentic review claim.'
-    }]
-  };
-  const repairedAdvisory = {
-    ...invalidAdvisory,
-    review_claims: [{
       id: 'supported-claim',
       claim: 'The visible copy is understandable but needs stronger supporting evidence.',
+      supported_by_roles: ['content_reviewer']
+    }, {
+      id: 'placeholder-claim',
+      claim: 'Agentic review claim.'
+    }, {
+      id: 'unsupported-human-claim',
+      claim: 'This result is human-superior for this target.',
       supported_by_roles: ['content_reviewer']
     }]
   };
@@ -8292,19 +8409,24 @@ test('agentic human review responses adapter retries repairable review claim gap
     config: { contractRepairAttempts: 1 },
     fetchImpl: async (url, init) => {
       observedRequests.push(JSON.parse(init.body));
-      return jsonResponse({
-        output_text: JSON.stringify(observedRequests.length === 1 ? invalidAdvisory : repairedAdvisory)
-      });
+      return jsonResponse({ output_text: JSON.stringify(advisory) });
     },
     now: fixedNow
   });
 
   assert.equal(result.statusCode, 200);
-  assert.equal(observedRequests.length, 2);
+  assert.equal(observedRequests.length, 1);
   assert.equal(result.body.review_claims[0].id, 'supported-claim');
   assert.equal(result.body.review_claims[0].supported_by_roles[0], 'content_reviewer');
-  assert.equal(result.body.adapter_boundary.contract_repair_attempts_performed, 1);
-  assert.match(observedRequests[1].input, /invalid_review_claims/);
+  assert.equal(result.body.review_claims.length, 1);
+  assert.equal(result.body.adapter_claim_filtering.original_claim_count, 3);
+  assert.equal(result.body.adapter_claim_filtering.accepted_claim_count, 1);
+  assert.equal(result.body.adapter_claim_filtering.rejected_claim_count, 2);
+  assert.equal(result.body.adapter_claim_filtering.rejected_claims.some((claim) => claim.reasons.includes('non_placeholder_claim')), true);
+  assert.equal(result.body.adapter_claim_filtering.rejected_claims.some((claim) => claim.reasons.includes('equality_or_superiority_claim_text')), true);
+  assert.equal(result.body.adapter_boundary.contract_repair_attempts_performed, 0);
+  assert.equal(result.body.adapter_boundary.claim_filtering.rejected_claim_count, 2);
+  assert.doesNotMatch(JSON.stringify(result.body.review_claims), /placeholder-claim|human[- ]superior|human[- ]equivalent|better than human/i);
   assert.doesNotMatch(JSON.stringify(result.body), /adapter-secret-value|provider-secret-value|output_text/);
 });
 

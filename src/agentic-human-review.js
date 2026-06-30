@@ -9893,6 +9893,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     role_opinions: roleOpinions,
     role_execution_records: buildRoleExecutionRecords({ plan, roleOpinions, boundary }),
     review_claims: claims,
+    adapter_claim_filtering: normalizeAdapterClaimFiltering(input.adapter_claim_filtering ?? input.adapter_boundary?.claim_filtering),
     claim_integrity: claimSet.integrity,
     round_records: roundRecords,
     critique_records: critiqueRecords,
@@ -11736,7 +11737,8 @@ function buildRoleExecutionRecords({ plan, roleOpinions, boundary }) {
 function buildReviewClaimSet({ resultId, input, findings, roleOpinions }) {
   const reportedRoles = reportedRoleOpinions(roleOpinions).map((opinion) => opinion.role);
   const claimValues = Array.isArray(input.review_claims) ? input.review_claims : [];
-  const rejectedClaims = [];
+  const adapterFiltering = normalizeAdapterClaimFiltering(input.adapter_claim_filtering ?? input.adapter_boundary?.claim_filtering);
+  const rejectedClaims = [...adapterFiltering.rejected_claims];
   const explicitClaims = [];
   for (const [index, item] of claimValues.slice(0, 25).entries()) {
     const claim = normalizeReviewClaimRecord({
@@ -11776,7 +11778,7 @@ function buildReviewClaimSet({ resultId, input, findings, roleOpinions }) {
     integrity: buildClaimIntegritySummary({
       claims,
       rejectedClaims,
-      explicit_claim_count: claimValues.length,
+      explicit_claim_count: Math.max(claimValues.length, adapterFiltering.original_claim_count),
       derived_finding_claim_count: findingClaims.length
     })
   };
@@ -11821,6 +11823,9 @@ function unsupportedReviewClaimReasons(claim) {
   if (isPlaceholderReviewClaimText(claim?.claim)) {
     reasons.push('placeholder_claim_text');
   }
+  if (isEqualityOrSuperiorityReviewClaimText(claim?.claim)) {
+    reasons.push('equality_or_superiority_claim_text');
+  }
   if ((claim?.evidence_refs ?? []).length === 0 && (claim?.supported_by_roles ?? []).length === 0) {
     reasons.push('claim_support_missing');
   }
@@ -11844,6 +11849,10 @@ function isPlaceholderReviewClaimText(value) {
     || /^claim\s+\d+$/.test(normalized);
 }
 
+function isEqualityOrSuperiorityReviewClaimText(value) {
+  return /\bhuman[-\s]?(equivalent|superior)\b|better than human|equal(?:\s+to|\s+or\s+superior\s+to)?\s+human/i.test(String(value ?? ''));
+}
+
 function rejectedReviewClaimDiagnostic({ claim, index, source, reasons }) {
   return {
     index,
@@ -11854,6 +11863,28 @@ function rejectedReviewClaimDiagnostic({ claim, index, source, reasons }) {
     supported_role_count: Array.isArray(claim?.supported_by_roles) ? claim.supported_by_roles.length : 0,
     placeholder_text: isPlaceholderReviewClaimText(claim?.claim),
     gate_effect: claim?.gate_effect ?? 'none'
+  };
+}
+
+function normalizeAdapterClaimFiltering(value) {
+  const source = isPlainObject(value) ? value : {};
+  const rejectedClaims = (Array.isArray(source.rejected_claims) ? source.rejected_claims : []).slice(0, 25).map((claim, index) => ({
+    index: Number.isFinite(Number(claim?.index)) ? Number(claim.index) : index,
+    source: 'adapter_review_claim_filter',
+    claim_id: truncateText(claim?.claim_id ?? claim?.id ?? `adapter-filtered-claim-${index + 1}`, 120),
+    reasons: normalizeStringArray(claim?.reasons ?? claim?.missing_fields).slice(0, 8),
+    evidence_ref_count: Number.isFinite(Number(claim?.evidence_ref_count)) ? Number(claim.evidence_ref_count) : 0,
+    supported_role_count: Number.isFinite(Number(claim?.supported_role_count)) ? Number(claim.supported_role_count) : 0,
+    placeholder_text: claim?.placeholder_text === true,
+    gate_effect: 'none'
+  }));
+  return {
+    original_claim_count: Number.isFinite(Number(source.original_claim_count)) ? Number(source.original_claim_count) : 0,
+    accepted_claim_count: Number.isFinite(Number(source.accepted_claim_count)) ? Number(source.accepted_claim_count) : 0,
+    rejected_claim_count: Number.isFinite(Number(source.rejected_claim_count)) ? Number(source.rejected_claim_count) : rejectedClaims.length,
+    rejected_claims: rejectedClaims,
+    advisory_only: true,
+    gate_effect: 'none'
   };
 }
 
