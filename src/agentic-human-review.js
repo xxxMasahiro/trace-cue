@@ -5121,22 +5121,162 @@ function normalizeClaimPolicy(input) {
   };
 }
 
+function claimAuditTextSources({ result, claimRecords }) {
+  return [
+    ...claimRecords.map((claim) => ({
+      source_kind: 'review_claim',
+      source_id: claim.id ?? null,
+      text: claim.claim,
+      evidence_refs: claim.evidence_refs ?? []
+    })),
+    {
+      source_kind: 'non_engineer_summary.main_takeaway',
+      source_id: null,
+      text: result.non_engineer_summary?.main_takeaway,
+      evidence_refs: []
+    },
+    {
+      source_kind: 'human_report_v3.plain_language_takeaway',
+      source_id: null,
+      text: result.human_report_v3?.plain_language_takeaway,
+      evidence_refs: []
+    },
+    {
+      source_kind: 'human_report_v3.highest_priority_fix',
+      source_id: null,
+      text: result.human_report_v3?.highest_priority_fix,
+      evidence_refs: []
+    }
+  ].filter((source) => String(source.text ?? '').trim());
+}
+
+function buildClaimAuditForbiddenClaimMatches({ result, claimRecords, policy }) {
+  const sources = claimAuditTextSources({ result, claimRecords });
+  const forbiddenMatches = [];
+  const nonBlockingMentions = [];
+  for (const pattern of policy.forbidden_claim_patterns) {
+    const blockingMentions = [];
+    for (const source of sources) {
+      if (!textIncludesLoose(source.text, pattern)) {
+        continue;
+      }
+      const classification = classifyClaimAuditForbiddenMention({ result, pattern, source });
+      const mention = {
+        pattern,
+        source_kind: source.source_kind,
+        source_id: source.source_id,
+        polarity: classification.polarity,
+        blocks_gate: classification.blocks_gate,
+        reason: classification.reason,
+        evidence_ref_count: normalizeArtifactReferences(source.evidence_refs).length
+      };
+      if (classification.blocks_gate) {
+        blockingMentions.push(mention);
+      } else {
+        nonBlockingMentions.push(mention);
+      }
+    }
+    if (blockingMentions.length > 0) {
+      forbiddenMatches.push({
+        pattern,
+        match_count: blockingMentions.length,
+        matches: blockingMentions.slice(0, 10)
+      });
+    }
+  }
+  return {
+    forbiddenMatches,
+    nonBlockingMentions: nonBlockingMentions.slice(0, 50),
+    blockingMatchCount: forbiddenMatches.reduce((sum, match) => sum + Number(match.match_count ?? 0), 0)
+  };
+}
+
+function classifyClaimAuditForbiddenMention({ result, pattern, source }) {
+  const coverageRecord = findClaimAuditForbiddenCoverageRecord({ result, pattern });
+  const backedByStructuredAbsence = claimAuditForbiddenCoverageAbsenceBacked(coverageRecord);
+  const backedByForbiddenEvidenceRef = artifactReferencesContainForbiddenClaimContext(source.evidence_refs);
+  if (hasForbiddenClaimAbsenceLanguage(source.text, pattern) && (backedByForbiddenEvidenceRef || backedByStructuredAbsence)) {
+    return {
+      polarity: 'absence_check',
+      blocks_gate: false,
+      reason: backedByForbiddenEvidenceRef ? 'evidence_backed_absence_claim' : 'structured_absence_coverage'
+    };
+  }
+  return {
+    polarity: 'asserted_or_ambiguous',
+    blocks_gate: true,
+    reason: 'forbidden_policy_text_without_supported_absence_context'
+  };
+}
+
+function findClaimAuditForbiddenCoverageRecord({ result, pattern }) {
+  const records = Array.isArray(result.benchmark_requirement_coverage?.forbidden_claims)
+    ? result.benchmark_requirement_coverage.forbidden_claims
+    : [];
+  return records.find((record) => textIncludesLoose(record?.claim ?? record?.forbidden_claim ?? record?.id ?? record?.label, pattern)) ?? null;
+}
+
+function claimAuditForbiddenCoverageAbsenceBacked(record) {
+  if (!record || record.present !== false || record.forbidden_claim_presence_contradiction === true) {
+    return false;
+  }
+  const status = String(record.status ?? '').toLowerCase().replace(/[-_]+/g, ' ').trim();
+  const absenceStatus = record.forbidden_claim_absence_confirmed === true
+    || ['absent', 'not present', 'not found', 'not detected'].includes(status);
+  const evidenceRefs = normalizeArtifactReferences(record.evidence_refs ?? record.artifacts);
+  const evidenceBacked = record.evidence_backed === true || secretSafeText(record.evidence ?? record.reason ?? '', 700).length > 0;
+  const evidenceRefBacked = record.evidence_ref_backed === true || evidenceRefs.length > 0;
+  return absenceStatus && evidenceBacked && evidenceRefBacked;
+}
+
+function artifactReferencesContainForbiddenClaimContext(values) {
+  return normalizeArtifactReferences(values).some((ref) => {
+    const text = [
+      ref.id,
+      ref.ref_id,
+      ref.type,
+      ref.description,
+      ref.path
+    ].filter(Boolean).join(' ');
+    return textIncludesLoose(text, 'forbidden claim');
+  });
+}
+
+function normalizeClaimAuditContextText(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function claimAuditAbsenceLanguagePresent(value) {
+  const text = normalizeClaimAuditContextText(value);
+  return /\b(avoid|avoids|avoided|avoiding|without|absence|absent|never|no)\b/.test(text)
+    || /\b(does not|do not|did not|doesn't|don't|is not|was not|not present|not included|not asserted|not assert|not claiming|not claim|not stated|not state|not detected|not found)\b/.test(text);
+}
+
+function hasForbiddenClaimAbsenceLanguage(text, pattern) {
+  const normalizedText = normalizeClaimAuditContextText(text);
+  const normalizedPattern = normalizeClaimAuditContextText(pattern);
+  if (!normalizedPattern) {
+    return false;
+  }
+  const index = normalizedText.indexOf(normalizedPattern);
+  if (index < 0) {
+    return false;
+  }
+  const context = normalizedText.slice(Math.max(0, index - 160), index + normalizedPattern.length + 160);
+  return claimAuditAbsenceLanguagePresent(context)
+    && /\b(forbidden|claim|claims|assert|asserts|statement|language|present|absent|detected|found|policy|coverage|check|approval)\b/.test(context);
+}
+
 function buildClaimAudit({ result, resultPath, resultHash, policy, policyPath, policyHash, now }) {
   const claimRecords = normalizeReviewClaims(result.review_claims);
   const claimIntegrity = buildResultClaimIntegrity(result);
-  const claimTexts = [
-    ...claimRecords.map((claim) => claim.claim),
-    result.non_engineer_summary?.main_takeaway,
-    result.human_report_v3?.plain_language_takeaway,
-    result.human_report_v3?.highest_priority_fix
-  ].filter(Boolean);
-  const forbiddenMatches = [];
-  for (const pattern of policy.forbidden_claim_patterns) {
-    const matched = claimTexts.filter((text) => textIncludesLoose(String(text).toLowerCase(), pattern));
-    if (matched.length > 0) {
-      forbiddenMatches.push({ pattern, match_count: matched.length });
-    }
-  }
+  const claimTexts = claimAuditTextSources({ result, claimRecords }).map((source) => source.text);
+  const forbiddenClaimAudit = buildClaimAuditForbiddenClaimMatches({ result, claimRecords, policy });
+  const forbiddenMatches = forbiddenClaimAudit.forbiddenMatches;
   const missingEvidenceClaims = policy.required_evidence_for_claims
     ? claimRecords.filter((claim) => claim.evidence_refs.length === 0 && claim.supported_by_roles.length === 0)
     : [];
@@ -5169,6 +5309,9 @@ function buildClaimAudit({ result, resultPath, resultHash, policy, policyPath, p
     policy_hash: policyHash,
     claim_count: claimRecords.length,
     forbidden_claim_matches: forbiddenMatches,
+    blocking_forbidden_claim_match_count: forbiddenClaimAudit.blockingMatchCount,
+    non_blocking_forbidden_claim_mentions: forbiddenClaimAudit.nonBlockingMentions,
+    non_blocking_forbidden_claim_mention_count: forbiddenClaimAudit.nonBlockingMentions.length,
     missing_evidence_claim_count: missingEvidenceClaims.length,
     claim_integrity: claimIntegrity,
     equality_or_superiority_text_present: equalityTextPresent,
@@ -10721,7 +10864,10 @@ function buildReviewClaimSet({ resultId, input, findings, roleOpinions }) {
     }
     explicitClaims.push(claim);
   }
-  const findingClaims = findings.slice(0, 25 - explicitClaims.length).map((finding) => ({
+  const findingClaims = findings
+    .filter(shouldDeriveReviewClaimFromFinding)
+    .slice(0, 25 - explicitClaims.length)
+    .map((finding) => ({
     id: `${finding.id}-claim`,
     claim: finding.message,
     evidence_refs: finding.evidence_refs,
@@ -10751,6 +10897,20 @@ function buildReviewClaimSet({ resultId, input, findings, roleOpinions }) {
 
 function buildReviewClaims(args) {
   return buildReviewClaimSet(args).claims;
+}
+
+function shouldDeriveReviewClaimFromFinding(finding) {
+  return !isForbiddenClaimCoverageOnlyFinding(finding);
+}
+
+function isForbiddenClaimCoverageOnlyFinding(finding) {
+  const text = [
+    finding?.category,
+    finding?.message,
+    finding?.recommendation
+  ].filter(Boolean).join(' ');
+  return artifactReferencesContainForbiddenClaimContext(finding?.evidence_refs)
+    && claimAuditAbsenceLanguagePresent(text);
 }
 
 function normalizeReviewClaimRecord({ value, id, source }) {

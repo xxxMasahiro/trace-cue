@@ -5125,6 +5125,106 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(uppercaseForbiddenClaimComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.forbidden_claim_score < 1, true);
   assert.equal(uppercaseForbiddenClaimComparisonBody.data.agentic_human_review_human_baseline_comparison.diagnostics.forbidden_claim_absence_evidence_missing.length > 0, true);
 
+  const absenceClaimAuditResultPath = path.join(cwd, 'agentic-forbidden-absence-claim-audit-result.json');
+  const absenceClaimAuditResult = JSON.parse(await readFile(path.join(cwd, '.browser-debug/agentic-human-review-results/agentic-execution-api/result.json'), 'utf8'));
+  absenceClaimAuditResult.review_claims = [{
+    id: 'absence-backed-forbidden-claim-check',
+    claim: 'The advisory avoids forbidden claims such as release is approved and stays advisory-only.',
+    evidence_refs: [{
+      id: 'benchmark-forbidden-claim-1',
+      type: 'benchmark_forbidden_claim',
+      description: 'Benchmark forbidden claim check for the configured release approval policy.'
+    }],
+    supported_by_roles: ['content_reviewer'],
+    confidence: { evidence: 'high', judgment: 'high', implementation: 'inconclusive' },
+    subjective_judgment: true,
+    gate_effect: 'none'
+  }];
+  absenceClaimAuditResult.claim_integrity = {
+    schema_version: '0.1.0',
+    version: '1.0.0',
+    status: 'claim_integrity_satisfied',
+    claim_numerator_safe: true,
+    supported_claim_count: 1,
+    explicit_claim_count: 1,
+    derived_finding_claim_count: 0,
+    rejected_claim_count: 0,
+    missing_evidence_claim_count: 0,
+    placeholder_claim_count: 0,
+    rejected_claims: [],
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  absenceClaimAuditResult.benchmark_requirement_coverage = {
+    ...(absenceClaimAuditResult.benchmark_requirement_coverage ?? {}),
+    forbidden_claims: [{
+      claim: 'release is approved',
+      present: false,
+      status: 'absent',
+      evidence: 'The advisory output explicitly keeps the configured release approval claim absent.',
+      evidence_refs: [{
+        id: 'benchmark-forbidden-claim-1',
+        type: 'benchmark_forbidden_claim',
+        description: 'Benchmark forbidden claim check for the configured release approval policy.'
+      }],
+      structured_record_present: true,
+      evidence_backed: true,
+      evidence_ref_backed: true,
+      forbidden_claim_absence_confirmed: true,
+      forbidden_claim_presence_contradiction: false
+    }]
+  };
+  await writeFile(absenceClaimAuditResultPath, JSON.stringify(absenceClaimAuditResult, null, 2), 'utf8');
+  const absenceClaimAudit = await executeCli([
+    'agentic',
+    'review',
+    'claim',
+    'audit',
+    '--result',
+    'agentic-forbidden-absence-claim-audit-result.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(absenceClaimAudit.exitCode, 0);
+  const absenceClaimAuditData = JSON.parse(absenceClaimAudit.stdout).data.agentic_human_review_claim_audit;
+  assert.equal(absenceClaimAuditData.status, 'claim_policy_passed_for_advisory_result');
+  assert.equal(absenceClaimAuditData.forbidden_claim_matches.length, 0);
+  assert.equal(absenceClaimAuditData.blocking_forbidden_claim_match_count, 0);
+  assert.equal(absenceClaimAuditData.non_blocking_forbidden_claim_mention_count, 1);
+  assert.equal(absenceClaimAuditData.non_blocking_forbidden_claim_mentions[0].polarity, 'absence_check');
+
+  const assertedClaimAuditResultPath = path.join(cwd, 'agentic-forbidden-asserted-claim-audit-result.json');
+  const assertedClaimAuditResult = JSON.parse(JSON.stringify(absenceClaimAuditResult));
+  assertedClaimAuditResult.review_claims = [{
+    id: 'asserted-forbidden-claim',
+    claim: 'release is approved',
+    evidence_refs: [{ id: 'text-snippet-1', type: 'bounded_text_snippet', description: 'Bounded local text evidence.' }],
+    supported_by_roles: ['content_reviewer'],
+    confidence: { evidence: 'high', judgment: 'high', implementation: 'inconclusive' },
+    subjective_judgment: true,
+    gate_effect: 'none'
+  }];
+  assertedClaimAuditResult.claim_integrity = {
+    ...absenceClaimAuditResult.claim_integrity,
+    supported_claim_count: 1,
+    explicit_claim_count: 1
+  };
+  await writeFile(assertedClaimAuditResultPath, JSON.stringify(assertedClaimAuditResult, null, 2), 'utf8');
+  const assertedClaimAudit = await executeCli([
+    'agentic',
+    'review',
+    'claim',
+    'audit',
+    '--result',
+    'agentic-forbidden-asserted-claim-audit-result.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(assertedClaimAudit.exitCode, 0);
+  const assertedClaimAuditData = JSON.parse(assertedClaimAudit.stdout).data.agentic_human_review_claim_audit;
+  assert.equal(assertedClaimAuditData.status, 'claim_policy_warnings_present');
+  assert.equal(assertedClaimAuditData.forbidden_claim_matches.length, 1);
+  assert.equal(assertedClaimAuditData.blocking_forbidden_claim_match_count, 1);
+  assert.equal(assertedClaimAuditData.non_blocking_forbidden_claim_mention_count, 0);
+
   const evidenceSetPath = path.join(cwd, 'agentic-evidence-set.json');
   await writeFile(evidenceSetPath, JSON.stringify({
     type: 'agentic_human_review_evidence_set_manifest',
