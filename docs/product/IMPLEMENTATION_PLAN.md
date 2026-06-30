@@ -9,6 +9,16 @@
 
 ## Phase Plan
 
+### Agentic Human Review Long Dogfood HTTP Transport Hardening
+
+Purpose: make approved long-running owner-contract dogfood runs wait for the configured TraceCue and adapter timeouts instead of failing around a hidden bundled fetch header-timeout default. The slice remains generic across target URLs, providers, models, benchmark cases, and artifact layouts by changing only the reusable HTTP(S) transport path and safe diagnostics.
+
+Implemented scope: add a dependency-free repository-local bounded HTTP(S) transport for default generic API provider requests, Responses adapter upstream requests, and the packaged adapter CLI startup path; preserve injected fetch transports for tests and callers; keep provider timeout, response-size, redirect, credential, raw-response, and advisory-only boundaries; add safe cause-name and cause-code diagnostics for generic-provider request failures; keep the adapter server request/header/socket timeout policy explicit for long dogfood. Non-scope: changing timeout defaults, automatic provider reruns, credential storage, raw provider response storage, MCP Agentic Human Review execution, deterministic review mutation, release-gate mutation, human-equivalent or human-superior claims, parent-repository changes, consumer-repository changes, dependency additions, or package publication.
+
+Implementation order: add shared bounded transport; wire generic provider and Responses adapter defaults while preserving injected fetch behavior; harden safe diagnostics; update focused no-browser tests and long-dogfood documentation; run syntax checks, focused Agentic Human Review tests, product docs/security checks, and product gate; then rerun the approved owner-contract xhigh dogfood cells starting with the previously failing case.
+
+Recovery: this slice is additive and local. Existing Agentic Human Review proposal, plan, run, status/list, report-quality, benchmark, calibrate, compare, evidence-set, human-baseline lifecycle, xhigh, claim-readiness, longitudinal quality, claim-standard-gate, evidence regeneration planning, visual review, agent execution, MCP profiles, safe HTTP MCP, release readiness, artifact-root policy, alias compatibility, deterministic findings, and release gates remain compatible. Rollback is a standard Git revert of the transport, diagnostics, docs, and focused tests; no artifact migration, publication, credential storage, raw response persistence, release-gate change, provider-call authorization expansion, or MCP permission expansion is involved.
+
 ### Agentic Human Review Owner-Baseline Recovery And Adapter Timeout Diagnostics
 
 Purpose: make the next real-page standard/deep/xhigh dogfood cycle recoverable without misleading local-only rerun guidance. The slice keeps recovery generic across target URLs, benchmark cases, models, and artifact layouts by deriving contract state from owner-baseline comparison records, evidence-set records, and approved plan artifacts rather than from page-specific literals.

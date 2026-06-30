@@ -11,8 +11,7 @@ if (parsed.help) {
 } else {
   try {
     const adapter = await startAgenticHumanReviewResponsesAdapter(parsed.options, {
-      env: process.env,
-      fetch: globalThis.fetch
+      env: process.env
     });
     const payload = {
       status: 'listening',

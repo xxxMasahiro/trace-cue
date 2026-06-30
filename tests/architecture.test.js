@@ -305,6 +305,7 @@ test('agentic human review Responses adapter stays loopback-only and advisory-on
 
   assert.match(bin, /startAgenticHumanReviewResponsesAdapter/);
   assert.match(bin, /--provider-model/);
+  assert.doesNotMatch(bin, /globalThis\.fetch/);
   assert.doesNotMatch(bin, /node:child_process|from 'playwright'|import\('playwright'\)|\bwriteFile\b|\bunlink\b|\brmdir\b/);
 
   assert.match(api, /startAgenticHumanReviewResponsesAdapter/);

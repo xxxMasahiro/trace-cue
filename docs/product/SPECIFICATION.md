@@ -577,6 +577,8 @@ Adapter configuration is environment-variable and option driven:
 - `AGENTIC_HUMAN_REVIEW_API_TIMEOUT_MS`: optional positive-integer timeout for the TraceCue generic provider request. The default remains 30000 ms.
 - Adapter `--timeout <ms>`: optional positive-integer timeout for the adapter's upstream provider request. This is intentionally separate from `AGENTIC_HUMAN_REVIEW_API_TIMEOUT_MS`; long live dogfood runs must align both values explicitly. The adapter startup output must report the effective timeout without printing credential values.
 
+For long loopback dogfood, TraceCue's generic provider path, the Responses adapter's upstream provider path, and the packaged adapter CLI startup path use a repository-local bounded HTTP(S) transport by default instead of relying on bundled fetch transport defaults. The transport is still timeout, redirect, response-size, and credential-disclosure bounded by the existing provider contracts; injected test transports remain supported. This prevents a hidden client header-timeout default from ending an approved slow dogfood run before the configured `AGENTIC_HUMAN_REVIEW_API_TIMEOUT_MS` or adapter `--timeout` value.
+
 Boundary behavior:
 
 - The adapter binds only to loopback hosts and rejects non-loopback Host or Origin headers.

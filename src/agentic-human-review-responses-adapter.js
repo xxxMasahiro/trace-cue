@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { SCHEMA_VERSION } from './constants.js';
+import { nodeHttpFetch } from './http-transport.js';
 import { redact, redactString, truncateText } from './redaction.js';
 
 export const AGENTIC_HUMAN_REVIEW_RESPONSES_ADAPTER_VERSION = '1.0.0';
@@ -268,14 +269,15 @@ export async function startAgenticHumanReviewResponsesAdapter(options = {}, cont
       bodyText,
       config,
       env: context.env ?? process.env,
-      fetchImpl: context.fetch ?? globalThis.fetch,
+      fetchImpl: context.fetch ?? nodeHttpFetch,
       now: context.now
     });
     writeAdapterResponse(response, result);
   });
-  server.requestTimeout = config.timeoutMs + 5000;
-  server.headersTimeout = Math.max(server.headersTimeout, config.timeoutMs + 10000);
+  server.requestTimeout = config.timeoutMs + 15000;
+  server.headersTimeout = config.timeoutMs + 10000;
   server.keepAliveTimeout = Math.max(server.keepAliveTimeout, 5000);
+  server.timeout = 0;
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(config.port, config.host, () => {
@@ -308,7 +310,7 @@ export async function handleAgenticHumanReviewResponsesAdapterRequest({
   bodyText = '',
   config: configInput = {},
   env = process.env,
-  fetchImpl = globalThis.fetch,
+  fetchImpl = nodeHttpFetch,
   now = () => new Date()
 } = {}) {
   let config;
@@ -2819,7 +2821,9 @@ async function dispatchProviderRequest({ endpoint, credential, requestText, time
       },
       body: requestText,
       redirect: 'error',
-      signal: controller?.signal
+      signal: controller?.signal,
+      timeoutMs,
+      maxResponseBytes
     });
   } catch (error) {
     if (timer) {

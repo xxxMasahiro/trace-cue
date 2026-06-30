@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { SCHEMA_VERSION } from './constants.js';
+import { nodeHttpFetch } from './http-transport.js';
 import { redact, truncateText } from './redaction.js';
 
 export const AGENTIC_REVIEW_API_ENDPOINT_ENV = 'AGENTIC_HUMAN_REVIEW_API_ENDPOINT';
@@ -701,7 +702,8 @@ export async function executeAgenticHumanReviewApiProvider({
     });
   }
 
-  const fetchImpl = context.fetch ?? globalThis.fetch;
+  const usingDefaultHttpTransport = typeof context.fetch !== 'function';
+  const fetchImpl = context.fetch ?? nodeHttpFetch;
   if (typeof fetchImpl !== 'function') {
     return providerFailure({
       status: 'blocked',
@@ -758,7 +760,11 @@ export async function executeAgenticHumanReviewApiProvider({
       },
       body: payloadText,
       redirect: 'error',
-      signal: controller?.signal
+      signal: controller?.signal,
+      ...(usingDefaultHttpTransport ? {
+        timeoutMs: provider.timeout_ms,
+        maxResponseBytes: provider.max_response_bytes
+      } : {})
     });
   } catch (error) {
     if (timeout) {
@@ -772,7 +778,7 @@ export async function executeAgenticHumanReviewApiProvider({
         : 'The agentic review API request failed.',
       details: {
         provider: provider.id,
-        failure_class: error?.name ?? 'Error',
+        ...safeApiFailureMetadata(error),
         duration_ms: Date.now() - started,
         timeout_ms: provider.timeout_ms,
         credential_values_recorded: false,
@@ -1626,6 +1632,23 @@ function redactExactSecrets(value, secrets) {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactExactSecrets(item, filtered)]));
   }
   return value;
+}
+
+function safeApiFailureMetadata(error) {
+  return {
+    failure_class: safeDiagnosticToken(error?.name ?? 'Error'),
+    failure_cause_name: safeDiagnosticToken(error?.cause?.name),
+    failure_cause_code: safeDiagnosticToken(error?.cause?.code ?? error?.code)
+  };
+}
+
+function safeDiagnosticToken(value) {
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return null;
+  }
+  const sanitized = text.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 80);
+  return sanitized || null;
 }
 
 function uniqueSorted(values) {

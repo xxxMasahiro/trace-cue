@@ -4158,6 +4158,35 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.doesNotMatch(loopbackAdapterFailure.stdout, /api-secret-value/);
   assert.match(loopbackAdapterFailure.stdout, /\[REDACTED\]/);
 
+  const loopbackClientHeadersTimeout = await executeCli(apiRunArgs, {
+    cwd,
+    now: fixedNow,
+    env: {
+      [AGENTIC_REVIEW_API_ENDPOINT_ENV]: 'http://127.0.0.1:8787/review',
+      [AGENTIC_REVIEW_API_CREDENTIAL_ENV]: 'api-secret-value',
+      [AGENTIC_REVIEW_API_TIMEOUT_ENV]: '90000'
+    },
+    fetch: async () => {
+      const error = new TypeError('fetch failed with api-secret-value');
+      error.cause = {
+        name: 'HeadersTimeoutError',
+        code: 'UND_ERR_HEADERS_TIMEOUT'
+      };
+      throw error;
+    }
+  });
+  assert.equal(loopbackClientHeadersTimeout.exitCode, 1);
+  const loopbackClientHeadersTimeoutBody = JSON.parse(loopbackClientHeadersTimeout.stdout);
+  assert.equal(loopbackClientHeadersTimeoutBody.errors[0].code, 'AGENTIC_REVIEW_API_REQUEST_FAILED');
+  const loopbackClientHeadersTimeoutDiagnostics = loopbackClientHeadersTimeoutBody
+    .data.agentic_human_review_execution.failure_diagnostics.details;
+  assert.equal(loopbackClientHeadersTimeoutDiagnostics.failure_class, 'TypeError');
+  assert.equal(loopbackClientHeadersTimeoutDiagnostics.failure_cause_name, 'HeadersTimeoutError');
+  assert.equal(loopbackClientHeadersTimeoutDiagnostics.failure_cause_code, 'UND_ERR_HEADERS_TIMEOUT');
+  assert.equal(loopbackClientHeadersTimeoutDiagnostics.timeout_ms, 90000);
+  assert.equal(loopbackClientHeadersTimeoutDiagnostics.raw_provider_response_stored, false);
+  assert.doesNotMatch(loopbackClientHeadersTimeout.stdout, /api-secret-value|fetch failed/);
+
   const externalProviderFailure = await executeCli(apiRunArgs, {
     cwd,
     now: fixedNow,
@@ -6516,9 +6545,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(listResult.exitCode, 0);
   const listBody = JSON.parse(listResult.stdout);
   assert.equal(listBody.command, 'agentic review list');
-  assert.equal(listBody.data.summary.total, 10);
+  assert.equal(listBody.data.summary.total, 11);
   assert.equal(listBody.data.summary.completed, 4);
-  assert.equal(listBody.data.summary.failed, 2);
+  assert.equal(listBody.data.summary.failed, 3);
   assert.equal(listBody.data.summary.blocked, 4);
   assert.equal(listBody.data.summary.api_call_performed, true);
   assert.equal(listBody.data.summary.external_evidence_transfer, true);
@@ -7712,6 +7741,8 @@ test('agentic human review responses adapter keeps HTTP request timeout above pr
   try {
     assert.ok(adapter.server.requestTimeout > adapter.config.timeoutMs);
     assert.ok(adapter.server.headersTimeout > adapter.config.timeoutMs);
+    assert.ok(adapter.server.headersTimeout <= adapter.server.requestTimeout);
+    assert.equal(adapter.server.timeout, 0);
   } finally {
     await adapter.close();
   }

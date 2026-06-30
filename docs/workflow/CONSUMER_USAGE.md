@@ -56,7 +56,7 @@ For this flow, point `AGENTIC_HUMAN_REVIEW_API_ENDPOINT` at the loopback adapter
 AGENTIC_HUMAN_REVIEW_API_TOKEN=<tok> AGENTIC_HUMAN_REVIEW_OPENAI_API_KEY=<key> AGENTIC_HUMAN_REVIEW_OPENAI_MODEL=<model> npm run ahr:responses-adapter -- --json
 ```
 
-For long standard, deep, or xhigh dogfood runs, align both timers explicitly: set `AGENTIC_HUMAN_REVIEW_API_TIMEOUT_MS=<ms>` for `agentic review run`, and start the adapter with `npm run ahr:responses-adapter -- --timeout <ms> --json` for the adapter-to-provider request. The adapter startup output reports the effective timeout but does not print credential values.
+For long standard, deep, or xhigh dogfood runs, align both timers explicitly: set `AGENTIC_HUMAN_REVIEW_API_TIMEOUT_MS=<ms>` for `agentic review run`, and start the adapter with `npm run ahr:responses-adapter -- --timeout <ms> --json` for the adapter-to-provider request. The default TraceCue HTTP(S) transport follows those configured timers for slow response-header waits instead of relying on bundled fetch header-timeout defaults. The adapter startup output reports the effective timeout but does not print credential values.
 
 The adapter stores no provider key, no adapter token, and no raw provider response. Live upstream calls are manual and should not be enabled in CI.
 
