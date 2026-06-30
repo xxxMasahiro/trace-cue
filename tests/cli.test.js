@@ -6428,6 +6428,7 @@ test('agentic human review responses adapter converts requests without leaking c
   assert.equal(observedFetch.body.text.format.name, 'tracecue_agentic_human_review_advisory');
   assert.equal(observedFetch.body.text.format.schema.required.includes('benchmark_requirement_coverage'), true);
   assert.equal(observedFetch.body.text.format.schema.required.includes('agentic_human_review_findings'), true);
+  assert.equal(observedFetch.body.text.format.schema.required.includes('owner_baseline_findings'), false);
   assert.match(observedFetch.body.instructions, /without paraphrasing keys/);
   assert.match(observedFetch.body.instructions, /Do not claim human-equivalent or human-superior quality/);
   assert.doesNotMatch(observedFetch.body.instructions, /expert human-equivalent reviewer/);
@@ -6445,6 +6446,7 @@ test('agentic human review responses adapter converts requests without leaking c
   assert.equal(directRequest.store, false);
   assert.equal(directRequest.reasoning.effort, 'high');
   assert.doesNotMatch(directRequest.input, /\.browser-debug|\/tmp\/local-plan/);
+  assert.equal(directRequest.text.format.schema.required.includes('owner_baseline_findings'), false);
   const benchmarkSchema = directRequest.text.format.schema.properties.benchmark_requirement_coverage.properties;
   assert.equal(benchmarkSchema.required_mentions.items.required.includes('evidence'), true);
   assert.equal(benchmarkSchema.required_mentions.items.required.includes('evidence_refs'), true);
@@ -6676,8 +6678,12 @@ test('agentic human review responses adapter retries repairable owner baseline c
   };
   const repairedAdvisory = {
     ...baseAdvisory,
-    agentic_human_review_findings: [{
-      ...baseAdvisory.agentic_human_review_findings[0],
+    owner_baseline_findings: [{
+      id: 'owner-baseline-complete',
+      category: 'content_comprehension',
+      severity: 'high',
+      message: 'The ambiguous ending interpretation is important.',
+      recommendation: 'Preserve the ambiguity rather than forcing one conclusion.',
       must_not_miss_criterion_id: 'owner-final-ambiguity',
       criteria_refs: ['owner-final-ambiguity'],
       owner_label_ids: ['owner-label-final-ambiguity'],
@@ -6711,6 +6717,14 @@ test('agentic human review responses adapter retries repairable owner baseline c
   assert.equal(observedRequests.length, 2);
   const initialInput = JSON.parse(observedRequests[0].input);
   const repairInput = JSON.parse(observedRequests[1].input);
+  const ownerBaselineSchema = observedRequests[0].text.format.schema.properties.owner_baseline_findings;
+  assert.equal(observedRequests[0].text.format.schema.required.includes('owner_baseline_findings'), true);
+  assert.equal(ownerBaselineSchema.minItems, 1);
+  assert.equal(ownerBaselineSchema.items.required.includes('must_not_miss_criterion_id'), true);
+  assert.equal(ownerBaselineSchema.items.required.includes('owner_label_ids'), true);
+  assert.equal(ownerBaselineSchema.items.required.includes('recommendation'), true);
+  assert.equal(ownerBaselineSchema.items.required.includes('evidence_refs'), true);
+  assert.equal(ownerBaselineSchema.items.properties.evidence_refs.minItems, 1);
   assert.equal(initialInput.required_owner_baseline_findings[0].must_not_miss_criterion_id, 'owner-final-ambiguity');
   assert.equal(initialInput.required_owner_baseline_findings[0].owner_label_ids[0], 'owner-label-final-ambiguity');
   assert.equal(initialInput.required_owner_baseline_findings[0].required_fields.includes('owner_label_ids'), true);
@@ -6718,6 +6732,7 @@ test('agentic human review responses adapter retries repairable owner baseline c
   assert.equal(repairInput.contract_repair_request.required_owner_baseline_findings[0].must_not_miss_criterion_id, 'owner-final-ambiguity');
   assert.equal(repairInput.contract_repair_request.required_owner_baseline_findings[0].recommended_evidence_ref_ids.includes('owner-final-ambiguity'), true);
   assert.match(observedRequests[0].instructions, /Owner-approved human baseline contract is mandatory/);
+  assert.match(observedRequests[0].instructions, /owner_baseline_findings as the canonical proof array/);
   assert.match(observedRequests[0].instructions, /input\.required_owner_baseline_findings/);
   assert.match(observedRequests[0].instructions, /required_owner_baseline_findings/);
   assert.doesNotMatch(observedRequests[0].instructions, /must remain visible to the reviewer/);
@@ -6731,6 +6746,7 @@ test('agentic human review responses adapter retries repairable owner baseline c
   assert.match(observedRequests[1].input, /owner-label-final-ambiguity/);
   assert.match(observedRequests[1].input, /owner_label_ids/);
   assert.match(observedRequests[1].input, /evidence_reference_catalog/);
+  assert.match(observedRequests[1].instructions, /owner_baseline_findings/);
   assert.equal(result.body.agentic_human_review_findings[0].must_not_miss_criterion_id, 'owner-final-ambiguity');
   assert.equal(result.body.agentic_human_review_findings[0].owner_label_ids[0], 'owner-label-final-ambiguity');
   assert.equal(result.body.agentic_human_review_findings[0].evidence_refs[0].id, 'owner-final-ambiguity');

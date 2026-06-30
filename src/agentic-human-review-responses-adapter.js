@@ -217,6 +217,10 @@ function buildAdvisoryResponseSchema(traceCueRequest) {
   if (benchmarkEnabled || ownerBaselineEnabled) {
     schema.required = [...schema.required, 'agentic_human_review_findings'];
   }
+  if (ownerBaselineEnabled) {
+    schema.required = [...schema.required, 'owner_baseline_findings'];
+    schema.properties.owner_baseline_findings.items.properties.evidence_refs.minItems = 1;
+  }
   return schema;
 }
 
@@ -571,10 +575,10 @@ function buildAdapterInstructions(traceCueRequest, repairContext = null) {
       ].join(' ')
     : 'No benchmark_requirement_coverage section is required when review_quality_benchmark is disabled.';
   const ownerBaseline = isOwnerBaselineEnabled(traceCueRequest)
-    ? [
+      ? [
         'Owner-approved human baseline contract is mandatory.',
-        'Return one structured agentic_human_review_findings record for each target-specific must-not-miss criterion in review_request.plan.owner_baseline_requirement_contract.must_not_miss_criteria.',
-        'Copy every record from required_owner_baseline_findings into provider-authored structured agentic_human_review_findings, preserving must_not_miss_criterion_id, criteria_refs, owner_label_ids, required fields, and catalog-backed evidence_refs.',
+        'Return owner_baseline_findings as the canonical proof array for target-specific owner-approved must-not-miss criteria.',
+        'For each input.required_owner_baseline_findings template, return exactly one owner_baseline_findings record that preserves must_not_miss_criterion_id, criteria_refs, owner_label_ids, adds provider-authored message and recommendation, and populates non-empty evidence_refs from evidence_reference_catalog using the template recommended_evidence_ref_ids.',
         'Copy every record from required_owner_baseline_coverage into benchmark_requirement_coverage.required_mentions, required_dimensions, and forbidden_claims, preserving exact mention/dimension/claim strings and catalog-backed evidence_refs.',
         'Use input.required_owner_baseline_findings as the compact target-specific id map for required ids, owner label ids, required fields, and preferred evidence refs.',
         'Use input.required_owner_baseline_coverage as the compact owner-baseline coverage map for additional exact required_mentions, required_dimensions, and forbidden_claims.',
@@ -747,7 +751,7 @@ function buildAdapterContractRepairInstruction(repairContext) {
       ? `Add complete benchmark_requirement_coverage records for these missing items, preserving section and exact expected text: ${JSON.stringify(missingBenchmarkRecords)}.`
       : '',
     missingOwnerBaselineRecords.length > 0
-      ? `Add structured agentic_human_review_findings for these missing owner-approved must-not-miss criteria, preserving ids and owner label ids: ${JSON.stringify(missingOwnerBaselineRecords)}.`
+      ? `Add structured owner_baseline_findings for these missing owner-approved must-not-miss criteria, preserving ids, owner label ids, and catalog-backed evidence_refs: ${JSON.stringify(missingOwnerBaselineRecords)}.`
       : '',
     invalidReviewClaims.length > 0
       ? `Repair these review_claims by replacing placeholders, adding catalog-backed evidence_refs, adding planned supported_by_roles, or removing unsupported claims: ${JSON.stringify(invalidReviewClaims)}.`
@@ -756,7 +760,7 @@ function buildAdapterContractRepairInstruction(repairContext) {
       ? `Owner-baseline criterion repair hints: ${JSON.stringify(ownerBaselineCriterionHints)}.`
       : '',
     requiredOwnerBaselineFindings.length > 0
-      ? `Required owner-baseline finding templates: copy these ids into complete agentic_human_review_findings records with evidence_refs from evidence_reference_catalog: ${JSON.stringify(requiredOwnerBaselineFindings)}.`
+      ? `Required owner-baseline finding templates: create complete owner_baseline_findings records from these ids with provider-authored message/recommendation and evidence_refs from evidence_reference_catalog: ${JSON.stringify(requiredOwnerBaselineFindings)}.`
       : '',
     requiredOwnerBaselineCoverageCount > 0
       ? `Required owner-baseline coverage templates: copy these exact mention, dimension, and forbidden-claim rows into benchmark_requirement_coverage with evidence_refs from evidence_reference_catalog: ${JSON.stringify(requiredOwnerBaselineCoverage)}.`
@@ -1696,8 +1700,8 @@ function collectAdapterFindingRecords(advisory) {
       }
     }
   };
-  addRecords(advisory?.agentic_human_review_findings);
   addRecords(advisory?.owner_baseline_findings);
+  addRecords(advisory?.agentic_human_review_findings);
   addRecords(advisory?.findings);
   for (const opinion of arrayOrEmpty(advisory?.role_opinions)) {
     addRecords(opinion?.findings);
