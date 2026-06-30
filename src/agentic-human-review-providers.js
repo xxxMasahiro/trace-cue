@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { SCHEMA_VERSION } from './constants.js';
+import { filterPersistableFailureDiagnosticDetails } from './failure-diagnostics.js';
 import { nodeHttpFetch } from './http-transport.js';
 import { redact, truncateText } from './redaction.js';
 
@@ -1413,7 +1414,7 @@ async function readLoopbackAdapterDiagnostics({ response, endpointUrl, maxRespon
     loopback_adapter_error_code: error.code,
     loopback_adapter_error_message: truncateText(String(error.message ?? ''), 500),
     loopback_adapter_error_details: error.details && typeof error.details === 'object' && !Array.isArray(error.details)
-      ? error.details
+      ? filterPersistableFailureDiagnosticDetails(error.details, { parentKey: 'loopback_adapter_error_details' })
       : {},
     loopback_adapter_response_bytes: parsed.response_bytes ?? null
   });
@@ -1546,7 +1547,7 @@ function providerFailure({
   apiCallPerformed = false,
   externalEvidenceTransfer = false
 }) {
-  const diagnosticDetails = redact(details ?? {});
+  const diagnosticDetails = filterPersistableFailureDiagnosticDetails(redact(details ?? {})) ?? {};
   return {
     ok: false,
     status,

@@ -12,6 +12,7 @@ import {
 } from './artifacts.js';
 import { AGENT_SURFACES } from './agent.js';
 import { CLI_NAME, DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
+import { filterPersistableFailureDiagnosticDetails } from './failure-diagnostics.js';
 import { redact, redactString, truncateText } from './redaction.js';
 import {
   AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
@@ -12796,7 +12797,7 @@ function providerFailure({
     apiCallPerformed,
     externalEvidenceTransfer
   });
-  const diagnosticDetails = redact(details ?? {});
+  const diagnosticDetails = filterPersistableFailureDiagnosticDetails(redact(details ?? {})) ?? {};
   return {
     ok: false,
     status,
@@ -12809,6 +12810,7 @@ function providerFailure({
       provider_id: provider?.id ?? null,
       status,
       message,
+      details: diagnosticDetails,
       next_actions: providerFailureNextActions(code),
       provider_call_performed: Boolean(providerCallPerformed),
       api_call_performed: Boolean(apiCallPerformed),

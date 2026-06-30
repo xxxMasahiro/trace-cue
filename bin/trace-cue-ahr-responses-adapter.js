@@ -26,6 +26,8 @@ if (parsed.help) {
       provider_endpoint_env: adapter.config.providerEndpointEnv,
       provider_model_env: adapter.config.providerModelEnv,
       timeout_ms: adapter.config.timeoutMs,
+      max_request_bytes: adapter.config.maxRequestBytes,
+      max_provider_response_bytes: adapter.config.maxProviderResponseBytes,
       provider_endpoint_value_printed: false,
       credential_values_printed: false,
       raw_provider_response_stored: false
@@ -38,6 +40,8 @@ if (parsed.help) {
       console.log(`Provider API key env: ${adapter.config.providerApiKeyEnv} or ${adapter.config.providerApiKeyFallbackEnv}`);
       console.log(`Provider model env: ${adapter.config.providerModelEnv}`);
       console.log(`Provider request timeout: ${adapter.config.timeoutMs} ms`);
+      console.log(`Max adapter request bytes: ${adapter.config.maxRequestBytes}`);
+      console.log(`Max provider response bytes: ${adapter.config.maxProviderResponseBytes}`);
     }
     for (const signal of ['SIGINT', 'SIGTERM']) {
       process.once(signal, async () => {
@@ -135,6 +139,8 @@ function printHelp() {
     '  --provider-endpoint <url>             Provider endpoint default when env is unset.',
     '  --provider-model <id>                 Provider model default when env and request model are unset.',
     `  --timeout <ms>                        Provider request timeout. Default: ${AGENTIC_HUMAN_REVIEW_RESPONSES_ADAPTER_DEFAULTS.timeoutMs}`,
+    `  --max-request-bytes <bytes>           Maximum inbound TraceCue request size. Default: ${AGENTIC_HUMAN_REVIEW_RESPONSES_ADAPTER_DEFAULTS.maxRequestBytes}`,
+    `  --max-provider-response-bytes <bytes> Maximum upstream provider response size. Default: ${AGENTIC_HUMAN_REVIEW_RESPONSES_ADAPTER_DEFAULTS.maxProviderResponseBytes}`,
     `  --contract-repair-attempts <count>    Contract repair retries. Default: ${AGENTIC_HUMAN_REVIEW_RESPONSES_ADAPTER_DEFAULTS.contractRepairAttempts}`,
     '  --help                                Show this help.'
   ].join('\n'));

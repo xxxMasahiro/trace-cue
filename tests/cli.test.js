@@ -6984,6 +6984,143 @@ test('agentic human review staged xhigh incomplete stage output remains non-proo
   assert.equal(qualityBody.data.agentic_human_review_report_quality.human_review_maturity.human_equivalence_claim.human_superior_claim_allowed, false);
 });
 
+test('agentic human review staged API failures preserve safe loopback adapter diagnostics', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-staged-api-failure-'));
+  const png = minimalPngBuffer(120, 80);
+  await writeFile(path.join(cwd, 'screen.png'), png);
+
+  const imageReview = await executeCli(['review', '--image', 'screen.png', '--json'], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'image-review-staged-api-failure'
+  });
+  assert.equal(imageReview.exitCode, 0);
+
+  const planResult = await executeCli([
+    'agentic',
+    'review',
+    'plan',
+    '--review-index',
+    '.browser-debug/review-artifacts/image-review-staged-api-failure.json',
+    '--intent',
+    'Review visible text, trust, likely reader feeling, and target-specific proof risks with staged xhigh.',
+    '--effort',
+    'xhigh',
+    '--benchmark-case',
+    'blog-content-value',
+    '--provider',
+    'generic-api-provider',
+    '--model',
+    'api-model',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'agentic-plan-staged-api-failure',
+    env: {
+      [AGENTIC_REVIEW_LIVE_DOGFOOD_ENV]: '1',
+      [AGENTIC_REVIEW_API_TIMEOUT_ENV]: '90000'
+    }
+  });
+  assert.equal(planResult.exitCode, 0);
+  const planBody = JSON.parse(planResult.stdout);
+  const requiredFlags = planBody.data.agentic_human_review_plan.transfer_permissions.required_flags.slice().sort();
+
+  let fetchCalls = 0;
+  const runResult = await executeCli([
+    'agentic',
+    'review',
+    'run',
+    '--plan',
+    '.browser-debug/agentic-human-review-plans/agentic-plan-staged-api-failure/plan.json',
+    '--plan-hash',
+    planBody.data.plan_hash,
+    ...requiredFlags.map((flag) => `--${flag}`),
+    '--provider',
+    'generic-api-provider',
+    '--model',
+    'api-model',
+    '--execution-mode',
+    'staged',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => {
+      if (prefix === 'agentic-human-review-execution') {
+        return 'agentic-execution-staged-api-failure';
+      }
+      if (prefix === 'agentic-human-review-result') {
+        return 'agentic-result-staged-api-failure';
+      }
+      return 'unexpected-agentic-staged-api-failure-id';
+    },
+    env: {
+      [AGENTIC_REVIEW_LIVE_DOGFOOD_ENV]: '1',
+      [AGENTIC_REVIEW_API_ENDPOINT_ENV]: 'http://127.0.0.1:8787/review',
+      [AGENTIC_REVIEW_API_CREDENTIAL_ENV]: 'api-secret-value',
+      [AGENTIC_REVIEW_API_TIMEOUT_ENV]: '90000'
+    },
+    fetch: async () => {
+      fetchCalls += 1;
+      return jsonResponse({
+        schema_version: '0.1.0',
+        ok: false,
+        error: {
+          code: 'AHR_RESPONSES_ADAPTER_CONTRACT_REPAIR_EXHAUSTED',
+          message: 'The upstream advisory still did not satisfy the TraceCue contract.',
+          details: {
+            contract_failures: [{
+              code: 'AHR_RESPONSES_ADAPTER_BENCHMARK_CONTRACT_INCOMPLETE',
+              message: 'Benchmark coverage was missing required evidence.'
+            }],
+            missing_benchmark_records: [{
+              section: 'forbidden_claims',
+              expected: 'release is approved',
+              missing_fields: ['record', 'evidence_refs'],
+              recommended_evidence_ref_ids: ['benchmark-forbidden-claim-1']
+            }],
+            raw_provider_response: 'raw provider response content must not persist',
+            request_payload: 'request payload content must not persist',
+            credential_values_recorded: false,
+            raw_provider_response_stored: false
+          }
+        }
+      }, 502);
+    }
+  });
+
+  assert.equal(runResult.exitCode, 1);
+  assert.equal(fetchCalls, 1);
+  const body = JSON.parse(runResult.stdout);
+  assert.equal(body.errors[0].code, 'AGENTIC_REVIEW_API_RESPONSE_NOT_OK');
+  const diagnostics = body.data.agentic_human_review_execution.failure_diagnostics.details;
+  assert.equal(diagnostics.stage_id, 'xhigh-round-1');
+  assert.equal(diagnostics.stage_round, 1);
+  assert.equal(diagnostics.stage_error.loopback_adapter_error_observed, true);
+  assert.equal(
+    diagnostics.stage_error.loopback_adapter_error_code,
+    'AHR_RESPONSES_ADAPTER_CONTRACT_REPAIR_EXHAUSTED'
+  );
+  assert.equal(
+    diagnostics.stage_error.loopback_adapter_error_details.contract_failures[0].code,
+    'AHR_RESPONSES_ADAPTER_BENCHMARK_CONTRACT_INCOMPLETE'
+  );
+  assert.equal(
+    diagnostics.stage_error.loopback_adapter_error_details.missing_benchmark_records[0].recommended_evidence_ref_ids[0],
+    'benchmark-forbidden-claim-1'
+  );
+  assert.equal(diagnostics.raw_provider_response_stored, false);
+  assert.equal(diagnostics.credential_values_recorded, false);
+  const executionText = await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-staged-api-failure', 'execution.json'), 'utf8');
+  const runReceiptText = await readFile(path.join(cwd, '.browser-debug', 'receipts', 'agentic-execution-staged-api-failure-agentic-run.json'), 'utf8');
+  assert.match(executionText, /AHR_RESPONSES_ADAPTER_CONTRACT_REPAIR_EXHAUSTED/);
+  assert.match(runReceiptText, /AHR_RESPONSES_ADAPTER_CONTRACT_REPAIR_EXHAUSTED/);
+  assert.doesNotMatch(`${runResult.stdout}\n${executionText}\n${runReceiptText}`, /api-secret-value|raw provider response content|request payload content/);
+  assert.doesNotMatch(executionText, /screen\.png/);
+});
+
 test('agentic human review responses adapter converts requests without leaking credentials or local paths', async () => {
   const request = adapterTraceCueRequest();
   request.stage_execution = {
@@ -7452,6 +7589,117 @@ test('agentic human review responses adapter retries repairable benchmark contra
   assert.doesNotMatch(JSON.stringify(result.body), /adapter-secret-value|provider-secret-value|output_text/);
 });
 
+test('agentic human review responses adapter aggregates benchmark and owner-baseline repair gaps', async () => {
+  const request = adapterTraceCueRequest();
+  request.plan.review_effort = { mode: 'standard' };
+  request.plan.review_quality_benchmark = {
+    enabled: true,
+    case_id: 'blog-content-value',
+    required_mentions: ['content value'],
+    required_dimensions: ['content_comprehension'],
+    forbidden_claims: ['release is approved']
+  };
+  attachAdapterOwnerBaselineContract(request);
+  const baseAdvisory = {
+    summary: 'The adapter provider returned only partial benchmark and owner-baseline coverage.',
+    role_opinions: [{
+      role: 'content_reviewer',
+      display_name: 'Content Reviewer',
+      effort: 'standard',
+      round: 1,
+      summary: 'The content reviewer covered only the base content value.',
+      findings: [],
+      uncertainties: []
+    }],
+    agentic_human_review_findings: [],
+    benchmark_requirement_coverage: {
+      required_mentions: [{
+        mention: 'content value',
+        present: true,
+        status: 'covered',
+        evidence: 'The review discusses content value.',
+        evidence_ref_ids: ['benchmark-required-mention-1']
+      }],
+      required_dimensions: [{
+        dimension: 'content_comprehension',
+        present: true,
+        status: 'covered',
+        evidence: 'The review covers content comprehension.',
+        evidence_ref_ids: ['benchmark-required-dimension-1']
+      }]
+    }
+  };
+  const repairedAdvisory = {
+    ...baseAdvisory,
+    owner_baseline_findings: [{
+      id: 'owner-baseline-complete',
+      category: 'content_comprehension',
+      severity: 'high',
+      message: 'The ambiguous ending interpretation remains visible.',
+      recommendation: 'Keep the ambiguity explicit rather than forcing a single conclusion.',
+      must_not_miss_criterion_id: 'owner-final-ambiguity',
+      criteria_refs: ['owner-final-ambiguity'],
+      owner_label_ids: ['owner-label-final-ambiguity'],
+      target_specific: true,
+      evidence_ref_ids: ['owner-final-ambiguity']
+    }],
+    benchmark_requirement_coverage: {
+      ...baseAdvisory.benchmark_requirement_coverage,
+      forbidden_claims: [{
+        claim: 'release is approved',
+        present: false,
+        status: 'absent',
+        evidence: 'The advisory does not approve a release.',
+        evidence_ref_ids: ['benchmark-forbidden-claim-1']
+      }]
+    }
+  };
+  const observedRequests = [];
+  const result = await handleAgenticHumanReviewResponsesAdapterRequest({
+    method: 'POST',
+    url: '/agentic-human-review',
+    headers: {
+      host: '127.0.0.1:8787',
+      authorization: 'Bearer adapter-secret-value',
+      'content-type': 'application/json'
+    },
+    remoteAddress: '127.0.0.1',
+    bodyText: JSON.stringify(request),
+    env: adapterEnv(),
+    config: { contractRepairAttempts: 1 },
+    fetchImpl: async (url, init) => {
+      observedRequests.push(JSON.parse(init.body));
+      return jsonResponse({
+        output_text: JSON.stringify(observedRequests.length === 1 ? baseAdvisory : repairedAdvisory)
+      });
+    },
+    now: fixedNow
+  });
+
+  assert.equal(result.statusCode, 200);
+  assert.equal(observedRequests.length, 2);
+  const repairInput = JSON.parse(observedRequests[1].input);
+  const repairRequest = repairInput.contract_repair_request;
+  assert.deepEqual(
+    repairRequest.contract_failures.map((failure) => failure.code),
+    [
+      'AHR_RESPONSES_ADAPTER_BENCHMARK_CONTRACT_INCOMPLETE',
+      'AHR_RESPONSES_ADAPTER_OWNER_BASELINE_CONTRACT_INCOMPLETE'
+    ]
+  );
+  assert.equal(repairRequest.required_benchmark_coverage.required_mentions.length, 0);
+  assert.equal(repairRequest.required_benchmark_coverage.required_dimensions.length, 0);
+  assert.equal(repairRequest.required_benchmark_coverage.forbidden_claims[0].claim, 'release is approved');
+  assert.equal(repairRequest.required_owner_baseline_findings[0].must_not_miss_criterion_id, 'owner-final-ambiguity');
+  assert.equal(repairRequest.evidence_reference_ids.includes('benchmark-forbidden-claim-1'), true);
+  assert.equal(repairRequest.evidence_reference_ids.includes('owner-final-ambiguity'), true);
+  assert.match(observedRequests[1].instructions, /Repair all contract failures in this retry/);
+  assert.match(observedRequests[1].instructions, /intentionally lists only missing or invalid checklist items/);
+  assert.equal(result.body.benchmark_requirement_coverage.forbidden_claims[0].present, false);
+  assert.equal(result.body.agentic_human_review_findings[0].must_not_miss_criterion_id, 'owner-final-ambiguity');
+  assert.doesNotMatch(JSON.stringify(result.body), /adapter-secret-value|provider-secret-value|output_text/);
+});
+
 test('agentic human review responses adapter retries repairable owner baseline contract gaps once', async () => {
   const request = adapterTraceCueRequest();
   request.plan.review_effort = { mode: 'standard' };
@@ -7719,8 +7967,9 @@ test('agentic human review responses adapter retries repairable owner baseline c
   const benchmarkForbiddenTemplate = initialInput.required_benchmark_coverage.forbidden_claims.find((record) => record.claim === 'release is approved');
   assert.equal(benchmarkForbiddenTemplate.required_present, false);
   assert.equal(repairInput.contract_repair_request.required_owner_baseline_coverage.required_mentions[0].mention, 'owner interpretive ambiguity');
-  const repairBenchmarkForbiddenTemplate = repairInput.contract_repair_request.required_benchmark_coverage.forbidden_claims.find((record) => record.claim === 'release is approved');
+  const repairBenchmarkForbiddenTemplate = repairInput.contract_repair_request.required_benchmark_coverage.forbidden_claims.find((record) => record.claim === 'definitive ending interpretation was proved');
   assert.equal(repairBenchmarkForbiddenTemplate.required_fields.includes('absence_confirmation'), true);
+  assert.equal(repairInput.contract_repair_request.required_benchmark_coverage.forbidden_claims.some((record) => record.claim === 'release is approved'), false);
   assert.match(observedRequests[0].instructions, /required_owner_baseline_coverage/);
   assert.match(observedRequests[1].instructions, /Required benchmark coverage templates/);
   assert.match(observedRequests[1].instructions, /Required owner-baseline coverage templates/);

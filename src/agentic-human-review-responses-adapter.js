@@ -732,26 +732,39 @@ function isRepairableAdapterContractValidation(validation) {
 }
 
 function buildAdapterContractRepairContext(validation, attempt) {
+  const details = validation?.details ?? {};
   return redact({
     schema_version: SCHEMA_VERSION,
     repair_attempt: attempt,
     reason_code: validation?.code ?? 'AHR_RESPONSES_ADAPTER_CONTRACT_INCOMPLETE',
     instruction: 'Return a complete replacement advisory JSON object, not a diff or partial patch.',
-    missing_benchmark_records: compactRepairRecords(validation?.details?.missing_benchmark_records),
-    missing_owner_baseline_records: compactRepairRecords(validation?.details?.missing_owner_baseline_records),
-    invalid_review_claims: compactRepairRecords(validation?.details?.invalid_review_claims),
-    required_benchmark_coverage: compactRepairCoverageTemplates(validation?.details?.required_benchmark_coverage),
-    owner_baseline_criterion_hints: compactRepairOwnerBaselineHints(validation?.details?.owner_baseline_criterion_hints),
-    required_owner_baseline_findings: compactRepairOwnerBaselineFindingTemplates(validation?.details?.required_owner_baseline_findings),
-    required_owner_baseline_coverage: compactRepairOwnerBaselineCoverageTemplates(validation?.details?.required_owner_baseline_coverage),
-    evidence_reference_ids: compactRepairEvidenceReferenceIds(validation?.details?.evidence_reference_catalog),
-    missing_roles: compactRepairStrings(validation?.details?.missing_roles),
-    missing_rounds: compactRepairStrings(validation?.details?.missing_rounds),
-    missing_critique_roles: compactRepairStrings(validation?.details?.missing_critique_roles),
-    synthesis_integrated: validation?.details?.synthesis_integrated ?? null,
-    missing_conditions: compactRepairStrings(validation?.details?.missing_conditions),
+    contract_failures: compactRepairContractFailures(details.contract_failures),
+    missing_benchmark_records: compactRepairRecords(details.missing_benchmark_records),
+    missing_owner_baseline_records: compactRepairRecords(details.missing_owner_baseline_records),
+    invalid_review_claims: compactRepairRecords(details.invalid_review_claims),
+    required_benchmark_coverage: compactRepairCoverageTemplates(details.required_benchmark_coverage),
+    owner_baseline_criterion_hints: compactRepairOwnerBaselineHints(details.owner_baseline_criterion_hints),
+    required_owner_baseline_findings: compactRepairOwnerBaselineFindingTemplates(details.required_owner_baseline_findings),
+    required_owner_baseline_coverage: compactRepairOwnerBaselineCoverageTemplates(details.required_owner_baseline_coverage),
+    evidence_reference_ids: compactRepairEvidenceReferenceIdsForFailureDetails(details),
+    missing_roles: compactRepairStrings(details.missing_roles),
+    missing_rounds: compactRepairStrings(details.missing_rounds),
+    missing_critique_roles: compactRepairStrings(details.missing_critique_roles),
+    synthesis_integrated: details.synthesis_integrated ?? null,
+    missing_conditions: compactRepairStrings(details.missing_conditions),
     raw_provider_response_stored: false
   });
+}
+
+function compactRepairContractFailures(values) {
+  return arrayOrEmpty(values).slice(0, MAX_ADAPTER_REPAIR_RECORDS).map((failure) => Object.fromEntries(Object.entries({
+    code: truncateText(firstString(failure?.code, null), 120),
+    message: truncateText(firstString(failure?.message, null), 220),
+    missing_benchmark_record_count: Number.isFinite(Number(failure?.missing_benchmark_record_count)) ? Number(failure.missing_benchmark_record_count) : undefined,
+    missing_owner_baseline_record_count: Number.isFinite(Number(failure?.missing_owner_baseline_record_count)) ? Number(failure.missing_owner_baseline_record_count) : undefined,
+    invalid_review_claim_count: Number.isFinite(Number(failure?.invalid_review_claim_count)) ? Number(failure.invalid_review_claim_count) : undefined,
+    missing_condition_count: Number.isFinite(Number(failure?.missing_condition_count)) ? Number(failure.missing_condition_count) : undefined
+  }).filter(([, value]) => value !== undefined && value !== null && value !== '')));
 }
 
 function compactRepairRecords(values) {
@@ -821,6 +834,31 @@ function compactRepairEvidenceReferenceIds(values) {
     .slice(0, MAX_ADAPTER_REPAIR_EVIDENCE_IDS);
 }
 
+function compactRepairEvidenceReferenceIdsForFailureDetails(details) {
+  const directIds = [
+    ...arrayOrEmpty(details?.missing_benchmark_records),
+    ...arrayOrEmpty(details?.missing_owner_baseline_records),
+    ...arrayOrEmpty(details?.invalid_review_claims),
+    ...arrayOrEmpty(details?.owner_baseline_criterion_hints),
+    ...arrayOrEmpty(details?.required_owner_baseline_findings),
+    ...coverageTemplateRecords(details?.required_benchmark_coverage),
+    ...coverageTemplateRecords(details?.required_owner_baseline_coverage)
+  ].flatMap((record) => compactRepairStrings(record?.recommended_evidence_ref_ids));
+  const compactDirectIds = uniqueAdapterStrings(directIds).slice(0, MAX_ADAPTER_REPAIR_EVIDENCE_IDS);
+  if (compactDirectIds.length > 0) {
+    return compactDirectIds;
+  }
+  return compactRepairEvidenceReferenceIds(details?.evidence_reference_catalog);
+}
+
+function coverageTemplateRecords(value) {
+  return [
+    ...arrayOrEmpty(value?.required_mentions),
+    ...arrayOrEmpty(value?.required_dimensions),
+    ...arrayOrEmpty(value?.forbidden_claims)
+  ];
+}
+
 function compactRepairStrings(values) {
   return normalizeStringArray(values)
     .slice(0, MAX_ADAPTER_REPAIR_RECORDS)
@@ -846,6 +884,9 @@ function buildAdapterContractRepairInstruction(repairContext) {
   const evidenceReferenceIds = Array.isArray(repairContext.evidence_reference_ids)
     ? repairContext.evidence_reference_ids
     : [];
+  const contractFailures = Array.isArray(repairContext.contract_failures)
+    ? repairContext.contract_failures
+    : [];
   const ownerBaselineCriterionHints = Array.isArray(repairContext.owner_baseline_criterion_hints)
     ? repairContext.owner_baseline_criterion_hints
     : [];
@@ -863,7 +904,11 @@ function buildAdapterContractRepairInstruction(repairContext) {
   return [
     'Contract repair retry is active because the previous provider output failed TraceCue post-validation.',
     `Repair reason code: ${repairContext.reason_code}.`,
+    contractFailures.length > 1
+      ? `Repair all contract failures in this retry, not only the first one: ${JSON.stringify(contractFailures)}.`
+      : '',
     'Return a complete replacement advisory JSON object, not a diff, patch, explanation, or partial object.',
+    'The original request already contains the canonical full benchmark, owner-baseline, role, round, and evidence contracts; this repair context intentionally lists only missing or invalid checklist items.',
     evidenceReferenceIds.length > 0
       ? `Use only these evidence_reference_catalog ids when repairing evidence_refs: ${JSON.stringify(evidenceReferenceIds)}.`
       : '',
@@ -948,46 +993,255 @@ function fallbackResponsesNativeEffort(effort) {
 }
 
 function validateAdapterAdvisoryAgainstTraceCueContract(advisory, traceCueRequest) {
+  const failures = collectAdapterContractValidationFailures(advisory, traceCueRequest);
+  if (failures.length === 0) {
+    return { ok: true };
+  }
+  const primary = failures[0];
+  return {
+    ok: false,
+    code: primary.code,
+    message: primary.message,
+    details: mergeAdapterContractFailureDetails(failures)
+  };
+}
+
+function collectAdapterContractValidationFailures(advisory, traceCueRequest) {
+  const failures = [];
+  const pushFailure = (validation) => {
+    if (!validation?.ok) {
+      failures.push(validation);
+    }
+  };
+  pushFailure(validateAdapterBenchmarkCoverage(advisory, traceCueRequest));
+  pushFailure(validateAdapterOwnerBaselineCoverage(advisory, traceCueRequest));
+  pushFailure(validateAdapterReviewClaims(advisory, traceCueRequest));
+  pushFailure(validateAdapterXhighOrStageContract(advisory, traceCueRequest));
+  return failures;
+}
+
+function mergeAdapterContractFailureDetails(failures) {
+  const detailsList = failures.map((failure) => failure?.details ?? {});
+  const missingBenchmarkRecords = detailsList.flatMap((details) => arrayOrEmpty(details.missing_benchmark_records));
+  const missingOwnerBaselineRecords = detailsList.flatMap((details) => arrayOrEmpty(details.missing_owner_baseline_records));
+  const invalidReviewClaims = detailsList.flatMap((details) => arrayOrEmpty(details.invalid_review_claims));
+  const missingRoles = uniqueAdapterStrings(detailsList.flatMap((details) => normalizeStringArray(details.missing_roles)));
+  const missingRounds = uniqueAdapterStrings(detailsList.flatMap((details) => normalizeStringArray(details.missing_rounds)));
+  const missingCritiqueRoles = uniqueAdapterStrings(detailsList.flatMap((details) => normalizeStringArray(details.missing_critique_roles)));
+  const missingConditions = uniqueAdapterStrings(detailsList.flatMap((details) => normalizeStringArray(details.missing_conditions)));
+  const ownerBaselineCriterionHints = filterOwnerBaselineHintsForMissingCriteria(
+    detailsList.flatMap((details) => arrayOrEmpty(details.owner_baseline_criterion_hints)),
+    missingOwnerBaselineRecords
+  );
+  const requiredOwnerBaselineFindings = filterOwnerBaselineFindingTemplatesForMissingCriteria(
+    firstArray(detailsList.map((details) => details.required_owner_baseline_findings)),
+    missingOwnerBaselineRecords
+  );
+  const requiredBenchmarkCoverage = filterCoverageTemplatesForMissingRecords(
+    firstObject(detailsList.map((details) => details.required_benchmark_coverage)),
+    missingBenchmarkRecords
+  );
+  const requiredOwnerBaselineCoverage = filterCoverageTemplatesForMissingRecords(
+    firstObject(detailsList.map((details) => details.required_owner_baseline_coverage)),
+    missingBenchmarkRecords
+  );
+  return redact({
+    contract_failures: failures.map((failure) => ({
+      code: failure.code,
+      message: failure.message,
+      missing_benchmark_record_count: arrayOrEmpty(failure.details?.missing_benchmark_records).length,
+      missing_owner_baseline_record_count: arrayOrEmpty(failure.details?.missing_owner_baseline_records).length,
+      invalid_review_claim_count: arrayOrEmpty(failure.details?.invalid_review_claims).length,
+      missing_condition_count: arrayOrEmpty(failure.details?.missing_conditions).length
+    })),
+    missing_benchmark_records: compactRepairRecords(missingBenchmarkRecords),
+    missing_owner_baseline_records: compactRepairRecords(missingOwnerBaselineRecords),
+    invalid_review_claims: compactRepairRecords(invalidReviewClaims),
+    required_benchmark_coverage: requiredBenchmarkCoverage,
+    owner_baseline_criterion_hints: ownerBaselineCriterionHints,
+    required_owner_baseline_findings: requiredOwnerBaselineFindings,
+    required_owner_baseline_coverage: requiredOwnerBaselineCoverage,
+    evidence_reference_catalog: firstArray(detailsList.map((details) => details.evidence_reference_catalog)),
+    missing_roles: missingRoles,
+    missing_rounds: missingRounds,
+    missing_critique_roles: missingCritiqueRoles,
+    synthesis_integrated: firstDefined(detailsList.map((details) => details.synthesis_integrated)),
+    missing_conditions: missingConditions,
+    raw_provider_response_stored: false,
+    credential_values_recorded: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+}
+
+function firstObject(values) {
+  return arrayOrEmpty(values).find((value) => value && typeof value === 'object' && !Array.isArray(value)) ?? {};
+}
+
+function firstArray(values) {
+  return arrayOrEmpty(values).find((value) => Array.isArray(value)) ?? [];
+}
+
+function firstDefined(values) {
+  return arrayOrEmpty(values).find((value) => value !== undefined && value !== null) ?? null;
+}
+
+function filterOwnerBaselineHintsForMissingCriteria(hints, missingRecords) {
+  const missingCriterionIds = ownerBaselineMissingCriterionIdSet(missingRecords);
+  if (missingCriterionIds.size === 0) {
+    return [];
+  }
+  return arrayOrEmpty(hints).filter((hint) => {
+    const criterionId = String(hint?.criterion_id ?? hint?.must_not_miss_criterion_id ?? '').trim();
+    return criterionId && missingCriterionIds.has(criterionId);
+  });
+}
+
+function filterOwnerBaselineFindingTemplatesForMissingCriteria(templates, missingRecords) {
+  const missingCriterionIds = ownerBaselineMissingCriterionIdSet(missingRecords);
+  if (missingCriterionIds.size === 0) {
+    return [];
+  }
+  return arrayOrEmpty(templates).filter((template) => {
+    const ids = uniqueAdapterStrings([
+      template?.must_not_miss_criterion_id,
+      template?.criterion_id,
+      ...arrayOrEmpty(template?.criteria_refs)
+    ]);
+    return ids.some((id) => missingCriterionIds.has(id));
+  });
+}
+
+function ownerBaselineMissingCriterionIdSet(missingRecords) {
+  return new Set(arrayOrEmpty(missingRecords)
+    .flatMap((record) => [
+      record?.criterion_id,
+      record?.must_not_miss_criterion_id,
+      ...arrayOrEmpty(record?.criteria_refs)
+    ])
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean));
+}
+
+function filterCoverageTemplatesForMissingRecords(coverage, missingRecords) {
+  if (!coverage || typeof coverage !== 'object' || Array.isArray(coverage)) {
+    return {};
+  }
+  const missingBySection = coverageMissingRecordKeyMap(missingRecords);
+  const filterRecords = (records, section, labelKey) => {
+    const expectedKeys = missingBySection.get(section);
+    if (!expectedKeys || expectedKeys.size === 0) {
+      return [];
+    }
+    return arrayOrEmpty(records).filter((record) => {
+      const key = normalizeAdapterCoverageKey(record?.[labelKey] ?? record?.expected ?? record?.id ?? record?.name ?? record?.label);
+      return key && expectedKeys.has(key);
+    });
+  };
+  return {
+    required_mentions: filterRecords(coverage.required_mentions, 'required_mentions', 'mention'),
+    required_dimensions: filterRecords(coverage.required_dimensions, 'required_dimensions', 'dimension'),
+    forbidden_claims: filterRecords(coverage.forbidden_claims, 'forbidden_claims', 'claim')
+  };
+}
+
+function coverageMissingRecordKeyMap(missingRecords) {
+  const output = new Map();
+  for (const record of arrayOrEmpty(missingRecords)) {
+    const section = String(record?.section ?? '').trim();
+    const key = normalizeAdapterCoverageKey(record?.expected ?? record?.mention ?? record?.dimension ?? record?.claim ?? record?.id ?? record?.name ?? record?.label);
+    if (!section || !key) {
+      continue;
+    }
+    if (!output.has(section)) {
+      output.set(section, new Set());
+    }
+    output.get(section).add(key);
+  }
+  return output;
+}
+
+function validateAdapterXhighOrStageContract(advisory, traceCueRequest) {
   const effort = traceCueRequest?.plan?.review_effort?.mode ?? 'standard';
-  const benchmarkValidation = validateAdapterBenchmarkCoverage(advisory, traceCueRequest);
-  if (!benchmarkValidation.ok) {
-    return benchmarkValidation;
-  }
-  const ownerBaselineValidation = validateAdapterOwnerBaselineCoverage(advisory, traceCueRequest);
-  if (!ownerBaselineValidation.ok) {
-    return ownerBaselineValidation;
-  }
-  const claimValidation = validateAdapterReviewClaims(advisory, traceCueRequest);
-  if (!claimValidation.ok) {
-    return claimValidation;
+  if (traceCueRequest?.stage_execution && typeof traceCueRequest.stage_execution === 'object' && !Array.isArray(traceCueRequest.stage_execution)) {
+    return validateAdapterStageExecutionContract(advisory, traceCueRequest);
   }
   if (effort !== 'xhigh') {
     return { ok: true };
   }
+  return validateAdapterFullXhighContract(advisory, traceCueRequest);
+}
+
+function validateAdapterFullXhighContract(advisory, traceCueRequest) {
+  const benchmarkValidation = validateAdapterBenchmarkCoverage(advisory, traceCueRequest);
+  const ownerBaselineValidation = validateAdapterOwnerBaselineCoverage(advisory, traceCueRequest);
+  const claimValidation = validateAdapterReviewClaims(advisory, traceCueRequest);
+  if (!benchmarkValidation.ok || !ownerBaselineValidation.ok || !claimValidation.ok) {
+    return { ok: true };
+  }
   const plannedAgents = Array.isArray(traceCueRequest?.plan?.sub_agents) ? traceCueRequest.plan.sub_agents : [];
+  return validateAdapterRoleRoundContract({
+    advisory,
+    plannedAgents,
+    requiredCritiqueRoles: plannedAgents
+      .filter((agent) => ['critic_reviewer', 'verification_reviewer'].includes(agent.role))
+      .map((agent) => agent.role),
+    requireAtLeastThreeRounds: true,
+    requireSynthesis: true,
+    incompleteCode: 'AHR_RESPONSES_ADAPTER_XHIGH_CONTRACT_INCOMPLETE',
+    incompleteMessage: 'Provider output did not satisfy the TraceCue xhigh mechanical output contract.'
+  });
+}
+
+function validateAdapterStageExecutionContract(advisory, traceCueRequest) {
+  const stage = traceCueRequest.stage_execution;
+  const requiredRoles = normalizeStringArray(stage.required_roles);
+  const requiredRound = Number.isFinite(Number(stage.required_round)) ? Number(stage.required_round) : 1;
+  const plannedAgents = requiredRoles.map((role) => ({
+    role,
+    round: requiredRound
+  }));
+  return validateAdapterRoleRoundContract({
+    advisory,
+    plannedAgents,
+    requiredCritiqueRoles: requiredRoles.filter((role) => ['critic_reviewer', 'verification_reviewer'].includes(role)),
+    requireAtLeastThreeRounds: false,
+    requireSynthesis: stage.final_contract_stage === true,
+    incompleteCode: 'AHR_RESPONSES_ADAPTER_XHIGH_CONTRACT_INCOMPLETE',
+    incompleteMessage: 'Provider output did not satisfy the TraceCue staged xhigh output contract.'
+  });
+}
+
+function validateAdapterRoleRoundContract({
+  advisory,
+  plannedAgents,
+  requiredCritiqueRoles,
+  requireAtLeastThreeRounds,
+  requireSynthesis,
+  incompleteCode,
+  incompleteMessage
+}) {
   const roleOpinions = Array.isArray(advisory?.role_opinions) ? advisory.role_opinions : [];
   const reported = roleOpinions.filter((opinion) => opinion && typeof opinion === 'object' && !opinion.placeholder_generated && opinion.reported_by_provider !== false);
   const reportedPairs = new Set(reported.map((opinion) => `${opinion.role}:${Number(opinion.round ?? 1)}`));
+  const requiredCritiqueRoleList = normalizeStringArray(requiredCritiqueRoles);
   const missingRoles = plannedAgents
     .filter((agent) => !reportedPairs.has(`${agent.role}:${Number(agent.round ?? 1)}`))
     .map((agent) => agent.role);
   const plannedRounds = [...new Set(plannedAgents.map((agent) => Number(agent.round ?? 1)))].sort((left, right) => left - right);
   const reportedRounds = new Set(reported.map((opinion) => Number(opinion.round ?? 1)));
   const missingRounds = plannedRounds.filter((round) => !reportedRounds.has(round));
-  const requiredCritiqueRoles = plannedAgents
-    .filter((agent) => ['critic_reviewer', 'verification_reviewer'].includes(agent.role))
-    .map((agent) => agent.role);
   const critiqueRecords = Array.isArray(advisory?.critique_records) ? advisory.critique_records : [];
   const critiqueRoles = new Set([
     ...critiqueRecords.map((record) => record?.role),
-    ...reported.filter((opinion) => requiredCritiqueRoles.includes(opinion.role)).map((opinion) => opinion.role)
+    ...reported.filter((opinion) => requiredCritiqueRoleList.includes(opinion.role)).map((opinion) => opinion.role)
   ].filter(Boolean));
-  const missingCritiqueRoles = requiredCritiqueRoles.filter((role) => !critiqueRoles.has(role));
+  const missingCritiqueRoles = requiredCritiqueRoleList.filter((role) => !critiqueRoles.has(role));
   const synthesisIntegrated = Boolean(advisory?.integration_record)
-    || reported.some((opinion) => opinion.role === 'synthesis_agent');
+    || (requireSynthesis === false ? true : reported.some((opinion) => opinion.role === 'synthesis_agent'));
   const placeholderCount = roleOpinions.filter((opinion) => opinion?.placeholder_generated === true || opinion?.reported_by_provider === false || /did not return|not available|missing output/i.test(String(opinion?.summary ?? ''))).length;
   const missingConditions = [
-    ...(plannedRounds.length >= 3 ? [] : ['xhigh requires at least three planned rounds']),
+    ...(!requireAtLeastThreeRounds || plannedRounds.length >= 3 ? [] : ['xhigh requires at least three planned rounds']),
     ...(missingRoles.length === 0 ? [] : [`missing planned roles: ${missingRoles.join(', ')}`]),
     ...(missingRounds.length === 0 ? [] : [`missing planned rounds: ${missingRounds.join(', ')}`]),
     ...(missingCritiqueRoles.length === 0 ? [] : [`missing critique or verification roles: ${missingCritiqueRoles.join(', ')}`]),
@@ -997,8 +1251,8 @@ function validateAdapterAdvisoryAgainstTraceCueContract(advisory, traceCueReques
   if (missingConditions.length > 0) {
     return {
       ok: false,
-      code: 'AHR_RESPONSES_ADAPTER_XHIGH_CONTRACT_INCOMPLETE',
-      message: 'Provider output did not satisfy the TraceCue xhigh mechanical output contract.',
+      code: incompleteCode,
+      message: incompleteMessage,
       details: {
         missing_roles: missingRoles,
         missing_rounds: missingRounds,
@@ -1523,11 +1777,14 @@ function validateAdapterBenchmarkCoverage(advisory, traceCueRequest) {
         }
       }
       if (!record || missingFields.length > 0) {
+        const template = coverageTemplateRecords(requiredBenchmarkCoverage)
+          .find((item) => item?.section === section && normalizeAdapterCoverageKey(item?.[labelKey]) === expectedKey);
         missing.push({
           section,
           expected,
           missing_fields: missingFields,
           ...(section === 'forbidden_claims' ? { required_present: false } : {}),
+          recommended_evidence_ref_ids: compactRepairStrings(template?.recommended_evidence_ref_ids),
           reason: forbiddenClaimInvalid
             ? 'forbidden claim record must set present=false, explicitly confirm absence, and use present only for actual claim presence'
             : 'record must include evidence and evidence_refs'

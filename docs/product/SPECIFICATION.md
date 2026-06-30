@@ -845,3 +845,15 @@ The command reads the selected preparation JSON and scans existing `.browser-deb
 Aggregation groups untrusted visual advisory findings deterministically by category, message, route, and viewport. A group is `corroborated` when more than one reviewer source reports it. Severity disagreements are preserved as conflicts that require owner review. Text fields are bounded, malformed artifacts are skipped with warnings, result scanning is limit-bound, and no raw provider response body is stored.
 
 Aggregation never writes artifacts, runs providers, reads raw pixels, reads credentials, mutates existing reviews, changes deterministic findings, changes release gates, or exposes a MCP tool. `mcp capabilities` and `mcp execution gates` report `visual_review_aggregation` as currently excluded from safe/full/admin MCP profiles until separate read-exposure gates are approved.
+
+## Agentic Human Review Responses Adapter Contract Recovery
+
+Responses adapter post-validation now evaluates all applicable TraceCue contracts before deciding whether a provider advisory is repairable. The validation families are benchmark coverage, owner-approved human-baseline coverage, optional `review_claims` filtering, and either full `xhigh` role/round/critique/synthesis completion or staged-role completion when `stage_execution` is present.
+
+When more than one family fails, the adapter returns the first failure code for backward-compatible status classification and includes `contract_failures` plus merged missing-record details in `error.details`. Repair context uses missing-only templates: satisfied benchmark or owner-baseline rows are not repeated, required owner-baseline finding templates are filtered to missing criterion ids, and allowed evidence ids are derived first from missing records and recommended evidence-reference ids before falling back to the bounded evidence catalog.
+
+For staged `xhigh` requests, the adapter validates only the roles and round required by the current stage. Final contract stages must also include synthesis integration. This keeps staged provider calls compatible with the approved multi-call plan while preventing a final-stage response from bypassing TraceCue's mechanical `xhigh` completion contract.
+
+Generic-provider and staged-provider failure records persist a safe diagnostic subset under `failure_diagnostics.details`. The subset may include provider/adapter error codes, messages, status and byte counts, timeout and duration numbers, model-resolution metadata, stage id/round/roles, contract failure summaries, missing benchmark or owner-baseline records, and recommended evidence-reference ids. It must not persist raw provider responses, raw response bodies, request payloads, provider request bodies, credentials, authorization headers, endpoint strings, URL strings, local paths, cookies, sessions, stack traces, or arbitrary nested payloads.
+
+The adapter CLI accepts and documents `--max-request-bytes` and `--max-provider-response-bytes`, and startup JSON reports the effective values. These limits are configuration for approved dogfood runs, not hidden product-specific constants.

@@ -379,3 +379,13 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Aggregation must report corroborated findings, conflicts, owner decision requests, source effects, and read-only boundary flags.
 - Aggregation must treat provider output as untrusted advisory data, bound text and result counts, skip malformed or unsafe local artifacts with warnings, and avoid release gate changes.
 - Aggregation must not run providers, read raw pixels, write artifacts, mutate existing reviews, expose MCP tools, read credentials, or store raw provider responses.
+
+## Agentic Human Review Responses Adapter Contract Recovery Criteria
+
+- TraceCue must treat external provider effort settings as advisory execution controls and enforce `standard`, `deep`, and `xhigh` review quality through TraceCue-owned mechanical contracts after provider output is returned.
+- Responses adapter validation must aggregate benchmark, owner-baseline, optional claim, and `xhigh` or staged-role contract failures into one repairable diagnostic instead of stopping at the first failure family.
+- Repair prompts must be compact and reusable: they should include only missing or invalid checklist items, approved criterion ids, owner label ids, required fields, role/round gaps, and recommended local evidence-reference ids while relying on the original request as the canonical full contract.
+- Staged `xhigh` provider calls must validate the required stage roles and round for each stage, and the final staged call must still require synthesis integration. Intermediate stage output remains non-final evidence.
+- Provider failure diagnostics written to execution records and receipts must preserve safe loopback adapter error codes, missing-condition summaries, size/timeout metadata, and stage identifiers while excluding raw provider responses, provider request bodies, credential values, endpoint strings, local paths, and raw payloads.
+- Adapter startup output and help must expose request-size and provider-response-size limits so long real-page dogfood runs can be configured deliberately without source inspection.
+- This recovery layer must stay target-agnostic. It must not add branches for a specific page, benchmark case, repository name, product name, URL, local path, provider model, or one-off dogfood artifact.
