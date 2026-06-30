@@ -56,9 +56,13 @@ For this flow, point `AGENTIC_HUMAN_REVIEW_API_ENDPOINT` at the loopback adapter
 AGENTIC_HUMAN_REVIEW_API_TOKEN=<tok> AGENTIC_HUMAN_REVIEW_OPENAI_API_KEY=<key> AGENTIC_HUMAN_REVIEW_OPENAI_MODEL=<model> npm run ahr:responses-adapter -- --json
 ```
 
+For long standard, deep, or xhigh dogfood runs, align both timers explicitly: set `AGENTIC_HUMAN_REVIEW_API_TIMEOUT_MS=<ms>` for `agentic review run`, and start the adapter with `npm run ahr:responses-adapter -- --timeout <ms> --json` for the adapter-to-provider request. The adapter startup output reports the effective timeout but does not print credential values.
+
 The adapter stores no provider key, no adapter token, and no raw provider response. Live upstream calls are manual and should not be enabled in CI.
 
 After dogfood results exist, use the read-only human-baseline lifecycle to prepare reusable owner evidence before any quality claim: `agentic review human-baseline registry`, `overlay`, `draft`, `approval`, `validate`, `compare`, and `claim-readiness`, then run `agentic review claim standard-gate --evidence-set <workspace-json> --json` to make claim-readiness pass/fail mechanical. AI drafts are preparation only; only owner-approved baselines with approval metadata can verify as `owner_labeled` evidence. Once verified, pass the approved baseline to later `agentic review propose` or `agentic review plan` with `--human-baseline <owner-baseline-json>` so target-specific must-not-miss criteria become a plan-hash-bound provider and adapter contract. These diagnostics do not run providers, expose MCP execution, mutate deterministic review output, or permit human-equivalent or human-superior claims by themselves; the claim standard gate can fail the command for automation without becoming a release gate.
+
+If owner-baseline comparison fails because the candidate result was generated without a matching owner-baseline requirement contract, rerunning only `human-baseline compare` is not enough. Regenerate an approved owner-contract plan, rerun the provider result through the normal plan-hash and transfer-flag path, then rerun calibration, comparisons, human-baseline comparison, evidence-set summary, claim-readiness, longitudinal quality, and claim-standard-gate.
 
 ## MCP Stdio Quickstart
 

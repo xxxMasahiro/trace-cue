@@ -26,6 +26,7 @@ if (parsed.help) {
       provider_api_key_fallback_env: adapter.config.providerApiKeyFallbackEnv,
       provider_endpoint_env: adapter.config.providerEndpointEnv,
       provider_model_env: adapter.config.providerModelEnv,
+      timeout_ms: adapter.config.timeoutMs,
       provider_endpoint_value_printed: false,
       credential_values_printed: false,
       raw_provider_response_stored: false
@@ -37,6 +38,7 @@ if (parsed.help) {
       console.log(`Adapter token env: ${adapter.config.adapterTokenEnv}`);
       console.log(`Provider API key env: ${adapter.config.providerApiKeyEnv} or ${adapter.config.providerApiKeyFallbackEnv}`);
       console.log(`Provider model env: ${adapter.config.providerModelEnv}`);
+      console.log(`Provider request timeout: ${adapter.config.timeoutMs} ms`);
     }
     for (const signal of ['SIGINT', 'SIGTERM']) {
       process.once(signal, async () => {
@@ -133,7 +135,7 @@ function printHelp() {
     `  --provider-model-env <name>           Provider model env. Default: ${AGENTIC_HUMAN_REVIEW_RESPONSES_ADAPTER_DEFAULTS.providerModelEnv}`,
     '  --provider-endpoint <url>             Provider endpoint default when env is unset.',
     '  --provider-model <id>                 Provider model default when env and request model are unset.',
-    '  --timeout <ms>                        Provider request timeout.',
+    `  --timeout <ms>                        Provider request timeout. Default: ${AGENTIC_HUMAN_REVIEW_RESPONSES_ADAPTER_DEFAULTS.timeoutMs}`,
     `  --contract-repair-attempts <count>    Contract repair retries. Default: ${AGENTIC_HUMAN_REVIEW_RESPONSES_ADAPTER_DEFAULTS.contractRepairAttempts}`,
     '  --help                                Show this help.'
   ].join('\n'));
