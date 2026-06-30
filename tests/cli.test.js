@@ -4850,6 +4850,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   const humanBaselineValidationBody = JSON.parse(humanBaselineValidation.stdout);
   assert.equal(humanBaselineValidationBody.command, 'agentic review human-baseline validate');
   assert.equal(humanBaselineValidationBody.data.agentic_human_review_human_baseline.validation.owner_labeled_baseline_verified, true);
+  const ownerHumanBaselineInputHash = humanBaselineValidationBody.data.agentic_human_review_human_baseline.input_hash;
   assert.equal(humanBaselineValidationBody.data.agentic_human_review_human_baseline.validation.approval_metadata_complete, true);
   assert.equal(humanBaselineValidationBody.data.agentic_human_review_human_baseline.validation.target_specific_must_not_miss_criteria_complete, true);
   assert.equal(humanBaselineValidationBody.data.agentic_human_review_human_baseline.summary.must_not_miss_owner_label_count, 1);
@@ -4948,6 +4949,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   });
   assert.equal(humanBaselinePlan.exitCode, 0);
   const humanBaselinePlanBody = JSON.parse(humanBaselinePlan.stdout);
+  const humanBaselinePlanPath = '.browser-debug/agentic-human-review-plans/agentic-plan-owner-baseline/plan.json';
+  const humanBaselinePlanHash = humanBaselinePlanBody.data.plan_hash;
+  const humanBaselinePlanFlags = humanBaselinePlanBody.data.agentic_human_review_plan.transfer_permissions.required_flags.slice().sort();
   assert.equal(humanBaselinePlanBody.data.agentic_human_review_plan.owner_baseline_requirement_contract.baseline_id, 'owner-baseline-fixed');
   assert.equal(humanBaselinePlanBody.data.agentic_human_review_plan.owner_baseline_requirement_contract.case_id, 'blog-content-value');
   assert.equal(humanBaselinePlanBody.data.agentic_human_review_plan.review_quality_benchmark.case_id, 'blog-content-value');
@@ -5007,9 +5011,14 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.miss_count, 0);
   assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.scores.must_not_miss_miss_count, 0);
   assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.matches.classifications.misses.length, 0);
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.candidate.owner_baseline_requirement_contract_present, false);
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.candidate.owner_baseline_requirement_contract_matches_baseline, false);
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.summary.ready_for_owner_review, false);
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.warnings.some((warning) => warning.code === 'AHR_HUMAN_BASELINE_COMPARISON_CANDIDATE_OWNER_BASELINE_CONTRACT_MISSING'), true);
   assert.equal(Array.isArray(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.diagnostics.missing_owner_label_ids), true);
   assert.equal(Array.isArray(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.diagnostics.missing_must_not_miss_criterion_ids), true);
   assert.equal(Array.isArray(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.diagnostics.forbidden_claim_absence_evidence_missing), true);
+  assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.diagnostics.candidate_owner_baseline_requirement_contract.present, false);
   assert.equal(humanBaselineComparisonBody.data.agentic_human_review_human_baseline_comparison.summary.human_equivalent_claim_allowed, false);
   await writeFile(path.join(cwd, 'owner-human-baseline-validation-wrapper.json'), humanBaselineValidation.stdout, 'utf8');
   const validationWrappedHumanBaselineComparison = await executeCli([
@@ -5368,6 +5377,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.results[0].claim_numerator_eligible, false);
   assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.results[0].proof_eligible, false);
   assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.summary.human_equivalent_claim_allowed, false);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.comparisons[0].candidate_owner_baseline_requirement_contract_present, false);
+  assert.equal(evidenceSetBody.data.agentic_human_review_evidence_set.comparisons[0].candidate_owner_baseline_requirement_contract_matches_baseline, false);
 
   const evidenceSetAliasPath = path.join(cwd, 'agentic-evidence-set-aliases.json');
   await writeFile(evidenceSetAliasPath, JSON.stringify({
@@ -5828,7 +5839,20 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
       human_baseline_ready_for_owner_review: true,
       human_baseline_candidate_matches_owner_baseline: true,
       human_baseline_owner_labeled_baseline_verified: true,
+      human_baseline_id: caseId === 'blog-content-value' ? 'owner-baseline-fixed' : `baseline-${caseId}`,
+      human_baseline_input_hash: caseId === 'blog-content-value' ? ownerHumanBaselineInputHash : `owner-baseline-input-${caseId}`,
+      candidate_result_path: `matrix-${caseId}-standard.json`,
       candidate_mechanical_contract_satisfied: true,
+      candidate_owner_baseline_requirement_contract_present: true,
+      candidate_owner_baseline_requirement_contract_matches_baseline: true,
+      candidate_owner_baseline_requirement_contract_diagnostics: {
+        present: true,
+        matches_baseline: true,
+        baseline_id_matches: true,
+        case_id_matches: true,
+        input_hash_matches: true,
+        contract_owner_labeled_baseline_verified: true
+      },
       human_baseline_must_not_miss_miss_count: 0,
       human_baseline_miss_count: 0,
       human_baseline_over_report_count: 0,
@@ -5960,6 +5984,105 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(completeClaimStandardGateData.blockers.length, 0);
   assert.equal(completeClaimStandardGateData.rerun_plan.status, 'no_rerun_required');
   assert.equal(completeClaimStandardGateData.rerun_plan.target_count, 0);
+
+  const ownerContractMissingComparison = {
+    ...completeClaimComparisons.find((comparison) => comparison.comparison_kind === 'owner-labeled-human-baseline' && comparison.case_id === 'blog-content-value'),
+    path: 'claim-owner-baseline-contract-missing-blog-content-value.json',
+    candidate_result_path: 'matrix-blog-content-value-standard.json',
+    human_baseline_ready_for_owner_review: false,
+    human_baseline_candidate_matches_owner_baseline: false,
+    candidate_owner_baseline_requirement_contract_present: false,
+    candidate_owner_baseline_requirement_contract_matches_baseline: false,
+    candidate_owner_baseline_requirement_contract_diagnostics: {
+      present: false,
+      matches_baseline: false,
+      baseline_id_matches: false,
+      case_id_matches: false,
+      input_hash_matches: false
+    }
+  };
+  const ownerContractMissingEvidenceSet = {
+    ...completeClaimEvidenceSet,
+    comparisons: completeClaimEvidenceSet.comparisons.map((comparison) => (
+      comparison.comparison_kind === 'owner-labeled-human-baseline' && comparison.case_id === 'blog-content-value'
+        ? ownerContractMissingComparison
+        : comparison
+    ))
+  };
+  await writeFile(path.join(cwd, 'owner-contract-missing-claim-standard-gate-evidence-set.json'), JSON.stringify(ownerContractMissingEvidenceSet, null, 2), 'utf8');
+  const ownerContractMissingClaimStandardGate = await executeCli([
+    'agentic',
+    'review',
+    'claim',
+    'standard-gate',
+    '--evidence-set',
+    'owner-contract-missing-claim-standard-gate-evidence-set.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(ownerContractMissingClaimStandardGate.exitCode, 1);
+  const ownerContractMissingGateData = JSON.parse(ownerContractMissingClaimStandardGate.stdout).data.agentic_human_review_claim_standard_gate;
+  assert.equal(ownerContractMissingGateData.rerun_plan.provider_execution_approval_required, true);
+  assert.equal(ownerContractMissingGateData.rerun_plan.targets.some((target) => target.target_type === 'human_baseline_comparison' && target.requires_provider_execution_approval === false), true);
+  const ownerContractResultTarget = ownerContractMissingGateData.rerun_plan.targets.find((target) => target.target_type === 'result' && target.reason_code === 'owner_baseline_candidate_contract_missing');
+  assert.ok(ownerContractResultTarget);
+  assert.equal(ownerContractResultTarget.requires_provider_execution_approval, true);
+  assert.equal(ownerContractResultTarget.owner_baseline_contract_required, true);
+  assert.equal(ownerContractResultTarget.owner_baseline_id, 'owner-baseline-fixed');
+  assert.equal(ownerContractResultTarget.owner_baseline_input_hash, ownerHumanBaselineInputHash);
+
+  await writeFile(path.join(cwd, 'owner-contract-missing-claim-standard-gate.json'), ownerContractMissingClaimStandardGate.stdout, 'utf8');
+  const unresolvedOwnerContractRegenerationPlan = await executeCli([
+    'agentic',
+    'review',
+    'evidence-set',
+    'regenerate',
+    'plan',
+    '--evidence-set',
+    'owner-contract-missing-claim-standard-gate-evidence-set.json',
+    '--claim-gate',
+    'owner-contract-missing-claim-standard-gate.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(unresolvedOwnerContractRegenerationPlan.exitCode, 0);
+  const unresolvedOwnerContractRegenerationData = JSON.parse(unresolvedOwnerContractRegenerationPlan.stdout).data.agentic_human_review_evidence_regeneration_plan;
+  assert.equal(unresolvedOwnerContractRegenerationData.provider_execution_approval_required, true);
+  const unresolvedOwnerContractTarget = unresolvedOwnerContractRegenerationData.targets.find((target) => target.reason_code === 'owner_baseline_candidate_contract_missing');
+  assert.equal(unresolvedOwnerContractTarget.owner_baseline_contract_required, true);
+  assert.equal(unresolvedOwnerContractTarget.unresolved_inputs.includes('plan'), true);
+  assert.equal(unresolvedOwnerContractTarget.unresolved_inputs.includes('plan_hash'), true);
+
+  await writeFile(path.join(cwd, 'owner-contract-regeneration-target-registry.json'), JSON.stringify({
+    results: [{
+      case_id: 'blog-content-value',
+      effort: 'standard',
+      result_path: 'matrix-blog-content-value-standard.json',
+      plan_path: humanBaselinePlanPath,
+      plan_hash: humanBaselinePlanHash,
+      required_flags: humanBaselinePlanFlags
+    }]
+  }, null, 2), 'utf8');
+  const resolvedOwnerContractRegenerationPlan = await executeCli([
+    'agentic',
+    'review',
+    'evidence-set',
+    'regenerate',
+    'plan',
+    '--evidence-set',
+    'owner-contract-missing-claim-standard-gate-evidence-set.json',
+    '--claim-gate',
+    'owner-contract-missing-claim-standard-gate.json',
+    '--target-registry',
+    'owner-contract-regeneration-target-registry.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(resolvedOwnerContractRegenerationPlan.exitCode, 0);
+  const resolvedOwnerContractRegenerationData = JSON.parse(resolvedOwnerContractRegenerationPlan.stdout).data.agentic_human_review_evidence_regeneration_plan;
+  const resolvedOwnerContractTarget = resolvedOwnerContractRegenerationData.targets.find((target) => target.reason_code === 'owner_baseline_candidate_contract_missing');
+  assert.equal(resolvedOwnerContractTarget.resolved_inputs.approved_plan_path, humanBaselinePlanPath);
+  assert.equal(resolvedOwnerContractTarget.resolved_inputs.approved_plan_hash, humanBaselinePlanHash);
+  assert.equal(resolvedOwnerContractTarget.resolved_inputs.approved_owner_baseline_contract_verified, true);
+  assert.deepEqual(resolvedOwnerContractTarget.unresolved_inputs, []);
+  assert.equal(resolvedOwnerContractTarget.command_templates.some((command) => command.command.includes(humanBaselinePlanPath) && command.command.includes('--execute')), true);
 
   const invalidClaimResult = {
     ...matrixBaseResult,
@@ -7592,6 +7715,38 @@ test('agentic human review responses adapter keeps HTTP request timeout above pr
   } finally {
     await adapter.close();
   }
+});
+
+test('agentic human review responses adapter reports safe upstream failure diagnostics', async () => {
+  const request = adapterTraceCueRequest();
+  const failure = new Error('provider-secret-value should not be exposed');
+  failure.name = 'TypeError';
+  failure.code = 'ECONNRESET';
+  const result = await handleAgenticHumanReviewResponsesAdapterRequest({
+    method: 'POST',
+    url: '/agentic-human-review',
+    headers: {
+      host: '127.0.0.1:8787',
+      'content-type': 'application/json',
+      authorization: 'Bearer adapter-secret-value'
+    },
+    remoteAddress: '127.0.0.1',
+    bodyText: JSON.stringify(request),
+    config: { timeoutMs: 1234 },
+    env: adapterEnv(),
+    fetchImpl: async () => {
+      throw failure;
+    },
+    now: fixedNow
+  });
+
+  assert.equal(result.statusCode, 502);
+  assert.equal(result.body.error.code, 'AHR_RESPONSES_ADAPTER_PROVIDER_REQUEST_FAILED');
+  assert.equal(result.body.error.details.timeout_ms, 1234);
+  assert.equal(result.body.error.details.failure_class, 'TypeError');
+  assert.equal(result.body.error.details.failure_cause_code, 'ECONNRESET');
+  assert.equal(typeof result.body.error.details.duration_ms, 'number');
+  assert.doesNotMatch(JSON.stringify(result.body), /provider-secret-value|adapter-secret-value/);
 });
 
 test('agentic human review responses adapter requires owner label ids for owner-baseline criteria', async () => {

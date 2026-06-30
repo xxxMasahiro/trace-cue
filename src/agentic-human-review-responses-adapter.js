@@ -414,6 +414,11 @@ export async function handleAgenticHumanReviewResponsesAdapterRequest({
         boundary,
         provider_status_code: providerResult.providerStatusCode,
         response_bytes: providerResult.responseBytes,
+        duration_ms: providerResult.durationMs,
+        timeout_ms: providerResult.timeoutMs,
+        failure_class: providerResult.failureClass,
+        failure_cause_name: providerResult.failureCauseName,
+        failure_cause_code: providerResult.failureCauseCode,
         contract_repair_attempts_performed: contractRepairAttemptsPerformed
       });
     }
@@ -2820,6 +2825,7 @@ async function dispatchProviderRequest({ endpoint, credential, requestText, time
     if (timer) {
       clearTimeout(timer);
     }
+    const failureMetadata = safeProviderFailureMetadata(error);
     return {
       ok: false,
       statusCode: 502,
@@ -2829,7 +2835,9 @@ async function dispatchProviderRequest({ endpoint, credential, requestText, time
         : 'Provider request failed.',
       providerStatusCode: null,
       responseBytes: null,
-      durationMs: Date.now() - started
+      durationMs: Date.now() - started,
+      timeoutMs,
+      ...failureMetadata
     };
   } finally {
     if (timer) {
@@ -2865,6 +2873,23 @@ async function dispatchProviderRequest({ endpoint, credential, requestText, time
     providerStatusCode,
     responseBytes: parsed.responseBytes
   };
+}
+
+function safeProviderFailureMetadata(error) {
+  return {
+    failureClass: safeDiagnosticToken(error?.name),
+    failureCauseName: safeDiagnosticToken(error?.cause?.name),
+    failureCauseCode: safeDiagnosticToken(error?.cause?.code ?? error?.code)
+  };
+}
+
+function safeDiagnosticToken(value) {
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return null;
+  }
+  const sanitized = text.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 80);
+  return sanitized || null;
 }
 
 function extractOpenAiOutputText(responseJson) {

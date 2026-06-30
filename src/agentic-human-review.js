@@ -2864,8 +2864,18 @@ function evidenceSetComparisonRecord({ entry, comparison, comparisonPath, compar
     human_baseline_candidate_matches_owner_baseline: comparison.summary?.candidate_matches_owner_baseline === true,
     human_baseline_owner_labeled_baseline_verified: comparison.summary?.owner_labeled_baseline_verified === true
       || comparison.baseline?.owner_labeled_baseline_verified === true,
+    human_baseline_id: comparison.baseline?.baseline_id ?? null,
+    human_baseline_input_hash: comparison.baseline?.input_hash ?? null,
+    candidate_result_path: comparison.candidate?.result_path ?? entry.candidate_path ?? entry.result_path ?? null,
     candidate_mechanical_contract_satisfied: comparison.summary?.candidate_mechanical_contract_satisfied === true
       || comparison.candidate?.mechanical_contract_satisfied === true,
+    candidate_owner_baseline_requirement_contract_present: comparison.candidate?.owner_baseline_requirement_contract_present === true
+      || comparison.summary?.candidate_owner_baseline_requirement_contract_present === true,
+    candidate_owner_baseline_requirement_contract_matches_baseline: comparison.candidate?.owner_baseline_requirement_contract_matches_baseline === true
+      || comparison.summary?.candidate_owner_baseline_requirement_contract_matches_baseline === true,
+    candidate_owner_baseline_requirement_contract_diagnostics: comparison.candidate?.owner_baseline_requirement_contract_diagnostics
+      ?? comparison.diagnostics?.candidate_owner_baseline_requirement_contract
+      ?? {},
     human_baseline_must_not_miss_miss_count: Number(comparison.scores?.must_not_miss_miss_count ?? 0),
     human_baseline_miss_count: Number(comparison.scores?.miss_count ?? comparison.matches?.classifications?.misses?.length ?? 0),
     human_baseline_over_report_count: Number(comparison.scores?.over_report_count ?? comparison.matches?.classifications?.over_reports?.length ?? 0),
@@ -3758,6 +3768,8 @@ function buildClaimStandardGate({
       || comparison.human_baseline_candidate_matches_owner_baseline !== true
       || comparison.human_baseline_owner_labeled_baseline_verified !== true
       || comparison.candidate_mechanical_contract_satisfied !== true
+      || comparison.candidate_owner_baseline_requirement_contract_present !== true
+      || comparison.candidate_owner_baseline_requirement_contract_matches_baseline !== true
       || Number(comparison.human_baseline_must_not_miss_miss_count ?? 0) > 0
       || Number(comparison.human_baseline_miss_count ?? 0) > 0
       || Number(comparison.human_baseline_insufficient_evidence_count ?? 0) > 0);
@@ -4025,8 +4037,15 @@ async function buildEvidenceRegenerationTarget({ cwd, evidenceSet, registry, raw
   const effort = rawTarget?.effort ? secretSafeText(rawTarget.effort, 80) : null;
   const comparisonKind = rawTarget?.comparison_kind ? secretSafeText(rawTarget.comparison_kind, 120) : null;
   const sourcePath = rawTarget?.source_path ? secretSafeText(rawTarget.source_path, 600) : null;
+  const relatedSourcePath = rawTarget?.related_source_path ? secretSafeText(rawTarget.related_source_path, 600) : null;
+  const resultId = rawTarget?.result_id ? secretSafeText(rawTarget.result_id, 160) : null;
+  const ownerBaselineRequirement = {
+    required: rawTarget?.owner_baseline_contract_required === true,
+    baseline_id: rawTarget?.owner_baseline_id ? secretSafeText(rawTarget.owner_baseline_id, 160) : null,
+    input_hash: rawTarget?.owner_baseline_input_hash ? secretSafeText(rawTarget.owner_baseline_input_hash, 160) : null
+  };
   const warnings = [];
-  const resultRecord = findRegenerationResultRecord({ evidenceSet, registry, caseId, effort, resultId: rawTarget?.result_id, sourcePath });
+  const resultRecord = findRegenerationResultRecord({ evidenceSet, registry, caseId, effort, resultId, sourcePath });
   const comparisonRecord = findRegenerationComparisonRecord({ evidenceSet, registry, caseId, comparisonKind, sourcePath });
   const humanBaselineComparisonRecord = findRegenerationHumanBaselineComparisonRecord({ registry, caseId, effort, sourcePath });
   const sourceArtifact = sourcePath
@@ -4042,6 +4061,7 @@ async function buildEvidenceRegenerationTarget({ cwd, evidenceSet, registry, raw
         sourcePath,
         caseId,
         effort,
+        ownerBaselineRequirement,
         maxBytes
       })
     : { record: null, warnings: [] };
@@ -4078,6 +4098,11 @@ async function buildEvidenceRegenerationTarget({ cwd, evidenceSet, registry, raw
       effort,
       comparison_kind: comparisonKind,
       source_path: sourcePath,
+      related_source_path: relatedSourcePath,
+      result_id: resultId,
+      owner_baseline_contract_required: ownerBaselineRequirement.required,
+      owner_baseline_id: ownerBaselineRequirement.baseline_id,
+      owner_baseline_input_hash: ownerBaselineRequirement.input_hash,
       action: secretSafeText(rawTarget?.action ?? evidenceRegenerationDefaultAction(targetType), 600),
       requires_provider_execution_approval: rawTarget?.requires_provider_execution_approval === true || ['result', 'claim_audit'].includes(targetType),
       dependency_group: evidenceRegenerationDependencyGroup(targetType),
@@ -4089,6 +4114,7 @@ async function buildEvidenceRegenerationTarget({ cwd, evidenceSet, registry, raw
         approved_plan_hash: approvedPlan.record?.plan_hash ?? null,
         approved_transfer_flags: approvedPlan.record?.required_flags ?? [],
         approved_plan_source: approvedPlan.record?.source ?? null,
+        approved_owner_baseline_contract_verified: approvedPlan.record?.owner_baseline_contract_verified === true,
         baseline_path: commandTemplates.find((command) => command.intent === 'comparison')?.inputs?.baseline ?? null,
         candidate_path: commandTemplates.find((command) => command.intent === 'comparison')?.inputs?.candidate ?? null,
         human_baseline_path: commandTemplates.find((command) => command.intent === 'human_baseline_comparison')?.inputs?.baseline ?? null
@@ -4140,6 +4166,7 @@ async function resolveEvidenceRegenerationApprovedPlan({
   sourcePath,
   caseId,
   effort,
+  ownerBaselineRequirement,
   maxBytes
 }) {
   const explicitCandidate = evidenceRegenerationApprovedPlanCandidateFromRecord(resultRecord, 'target_registry_or_result_record');
@@ -4150,6 +4177,7 @@ async function resolveEvidenceRegenerationApprovedPlan({
       sourcePath,
       caseId,
       effort,
+      ownerBaselineRequirement,
       maxBytes
     });
   }
@@ -4204,6 +4232,7 @@ async function resolveEvidenceRegenerationApprovedPlan({
     sourcePath,
     caseId,
     effort,
+    ownerBaselineRequirement,
     maxBytes
   });
 }
@@ -4288,6 +4317,7 @@ async function validateEvidenceRegenerationApprovedPlanCandidate({
   sourcePath,
   caseId,
   effort,
+  ownerBaselineRequirement = null,
   maxBytes
 }) {
   if (!candidate?.plan_path || !candidate?.plan_hash) {
@@ -4381,6 +4411,21 @@ async function validateEvidenceRegenerationApprovedPlanCandidate({
     };
   }
 
+  const ownerBaselineMatch = evidenceRegenerationApprovedPlanOwnerBaselineMatch({
+    plan,
+    requirement: ownerBaselineRequirement
+  });
+  if (!ownerBaselineMatch.ok) {
+    return {
+      record: null,
+      warnings: [{
+        code: ownerBaselineMatch.code,
+        message: ownerBaselineMatch.message,
+        details: { ...ownerBaselineMatch.details, plan_path: candidate.plan_path, source: candidate.source }
+      }]
+    };
+  }
+
   const expectedCommand = buildRunCommand({
     planPath: candidate.plan_path,
     planHash: planValidation.planHash,
@@ -4407,9 +4452,62 @@ async function validateEvidenceRegenerationApprovedPlanCandidate({
       execution_path: candidate.execution_path ?? null,
       plan_path: candidate.plan_path,
       plan_hash: planValidation.planHash,
-      required_flags: requiredFlags
+      required_flags: requiredFlags,
+      owner_baseline_contract_verified: ownerBaselineMatch.verified
     },
     warnings: []
+  };
+}
+
+function evidenceRegenerationApprovedPlanOwnerBaselineMatch({ plan, requirement }) {
+  if (requirement?.required !== true) {
+    return { ok: true, verified: false };
+  }
+  const contract = plan?.owner_baseline_requirement_contract
+    ?? plan?.review_quality_benchmark?.owner_baseline_requirement_contract
+    ?? null;
+  if (!contract) {
+    return {
+      ok: false,
+      verified: false,
+      code: 'AHR_EVIDENCE_REGENERATION_PLAN_OWNER_BASELINE_CONTRACT_MISSING',
+      message: 'A regeneration target requires an approved owner-baseline requirement contract, but the resolved plan does not include one.',
+      details: {
+        owner_baseline_contract_required: true,
+        owner_baseline_id_present: Boolean(requirement.baseline_id),
+        owner_baseline_input_hash_present: Boolean(requirement.input_hash)
+      }
+    };
+  }
+  const baselineIdMatches = !requirement.baseline_id || contract.baseline_id === requirement.baseline_id;
+  const inputHashMatches = !requirement.input_hash || contract.input_hash === requirement.input_hash;
+  if (!baselineIdMatches || !inputHashMatches || contract.owner_labeled_baseline_verified !== true) {
+    return {
+      ok: false,
+      verified: false,
+      code: 'AHR_EVIDENCE_REGENERATION_PLAN_OWNER_BASELINE_CONTRACT_MISMATCH',
+      message: 'A regeneration target requires an approved owner-baseline requirement contract matching the failed comparison baseline.',
+      details: {
+        owner_baseline_contract_required: true,
+        owner_baseline_id_matches: baselineIdMatches,
+        owner_baseline_input_hash_matches: inputHashMatches,
+        contract_owner_labeled_baseline_verified: contract.owner_labeled_baseline_verified === true,
+        owner_baseline_id_present: Boolean(requirement.baseline_id),
+        owner_baseline_input_hash_present: Boolean(requirement.input_hash),
+        contract_hash: hashJson(contract)
+      }
+    };
+  }
+  return {
+    ok: true,
+    verified: true,
+    details: {
+      owner_baseline_contract_required: true,
+      owner_baseline_id_matches: baselineIdMatches,
+      owner_baseline_input_hash_matches: inputHashMatches,
+      contract_owner_labeled_baseline_verified: true,
+      contract_hash: hashJson(contract)
+    }
   };
 }
 
@@ -4767,6 +4865,28 @@ function evidenceRegenerationInvalidations({ targetType, caseId, effort, compari
   return common.map((artifact_family) => ({ artifact_family }));
 }
 
+function ownerBaselineComparisonNeedsProviderResultRerun(comparison) {
+  return comparison.candidate_owner_baseline_requirement_contract_present !== true
+    || comparison.candidate_owner_baseline_requirement_contract_matches_baseline !== true
+    || comparison.candidate_mechanical_contract_satisfied !== true
+    || Number(comparison.human_baseline_must_not_miss_miss_count ?? 0) > 0
+    || Number(comparison.human_baseline_miss_count ?? 0) > 0
+    || Number(comparison.human_baseline_insufficient_evidence_count ?? 0) > 0;
+}
+
+function ownerBaselineComparisonProviderRerunReason(comparison) {
+  if (comparison.candidate_owner_baseline_requirement_contract_present !== true) {
+    return 'owner_baseline_candidate_contract_missing';
+  }
+  if (comparison.candidate_owner_baseline_requirement_contract_matches_baseline !== true) {
+    return 'owner_baseline_candidate_contract_mismatch';
+  }
+  if (comparison.candidate_mechanical_contract_satisfied !== true) {
+    return 'owner_baseline_candidate_mechanical_incomplete';
+  }
+  return 'owner_baseline_candidate_output_incomplete';
+}
+
 function buildEvidenceRegenerationStages(targets, { evidenceSetPath, claimGatePath, targetRegistryPath, providerExecutionApprovalRequired }) {
   const stageDefinitions = [
     ['provider_result_repair', 'Approved provider result reruns or result repairs. These commands are not executed by this plan.'],
@@ -4864,6 +4984,11 @@ function buildClaimStandardRerunPlan({
       effort: target.effort ?? null,
       comparison_kind: target.comparison_kind ?? null,
       source_path: target.source_path ?? null,
+      related_source_path: target.related_source_path ?? null,
+      result_id: target.result_id ?? null,
+      owner_baseline_contract_required: target.owner_baseline_contract_required === true,
+      owner_baseline_id: target.owner_baseline_id ?? null,
+      owner_baseline_input_hash: target.owner_baseline_input_hash ?? null,
       action: target.action,
       requires_provider_execution_approval: target.requires_provider_execution_approval === true,
       advisory_only: true,
@@ -4916,16 +5041,34 @@ function buildClaimStandardRerunPlan({
     });
   }
   for (const comparison of ownerBaselineComparisonBlockers) {
+    const caseId = comparison.case_id ?? comparison.baseline_case_id ?? comparison.candidate_case_id;
+    const effort = comparison.candidate_effort ?? null;
     addTarget({
       target_type: 'human_baseline_comparison',
       reason_code: 'owner_baseline_alignment_incomplete',
-      case_id: comparison.case_id ?? comparison.baseline_case_id ?? comparison.candidate_case_id,
-      effort: comparison.candidate_effort ?? null,
+      case_id: caseId,
+      effort,
       comparison_kind: comparison.comparison_kind,
       source_path: comparison.path,
       action: 'regenerate owner-baseline comparison after candidate result covers missing owner labels and criteria',
       requires_provider_execution_approval: false
     });
+    if (ownerBaselineComparisonNeedsProviderResultRerun(comparison)) {
+      addTarget({
+        target_type: 'result',
+        reason_code: ownerBaselineComparisonProviderRerunReason(comparison),
+        case_id: caseId,
+        effort,
+        source_path: comparison.candidate_result_path ?? null,
+        related_source_path: comparison.path,
+        result_id: comparison.candidate_result_id ?? null,
+        owner_baseline_contract_required: true,
+        owner_baseline_id: comparison.human_baseline_id ?? null,
+        owner_baseline_input_hash: comparison.human_baseline_input_hash ?? null,
+        action: 'rerun the candidate result with a matching owner-baseline requirement contract before regenerating owner-baseline comparison evidence',
+        requires_provider_execution_approval: true
+      });
+    }
   }
   for (const failure of claimAuditSummary.failures ?? []) {
     addTarget({
@@ -5085,6 +5228,9 @@ function claimStandardComparisonDetails(comparison) {
     candidate_matches_owner_baseline: comparison.human_baseline_candidate_matches_owner_baseline ?? null,
     owner_labeled_baseline_verified: comparison.human_baseline_owner_labeled_baseline_verified ?? null,
     candidate_mechanical_contract_satisfied: comparison.candidate_mechanical_contract_satisfied ?? null,
+    candidate_owner_baseline_requirement_contract_present: comparison.candidate_owner_baseline_requirement_contract_present ?? null,
+    candidate_owner_baseline_requirement_contract_matches_baseline: comparison.candidate_owner_baseline_requirement_contract_matches_baseline ?? null,
+    candidate_owner_baseline_requirement_contract_diagnostics: comparison.candidate_owner_baseline_requirement_contract_diagnostics ?? {},
     must_not_miss_miss_count: Number(comparison.human_baseline_must_not_miss_miss_count ?? 0),
     miss_count: Number(comparison.human_baseline_miss_count ?? 0),
     insufficient_evidence_count: Number(comparison.human_baseline_insufficient_evidence_count ?? 0),
@@ -7086,6 +7232,54 @@ function buildOwnerBaselineRequirementContract({ humanBaseline, inputHash }) {
   });
 }
 
+function ownerBaselineRequirementContractFromResult(result) {
+  return result?.owner_baseline_requirement_contract
+    ?? result?.review_quality_benchmark?.owner_baseline_requirement_contract
+    ?? result?.provider_instruction_contract?.owner_baseline_requirement_contract
+    ?? result?.agentic_human_review_advisory?.owner_baseline_requirement_contract
+    ?? null;
+}
+
+function ownerBaselineContractDiagnostics({ baseline, result }) {
+  const contract = ownerBaselineRequirementContractFromResult(result);
+  const baselineId = stringOrNull(baseline?.baseline?.baseline_id);
+  const baselineCaseId = stringOrNull(baseline?.baseline?.case_id);
+  const baselineInputHash = stringOrNull(baseline?.input_hash);
+  const contractBaselineId = stringOrNull(contract?.baseline_id);
+  const contractCaseId = stringOrNull(contract?.case_id);
+  const contractInputHash = stringOrNull(contract?.input_hash);
+  const present = Boolean(contract);
+  const baselineIdMatches = Boolean(present && baselineId && contractBaselineId && baselineId === contractBaselineId);
+  const caseIdMatches = Boolean(present && baselineCaseId && contractCaseId && baselineCaseId === contractCaseId);
+  const inputHashMatches = Boolean(present && baselineInputHash && contractInputHash && baselineInputHash === contractInputHash);
+  const ownerLabeledBaselineVerified = contract?.owner_labeled_baseline_verified === true;
+  const matchesBaseline = present
+    && baselineIdMatches
+    && caseIdMatches
+    && inputHashMatches
+    && ownerLabeledBaselineVerified;
+  return {
+    present,
+    matchesBaseline,
+    diagnostics: {
+      present,
+      matches_baseline: matchesBaseline,
+      baseline_id_present: Boolean(baselineId),
+      contract_baseline_id_present: Boolean(contractBaselineId),
+      baseline_id_matches: baselineIdMatches,
+      case_id_present: Boolean(baselineCaseId),
+      contract_case_id_present: Boolean(contractCaseId),
+      case_id_matches: caseIdMatches,
+      baseline_input_hash_present: Boolean(baselineInputHash),
+      contract_input_hash_present: Boolean(contractInputHash),
+      input_hash_matches: inputHashMatches,
+      contract_owner_labeled_baseline_verified: ownerLabeledBaselineVerified,
+      target_specific_must_not_miss_required: contract?.target_specific_must_not_miss_required === true,
+      contract_hash: present ? hashJson(contract) : null
+    }
+  };
+}
+
 function buildHumanBaselineComparison({ baseline, result, resultPath, resultHash, requestedCaseId, now }) {
   const baselineCaseId = baseline.baseline.case_id;
   const resultCaseId = result.calibration_metadata?.benchmark_case_id
@@ -7133,6 +7327,7 @@ function buildHumanBaselineComparison({ baseline, result, resultPath, resultHash
     result,
     providerId: result.provider?.id ?? null
   });
+  const ownerBaselineContract = ownerBaselineContractDiagnostics({ baseline, result });
   const overallAlignmentScore = clampScore(
     (dimensionScore * 0.3)
     + (labelScore * 0.3)
@@ -7172,6 +7367,16 @@ function buildHumanBaselineComparison({ baseline, result, resultPath, resultHash
       message: 'The candidate matched owner labels through text but did not provide structured findings with local evidence references.',
       details: { insufficient_evidence_count: classification.insufficient_evidence.length }
     }]),
+    ...(ownerBaselineContract.present ? [] : [{
+      code: 'AHR_HUMAN_BASELINE_COMPARISON_CANDIDATE_OWNER_BASELINE_CONTRACT_MISSING',
+      message: 'The candidate result was not generated from an owner-baseline requirement contract, so local comparison regeneration cannot make it proof-ready.',
+      details: ownerBaselineContract.diagnostics
+    }]),
+    ...(!ownerBaselineContract.present || ownerBaselineContract.matchesBaseline ? [] : [{
+      code: 'AHR_HUMAN_BASELINE_COMPARISON_CANDIDATE_OWNER_BASELINE_CONTRACT_MISMATCH',
+      message: 'The candidate result owner-baseline requirement contract does not match the approved baseline being compared.',
+      details: ownerBaselineContract.diagnostics
+    }]),
     ...(candidateEligibility.mechanical_contract_satisfied ? [] : [{
       code: 'AHR_HUMAN_BASELINE_COMPARISON_CANDIDATE_MECHANICAL_CONTRACT_INCOMPLETE',
       message: 'The candidate result does not satisfy the TraceCue mechanical review contract required for ready baseline comparison evidence.',
@@ -7189,12 +7394,14 @@ function buildHumanBaselineComparison({ baseline, result, resultPath, resultHash
     forbiddenClaimMatches,
     classification
   });
+  diagnostics.candidate_owner_baseline_requirement_contract = ownerBaselineContract.diagnostics;
   const readyForOwnerReview = ownerBaselineVerified
     && overallAlignmentScore >= 0.75
     && mustNotMissScore === 1
     && forbiddenClaimScore === 1
     && classification.misses.length === 0
     && evidenceBackedOwnerLabelMatches
+    && ownerBaselineContract.matchesBaseline
     && candidateEligibility.mechanical_contract_satisfied;
   return redact({
     schema_version: SCHEMA_VERSION,
@@ -7221,7 +7428,10 @@ function buildHumanBaselineComparison({ baseline, result, resultPath, resultHash
       quality_scores: comparableQualityScores(result),
       mechanical_contract_satisfied: candidateEligibility.mechanical_contract_satisfied,
       strict_claim_numerator_eligible: candidateEligibility.strict_claim_numerator_eligible,
-      strict_eligibility_checks: candidateEligibility.strict_eligibility_checks
+      strict_eligibility_checks: candidateEligibility.strict_eligibility_checks,
+      owner_baseline_requirement_contract_present: ownerBaselineContract.present,
+      owner_baseline_requirement_contract_matches_baseline: ownerBaselineContract.matchesBaseline,
+      owner_baseline_requirement_contract_diagnostics: ownerBaselineContract.diagnostics
     },
     scores: {
       required_dimension_coverage_score: dimensionScore,
@@ -7250,6 +7460,8 @@ function buildHumanBaselineComparison({ baseline, result, resultPath, resultHash
       ready_for_owner_review: readyForOwnerReview,
       candidate_matches_owner_baseline: readyForOwnerReview,
       candidate_mechanical_contract_satisfied: candidateEligibility.mechanical_contract_satisfied,
+      candidate_owner_baseline_requirement_contract_present: ownerBaselineContract.present,
+      candidate_owner_baseline_requirement_contract_matches_baseline: ownerBaselineContract.matchesBaseline,
       human_equivalent_claim_allowed: false,
       human_superior_claim_allowed: false,
       advisory_only: true,
@@ -9073,6 +9285,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     rebuttal_records: rebuttalRecords,
     integration_record: integrationRecord,
     dogfood_metadata: dogfoodMetadata,
+    owner_baseline_requirement_contract: plan.owner_baseline_requirement_contract ?? null,
     live_dogfood_execution_gate: transferFlags.live_dogfood_execution_gate ?? plan.live_dogfood_execution_gate ?? null,
     benchmark_completion_readiness: benchmarkCompletionReadiness,
     benchmark_requirement_coverage: benchmarkRequirementCoverage,
