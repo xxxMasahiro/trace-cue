@@ -1380,7 +1380,7 @@ function validateAdapterOwnerBaselineCoverage(advisory, traceCueRequest) {
     };
   }
   const evidenceCatalog = buildLocalEvidenceReferenceCatalog(traceCueRequest);
-  const findings = normalizeAdapterFindings(advisory, evidenceCatalog);
+  const findings = normalizeAdapterOwnerBaselineFindings(advisory, evidenceCatalog);
   const criterionHints = ownerBaselineCriterionHints(contract, criteria, evidenceCatalog);
   const requiredOwnerBaselineFindings = requiredOwnerBaselineFindingRecordsFromContract(contract, criteria, evidenceCatalog);
   const missing = [];
@@ -1420,12 +1420,12 @@ function validateAdapterOwnerBaselineCoverage(advisory, traceCueRequest) {
         }),
         missing_fields: missingFields,
         reason: ownerLabelIds.length > 0 && !ownerLabelBacked
-          ? 'matching owner-baseline finding did not cite the required owner_label_ids with catalog-backed evidence'
+          ? 'canonical owner_baseline_findings record did not cite the required owner_label_ids with catalog-backed evidence'
           : unknownOwnerLabelIds.length > 0
-            ? 'matching owner-baseline finding cited owner_label_ids outside the approved contract'
+            ? 'canonical owner_baseline_findings record cited owner_label_ids outside the approved contract'
             : matchingFindings.length > 0
-              ? 'matching owner-baseline finding did not cite evidence_reference_catalog ids'
-              : 'no finding used the required must_not_miss_criterion_id or criteria_refs'
+              ? 'canonical owner_baseline_findings record did not cite evidence_reference_catalog ids'
+              : 'no canonical owner_baseline_findings record used the required must_not_miss_criterion_id or criteria_refs'
       });
     }
   }
@@ -1947,6 +1947,7 @@ function unwrapProviderAdvisory(parsed) {
     'benchmark_requirement_coverage',
     'benchmark_calibration_evidence',
     'calibration_evidence',
+    'owner_baseline_findings',
     'agentic_human_review_findings',
     'findings',
     'role_opinions',
@@ -2261,6 +2262,15 @@ function adapterForbiddenClaimAbsenceConfirmed(source, statusText, evidenceText)
 
 function normalizeAdapterFindings(advisory, evidenceCatalog) {
   const source = collectAdapterFindingRecords(advisory);
+  return normalizeAdapterFindingRecords(source, evidenceCatalog);
+}
+
+function normalizeAdapterOwnerBaselineFindings(advisory, evidenceCatalog) {
+  return normalizeAdapterFindingRecords(advisory?.owner_baseline_findings, evidenceCatalog);
+}
+
+function normalizeAdapterFindingRecords(values, evidenceCatalog) {
+  const source = arrayOrEmpty(values);
   return source.slice(0, 50).map((finding, index) => {
     const item = finding && typeof finding === 'object' && !Array.isArray(finding) ? finding : {};
     return {

@@ -8284,6 +8284,18 @@ test('agentic human review responses adapter retries repairable owner baseline c
       evidence_ref_ids: ['owner-final-ambiguity'],
       target_specific: true
     }],
+    owner_baseline_findings: [{
+      id: 'owner-baseline-gap',
+      category: 'content_comprehension',
+      severity: 'high',
+      message: 'The ambiguous ending interpretation is important.',
+      recommendation: 'Preserve the ambiguity rather than forcing one conclusion.',
+      must_not_miss_criterion_id: 'owner-final-ambiguity',
+      criteria_refs: ['owner-final-ambiguity'],
+      owner_label_ids: ['owner-label-final-ambiguity'],
+      evidence_ref_ids: ['owner-final-ambiguity'],
+      target_specific: true
+    }],
     benchmark_requirement_coverage: {
       required_mentions: [{
         mention: 'content value',
@@ -8564,7 +8576,7 @@ test('agentic human review responses adapter compacts real-shaped owner-baseline
   assert.doesNotMatch(serialized, /\.browser-debug|adapter-secret-value|provider-secret-value/);
 });
 
-test('agentic human review responses adapter accepts role-level owner-baseline structured findings', async () => {
+test('agentic human review responses adapter rejects role-level owner-baseline findings without canonical proof array', async () => {
   const request = adapterTraceCueRequest();
   request.plan.review_effort = { mode: 'standard' };
   attachAdapterOwnerBaselineContract(request);
@@ -8606,12 +8618,10 @@ test('agentic human review responses adapter accepts role-level owner-baseline s
     now: fixedNow
   });
 
-  assert.equal(result.statusCode, 200);
-  assert.equal(result.body.agentic_human_review_findings.length, 1);
-  assert.equal(result.body.agentic_human_review_findings[0].must_not_miss_criterion_id, '');
-  assert.deepEqual(result.body.agentic_human_review_findings[0].criteria_refs, ['owner-final-ambiguity']);
-  assert.deepEqual(result.body.agentic_human_review_findings[0].owner_label_ids, ['owner-label-final-ambiguity']);
-  assert.equal(result.body.agentic_human_review_findings[0].evidence_refs[0].id, 'owner-final-ambiguity');
+  assert.equal(result.statusCode, 502);
+  assert.equal(result.body.error.code, 'AHR_RESPONSES_ADAPTER_OWNER_BASELINE_CONTRACT_INCOMPLETE');
+  assert.equal(result.body.error.details.missing_owner_baseline_records[0].criterion_id, 'owner-final-ambiguity');
+  assert.equal(result.body.error.details.missing_owner_baseline_records[0].missing_fields.includes('structured_finding'), true);
   assert.doesNotMatch(JSON.stringify(result.body), /adapter-secret-value|provider-secret-value|output_text/);
 });
 
@@ -8747,6 +8757,18 @@ test('agentic human review responses adapter keeps xhigh repair retry compact un
       summary: 'The synthesis integrates role outputs, critique, and verification.',
       synthesis_integrated: true
     },
+    owner_baseline_findings: request.plan.owner_baseline_requirement_contract.must_not_miss_criteria.map((criterion, index) => ({
+      id: `owner-finding-${index + 1}`,
+      category: 'content_comprehension',
+      severity: 'high',
+      message: `Owner criterion ${index + 1} is covered.`,
+      recommendation: `Keep owner criterion ${index + 1} visible in the review.`,
+      must_not_miss_criterion_id: criterion.id,
+      criteria_refs: [criterion.id],
+      owner_label_ids: [`owner-label-${index + 1}`],
+      evidence_ref_ids: [criterion.id],
+      target_specific: true
+    })),
     agentic_human_review_findings: request.plan.owner_baseline_requirement_contract.must_not_miss_criteria.map((criterion, index) => ({
       id: `owner-finding-${index + 1}`,
       category: 'content_comprehension',

@@ -9603,10 +9603,8 @@ function aggregateStagedEffortInputs({ plan, stages }) {
   const finalInput = finalStage.advisory ?? {};
   const stageInputs = stages.map((stage) => stage.advisory ?? {});
   const roleOpinions = dedupeRoleOpinions(stageInputs.flatMap((input) => Array.isArray(input.role_opinions) ? input.role_opinions : []));
-  const findings = stageInputs.flatMap((input) => [
-    ...(Array.isArray(input.agentic_human_review_findings) ? input.agentic_human_review_findings : []),
-    ...(Array.isArray(input.findings) ? input.findings : [])
-  ]).slice(0, MAX_FINDINGS);
+  const ownerBaselineFindings = stageInputs.flatMap((input) => Array.isArray(input.owner_baseline_findings) ? input.owner_baseline_findings : []);
+  const findings = dedupeFindingInputs(stageInputs.flatMap((input) => collectAgenticFindingInputs(input))).slice(0, MAX_FINDINGS);
   const ownerDecisionRequests = stageInputs.flatMap((input) => Array.isArray(input.owner_decision_requests) ? input.owner_decision_requests : []).slice(0, 25);
   const reviewClaims = stageInputs.flatMap((input) => Array.isArray(input.review_claims) ? input.review_claims : []).slice(0, 25);
   return {
@@ -9617,6 +9615,7 @@ function aggregateStagedEffortInputs({ plan, stages }) {
     mechanical_vs_human_review: mergeFirstObject(stageInputs.map((input) => input.mechanical_vs_human_review)),
     benchmark_requirement_coverage: finalInput.benchmark_requirement_coverage ?? null,
     role_opinions: roleOpinions,
+    owner_baseline_findings: ownerBaselineFindings,
     findings,
     agentic_human_review_findings: findings,
     strengths: stageInputs.flatMap((input) => normalizeStringArray(input.strengths)).slice(0, 12),
@@ -9636,6 +9635,34 @@ function aggregateStagedEffortInputs({ plan, stages }) {
     staged_effort_parent_plan_hash: plan.plan_hash ?? null,
     staged_xhigh_parent_plan_hash: plan.plan_hash ?? null
   };
+}
+
+function collectAgenticFindingInputs(input) {
+  return [
+    ...(Array.isArray(input?.owner_baseline_findings) ? input.owner_baseline_findings : []),
+    ...(Array.isArray(input?.agentic_human_review_findings) ? input.agentic_human_review_findings : []),
+    ...(Array.isArray(input?.findings) ? input.findings : [])
+  ];
+}
+
+function dedupeFindingInputs(values) {
+  const seen = new Set();
+  const output = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const key = [
+      value?.id ?? '',
+      value?.must_not_miss_criterion_id ?? value?.criterion_id ?? value?.must_not_miss_id ?? '',
+      value?.message ?? value?.summary ?? value?.description ?? ''
+    ].join('|').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (key && seen.has(key)) {
+      continue;
+    }
+    if (key) {
+      seen.add(key);
+    }
+    output.push(value);
+  }
+  return output;
 }
 
 function dedupeRoleOpinions(values) {
@@ -9896,7 +9923,8 @@ async function injectedAgenticReviewResult({ provider, model, surface, plan, pla
 
 function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provider, model, surface, transferFlags, execution, boundary }) {
   const roleOpinions = normalizeRoleOpinions(input.role_opinions, plan.sub_agents);
-  const findings = normalizeFindings(input.findings ?? input.agentic_human_review_findings, id);
+  const ownerBaselineFindings = normalizeFindings(input.owner_baseline_findings, id);
+  const findings = normalizeFindings(dedupeFindingInputs(collectAgenticFindingInputs(input)), id);
   const ownerDecisions = normalizeOwnerDecisionRequests(input.owner_decision_requests);
   const safeInputSummary = secretSafeText(input.summary ?? 'Agentic human review completed with advisory-only output.', 1200);
   const claimSet = buildReviewClaimSet({ resultId: id, input, findings, roleOpinions });
@@ -10081,6 +10109,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     dissent_summary: buildDissentSummary({ roleOpinions, input }),
     consensus_analysis: consensusAnalysis,
     dissent_analysis: dissentAnalysis,
+    owner_baseline_findings: ownerBaselineFindings,
     agentic_human_review_findings: findings,
     agentic_human_review_action_plan: {
       next_actions: normalizeStringArray(input.agentic_human_review_action_plan?.next_actions ?? input.improvement_suggestions).slice(0, 12),
@@ -11213,15 +11242,18 @@ function normalizeArtifactReferences(values) {
   if (!Array.isArray(values)) {
     return [];
   }
-  return values.slice(0, MAX_EVIDENCE_REFS).map((artifact) => ({
-    id: truncateText(artifact?.id ?? artifact?.ref_id ?? artifact?.reference_id ?? artifact?.evidence_id, 120),
-    ref_id: truncateText(artifact?.ref_id ?? artifact?.id ?? artifact?.reference_id ?? artifact?.evidence_id, 120),
-    type: stringOrNull(artifact?.type),
-    path: safeArtifactReferencePath(artifact?.path),
-    description: stringOrNull(artifact?.description),
-    content_included: false,
-    local_reference: true
-  }));
+  return values.slice(0, MAX_EVIDENCE_REFS).map((artifact) => {
+    const source = typeof artifact === 'string' ? { id: artifact } : artifact;
+    return {
+      id: truncateText(source?.id ?? source?.ref_id ?? source?.reference_id ?? source?.evidence_id ?? source?.evidence_ref_id, 120),
+      ref_id: truncateText(source?.ref_id ?? source?.id ?? source?.reference_id ?? source?.evidence_id ?? source?.evidence_ref_id, 120),
+      type: stringOrNull(source?.type),
+      path: safeArtifactReferencePath(source?.path),
+      description: stringOrNull(source?.description),
+      content_included: false,
+      local_reference: true
+    };
+  });
 }
 
 function safeArtifactReferencePath(value) {
@@ -11701,7 +11733,16 @@ function normalizeFindings(values, resultId) {
     confidence: normalizeConfidence(finding?.confidence),
     message: secretSafeText(finding?.message ?? finding?.summary ?? 'Agentic human review advisory finding.', 700),
     recommendation: secretSafeText(finding?.recommendation ?? 'Review this advisory item with the owner before implementation.', 900),
-    evidence_refs: normalizeArtifactReferences(finding?.evidence_refs ?? finding?.artifacts),
+    evidence_refs: normalizeArtifactReferences(
+      finding?.evidence_refs
+      ?? finding?.evidence_ref_ids
+      ?? finding?.evidence_reference_ids
+      ?? finding?.evidence_reference_id
+      ?? finding?.citations
+      ?? finding?.source_refs
+      ?? finding?.references
+      ?? finding?.artifacts
+    ),
     must_not_miss_criterion_id: truncateText(finding?.must_not_miss_criterion_id ?? finding?.criterion_id ?? finding?.must_not_miss_id, 120),
     criteria_refs: normalizeStringArray(finding?.criteria_refs ?? finding?.criterion_refs ?? finding?.must_not_miss_criteria_refs).slice(0, 12),
     owner_label_ids: normalizeStringArray(finding?.owner_label_ids ?? finding?.owner_labels ?? finding?.label_ids).slice(0, 12),
