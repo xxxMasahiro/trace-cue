@@ -700,8 +700,10 @@ function buildAdapterStageExecutionInstruction(traceCueRequest) {
   }
   const roles = normalizeStringArray(stage.required_roles).slice(0, 12);
   const previous = Array.isArray(stage.previous_stage_summaries) ? stage.previous_stage_summaries.length : 0;
+  const parentEffort = truncateText(firstString(stage.parent_effort, 'unknown'), 80);
   return [
-    'This is a staged xhigh provider call under an already approved TraceCue plan.',
+    'This is a staged TraceCue provider call under an already approved TraceCue plan.',
+    `Parent review effort: ${parentEffort}.`,
     `Stage id: ${truncateText(firstString(stage.stage_id, 'unknown-stage'), 120)}.`,
     `Stage kind: ${truncateText(firstString(stage.stage_kind, 'staged_review'), 120)}.`,
     `Required stage roles: ${JSON.stringify(roles)}.`,
@@ -1236,7 +1238,7 @@ function validateAdapterStageExecutionContract(advisory, traceCueRequest) {
     requireSynthesis: stage.final_contract_stage === true,
     stageExecution: stage,
     incompleteCode: 'AHR_RESPONSES_ADAPTER_XHIGH_CONTRACT_INCOMPLETE',
-    incompleteMessage: 'Provider output did not satisfy the TraceCue staged xhigh output contract.'
+    incompleteMessage: 'Provider output did not satisfy the TraceCue staged effort output contract.'
   });
 }
 
@@ -2478,8 +2480,10 @@ function compactProviderStageExecution(value) {
   }
   return compactAdapterObject({
     schema_version: value.schema_version,
+    staged_effort_execution_version: value.staged_effort_execution_version,
     staged_xhigh_execution_version: value.staged_xhigh_execution_version,
     mode: truncateText(firstString(value.mode, null), 80),
+    parent_effort: truncateText(firstString(value.parent_effort, null), 80),
     stage_id: truncateText(firstString(value.stage_id, null), 120),
     stage_kind: truncateText(firstString(value.stage_kind, null), 120),
     final_contract_stage: value.final_contract_stage === true,

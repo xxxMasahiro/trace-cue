@@ -6779,7 +6779,7 @@ test('agentic human review injected runner redacts sensitive advisory text', asy
   assert.doesNotMatch(reportText, /sentinel/);
 });
 
-test('agentic human review staged xhigh run preserves the approved plan boundary', async () => {
+test('agentic human review staged effort run preserves the approved plan boundary', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-staged-'));
   const png = minimalPngBuffer(120, 80);
   await writeFile(path.join(cwd, 'screen.png'), png);
@@ -6828,9 +6828,100 @@ test('agentic human review staged xhigh run preserves the approved plan boundary
     'staged',
     '--execute',
     '--json'
-  ], { cwd, now: fixedNow });
-  assert.equal(standardStagedRun.exitCode, 1);
-  assert.equal(JSON.parse(standardStagedRun.stdout).errors[0].code, 'AGENTIC_REVIEW_STAGED_XHIGH_REQUIRES_XHIGH_PLAN');
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => {
+      if (prefix === 'agentic-human-review-execution') {
+        return 'agentic-execution-staged-standard';
+      }
+      if (prefix === 'agentic-human-review-result') {
+        return 'agentic-result-staged-standard';
+      }
+      return 'unexpected-agentic-staged-standard-id';
+    }
+  });
+  assert.equal(standardStagedRun.exitCode, 0);
+  const standardStagedBody = JSON.parse(standardStagedRun.stdout);
+  assert.equal(standardStagedBody.data.agentic_human_review_execution.execution_mode, 'staged');
+  assert.equal(standardStagedBody.data.agentic_human_review_execution.provider_call_count, 2);
+  assert.equal(standardStagedBody.data.agentic_human_review_execution.stage_count, 2);
+  assert.equal(standardStagedBody.data.agentic_human_review_execution.raw_provider_response_stored, false);
+  assert.equal(standardStagedBody.data.agentic_human_review_execution.credential_values_recorded, false);
+  const standardResultText = await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-staged-standard', 'result.json'), 'utf8');
+  const standardResultFile = JSON.parse(standardResultText);
+  assert.equal(standardResultFile.agentic_human_review_advisory.review_effort, 'standard');
+  assert.equal(standardResultFile.boundary.staged_effort_execution_performed, true);
+  assert.equal(standardResultFile.boundary.staged_xhigh_execution_performed, false);
+  assert.equal(standardResultFile.staged_effort_execution.original_effort, 'standard');
+  assert.equal(standardResultFile.staged_effort_execution.stage_outputs_are_final_evidence, false);
+  assert.equal(standardResultFile.xhigh_staged_execution, null);
+  assert.equal(standardResultFile.agentic_human_review_findings.every((finding) => finding.claim_numerator_eligible === false), true);
+
+  const deepPlan = await executeCli([
+    'agentic',
+    'review',
+    'plan',
+    '--review-index',
+    reviewIndexPath,
+    '--intent',
+    'Review visible text, reader trust, accessibility, and risk through staged deep review.',
+    '--effort',
+    'deep',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'agentic-plan-staged-deep'
+  });
+  assert.equal(deepPlan.exitCode, 0);
+  const deepPlanBody = JSON.parse(deepPlan.stdout);
+  const deepFlags = deepPlanBody.data.agentic_human_review_plan.transfer_permissions.required_flags.slice().sort();
+  const deepStagedRun = await executeCli([
+    'agentic',
+    'review',
+    'run',
+    '--plan',
+    '.browser-debug/agentic-human-review-plans/agentic-plan-staged-deep/plan.json',
+    '--plan-hash',
+    deepPlanBody.data.plan_hash,
+    ...deepFlags.map((flag) => `--${flag}`),
+    '--execution-mode',
+    'staged',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => {
+      if (prefix === 'agentic-human-review-execution') {
+        return 'agentic-execution-staged-deep';
+      }
+      if (prefix === 'agentic-human-review-result') {
+        return 'agentic-result-staged-deep';
+      }
+      return 'unexpected-agentic-staged-deep-id';
+    }
+  });
+  assert.equal(deepStagedRun.exitCode, 0);
+  const deepStagedBody = JSON.parse(deepStagedRun.stdout);
+  assert.equal(deepStagedBody.data.agentic_human_review_execution.execution_mode, 'staged');
+  assert.equal(deepStagedBody.data.agentic_human_review_execution.provider_call_count, 3);
+  assert.equal(deepStagedBody.data.agentic_human_review_execution.stage_count, 3);
+  assert.equal(deepStagedBody.data.agentic_human_review_execution.raw_provider_response_stored, false);
+  assert.equal(deepStagedBody.data.agentic_human_review_execution.credential_values_recorded, false);
+  const deepResultText = await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-staged-deep', 'result.json'), 'utf8');
+  const deepResultFile = JSON.parse(deepResultText);
+  assert.equal(deepResultFile.agentic_human_review_advisory.review_effort, 'deep');
+  assert.equal(deepResultFile.boundary.staged_effort_execution_performed, true);
+  assert.equal(deepResultFile.boundary.staged_xhigh_execution_performed, false);
+  assert.equal(deepResultFile.staged_effort_execution.original_effort, 'deep');
+  assert.equal(deepResultFile.staged_effort_execution.stage_outputs_are_final_evidence, false);
+  assert.equal(deepResultFile.xhigh_staged_execution, null);
 
   const xhighPlan = await executeCli([
     'agentic',
@@ -7355,7 +7446,7 @@ test('agentic human review responses adapter converts requests without leaking c
   assert.equal(observedFetch.body.text.format.schema.required.includes('agentic_human_review_findings'), true);
   assert.equal(observedFetch.body.text.format.schema.required.includes('owner_baseline_findings'), false);
   assert.match(observedFetch.body.instructions, /without paraphrasing keys/);
-  assert.match(observedFetch.body.instructions, /staged xhigh provider call/);
+  assert.match(observedFetch.body.instructions, /staged TraceCue provider call/);
   assert.match(observedFetch.body.instructions, /Do not claim human-equivalent or human-superior quality/);
   assert.doesNotMatch(observedFetch.body.instructions, /expert human-equivalent reviewer/);
   assert.doesNotMatch(observedFetch.body.input, /adapter-secret-value|provider-secret-value|\.browser-debug|\/tmp\/local-plan|stage\.json/);
