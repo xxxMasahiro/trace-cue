@@ -8119,14 +8119,15 @@ function classifyHumanBaselineComparison({ labels, result }) {
 }
 
 function findEvidenceBackedOwnerLabelMatch({ label, findings, result }) {
-  const finding = findMatchingCandidateFinding({ label, findings });
-  if (finding) {
+  const matchingFindings = findMatchingCandidateFindings({ label, findings });
+  const evidenceBackedFinding = bestEvidenceBackedCandidateFinding(matchingFindings);
+  if (evidenceBackedFinding) {
     return {
       found: true,
       source: 'agentic_human_review_findings',
-      finding,
+      finding: evidenceBackedFinding,
       coverage_record: null,
-      evidence_refs: finding.evidence_refs
+      evidence_refs: evidenceBackedFinding.evidence_refs
     };
   }
   const coverageRecord = findMatchingStructuredCoverageRecord({ label, result });
@@ -8139,27 +8140,51 @@ function findEvidenceBackedOwnerLabelMatch({ label, findings, result }) {
       evidence_refs: coverageRecord.evidence_refs
     };
   }
+  const unbackedFinding = matchingFindings[0]?.finding ?? null;
+  if (unbackedFinding) {
+    return {
+      found: true,
+      source: 'agentic_human_review_findings',
+      finding: unbackedFinding,
+      coverage_record: null,
+      evidence_refs: unbackedFinding.evidence_refs
+    };
+  }
   return { found: false, source: 'none', finding: null, coverage_record: null, evidence_refs: [] };
 }
 
-function findMatchingCandidateFinding({ label, findings }) {
+function bestEvidenceBackedCandidateFinding(matches) {
+  const exactEvidenceBacked = matches.find((match) => match.exact && match.finding.evidence_refs.length > 0);
+  if (exactEvidenceBacked) {
+    return exactEvidenceBacked.finding;
+  }
+  const textEvidenceBacked = matches.find((match) => match.finding.evidence_refs.length > 0);
+  if (textEvidenceBacked) {
+    return textEvidenceBacked.finding;
+  }
+  return null;
+}
+
+function findMatchingCandidateFindings({ label, findings }) {
   const terms = label.match_terms.length > 0 ? label.match_terms : [label.summary].filter(Boolean);
-  return findings.find((finding) => {
+  return findings.map((finding) => {
     if (label.id && finding.owner_label_ids.includes(label.id)) {
-      return true;
+      return { finding, exact: true };
     }
     if (label.must_not_miss_criterion_id && finding.must_not_miss_criterion_id === label.must_not_miss_criterion_id) {
-      return true;
+      return { finding, exact: true };
     }
     if (label.must_not_miss_criterion_id && finding.criteria_refs.includes(label.must_not_miss_criterion_id)) {
-      return true;
+      return { finding, exact: true };
     }
     if (label.criteria_refs.some((criterionId) => finding.criteria_refs.includes(criterionId) || finding.must_not_miss_criterion_id === criterionId)) {
-      return true;
+      return { finding, exact: true };
     }
     const text = `${finding.message} ${finding.recommendation} ${finding.category}`.toLowerCase();
-    return terms.some((term) => textIncludesLoose(text, term));
-  }) ?? null;
+    return terms.some((term) => textIncludesLoose(text, term))
+      ? { finding, exact: false }
+      : null;
+  }).filter(Boolean);
 }
 
 function findMatchingStructuredCoverageRecord({ label, result }) {
