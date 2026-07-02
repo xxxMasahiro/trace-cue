@@ -48,6 +48,7 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Provide a packaged external-repository usage guide so humans, shell-based agents, MCP-capable agents, and Codex users can choose CLI, MCP stdio, safe HTTP MCP, or plugin connection modes without source inspection.
 - Provide TraceCue-local language settings that separate dashboard display locale from artifact output language, using the supported locale contract `ja|en|ko|zh-CN|zh-TW|es|pt-BR|fr|de|id|vi|th|hi|ar` without depending on the parent lesson repository.
 - Provide read-only CLI/API/MCP inspection for those language settings so dashboards, humans, and agents can discover the active UI locale, output language mode, source-language behavior, and translation-execution boundary without writing files or running providers.
+- Align Agentic Human Review `editorial_synthesis` language metadata with the local artifact output language settings across the supported 14-locale contract while preserving source advisory text when translation execution is disabled.
 - Provide a read-only identity audit and rename-readiness check so humans and agents can distinguish canonical repository URL, legacy repository URL, checkout name, legacy aliases, and artifact-root migration boundaries before and after repository rename work.
 - Document target runtime readiness for consumer repositories so frontend-only dev-server reviews, missing API/backend services, API base configuration gaps, and intentional degraded modes can be distinguished without adding app-specific runtime code.
 - Support evidence-backed UI review findings for browser health, layout integrity, interaction quality, accessibility basics, and mock fidelity.
@@ -166,6 +167,7 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Do not treat capture planning reports as permission to capture screens, enumerate windows or processes, write image artifacts, read raw pixels, call providers, transfer evidence, or expose capture execution through MCP.
 - Do not treat capture metadata handoff as permission to capture screens, enumerate windows or processes, write artifacts, call providers, transfer evidence, expose MCP tools, or bypass workspace-confined image input checks.
 - Do not treat language settings as permission to translate source evidence, repository documentation, raw page text, selectors, URLs, logs, screenshots, traces, or provider output through external services. Translation execution remains disabled until a separate approved implementation defines local templates, provider boundaries, disclosure, and tests.
+- Do not treat Agentic Human Review `editorial_synthesis.language`, language settings, or artifact output language metadata as proof of translation, provider-authored output, owner-baseline or benchmark satisfaction, claim readiness, MCP exposure, owner approval, or release-gate authority.
 - Do not register a plugin marketplace entry, change the package license, choose a public package name, or publish to npm without explicit release approval.
 
 ## Success Criteria

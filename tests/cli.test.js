@@ -240,6 +240,41 @@ test('language settings keep dashboard UI and artifact output language independe
   assert.equal(sourceDerived.dashboard_ui.locale, 'ja');
   assert.equal(sourceDerived.artifact_output.language, 'en');
 
+  for (const locale of TRACE_CUE_LOCALE_CODES) {
+    const explicit = normalizeLanguageSettings({
+      ui_locale: 'en',
+      profiles: {
+        reports: {
+          language: {
+            source_language: 'auto',
+            output_language_mode: 'explicit',
+            output_language: locale
+          }
+        }
+      }
+    });
+    assert.equal(explicit.artifact_output.language, locale);
+    assert.equal(explicit.artifact_output.intl_locale, getTraceCueIntlLocale(locale));
+    assert.equal(explicit.artifact_output.text_direction, getTraceCueLocaleDirection(locale));
+    assert.equal(explicit.artifact_output.translation_execution_enabled, false);
+  }
+
+  const unresolvedExplicit = normalizeLanguageSettings({
+    ui_locale: 'en',
+    profiles: {
+      reports: {
+        language: {
+          source_language: 'auto',
+          output_language_mode: 'explicit',
+          output_language: 'unsupported-locale'
+        }
+      }
+    }
+  });
+  assert.equal(unresolvedExplicit.artifact_output.language, null);
+  assert.equal(unresolvedExplicit.artifact_output.status, 'explicit-locale-unresolved');
+  assert.equal(unresolvedExplicit.diagnostics.some((diagnostic) => diagnostic.code === 'unsupported-output-language'), true);
+
   const parsed = parseCliArgs(['settings', 'language', '--json']);
   assert.equal(parsed.ok, true);
   assert.equal(parsed.command, 'settings language');
@@ -4600,8 +4635,20 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(resultFile.live_dogfood_execution_gate.status, 'local_or_non_api_dogfood_ready');
   assert.equal(resultFile.human_report_v3.report_version, '3.0.0');
   assert.equal(resultFile.human_report_v3.owner_review_required, true);
+  assert.equal(resultFile.language_settings.artifact_output.language, null);
+  assert.equal(resultFile.language_settings.artifact_output.status, 'source-language-unresolved');
+  assert.equal(resultFile.language_settings.artifact_output.translation_execution_enabled, false);
+  assert.equal(resultFile.language_settings.boundary.gate_effect, 'none');
   assert.equal(resultFile.editorial_synthesis.synthesis_version, '1.0.0');
   assert.equal(resultFile.editorial_synthesis.status, 'completed');
+  assert.equal(resultFile.editorial_synthesis.language, 'en');
+  assert.equal(resultFile.editorial_synthesis.language_resolution.source, 'source_text_inference_fallback');
+  assert.equal(resultFile.editorial_synthesis.language_resolution.artifact_output_language, null);
+  assert.equal(resultFile.editorial_synthesis.language_resolution.translation_execution_enabled, false);
+  assert.equal(resultFile.editorial_synthesis.language_resolution.raw_evidence_translated, false);
+  assert.equal(resultFile.editorial_synthesis.language_resolution.provider_output_translated, false);
+  assert.equal(resultFile.editorial_synthesis.language_resolution.report_body_translated, false);
+  assert.equal(resultFile.editorial_synthesis.language_resolution.source_text_preserved, true);
   assert.equal(resultFile.editorial_synthesis.advisory_only, true);
   assert.equal(resultFile.editorial_synthesis.gate_effect, 'none');
   assert.equal(resultFile.editorial_synthesis.boundary.derived_from_existing_ahr_result, true);
@@ -4636,6 +4683,10 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.match(reportText, /Mechanical Review Compared With Human Review/);
   assert.match(reportText, /Human Report V3/);
   assert.match(reportText, /Editorial Synthesis/);
+  assert.match(reportText, /Language Settings/);
+  assert.match(reportText, /Editorial synthesis language: en/);
+  assert.match(reportText, /Artifact output language: unresolved/);
+  assert.match(reportText, /Translation execution: false/);
   assert.match(reportText, /Recommended Direction/);
   assert.match(reportText, /Source Findings/);
   assert.match(reportText, /Report Quality/);
@@ -6739,6 +6790,115 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(listBody.data.boundary.mcp_execution_exposed, false);
 });
 
+test('agentic human review editorial synthesis uses artifact output language settings for supported locales', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-editorial-locale-'));
+  const png = minimalPngBuffer(120, 80);
+  await writeFile(path.join(cwd, 'screen.png'), png);
+  await mkdir(path.join(cwd, 'ops'), { recursive: true });
+
+  const imageReview = await executeCli(['review', '--image', 'screen.png', '--json'], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'image-review-editorial-locale'
+  });
+  assert.equal(imageReview.exitCode, 0);
+
+  const planResult = await executeCli([
+    'agentic',
+    'review',
+    'plan',
+    '--review-index',
+    '.browser-debug/review-artifacts/image-review-editorial-locale.json',
+    '--intent',
+    'Review likely reader feeling, trust, and actionability with locale-aware editorial synthesis.',
+    '--effort',
+    'standard',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'agentic-plan-editorial-locale'
+  });
+  assert.equal(planResult.exitCode, 0);
+  const planBody = JSON.parse(planResult.stdout);
+  const requiredFlags = planBody.data.agentic_human_review_plan.transfer_permissions.required_flags.slice().sort();
+
+  for (const locale of TRACE_CUE_LOCALE_CODES) {
+    const slug = locale.toLowerCase().replace(/[^a-z0-9]+/gu, '-');
+    await writeFile(path.join(cwd, 'ops', 'DASHBOARD_SETTINGS.json'), JSON.stringify({
+      schema_version: '1.0.0',
+      ui_locale: 'ja',
+      profiles: {
+        reports: {
+          language: {
+            source_language: 'en',
+            output_language_mode: 'explicit',
+            output_language: locale,
+            translation_mode: 'none'
+          }
+        }
+      }
+    }, null, 2), 'utf8');
+
+    const runResult = await executeCli([
+      'agentic',
+      'review',
+      'run',
+      '--plan',
+      '.browser-debug/agentic-human-review-plans/agentic-plan-editorial-locale/plan.json',
+      '--plan-hash',
+      planBody.data.plan_hash,
+      ...requiredFlags.map((flag) => `--${flag}`),
+      '--provider',
+      'fake-agent',
+      '--model',
+      'fake-model',
+      '--execute',
+      '--json'
+    ], {
+      cwd,
+      now: fixedNow,
+      createId: (prefix) => {
+        if (prefix === 'agentic-human-review-execution') {
+          return `agentic-execution-editorial-locale-${slug}`;
+        }
+        if (prefix === 'agentic-human-review-result') {
+          return `agentic-result-editorial-locale-${slug}`;
+        }
+        return `unexpected-agentic-editorial-locale-${slug}`;
+      }
+    });
+    assert.equal(runResult.exitCode, 0);
+    const resultFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', `agentic-execution-editorial-locale-${slug}`, 'result.json'), 'utf8'));
+    assert.equal(resultFile.language_settings.dashboard_ui.locale, 'ja');
+    assert.equal(resultFile.language_settings.artifact_output.language, locale);
+    assert.equal(resultFile.language_settings.artifact_output.text_direction, getTraceCueLocaleDirection(locale));
+    assert.equal(resultFile.language_settings.artifact_output.translation_execution_enabled, false);
+    assert.equal(resultFile.editorial_synthesis.language, locale);
+    assert.equal(resultFile.editorial_synthesis.language_resolution.source, 'artifact_output_language_settings');
+    assert.equal(resultFile.editorial_synthesis.language_resolution.artifact_output_language, locale);
+    assert.equal(resultFile.editorial_synthesis.language_resolution.translation_execution_enabled, false);
+    assert.equal(resultFile.editorial_synthesis.language_resolution.raw_evidence_translated, false);
+    assert.equal(resultFile.editorial_synthesis.language_resolution.provider_output_translated, false);
+    assert.equal(resultFile.editorial_synthesis.language_resolution.report_body_translated, false);
+    assert.equal(resultFile.editorial_synthesis.boundary.provider_call_performed, false);
+    assert.equal(resultFile.editorial_synthesis.boundary.api_call_performed, false);
+    assert.equal(resultFile.editorial_synthesis.gate_effect, 'none');
+    assert.equal(resultFile.editorial_synthesis.source_ref_details.some((ref) => /provider|prompt|response|execution/.test(ref.source_field)), false);
+    if (locale === 'ar') {
+      assert.equal(resultFile.editorial_synthesis.language_resolution.text_direction, 'rtl');
+    }
+    const reportText = await readFile(path.join(cwd, '.browser-debug', 'reports', `agentic-execution-editorial-locale-${slug}-agentic-human-review.md`), 'utf8');
+    assert.match(reportText, new RegExp(`Editorial synthesis language: ${locale.replace('-', '\\-')}`));
+    assert.match(reportText, new RegExp(`Artifact output language: ${locale.replace('-', '\\-')}`));
+    assert.match(reportText, /Translation execution: false/);
+  }
+});
+
 test('agentic human review injected runner redacts sensitive advisory text', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-injected-'));
   const png = minimalPngBuffer(120, 80);
@@ -7124,6 +7284,21 @@ test('agentic human review staged xhigh incomplete stage output remains non-proo
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-staged-incomplete-'));
   const png = minimalPngBuffer(120, 80);
   await writeFile(path.join(cwd, 'screen.png'), png);
+  await mkdir(path.join(cwd, 'ops'), { recursive: true });
+  await writeFile(path.join(cwd, 'ops', 'DASHBOARD_SETTINGS.json'), JSON.stringify({
+    schema_version: '1.0.0',
+    ui_locale: 'en',
+    profiles: {
+      reports: {
+        language: {
+          source_language: 'en',
+          output_language_mode: 'explicit',
+          output_language: 'hi',
+          translation_mode: 'none'
+        }
+      }
+    }
+  }, null, 2), 'utf8');
 
   const imageReview = await executeCli(['review', '--image', 'screen.png', '--json'], {
     cwd,
@@ -7218,6 +7393,10 @@ test('agentic human review staged xhigh incomplete stage output remains non-proo
   assert.equal(resultFile.claim_integrity.claim_numerator_safe, false);
   assert.equal(resultFile.agentic_human_review_findings.length, 0);
   assert.equal(resultFile.editorial_synthesis.status, 'limited');
+  assert.equal(resultFile.editorial_synthesis.language, 'hi');
+  assert.equal(resultFile.editorial_synthesis.language_resolution.artifact_output_language, 'hi');
+  assert.equal(resultFile.editorial_synthesis.language_resolution.translation_execution_enabled, false);
+  assert.equal(resultFile.editorial_synthesis.language_resolution.raw_evidence_translated, false);
   assert.equal(resultFile.editorial_synthesis.limitations.length > 0, true);
   assert.equal(resultFile.editorial_synthesis.source_ref_details.some((ref) => ref.source_field === 'agentic_human_review_findings'), false);
   assert.match(resultFile.editorial_synthesis.full_review, /too few evidence-backed findings/);
@@ -7525,7 +7704,9 @@ test('agentic human review responses adapter converts requests without leaking c
   assert.equal(observedFetch.body.text.format.schema.required.includes('agentic_human_review_findings'), true);
   assert.equal(observedFetch.body.text.format.schema.required.includes('owner_baseline_findings'), false);
   assert.equal(observedFetch.body.text.format.schema.required.includes('editorial_synthesis'), false);
+  assert.equal(observedFetch.body.text.format.schema.required.includes('language_settings'), false);
   assert.equal(Object.hasOwn(observedFetch.body.text.format.schema.properties, 'editorial_synthesis'), false);
+  assert.equal(Object.hasOwn(observedFetch.body.text.format.schema.properties, 'language_settings'), false);
   assert.match(observedFetch.body.instructions, /without paraphrasing keys/);
   assert.match(observedFetch.body.instructions, /staged TraceCue provider call/);
   assert.match(observedFetch.body.instructions, /Do not claim human-equivalent or human-superior quality/);

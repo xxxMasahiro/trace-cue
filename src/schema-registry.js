@@ -1769,6 +1769,7 @@ const schemas = Object.freeze({
       result_type: { const: 'agentic_human_review_advisory' },
       human_review_schema_version: { type: 'string' },
       agentic_human_review_advisory: { type: 'object' },
+      language_settings: { type: 'object' },
       non_engineer_summary: { type: 'object' },
       subjective_perception: { type: 'object' },
       readability_comprehension: { type: 'object' },

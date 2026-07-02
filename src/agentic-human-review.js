@@ -13,6 +13,7 @@ import {
 import { AGENT_SURFACES } from './agent.js';
 import { CLI_NAME, DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
 import { filterPersistableFailureDiagnosticDetails } from './failure-diagnostics.js';
+import { resolveLanguageSettings } from './language-settings.js';
 import { redact, redactString, truncateText } from './redaction.js';
 import {
   AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
@@ -1000,6 +1001,10 @@ export async function runAgenticHumanReviewRun(options = {}, context = {}) {
   const provider = validation.provider;
   const model = validation.model;
   const surface = validation.surface;
+  const language = await resolveLanguageSettings({}, { ...context, cwd, now });
+  if (!language.ok) {
+    return errorResult(language.code, language.message, language.details ?? {});
+  }
   const executionId = context.createId?.('agentic-human-review-execution', now) ?? createArtifactId(now, 'agentic-human-review-execution');
   const resultId = context.createId?.('agentic-human-review-result', now) ?? `${executionId}-result`;
   const executionRel = artifactRelPath(artifactRootInput, 'agentic-human-review-results', executionId, 'execution.json');
@@ -1024,8 +1029,13 @@ export async function runAgenticHumanReviewRun(options = {}, context = {}) {
     maxBytes: maxBytes.value,
     resultId,
     now,
-    context
+    context,
+    languageSettings: language.settings
   });
+  const runWarnings = [
+    ...(Array.isArray(language.warnings) ? language.warnings : []),
+    ...(Array.isArray(providerResult.warnings) ? providerResult.warnings : [])
+  ];
   const boundary = agenticHumanReviewBoundary({
     ...providerResult.boundary,
     writes_artifacts: true,
@@ -1100,7 +1110,7 @@ export async function runAgenticHumanReviewRun(options = {}, context = {}) {
         agentic_human_review_status: execution,
         boundary
       },
-      warnings: providerResult.warnings,
+      warnings: runWarnings,
       errors: [providerResult.error],
       artifacts
     };
@@ -1120,7 +1130,7 @@ export async function runAgenticHumanReviewRun(options = {}, context = {}) {
       },
       boundary
     },
-    warnings: providerResult.warnings,
+    warnings: runWarnings,
     errors: [],
     artifacts
   };
@@ -8945,7 +8955,7 @@ function role(id, displayName, purpose, defaultEffort = DEFAULT_SUBAGENT_EFFORT,
   return { id, display_name: displayName, purpose, default_effort: defaultEffort, round };
 }
 
-async function executeAgenticProvider({ provider, model, surface, plan, planPath, transferFlags, execution, executionMode = 'one-shot', maxBytes, resultId, now, context }) {
+async function executeAgenticProvider({ provider, model, surface, plan, planPath, transferFlags, execution, executionMode = 'one-shot', maxBytes, resultId, now, context, languageSettings = null }) {
   if (executionMode === 'staged') {
     return executeStagedAgenticProvider({
       provider,
@@ -8958,14 +8968,15 @@ async function executeAgenticProvider({ provider, model, surface, plan, planPath
       maxBytes,
       resultId,
       now,
-      context
+      context,
+      languageSettings
     });
   }
   if (provider.id === 'fake-agent') {
-    return fakeAgenticReviewResult({ provider, model, surface, plan, planPath, transferFlags, execution, resultId, now });
+    return fakeAgenticReviewResult({ provider, model, surface, plan, planPath, transferFlags, execution, resultId, now, languageSettings });
   }
   if (provider.id === 'injected-runner') {
-    return injectedAgenticReviewResult({ provider, model, surface, plan, planPath, transferFlags, execution, resultId, now, context });
+    return injectedAgenticReviewResult({ provider, model, surface, plan, planPath, transferFlags, execution, resultId, now, context, languageSettings });
   }
   if (provider.transport === 'provider_api' || provider.external_evidence_transfer === true) {
     const reviewPackageRead = await readReviewPackageForExecution({
@@ -9010,7 +9021,8 @@ async function executeAgenticProvider({ provider, model, surface, plan, planPath
         surface,
         transferFlags,
         execution,
-        boundary: providerResult.boundary
+        boundary: providerResult.boundary,
+        languageSettings
       }),
       boundary: providerResult.boundary,
       model_resolution: providerResult.boundary?.model_resolution ?? null,
@@ -9026,7 +9038,7 @@ async function executeAgenticProvider({ provider, model, surface, plan, planPath
   });
 }
 
-async function executeStagedAgenticProvider({ provider, model, surface, plan, planPath, transferFlags, execution, maxBytes, resultId, now, context }) {
+async function executeStagedAgenticProvider({ provider, model, surface, plan, planPath, transferFlags, execution, maxBytes, resultId, now, context, languageSettings = null }) {
   const stagedContract = buildStagedEffortExecutionContract(plan);
   if (!stagedContract.ok) {
     return providerFailure({
@@ -9131,7 +9143,8 @@ async function executeStagedAgenticProvider({ provider, model, surface, plan, pl
       surface,
       transferFlags,
       execution,
-      boundary
+      boundary,
+      languageSettings
     }),
     boundary,
     staged_execution: stagedExecution,
@@ -9797,7 +9810,7 @@ function buildStagedExecutionSummary({ plan, contract, stages, boundary }) {
   };
 }
 
-function fakeAgenticReviewResult({ provider, model, surface, plan, planPath, transferFlags, execution, resultId, now }) {
+function fakeAgenticReviewResult({ provider, model, surface, plan, planPath, transferFlags, execution, resultId, now, languageSettings = null }) {
   const input = {
     summary: 'Deterministic fake agentic human review completed from the approved local plan and metadata package.',
     subjective_perception: {
@@ -9868,14 +9881,15 @@ function fakeAgenticReviewResult({ provider, model, surface, plan, planPath, tra
       surface,
       transferFlags,
       execution,
-      boundary
+      boundary,
+      languageSettings
     }),
     boundary,
     warnings: []
   };
 }
 
-async function injectedAgenticReviewResult({ provider, model, surface, plan, planPath, transferFlags, execution, resultId, now, context }) {
+async function injectedAgenticReviewResult({ provider, model, surface, plan, planPath, transferFlags, execution, resultId, now, context, languageSettings = null }) {
   const runner = runnerForContext(context, provider.id, model.id);
   if (!runner) {
     return providerFailure({
@@ -9940,14 +9954,15 @@ async function injectedAgenticReviewResult({ provider, model, surface, plan, pla
       surface,
       transferFlags,
       execution,
-      boundary
+      boundary,
+      languageSettings
     }),
     boundary,
     warnings: []
   };
 }
 
-function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provider, model, surface, transferFlags, execution, boundary }) {
+function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provider, model, surface, transferFlags, execution, boundary, languageSettings = null }) {
   const roleOpinions = normalizeRoleOpinions(input.role_opinions, plan.sub_agents);
   const ownerBaselineFindings = normalizeFindings(input.owner_baseline_findings, id);
   const findings = normalizeFindings(dedupeFindingInputs(collectAgenticFindingInputs(input)), id);
@@ -10036,8 +10051,10 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
   };
   const consensusSummary = buildConsensusSummary({ roleOpinions, findings, input });
   const dissentSummary = buildDissentSummary({ roleOpinions, input });
+  const boundedLanguageSettings = boundedAgenticLanguageSettings(languageSettings);
   const editorialSynthesis = buildEditorialSynthesis({
     plan,
+    languageSettings: boundedLanguageSettings,
     safeInputSummary,
     roleOpinions,
     findings,
@@ -10086,6 +10103,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     result_type: 'agentic_human_review_advisory',
     human_review_schema_version: HUMAN_REVIEW_SCHEMA_VERSION,
     agentic_human_review_advisory: advisory,
+    language_settings: boundedLanguageSettings,
     non_engineer_summary: {
       plain_language_scope: plan.human_explanation?.plain_language_summary ?? safeInputSummary,
       likely_first_impression: secretSafeText(input.non_engineer_summary?.likely_first_impression ?? input.likely_first_impression ?? 'Reviewers should inspect what a person notices first and whether the page or image communicates the intended message.', 900),
@@ -10719,10 +10737,22 @@ function renderEditorialSynthesisReportSection(editorialSynthesis) {
   if (!editorialSynthesis || typeof editorialSynthesis !== 'object') {
     return [];
   }
+  const languageResolution = editorialSynthesis.language_resolution ?? {};
   return [
     '## Editorial Synthesis',
     '',
     editorialSynthesis.full_review ?? editorialSynthesis.one_sentence_takeaway ?? '',
+    '',
+    '### Language Settings',
+    '',
+    `- Editorial synthesis language: ${editorialSynthesis.language ?? 'unknown'}`,
+    `- Language source: ${languageResolution.source ?? 'unknown'}`,
+    `- Artifact output language: ${languageResolution.artifact_output_language ?? 'unresolved'}`,
+    `- Artifact language mode: ${languageResolution.artifact_output_language_mode ?? 'unknown'}`,
+    `- Text direction: ${languageResolution.text_direction ?? 'ltr'}`,
+    `- Translation mode: ${languageResolution.translation_mode ?? 'none'}`,
+    `- Translation execution: ${languageResolution.translation_execution_enabled === true}`,
+    `- Source text preserved: ${languageResolution.source_text_preserved === true}`,
     '',
     '### Key Tensions',
     '',
@@ -12640,6 +12670,7 @@ function buildHumanReportV3({ input, plan, readerExperienceReview, mechanicalVsH
 
 function buildEditorialSynthesis({
   plan,
+  languageSettings,
   safeInputSummary,
   roleOpinions,
   findings,
@@ -12719,7 +12750,11 @@ function buildEditorialSynthesis({
     });
   }
 
-  const language = inferEditorialSynthesisLanguage(records.map((record) => record.text));
+  const languageResolution = resolveEditorialSynthesisLanguage({
+    languageSettings,
+    sourceTexts: records.map((record) => record.text)
+  });
+  const language = languageResolution.language;
   const keyObservations = editorialTextsBySource(records, [
     'human_report_v3',
     'reader_experience_review',
@@ -12765,9 +12800,12 @@ function buildEditorialSynthesis({
   const ownerDecisionSummary = ownerDecisionTexts.length > 0
     ? ownerDecisionTexts.join(' ')
     : 'No explicit owner decision was requested by the existing advisory output.';
-  const limitations = status === 'limited'
-    ? ['The existing AHR result has too few evidence-backed findings or reported role opinions for a fuller editorial review.']
-    : [];
+  const limitations = [
+    ...(status === 'limited'
+      ? ['The existing AHR result has too few evidence-backed findings or reported role opinions for a fuller editorial review.']
+      : []),
+    ...languageResolution.limitations
+  ];
 
   return {
     schema_version: SCHEMA_VERSION,
@@ -12776,6 +12814,7 @@ function buildEditorialSynthesis({
     audience: plan.task?.target_audience ?? plan.human_review_contract?.target_audience ?? 'owner',
     tone: 'source_attributed_editorial_review',
     language,
+    language_resolution: languageResolution,
     one_sentence_takeaway: oneSentenceTakeaway,
     full_review: buildEditorialFullReview({
       language,
@@ -12832,6 +12871,96 @@ function editorialSafeText(value, maxLength) {
     .replace(/\bhuman[- ]superior\b/gi, '[restricted comparison wording]')
     .replace(/\bbetter than human\b/gi, '[restricted comparison wording]')
     .replace(/\brelease is approved\b/gi, '[restricted release wording]');
+}
+
+function boundedAgenticLanguageSettings(languageSettings) {
+  if (!languageSettings || typeof languageSettings !== 'object') {
+    return null;
+  }
+  return {
+    schema_version: languageSettings.schema_version ?? null,
+    dashboard_ui: languageSettings.dashboard_ui ? {
+      locale: languageSettings.dashboard_ui.locale ?? null,
+      intl_locale: languageSettings.dashboard_ui.intl_locale ?? null,
+      text_direction: languageSettings.dashboard_ui.text_direction ?? 'ltr',
+      status: languageSettings.dashboard_ui.status ?? null
+    } : null,
+    source: languageSettings.source ? {
+      language: languageSettings.source.language ?? null,
+      status: languageSettings.source.status ?? null,
+      raw_observed_page_language_preserved: languageSettings.source.raw_observed_page_language_preserved === true
+    } : null,
+    artifact_output: languageSettings.artifact_output ? {
+      language_mode: languageSettings.artifact_output.language_mode ?? null,
+      language: languageSettings.artifact_output.language ?? null,
+      status: languageSettings.artifact_output.status ?? null,
+      explicit_language: languageSettings.artifact_output.explicit_language ?? null,
+      intl_locale: languageSettings.artifact_output.intl_locale ?? null,
+      text_direction: languageSettings.artifact_output.text_direction ?? 'ltr',
+      translation_mode: languageSettings.artifact_output.translation_mode ?? 'none',
+      translation_execution_enabled: languageSettings.artifact_output.translation_execution_enabled === true,
+      provider_dispatch_enabled: languageSettings.artifact_output.provider_dispatch_enabled === true,
+      external_sending_enabled: languageSettings.artifact_output.external_sending_enabled === true,
+      body_included: languageSettings.artifact_output.body_included === true
+    } : null,
+    boundary: languageSettings.boundary ? {
+      local_only: languageSettings.boundary.local_only === true,
+      read_only: languageSettings.boundary.read_only === true,
+      translation_execution_enabled: languageSettings.boundary.translation_execution_enabled === true,
+      provider_dispatch_enabled: languageSettings.boundary.provider_dispatch_enabled === true,
+      external_sending_enabled: languageSettings.boundary.external_sending_enabled === true,
+      mcp_write_execute_exposed: languageSettings.boundary.mcp_write_execute_exposed === true,
+      gate_effect: languageSettings.boundary.gate_effect ?? 'none'
+    } : null
+  };
+}
+
+function resolveEditorialSynthesisLanguage({ languageSettings, sourceTexts }) {
+  const artifactOutput = languageSettings?.artifact_output ?? null;
+  const source = languageSettings?.source ?? null;
+  const inferredSourceLanguage = inferEditorialSynthesisLanguage(sourceTexts);
+  const artifactLanguage = typeof artifactOutput?.language === 'string' && artifactOutput.language.trim()
+    ? artifactOutput.language.trim()
+    : null;
+  const selectedLanguage = artifactLanguage ?? inferredSourceLanguage;
+  const sourceKind = artifactLanguage
+    ? 'artifact_output_language_settings'
+    : 'source_text_inference_fallback';
+  const sourceTextPreserved = true;
+  const translationExecutionEnabled = artifactOutput?.translation_execution_enabled === true;
+  const limitations = [];
+  if (!artifactLanguage) {
+    limitations.push('The artifact output language was unresolved, so the editorial synthesis used the local source-text language fallback.');
+  } else if (artifactLanguage !== inferredSourceLanguage) {
+    limitations.push('The selected artifact output language was recorded from local language settings, but source advisory text was preserved because translation execution is disabled.');
+  }
+  return {
+    schema_version: SCHEMA_VERSION,
+    source: sourceKind,
+    language: selectedLanguage,
+    inferred_source_language: inferredSourceLanguage,
+    artifact_output_language: artifactLanguage,
+    artifact_output_status: artifactOutput?.status ?? 'unavailable',
+    artifact_output_language_mode: artifactOutput?.language_mode ?? null,
+    explicit_language: artifactOutput?.explicit_language ?? null,
+    dashboard_ui_locale: languageSettings?.dashboard_ui?.locale ?? null,
+    source_language: source?.language ?? null,
+    source_language_status: source?.status ?? null,
+    intl_locale: artifactLanguage ? artifactOutput?.intl_locale ?? null : null,
+    text_direction: artifactLanguage ? artifactOutput?.text_direction ?? 'ltr' : 'ltr',
+    translation_mode: artifactOutput?.translation_mode ?? 'none',
+    translation_execution_enabled: translationExecutionEnabled,
+    provider_dispatch_enabled: artifactOutput?.provider_dispatch_enabled === true,
+    external_sending_enabled: artifactOutput?.external_sending_enabled === true,
+    source_text_preserved: sourceTextPreserved,
+    raw_evidence_translated: false,
+    provider_output_translated: false,
+    report_body_translated: false,
+    local_only: languageSettings?.boundary?.local_only === true,
+    read_only: languageSettings?.boundary?.read_only === true,
+    gate_effect: 'none',
+    limitations
+  };
 }
 
 function inferEditorialSynthesisLanguage(values) {
@@ -12918,28 +13047,7 @@ function buildEditorialFullReview({
     ownerDecisionSummary,
     ...limitations
   ].filter(Boolean);
-  if (language === 'ja') {
-    return sourceOnlyParagraphs.join('\n\n');
-  }
-  const paragraphs = [
-    `The existing advisory result points to this takeaway: ${takeaway}`,
-    observations.length > 0
-      ? `Key observations are: ${formatEditorialList(observations.slice(0, 3))}.`
-      : null,
-    strengths.length > 0
-      ? `The clearest strengths are: ${formatEditorialList(strengths.slice(0, 3))}.`
-      : null,
-    risksOrCautions.length > 0
-      ? `The main cautions are: ${formatEditorialList(risksOrCautions.slice(0, 3))}.`
-      : null,
-    keyTensions.length > 0
-      ? `Important tensions or uncertainties remain: ${formatEditorialList(keyTensions.slice(0, 3))}.`
-      : null,
-    `Recommended direction: ${recommendedDirection}`,
-    `Owner decision context: ${ownerDecisionSummary}`,
-    status === 'limited' && limitations.length > 0 ? limitations[0] : null
-  ].filter(Boolean);
-  return paragraphs.join('\n\n');
+  return sourceOnlyParagraphs.join('\n\n');
 }
 
 function formatEditorialList(values) {
