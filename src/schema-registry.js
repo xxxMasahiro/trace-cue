@@ -1778,6 +1778,7 @@ const schemas = Object.freeze({
       benchmark_requirement_coverage: { type: 'object' },
       xhigh_multi_round_review: { type: 'object' },
       xhigh_mechanical_enforcement: { type: 'object' },
+      editorial_synthesis: { type: 'object' },
       effort_execution_contract: { type: ['object', 'null'] },
       provider_effort_binding: { type: ['object', 'null'] },
       strict_output_contract: { type: ['object', 'null'] },

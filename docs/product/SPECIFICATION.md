@@ -856,6 +856,16 @@ Aggregation groups untrusted visual advisory findings deterministically by categ
 
 Aggregation never writes artifacts, runs providers, reads raw pixels, reads credentials, mutates existing reviews, changes deterministic findings, changes release gates, or exposes a MCP tool. `mcp capabilities` and `mcp execution gates` report `visual_review_aggregation` as currently excluded from safe/full/admin MCP profiles until separate read-exposure gates are approved.
 
+## Agentic Human Review Editorial Synthesis
+
+Agentic Human Review advisory results may include an optional top-level `editorial_synthesis` object. This object is a derived editorial view over the normalized advisory result, not provider-authored proof. It is built after result normalization from existing sections such as `human_report_v3`, `reader_experience_review`, `mechanical_vs_human_review`, reported `role_opinions`, `agentic_human_review_findings`, `owner_baseline_findings`, consensus/dissent summaries, action-plan suggestions, and owner decision requests.
+
+The synthesis contract includes `schema_version`, `synthesis_version`, `status`, `audience`, `tone`, `language`, `one_sentence_takeaway`, `full_review`, `key_observations`, `key_tensions`, `strengths`, `risks_or_cautions`, `recommended_direction`, `owner_decision_summary`, `limitations`, `source_refs`, `source_ref_details`, `boundary`, `advisory_only=true`, and `gate_effect=none`. `source_refs` identify existing result sections and ids, while `source_ref_details` provide machine-readable `source_field`, `source_id`, and `source_kind` values without raw artifact bodies, provider prompts, provider responses, credentials, execution internals, or local paths.
+
+The synthesis builder is local and deterministic. It must not call providers, request `editorial_synthesis` in provider prompts or adapter schemas, read raw pixels, transfer evidence, read credential values, store raw provider responses, expose MCP execution, mutate deterministic findings, change report-quality metrics, satisfy owner-baseline proof, repair benchmark coverage, alter claim integrity, authorize owner decisions, or change release gates. If the normalized result has too few evidence-backed findings or reported role opinions, the synthesis must use a limited status and state the limitation instead of fabricating a richer review.
+
+Markdown Agentic Human Review reports render an `Editorial Synthesis` section from the existing result field only. Older results that do not contain `editorial_synthesis` remain valid and render without that section.
+
 ## Agentic Human Review Responses Adapter Contract Recovery
 
 Responses adapter post-validation now evaluates all applicable TraceCue contracts before deciding whether a provider advisory is repairable. The validation families are benchmark coverage, owner-approved human-baseline coverage, optional `review_claims` filtering, and either full `xhigh` role/round/critique/synthesis completion or staged-role completion when `stage_execution` is present.

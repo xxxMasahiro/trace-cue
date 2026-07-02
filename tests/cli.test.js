@@ -3918,6 +3918,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiPlanBody.data.agentic_human_review_plan.transfer_permissions.default_external_transfer, true);
 
   let apiRequestPayload = null;
+  let apiFetchCount = 0;
   const apiPlanPath = '.browser-debug/agentic-human-review-plans/agentic-plan-api/plan.json';
   const apiPlanHash = apiPlanBody.data.plan_hash;
   const apiReadinessWithTimeout = await executeCli([
@@ -4042,6 +4043,10 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(runtimeModelPayload.model_resolution.model_resolution_source, 'runtime_model_env');
   assert.equal(abstractModelRuntimeBody.data.agentic_human_review_execution.model.id, 'generic-agentic-review-model');
   assert.equal(abstractModelRuntimeBody.data.agentic_human_review_execution.model_resolution.effective_model_id, 'runtime-model-for-test');
+  const abstractModelRuntimeResultFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-api-runtime-model', 'result.json'), 'utf8'));
+  assert.equal(abstractModelRuntimeResultFile.editorial_synthesis.status, 'limited');
+  assert.equal(abstractModelRuntimeResultFile.editorial_synthesis.source_ref_details.some((ref) => ref.source_field === 'role_opinions'), false);
+  assert.match(abstractModelRuntimeResultFile.editorial_synthesis.full_review, /too few evidence-backed findings|Runtime model advisory completed/);
 
   const invalidApiTimeoutReadiness = await executeCli([
     'agentic',
@@ -4128,6 +4133,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
       assert.equal(url, 'https://provider.example/review');
       assert.match(init.headers.authorization, /Bearer /);
       assert.equal(init.redirect, 'error');
+      apiFetchCount += 1;
       apiRequestPayload = JSON.parse(init.body);
       return {
         ok: true,
@@ -4212,6 +4218,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiRequestPayload.package.visible_text_provenance.source_count > 0, true);
   assert.equal(apiRequestPayload.plan.human_review_contract.output_requirements.reader_feeling_required, true);
   assert.equal(apiRequestPayload.plan.provider_instruction_contract.output_sections.includes('mechanical_vs_human_review'), true);
+  assert.equal(apiRequestPayload.plan.provider_instruction_contract.output_sections.includes('editorial_synthesis'), false);
+  assert.equal(apiRequestPayload.plan.strict_output_contract.required_output_sections.includes('editorial_synthesis'), false);
+  assert.equal(apiFetchCount, 1);
   assert.doesNotMatch(apiRunResult.stdout, /api-secret-value|provider\.example/);
   const apiResultFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-api', 'result.json'), 'utf8'));
   assert.equal(apiResultFile.review_claims.some((claim) => /human[- ]superior|human[- ]equivalent|better than human/i.test(claim.claim)), false);
@@ -4219,6 +4228,12 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiResultFile.claim_integrity.rejected_claims[0].source, 'provider_review_claim');
   assert.equal(apiResultFile.claim_integrity.rejected_claims[0].reasons.includes('equality_or_superiority_claim_text'), true);
   assert.equal(apiResultFile.claim_integrity.claim_numerator_safe, false);
+  assert.equal(apiResultFile.editorial_synthesis.advisory_only, true);
+  assert.equal(apiResultFile.editorial_synthesis.gate_effect, 'none');
+  assert.equal(apiResultFile.editorial_synthesis.boundary.provider_call_performed, false);
+  assert.equal(apiResultFile.editorial_synthesis.boundary.api_call_performed, false);
+  assert.equal(apiResultFile.editorial_synthesis.source_refs.some((ref) => ref.startsWith('agentic_human_review_findings:api-proof-gap')), true);
+  assert.doesNotMatch(JSON.stringify(apiResultFile.editorial_synthesis), /human[- ]superior|human[- ]equivalent|better than human/i);
 
   const loopbackAdapterFailure = await executeCli(apiRunArgs, {
     cwd,
@@ -4585,6 +4600,22 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(resultFile.live_dogfood_execution_gate.status, 'local_or_non_api_dogfood_ready');
   assert.equal(resultFile.human_report_v3.report_version, '3.0.0');
   assert.equal(resultFile.human_report_v3.owner_review_required, true);
+  assert.equal(resultFile.editorial_synthesis.synthesis_version, '1.0.0');
+  assert.equal(resultFile.editorial_synthesis.status, 'completed');
+  assert.equal(resultFile.editorial_synthesis.advisory_only, true);
+  assert.equal(resultFile.editorial_synthesis.gate_effect, 'none');
+  assert.equal(resultFile.editorial_synthesis.boundary.derived_from_existing_ahr_result, true);
+  assert.equal(resultFile.editorial_synthesis.boundary.provider_call_performed, false);
+  assert.equal(resultFile.editorial_synthesis.boundary.api_call_performed, false);
+  assert.equal(resultFile.editorial_synthesis.boundary.existing_review_mutated, false);
+  assert.equal(resultFile.editorial_synthesis.boundary.deterministic_findings_mutated, false);
+  assert.equal(resultFile.editorial_synthesis.boundary.metrics_finding_count_mutated, false);
+  assert.equal(resultFile.editorial_synthesis.boundary.release_gate_mutated, false);
+  assert.equal(resultFile.editorial_synthesis.boundary.mechanical_proof_contract_satisfied, false);
+  assert.equal(resultFile.editorial_synthesis.source_refs.length > 0, true);
+  assert.equal(resultFile.editorial_synthesis.source_ref_details.every((ref) => typeof ref.source_field === 'string' && typeof ref.source_id === 'string'), true);
+  assert.equal(resultFile.editorial_synthesis.source_ref_details.some((ref) => ref.source_field === 'agentic_human_review_findings'), true);
+  assert.equal(resultFile.editorial_synthesis.source_ref_details.some((ref) => /provider|prompt|response|execution/.test(ref.source_field)), false);
   assert.equal(resultFile.consensus_analysis.gate_effect, 'none');
   assert.equal(resultFile.dissent_analysis.owner_review_required, true);
   assert.equal(resultFile.calibration_metadata.calibration_version, '1.0.0');
@@ -4604,6 +4635,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.match(reportText, /Role Opinions/);
   assert.match(reportText, /Mechanical Review Compared With Human Review/);
   assert.match(reportText, /Human Report V3/);
+  assert.match(reportText, /Editorial Synthesis/);
+  assert.match(reportText, /Recommended Direction/);
+  assert.match(reportText, /Source Findings/);
   assert.match(reportText, /Report Quality/);
   assert.match(reportText, /Quality Evaluation/);
   assert.match(reportText, /Calibration And Privacy/);
@@ -7183,6 +7217,10 @@ test('agentic human review staged xhigh incomplete stage output remains non-proo
   assert.equal(resultFile.role_execution_records.some((record) => record.status === 'missing_output'), true);
   assert.equal(resultFile.claim_integrity.claim_numerator_safe, false);
   assert.equal(resultFile.agentic_human_review_findings.length, 0);
+  assert.equal(resultFile.editorial_synthesis.status, 'limited');
+  assert.equal(resultFile.editorial_synthesis.limitations.length > 0, true);
+  assert.equal(resultFile.editorial_synthesis.source_ref_details.some((ref) => ref.source_field === 'agentic_human_review_findings'), false);
+  assert.match(resultFile.editorial_synthesis.full_review, /too few evidence-backed findings/);
   assert.equal(JSON.stringify(resultFile).includes(png.toString('base64')), false);
 
   const qualityResult = await executeCli([
@@ -7486,6 +7524,8 @@ test('agentic human review responses adapter converts requests without leaking c
   assert.equal(observedFetch.body.text.format.schema.required.includes('benchmark_requirement_coverage'), true);
   assert.equal(observedFetch.body.text.format.schema.required.includes('agentic_human_review_findings'), true);
   assert.equal(observedFetch.body.text.format.schema.required.includes('owner_baseline_findings'), false);
+  assert.equal(observedFetch.body.text.format.schema.required.includes('editorial_synthesis'), false);
+  assert.equal(Object.hasOwn(observedFetch.body.text.format.schema.properties, 'editorial_synthesis'), false);
   assert.match(observedFetch.body.instructions, /without paraphrasing keys/);
   assert.match(observedFetch.body.instructions, /staged TraceCue provider call/);
   assert.match(observedFetch.body.instructions, /Do not claim human-equivalent or human-superior quality/);

@@ -56,6 +56,7 @@ export const HUMAN_REVIEW_STRICT_OUTPUT_CONTRACT_VERSION = '1.0.0';
 export const HUMAN_REVIEW_REPAIR_RETRY_VERSION = '1.0.0';
 export const HUMAN_REVIEW_MULTI_STEP_XHIGH_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EVIDENCE_PROVENANCE_VERSION = '1.0.0';
+export const HUMAN_REVIEW_EDITORIAL_SYNTHESIS_VERSION = '1.0.0';
 
 const DEFAULT_PROVIDER_ID = 'fake-agent';
 const DEFAULT_MODEL_ID = 'fake-model';
@@ -10027,6 +10028,30 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     quality: qualityPreview,
     reviewQualityEvaluation
   });
+  const actionPlan = {
+    next_actions: normalizeStringArray(input.agentic_human_review_action_plan?.next_actions ?? input.improvement_suggestions).slice(0, 12),
+    suggested_fixes: normalizeStringArray(input.suggested_fixes ?? input.improvement_suggestions).slice(0, 12),
+    owner_review_required: true,
+    gate_effect: 'none'
+  };
+  const consensusSummary = buildConsensusSummary({ roleOpinions, findings, input });
+  const dissentSummary = buildDissentSummary({ roleOpinions, input });
+  const editorialSynthesis = buildEditorialSynthesis({
+    plan,
+    safeInputSummary,
+    roleOpinions,
+    findings,
+    ownerBaselineFindings,
+    ownerDecisions,
+    readerExperienceReview,
+    mechanicalVsHumanReview,
+    humanReportV3,
+    consensusSummary,
+    dissentSummary,
+    consensusAnalysis,
+    dissentAnalysis,
+    actionPlan
+  });
   const privacyDisclosureAudit = buildPrivacyDisclosureAudit({
     stage: 'result',
     provider,
@@ -10130,18 +10155,14 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
       gate_effect: 'none'
     },
     human_report_v3: humanReportV3,
-    consensus_summary: buildConsensusSummary({ roleOpinions, findings, input }),
-    dissent_summary: buildDissentSummary({ roleOpinions, input }),
+    editorial_synthesis: editorialSynthesis,
+    consensus_summary: consensusSummary,
+    dissent_summary: dissentSummary,
     consensus_analysis: consensusAnalysis,
     dissent_analysis: dissentAnalysis,
     owner_baseline_findings: ownerBaselineFindings,
     agentic_human_review_findings: findings,
-    agentic_human_review_action_plan: {
-      next_actions: normalizeStringArray(input.agentic_human_review_action_plan?.next_actions ?? input.improvement_suggestions).slice(0, 12),
-      suggested_fixes: normalizeStringArray(input.suggested_fixes ?? input.improvement_suggestions).slice(0, 12),
-      owner_review_required: true,
-      gate_effect: 'none'
-    },
+    agentic_human_review_action_plan: actionPlan,
     agentic_human_review_readiness: {
       status,
       advisory_only: true,
@@ -10593,6 +10614,7 @@ function buildRunReceipt({ execution, providerResult }) {
 function renderAgenticReviewReport(result) {
   const summary = result.non_engineer_summary ?? {};
   const advisory = result.agentic_human_review_advisory ?? {};
+  const editorialSynthesis = result.editorial_synthesis ?? null;
   const lines = [
     '# Agentic Human Review',
     '',
@@ -10627,6 +10649,8 @@ function renderAgenticReviewReport(result) {
     '',
     ...normalizeStringArray(result.human_report_v3?.what_works).map((item) => `- Works: ${item}`),
     ...normalizeStringArray(result.human_report_v3?.what_gets_lost).map((item) => `- Lost value: ${item}`),
+    '',
+    ...renderEditorialSynthesisReportSection(editorialSynthesis),
     '',
     '## Mechanical Review Compared With Human Review',
     '',
@@ -10689,6 +10713,29 @@ function renderAgenticReviewReport(result) {
     '- Raw provider responses and credential values are not stored.'
   ];
   return `${lines.join('\n')}\n`;
+}
+
+function renderEditorialSynthesisReportSection(editorialSynthesis) {
+  if (!editorialSynthesis || typeof editorialSynthesis !== 'object') {
+    return [];
+  }
+  return [
+    '## Editorial Synthesis',
+    '',
+    editorialSynthesis.full_review ?? editorialSynthesis.one_sentence_takeaway ?? '',
+    '',
+    '### Key Tensions',
+    '',
+    ...normalizeStringArray(editorialSynthesis.key_tensions).map((item) => `- ${item}`),
+    '',
+    '### Recommended Direction',
+    '',
+    editorialSynthesis.recommended_direction ?? '',
+    '',
+    '### Source Findings',
+    '',
+    ...normalizeStringArray(editorialSynthesis.source_refs).map((item) => `- ${item}`)
+  ];
 }
 
 function computePlanHash(plan) {
@@ -12589,6 +12636,321 @@ function buildHumanReportV3({ input, plan, readerExperienceReview, mechanicalVsH
     advisory_only: true,
     gate_effect: 'none'
   };
+}
+
+function buildEditorialSynthesis({
+  plan,
+  safeInputSummary,
+  roleOpinions,
+  findings,
+  ownerBaselineFindings,
+  ownerDecisions,
+  readerExperienceReview,
+  mechanicalVsHumanReview,
+  humanReportV3,
+  consensusSummary,
+  dissentSummary,
+  consensusAnalysis,
+  dissentAnalysis,
+  actionPlan
+}) {
+  const records = [];
+  const addRecords = ({ sourceField, sourceId, sourceKind = 'section', values }) => {
+    for (const text of normalizeEditorialTextArray(values)) {
+      records.push({
+        source_field: sourceField,
+        source_id: sourceId,
+        source_kind: sourceKind,
+        text
+      });
+    }
+  };
+
+  addRecords({ sourceField: 'non_engineer_summary', sourceId: 'main_takeaway', values: safeInputSummary });
+  addRecords({ sourceField: 'reader_experience_review', sourceId: 'content_takeaway', values: readerExperienceReview?.content_takeaway });
+  addRecords({ sourceField: 'reader_experience_review', sourceId: 'likely_viewer_feeling', values: readerExperienceReview?.likely_viewer_feeling });
+  addRecords({ sourceField: 'reader_experience_review', sourceId: 'trust_assessment', values: readerExperienceReview?.trust_assessment });
+  addRecords({ sourceField: 'reader_experience_review', sourceId: 'risk_and_misleading_content', values: readerExperienceReview?.risk_and_misleading_content });
+  addRecords({ sourceField: 'reader_experience_review', sourceId: 'lost_value_summary', values: readerExperienceReview?.lost_value_summary });
+  addRecords({ sourceField: 'human_report_v3', sourceId: 'reader_story', values: humanReportV3?.reader_story });
+  addRecords({ sourceField: 'human_report_v3', sourceId: 'plain_language_takeaway', values: humanReportV3?.plain_language_takeaway });
+  addRecords({ sourceField: 'human_report_v3', sourceId: 'what_works', values: humanReportV3?.what_works });
+  addRecords({ sourceField: 'human_report_v3', sourceId: 'what_gets_lost', values: humanReportV3?.what_gets_lost });
+  addRecords({ sourceField: 'human_report_v3', sourceId: 'highest_priority_fix', values: humanReportV3?.highest_priority_fix });
+  addRecords({ sourceField: 'mechanical_vs_human_review', sourceId: 'balanced_takeaways', values: mechanicalVsHumanReview?.balanced_takeaways });
+  addRecords({ sourceField: 'consensus_summary', sourceId: 'corroborated_findings', values: consensusSummary?.corroborated_findings });
+  addRecords({ sourceField: 'consensus_summary', sourceId: 'shared_risks', values: consensusSummary?.shared_risks });
+  addRecords({ sourceField: 'dissent_summary', sourceId: 'contradictions', values: dissentSummary?.contradictions });
+  addRecords({ sourceField: 'dissent_summary', sourceId: 'minority_opinions', values: dissentSummary?.minority_opinions });
+  addRecords({ sourceField: 'dissent_analysis', sourceId: 'residual_uncertainties', values: dissentAnalysis?.residual_uncertainties });
+  addRecords({ sourceField: 'agentic_human_review_action_plan', sourceId: 'suggested_fixes', values: actionPlan?.suggested_fixes });
+  addRecords({ sourceField: 'agentic_human_review_action_plan', sourceId: 'next_actions', values: actionPlan?.next_actions });
+
+  for (const opinion of reportedRoleOpinions(roleOpinions).slice(0, 8)) {
+    addRecords({
+      sourceField: 'role_opinions',
+      sourceId: opinion.role,
+      sourceKind: 'role',
+      values: opinion.summary
+    });
+  }
+  for (const finding of findings.slice(0, 12)) {
+    addRecords({
+      sourceField: 'agentic_human_review_findings',
+      sourceId: finding.id,
+      sourceKind: 'finding',
+      values: [finding.message, finding.recommendation]
+    });
+  }
+  for (const finding of ownerBaselineFindings.slice(0, 12)) {
+    addRecords({
+      sourceField: 'owner_baseline_findings',
+      sourceId: finding.id,
+      sourceKind: 'finding',
+      values: [finding.message, finding.recommendation]
+    });
+  }
+  for (const decision of ownerDecisions.slice(0, 8)) {
+    addRecords({
+      sourceField: 'owner_decision_requests',
+      sourceId: decision.id,
+      sourceKind: 'owner_decision',
+      values: decision.question
+    });
+  }
+
+  const language = inferEditorialSynthesisLanguage(records.map((record) => record.text));
+  const keyObservations = editorialTextsBySource(records, [
+    'human_report_v3',
+    'reader_experience_review',
+    'mechanical_vs_human_review',
+    'agentic_human_review_findings',
+    'role_opinions'
+  ], 6);
+  const strengths = editorialTextsById(records, [
+    'what_works',
+    'corroborated_findings',
+    'content_takeaway',
+    'trust_assessment'
+  ], 5);
+  const risksOrCautions = editorialTextsById(records, [
+    'what_gets_lost',
+    'risk_and_misleading_content',
+    'lost_value_summary',
+    'shared_risks'
+  ], 5);
+  const keyTensions = editorialTextsBySource(records, [
+    'dissent_summary',
+    'dissent_analysis',
+    'mechanical_vs_human_review'
+  ], 5);
+  const recommendationTexts = editorialTextsById(records, [
+    'highest_priority_fix',
+    'suggested_fixes',
+    'next_actions'
+  ], 4);
+  const ownerDecisionTexts = editorialTextsBySource(records, ['owner_decision_requests'], 4);
+  const sourceRefDetails = uniqueEditorialSourceRefs(records).slice(0, 24);
+  const materialSignalCount = findings.length
+    + ownerBaselineFindings.length
+    + reportedRoleOpinions(roleOpinions).length;
+  const status = materialSignalCount >= 2 ? 'completed' : 'limited';
+  const oneSentenceTakeaway = editorialFirstText([
+    humanReportV3?.plain_language_takeaway,
+    safeInputSummary,
+    keyObservations[0]
+  ]);
+  const recommendedDirection = recommendationTexts[0]
+    ?? 'Review the advisory output with the owner before implementation.';
+  const ownerDecisionSummary = ownerDecisionTexts.length > 0
+    ? ownerDecisionTexts.join(' ')
+    : 'No explicit owner decision was requested by the existing advisory output.';
+  const limitations = status === 'limited'
+    ? ['The existing AHR result has too few evidence-backed findings or reported role opinions for a fuller editorial review.']
+    : [];
+
+  return {
+    schema_version: SCHEMA_VERSION,
+    synthesis_version: HUMAN_REVIEW_EDITORIAL_SYNTHESIS_VERSION,
+    status,
+    audience: plan.task?.target_audience ?? plan.human_review_contract?.target_audience ?? 'owner',
+    tone: 'source_attributed_editorial_review',
+    language,
+    one_sentence_takeaway: oneSentenceTakeaway,
+    full_review: buildEditorialFullReview({
+      language,
+      status,
+      takeaway: oneSentenceTakeaway,
+      observations: keyObservations,
+      strengths,
+      risksOrCautions,
+      keyTensions,
+      recommendedDirection,
+      ownerDecisionSummary,
+      limitations
+    }),
+    key_observations: keyObservations,
+    key_tensions: keyTensions,
+    strengths,
+    risks_or_cautions: risksOrCautions,
+    recommended_direction: recommendedDirection,
+    owner_decision_summary: ownerDecisionSummary,
+    limitations,
+    source_refs: sourceRefDetails.map((reference) => reference.ref),
+    source_ref_details: sourceRefDetails,
+    boundary: {
+      derived_from_existing_ahr_result: true,
+      provider_call_performed: false,
+      api_call_performed: false,
+      external_evidence_transfer: false,
+      raw_pixels_read: false,
+      raw_pixels_transferred: false,
+      credential_values_recorded: false,
+      raw_provider_response_stored: false,
+      existing_review_mutated: false,
+      deterministic_findings_mutated: false,
+      metrics_finding_count_mutated: false,
+      release_gate_mutated: false,
+      mcp_execution_exposed: false,
+      mechanical_proof_contract_satisfied: false
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function normalizeEditorialTextArray(value) {
+  const values = Array.isArray(value) ? value : [value];
+  return values
+    .map((item) => editorialSafeText(item, 700))
+    .filter(Boolean);
+}
+
+function editorialSafeText(value, maxLength) {
+  return secretSafeText(value, maxLength)
+    .replace(/\bhuman[- ]equivalent\b/gi, '[restricted comparison wording]')
+    .replace(/\bhuman[- ]superior\b/gi, '[restricted comparison wording]')
+    .replace(/\bbetter than human\b/gi, '[restricted comparison wording]')
+    .replace(/\brelease is approved\b/gi, '[restricted release wording]');
+}
+
+function inferEditorialSynthesisLanguage(values) {
+  const text = values.join('\n');
+  return /[\u3040-\u30ff]/.test(text) ? 'ja' : 'en';
+}
+
+function editorialTextsBySource(records, sourceFields, limit) {
+  const allowed = new Set(sourceFields);
+  return uniqueEditorialTexts(records
+    .filter((record) => allowed.has(record.source_field))
+    .map((record) => record.text))
+    .slice(0, limit);
+}
+
+function editorialTextsById(records, sourceIds, limit) {
+  const allowed = new Set(sourceIds);
+  return uniqueEditorialTexts(records
+    .filter((record) => allowed.has(record.source_id))
+    .map((record) => record.text))
+    .slice(0, limit);
+}
+
+function editorialFirstText(values) {
+  return normalizeEditorialTextArray(values).find(Boolean)
+    ?? 'The existing advisory result needs owner review before product decisions are made.';
+}
+
+function uniqueEditorialTexts(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values) {
+    const normalized = editorialSafeText(value, 700);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function uniqueEditorialSourceRefs(records) {
+  const seen = new Set();
+  const result = [];
+  for (const record of records) {
+    const sourceField = truncateText(record.source_field, 120);
+    const sourceId = truncateText(record.source_id, 160);
+    const sourceKind = truncateText(record.source_kind ?? 'section', 80);
+    const ref = `${sourceField}:${sourceId}`;
+    if (!sourceField || !sourceId || seen.has(ref)) {
+      continue;
+    }
+    seen.add(ref);
+    result.push({
+      ref,
+      source_field: sourceField,
+      source_id: sourceId,
+      source_kind: sourceKind
+    });
+  }
+  return result;
+}
+
+function buildEditorialFullReview({
+  language,
+  status,
+  takeaway,
+  observations,
+  strengths,
+  risksOrCautions,
+  keyTensions,
+  recommendedDirection,
+  ownerDecisionSummary,
+  limitations
+}) {
+  const sourceOnlyParagraphs = [
+    takeaway,
+    ...observations.slice(0, 2),
+    ...strengths.slice(0, 1),
+    ...risksOrCautions.slice(0, 1),
+    ...keyTensions.slice(0, 1),
+    recommendedDirection,
+    ownerDecisionSummary,
+    ...limitations
+  ].filter(Boolean);
+  if (language === 'ja') {
+    return sourceOnlyParagraphs.join('\n\n');
+  }
+  const paragraphs = [
+    `The existing advisory result points to this takeaway: ${takeaway}`,
+    observations.length > 0
+      ? `Key observations are: ${formatEditorialList(observations.slice(0, 3))}.`
+      : null,
+    strengths.length > 0
+      ? `The clearest strengths are: ${formatEditorialList(strengths.slice(0, 3))}.`
+      : null,
+    risksOrCautions.length > 0
+      ? `The main cautions are: ${formatEditorialList(risksOrCautions.slice(0, 3))}.`
+      : null,
+    keyTensions.length > 0
+      ? `Important tensions or uncertainties remain: ${formatEditorialList(keyTensions.slice(0, 3))}.`
+      : null,
+    `Recommended direction: ${recommendedDirection}`,
+    `Owner decision context: ${ownerDecisionSummary}`,
+    status === 'limited' && limitations.length > 0 ? limitations[0] : null
+  ].filter(Boolean);
+  return paragraphs.join('\n\n');
+}
+
+function formatEditorialList(values) {
+  const items = values.filter(Boolean);
+  if (items.length <= 1) {
+    return items[0] ?? '';
+  }
+  if (items.length === 2) {
+    return `${items[0]} and ${items[1]}`;
+  }
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
 }
 
 function buildCalibrationMetadata({ plan, input, quality, benchmarkRequirementCoverage = null }) {
