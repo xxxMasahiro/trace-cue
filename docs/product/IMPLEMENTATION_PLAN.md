@@ -203,6 +203,16 @@ Implementation order: synchronize product, security, verification, handoff, trac
 
 Recovery: this slice is additive and local. Existing Agentic Human Review proposal, plan, run, status/list, report-quality, benchmark, calibrate, compare, evidence-set, human-baseline, dogfood readiness, Responses adapter startup, visual review, agent execution, MCP profiles, safe HTTP MCP, release readiness, artifact-root policy, alias compatibility, deterministic findings, and release gates remain compatible. Rollback is a standard Git revert of the mechanical effort enforcement changes; no artifact migration, publication, credential storage, raw response persistence, release gate change, or MCP permission expansion is involved.
 
+### Agentic Human Review Effort-Aware Quality Diagnostics
+
+Purpose: make report-quality warnings match the approved effort contract without weakening xhigh proof-readiness. Standard and deep results should not look failed only because they do not plan dedicated critique or verification roles, while xhigh must still warn when its required critic or verification output is missing.
+
+Implemented scope: add optional report-quality diagnostic metadata, effort expectations, classification summaries, effort notes, evaluator policy diagnostics, localized Markdown effort-note/warning sections, schema parity, and no-browser staged standard/deep/xhigh regression coverage. Standard and deep missing dedicated critique/verification is classified as an expected effort gap; xhigh missing dedicated critique/verification remains a policy warning and maturity gap. Non-scope: adding roles to standard or deep, changing score formulas, mutating deterministic review findings, authorizing human-equivalent or human-superior claims, changing release gates, calling providers, storing raw provider responses, storing credentials, exposing Agentic Human Review through MCP, parent-repository changes, consumer-repository changes, package publication, or target-specific branches.
+
+Implementation order: add effort-aware diagnostics to embedded advisory report-quality and standalone `agentic review report-quality`; localize generated diagnostic display text; update schemas and product/workflow docs; add focused no-browser tests for standard, deep, complete xhigh, and incomplete xhigh; then run product-local checks.
+
+Recovery: this slice is additive and local. Existing `quality_warnings` remains available as a compatibility array, and new diagnostics are optional fields. Rollback is a standard Git revert of the effort-aware diagnostics and docs changes; no artifact migration, publication, credential storage, raw response persistence, release gate change, or MCP permission expansion is involved.
+
 ### Agentic Human Review Real-Provider Proof-Readiness Hardening
 
 Purpose: make completed standard/deep/xhigh real-provider dogfood easier to judge without overstating the result as human-equivalence proof. The slice strengthens the adapter output contract and read-only evidence diagnostics so weak provider structure, missing owner baselines, missing case-level direct-vs-TraceCue comparisons, and weak calibration remain visible blockers.

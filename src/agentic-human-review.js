@@ -60,6 +60,7 @@ export const HUMAN_REVIEW_MULTI_STEP_XHIGH_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EVIDENCE_PROVENANCE_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EDITORIAL_SYNTHESIS_VERSION = '1.0.0';
 export const HUMAN_REVIEW_VIDEO_EVIDENCE_VERSION = '1.0.0';
+export const HUMAN_REVIEW_QUALITY_DIAGNOSTICS_VERSION = '1.0.0';
 
 const DEFAULT_PROVIDER_ID = 'fake-agent';
 const DEFAULT_MODEL_ID = 'fake-model';
@@ -10334,6 +10335,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     stagedExecution: input.xhigh_staged_execution ?? null
   });
   const qualityPreview = buildReportQualityFromParts({
+    reviewEffort: plan.review_effort?.mode,
     roleOpinions,
     findings,
     ownerDecisions,
@@ -10972,6 +10974,8 @@ function renderAgenticReviewReport(result) {
   const advisory = result.agentic_human_review_advisory ?? {};
   const editorialSynthesis = result.editorial_synthesis ?? null;
   const t = (key, fallback) => resolveAgenticReportText(result, key, fallback);
+  const reportLanguage = editorialSynthesis?.language ?? result.language_settings?.artifact_output?.language ?? 'en';
+  const localizeGenerated = (value) => localizeEditorialGeneratedText(value, reportLanguage);
   const lines = [
     `# ${t('report.ahr.title', 'Agentic Human Review')}`,
     '',
@@ -11002,16 +11006,16 @@ function renderAgenticReviewReport(result) {
     '',
     result.human_report_v3?.reader_story ?? '',
     '',
-    `${t('report.ahr.label.priority_fix', 'Priority fix')}: ${result.human_report_v3?.highest_priority_fix ?? t('report.ahr.value.owner_review_required', 'owner review required')}`,
+    `${t('report.ahr.label.priority_fix', 'Priority fix')}: ${localizeGenerated(result.human_report_v3?.highest_priority_fix ?? t('report.ahr.value.owner_review_required', 'owner review required'))}`,
     '',
     ...normalizeStringArray(result.human_report_v3?.what_works).map((item) => `- ${t('report.ahr.bullet.works', 'Works')}: ${item}`),
-    ...normalizeStringArray(result.human_report_v3?.what_gets_lost).map((item) => `- ${t('report.ahr.bullet.lost_value', 'Lost value')}: ${item}`),
+    ...normalizeStringArray(result.human_report_v3?.what_gets_lost).map((item) => `- ${t('report.ahr.bullet.lost_value', 'Lost value')}: ${localizeGenerated(item)}`),
     '',
     ...renderEditorialSynthesisReportSection(editorialSynthesis, result),
     '',
     `## ${t('report.ahr.section.mechanical_vs_human', 'Mechanical Review Compared With Human Review')}`,
     '',
-    ...normalizeStringArray(result.mechanical_vs_human_review?.balanced_takeaways).map((item) => `- ${item}`),
+    ...normalizeStringArray(result.mechanical_vs_human_review?.balanced_takeaways).map((item) => `- ${localizeGenerated(item)}`),
     '',
     `## ${t('report.ahr.section.role_opinions', 'Role Opinions')}`,
     '',
@@ -11046,6 +11050,14 @@ function renderAgenticReviewReport(result) {
     `${t('report.ahr.label.human_review_coverage', 'Human-review coverage')}: ${result.report_quality?.human_review_coverage_score ?? 'unknown'}`,
     `${t('report.ahr.label.actionability', 'Actionability')}: ${result.report_quality?.actionability_score ?? 'unknown'}`,
     `${t('report.ahr.label.evaluator', 'Evaluator')}: ${result.report_quality?.quality_evaluator_version ?? result.review_quality_evaluation?.evaluator_version ?? 'unknown'}`,
+    '',
+    `### ${t('report.ahr.section.quality_effort_notes', 'Effort Notes')}`,
+    '',
+    ...normalizeQualityDiagnostics(result.report_quality?.quality_effort_notes).map((item) => `- ${localizeReportQualityDiagnosticText(item.message, reportLanguage)} (${item.code})`),
+    '',
+    `### ${t('report.ahr.section.quality_warnings', 'Quality Warnings')}`,
+    '',
+    ...normalizeStringArray(result.report_quality?.quality_warnings).map((item) => `- ${localizeReportQualityDiagnosticText(item, reportLanguage)}`),
     '',
     `## ${t('report.ahr.section.quality_evaluation', 'Quality Evaluation')}`,
     '',
@@ -13151,7 +13163,8 @@ function buildEditorialSynthesis({
     sourceTexts: records.map((record) => record.text)
   });
   const language = languageResolution.language;
-  const keyObservations = editorialTextsBySource(records, [
+  const localizedRecords = localizeEditorialGeneratedRecords(records, language);
+  const keyObservations = editorialTextsBySource(localizedRecords, [
     'video_evidence',
     'human_report_v3',
     'reader_experience_review',
@@ -13159,7 +13172,7 @@ function buildEditorialSynthesis({
     'agentic_human_review_findings',
     'role_opinions'
   ], 6);
-  const strengths = editorialTextsById(records, [
+  const strengths = editorialTextsById(localizedRecords, [
     'video_content_summary',
     'video_visible_text_summary',
     'what_works',
@@ -13167,7 +13180,7 @@ function buildEditorialSynthesis({
     'content_takeaway',
     'trust_assessment'
   ], 5);
-  const risksOrCautions = editorialTextsById(records, [
+  const risksOrCautions = editorialTextsById(localizedRecords, [
     'video_limitations',
     'video_claims_observed',
     'what_gets_lost',
@@ -13175,18 +13188,18 @@ function buildEditorialSynthesis({
     'lost_value_summary',
     'shared_risks'
   ], 5);
-  const keyTensions = editorialTextsBySource(records, [
+  const keyTensions = editorialTextsBySource(localizedRecords, [
     'dissent_summary',
     'dissent_analysis',
     'mechanical_vs_human_review'
   ], 5);
-  const recommendationTexts = editorialTextsById(records, [
+  const recommendationTexts = editorialTextsById(localizedRecords, [
     'highest_priority_fix',
     'suggested_fixes',
     'next_actions'
   ], 4);
-  const ownerDecisionTexts = editorialTextsBySource(records, ['owner_decision_requests'], 4);
-  const sourceRefDetails = uniqueEditorialSourceRefs(records).slice(0, 40);
+  const ownerDecisionTexts = editorialTextsBySource(localizedRecords, ['owner_decision_requests'], 4);
+  const sourceRefDetails = uniqueEditorialSourceRefs(localizedRecords).slice(0, 40);
   const materialSignalCount = findings.length
     + ownerBaselineFindings.length
     + reportedRoleOpinions(roleOpinions).length;
@@ -13568,6 +13581,89 @@ function editorialFirstText(values, language = 'en') {
     ?? resolveReportTemplateText('report.ahr.editorial.fallback.owner_review_needed', language, 'The existing advisory result needs owner review before product decisions are made.');
 }
 
+function localizeEditorialGeneratedRecords(records, language = 'en') {
+  return records.map((record) => ({
+    ...record,
+    text: localizeEditorialGeneratedText(record.text, language)
+  }));
+}
+
+function localizeEditorialGeneratedText(value, language = 'en') {
+  const textValue = typeof value === 'string' ? value : '';
+  if (!textValue) {
+    return textValue;
+  }
+  const deterministicIssues = textValue.match(/^The deterministic review found (\d+) technical or structural issue\(s\), so technical quality still needs owner attention\.$/u);
+  if (deterministicIssues) {
+    return resolveReportTemplateText(
+      'report.ahr.editorial.fallback.deterministic_issues',
+      language,
+      textValue
+    ).replace('{count}', deterministicIssues[1]);
+  }
+  const exactTemplateKeys = new Map([
+    [
+      'Human review should preserve the page or content value that readers can still understand, trust, or find useful.',
+      'report.ahr.editorial.fallback.preserve_reader_value'
+    ],
+    [
+      'The priority is to reduce the UI, readability, accessibility, or technical friction that prevents that value from coming through.',
+      'report.ahr.editorial.fallback.reduce_friction'
+    ],
+    [
+      'No strong distinction between deterministic issues and human reader impact was provided; owner review should verify both.',
+      'report.ahr.editorial.fallback.verify_both'
+    ],
+    [
+      'Review the advisory output with the owner and prioritize the clearest comprehension or trust gap.',
+      'report.ahr.editorial.fallback.prioritize_gap'
+    ],
+    [
+      'Review the advisory output with the owner before implementation.',
+      'report.ahr.editorial.fallback.recommended_direction'
+    ],
+    [
+      'The existing advisory result needs owner review before product decisions are made.',
+      'report.ahr.editorial.fallback.owner_review_needed'
+    ]
+  ]);
+  const key = exactTemplateKeys.get(textValue);
+  if (!key) {
+    return textValue;
+  }
+  return resolveReportTemplateText(key, language, textValue);
+}
+
+function localizeReportQualityDiagnosticText(value, language = 'en') {
+  const textValue = typeof value === 'string' ? value : '';
+  if (!textValue) {
+    return textValue;
+  }
+  const exactTemplateKeys = new Map([
+    [
+      'No dedicated critique or verification output was present because this effort mode does not require those roles.',
+      'report.ahr.quality.expected_gap.dedicated_verification_missing'
+    ],
+    [
+      'Verification score is below the evaluator policy minimum because dedicated critique or verification is not required for this effort mode.',
+      'report.ahr.quality.expected_gap.verification_below_minimum'
+    ],
+    [
+      'No dedicated critique or verification output was present.',
+      'report.ahr.quality.warning.dedicated_verification_missing'
+    ],
+    [
+      'Verification score is below the evaluator policy minimum.',
+      'report.ahr.quality.warning.verification_below_minimum'
+    ]
+  ]);
+  const key = exactTemplateKeys.get(textValue);
+  if (!key) {
+    return textValue;
+  }
+  return resolveReportTemplateText(key, language, textValue);
+}
+
 function localizeEditorialLanguageLimitations(limitations, language = 'en') {
   return normalizeStringArray(limitations).map((limitation) => {
     if (/artifact output language was unresolved/i.test(limitation)) {
@@ -13678,6 +13774,7 @@ function buildCalibrationMetadata({ plan, input, quality, benchmarkRequirementCo
 function buildReportQuality({ result, resultPath, execution, evaluatorPolicy = null, now }) {
   const policy = normalizeEvaluatorPolicy(evaluatorPolicy);
   const quality = buildReportQualityFromParts({
+    reviewEffort: result.agentic_human_review_advisory?.review_effort,
     roleOpinions: normalizeRoleOpinions(result.role_opinions),
     findings: normalizeFindings(result.agentic_human_review_findings, result.id ?? 'agentic-result'),
     ownerDecisions: normalizeOwnerDecisionRequests(result.owner_decision_requests),
@@ -13688,7 +13785,16 @@ function buildReportQuality({ result, resultPath, execution, evaluatorPolicy = n
     readerExperienceReview: result.reader_experience_review ?? null,
     benchmarkRequirementCoverage: result.benchmark_requirement_coverage ?? null
   });
-  const policyWarnings = reportQualityPolicyWarnings({ quality, policy });
+  const policyDiagnostics = reportQualityPolicyDiagnostics({
+    quality,
+    policy,
+    qualityExpectations: quality.quality_expectations
+  });
+  const allDiagnostics = [
+    ...normalizeQualityDiagnostics(quality.quality_diagnostics),
+    ...policyDiagnostics
+  ];
+  const policyWarnings = policyDiagnostics.filter((diagnostic) => reportQualityDiagnosticCountsAsWarning(diagnostic));
   const humanReviewMaturity = buildHumanReviewMaturity({ result, execution, quality });
   return redact({
     schema_version: SCHEMA_VERSION,
@@ -13700,10 +13806,13 @@ function buildReportQuality({ result, resultPath, execution, evaluatorPolicy = n
     execution_id: execution?.id ?? null,
     evaluator_policy: policy,
     ...quality,
-    quality_warnings: [
-      ...normalizeStringArray(quality.quality_warnings),
-      ...policyWarnings.map((warning) => warning.message)
-    ],
+    quality_warning_classification_version: HUMAN_REVIEW_QUALITY_DIAGNOSTICS_VERSION,
+    quality_expectations: quality.quality_expectations,
+    quality_diagnostics: allDiagnostics,
+    quality_diagnostic_summary: summarizeQualityDiagnostics(allDiagnostics),
+    quality_effort_notes: allDiagnostics.filter((diagnostic) => diagnostic.classification === 'expected_gap'),
+    quality_warnings: reportQualityWarningMessages(allDiagnostics),
+    policy_diagnostics: policyDiagnostics,
     policy_warnings: policyWarnings,
     human_review_maturity: humanReviewMaturity,
     longitudinal_quality_evaluation: humanReviewMaturity.longitudinal_quality_evaluation,
@@ -13731,30 +13840,41 @@ function buildReportQuality({ result, resultPath, execution, evaluatorPolicy = n
   });
 }
 
-function reportQualityPolicyWarnings({ quality, policy }) {
-  const warnings = [];
+function reportQualityPolicyDiagnostics({ quality, policy, qualityExpectations = null }) {
+  const diagnostics = [];
   if (quality.actionability_score < policy.minimum_scores.actionability_score) {
-    warnings.push({
+    diagnostics.push(reportQualityDiagnostic({
       code: 'AHR_EVALUATOR_POLICY_ACTIONABILITY_BELOW_MINIMUM',
       message: 'Actionability score is below the evaluator policy minimum.',
+      classification: 'policy_warning',
+      severity: 'medium',
       details: { score: quality.actionability_score, minimum: policy.minimum_scores.actionability_score }
-    });
+    }));
   }
   if (quality.verification_score < policy.minimum_scores.verification_score) {
-    warnings.push({
+    const requiredForEffort = qualityExpectations?.dedicated_critique_or_verification?.required === true;
+    diagnostics.push(reportQualityDiagnostic({
       code: 'AHR_EVALUATOR_POLICY_VERIFICATION_BELOW_MINIMUM',
-      message: 'Verification score is below the evaluator policy minimum.',
+      message: requiredForEffort
+        ? 'Verification score is below the evaluator policy minimum.'
+        : 'Verification score is below the evaluator policy minimum because dedicated critique or verification is not required for this effort mode.',
+      classification: requiredForEffort ? 'policy_warning' : 'expected_gap',
+      severity: requiredForEffort ? 'medium' : 'info',
+      effort: qualityExpectations?.review_effort ?? null,
+      required_for_effort: requiredForEffort,
       details: { score: quality.verification_score, minimum: policy.minimum_scores.verification_score }
-    });
+    }));
   }
   if (quality.benchmark_requirement_coverage_score < policy.minimum_scores.benchmark_requirement_coverage_score) {
-    warnings.push({
+    diagnostics.push(reportQualityDiagnostic({
       code: 'AHR_EVALUATOR_POLICY_BENCHMARK_COVERAGE_BELOW_MINIMUM',
       message: 'Benchmark requirement coverage score is below the evaluator policy minimum.',
+      classification: 'policy_warning',
+      severity: 'medium',
       details: { score: quality.benchmark_requirement_coverage_score, minimum: policy.minimum_scores.benchmark_requirement_coverage_score }
-    });
+    }));
   }
-  return warnings;
+  return diagnostics;
 }
 
 function buildHumanReviewMaturity({ result, execution, quality }) {
@@ -13924,7 +14044,7 @@ function buildHumanReviewMaturityGaps({ observedEffort, missingEfforts, benchmar
   if (qualityEvaluation?.status !== 'calibration_ready') {
     gaps.push({ code: 'AHR_MATURITY_CALIBRATION_NOT_READY', message: 'The quality evaluator has not marked this result calibration-ready.', severity: 'medium', calibration_status: qualityEvaluation?.status ?? null });
   }
-  if (quality.verification_score < 0.75) {
+  if (quality.verification_score < 0.75 && quality.quality_expectations?.dedicated_critique_or_verification?.required === true) {
     gaps.push({ code: 'AHR_MATURITY_VERIFICATION_THIN', message: 'Dedicated critique or verification coverage is still thin.', severity: 'medium', verification_score: quality.verification_score });
   }
   gaps.push({ code: 'AHR_MATURITY_COMPARISON_HISTORY_REQUIRED', message: 'Direct-vs-TraceCue, provider-dogfood, benchmark-regression comparisons and repeated report-quality history must be reviewed by the owner before any equality or superiority claim.', severity: 'high' });
@@ -13942,7 +14062,7 @@ function buildHumanReviewMaturityNextActions({ missingEfforts, missingBenchmarkC
   if (!liveProviderDogfoodObserved) {
     actions.push('When credentials and transfer approval are explicitly provided, repeat standard/deep/xhigh dogfood with manual live-provider opt-in.');
   }
-  if (xhighReview?.status !== 'complete') {
+  if (xhighReview?.required === true && xhighReview?.status !== 'complete') {
     actions.push('Require complete xhigh role, critique, verification, and synthesis output before treating a result as a high-effort candidate.');
   }
   if (qualityEvaluation?.status !== 'calibration_ready') {
@@ -13952,8 +14072,9 @@ function buildHumanReviewMaturityNextActions({ missingEfforts, missingBenchmarkC
   return actions;
 }
 
-function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, claims, critiqueRecords, integrationRecord, humanReviewCoverage = null, readerExperienceReview = null, benchmarkRequirementCoverage = null }) {
+function buildReportQualityFromParts({ reviewEffort = null, roleOpinions, findings, ownerDecisions, claims, critiqueRecords, integrationRecord, humanReviewCoverage = null, readerExperienceReview = null, benchmarkRequirementCoverage = null }) {
   const actualRoleOpinions = reportedRoleOpinions(roleOpinions);
+  const qualityExpectations = buildReportQualityExpectations({ reviewEffort, critiqueRecords });
   const completenessScore = clampScore(
     (actualRoleOpinions.length > 0 ? 0.25 : 0)
     + (claims.length > 0 || findings.length > 0 ? 0.25 : 0)
@@ -13988,6 +14109,16 @@ function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, c
         + (benchmarkRequirementCoverage.summary?.evidence_backed_record_score * 0.15)
       )
     : 1;
+  const qualityDiagnostics = reportQualityDiagnostics({
+    roleOpinions,
+    claims,
+    ownerDecisions,
+    critiqueRecords,
+    humanReviewCoverage,
+    actionabilityScore,
+    benchmarkRequirementCoverage,
+    qualityExpectations
+  });
   return {
     quality_evaluator_version: HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION,
     completeness_score: completenessScore,
@@ -14004,36 +14135,182 @@ function buildReportQualityFromParts({ roleOpinions, findings, ownerDecisions, c
     finding_count: findings.length,
     claim_count: claims.length,
     owner_decision_count: ownerDecisions.length,
-    quality_warnings: reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueRecords, humanReviewCoverage, actionabilityScore, benchmarkRequirementCoverage }),
+    quality_warning_classification_version: HUMAN_REVIEW_QUALITY_DIAGNOSTICS_VERSION,
+    quality_expectations: qualityExpectations,
+    quality_diagnostics: qualityDiagnostics,
+    quality_diagnostic_summary: summarizeQualityDiagnostics(qualityDiagnostics),
+    quality_effort_notes: qualityDiagnostics.filter((diagnostic) => diagnostic.classification === 'expected_gap'),
+    quality_warnings: reportQualityWarningMessages(qualityDiagnostics),
     advisory_only: true,
     gate_effect: 'none'
   };
 }
 
-function reportQualityWarnings({ roleOpinions, claims, ownerDecisions, critiqueRecords, humanReviewCoverage = null, actionabilityScore = 0, benchmarkRequirementCoverage = null }) {
-  const warnings = [];
+function buildReportQualityExpectations({ reviewEffort = null, critiqueRecords = [] }) {
+  const effort = normalizeObservedReviewEffort(reviewEffort) ?? null;
+  const dedicatedRecords = Array.isArray(critiqueRecords)
+    ? critiqueRecords.filter((record) => ['critic_reviewer', 'verification_reviewer'].includes(record.role))
+    : [];
+  const dedicatedReported = dedicatedRecords.some((record) => record.status === 'reported' || record.status === 'integrated');
+  const required = effort === 'xhigh';
+  const status = dedicatedReported
+    ? 'reported'
+    : (required ? 'required_missing' : 'not_required_for_effort');
+  return {
+    schema_version: SCHEMA_VERSION,
+    diagnostics_version: HUMAN_REVIEW_QUALITY_DIAGNOSTICS_VERSION,
+    review_effort: effort,
+    supported_efforts: [...REVIEW_EFFORTS],
+    dedicated_critique_or_verification: {
+      required,
+      planned: dedicatedRecords.length > 0,
+      reported: dedicatedReported,
+      status,
+      expected_gap: !required && !dedicatedReported,
+      roles: dedicatedRecords.map((record) => record.role)
+    },
+    verification_score_policy: {
+      minimum_score_applies_as_warning: required,
+      expected_low_without_dedicated_roles: !required && !dedicatedReported
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function reportQualityDiagnostics({ roleOpinions, claims, ownerDecisions, critiqueRecords, humanReviewCoverage = null, actionabilityScore = 0, benchmarkRequirementCoverage = null, qualityExpectations = null }) {
+  const diagnostics = [];
   if (reportedRoleOpinions(roleOpinions).length === 0) {
-    warnings.push('No role-specific opinions were present.');
+    diagnostics.push(reportQualityDiagnostic({
+      code: 'AHR_REPORT_QUALITY_ROLE_OPINIONS_MISSING',
+      message: 'No role-specific opinions were present.',
+      classification: 'failure_risk',
+      severity: 'high'
+    }));
   }
   if (claims.length === 0) {
-    warnings.push('No explicit evidence claims were present.');
+    diagnostics.push(reportQualityDiagnostic({
+      code: 'AHR_REPORT_QUALITY_CLAIMS_MISSING',
+      message: 'No explicit evidence claims were present.',
+      classification: 'policy_warning',
+      severity: 'medium'
+    }));
   }
   if (ownerDecisions.length === 0) {
-    warnings.push('No owner decision requests were present.');
+    diagnostics.push(reportQualityDiagnostic({
+      code: 'AHR_REPORT_QUALITY_OWNER_DECISIONS_MISSING',
+      message: 'No owner decision requests were present.',
+      classification: 'policy_warning',
+      severity: 'medium'
+    }));
   }
   if (!critiqueRecords.some((record) => record.status === 'reported' || record.status === 'integrated')) {
-    warnings.push('No dedicated critique or verification output was present.');
+    const requiredForEffort = qualityExpectations?.dedicated_critique_or_verification?.required === true;
+    diagnostics.push(reportQualityDiagnostic({
+      code: 'AHR_REPORT_QUALITY_DEDICATED_VERIFICATION_MISSING',
+      message: requiredForEffort
+        ? 'No dedicated critique or verification output was present.'
+        : 'No dedicated critique or verification output was present because this effort mode does not require those roles.',
+      classification: requiredForEffort ? 'policy_warning' : 'expected_gap',
+      severity: requiredForEffort ? 'medium' : 'info',
+      effort: qualityExpectations?.review_effort ?? null,
+      required_for_effort: requiredForEffort
+    }));
   }
   if (humanReviewCoverage && Number(humanReviewCoverage.coverage_score) < 0.75) {
-    warnings.push('Human-review dimension coverage is incomplete.');
+    diagnostics.push(reportQualityDiagnostic({
+      code: 'AHR_REPORT_QUALITY_HUMAN_REVIEW_COVERAGE_INCOMPLETE',
+      message: 'Human-review dimension coverage is incomplete.',
+      classification: 'policy_warning',
+      severity: 'medium',
+      details: { coverage_score: Number(humanReviewCoverage.coverage_score) }
+    }));
   }
   if (actionabilityScore < 0.5) {
-    warnings.push('Recommendations may be too vague to guide product work.');
+    diagnostics.push(reportQualityDiagnostic({
+      code: 'AHR_REPORT_QUALITY_ACTIONABILITY_THIN',
+      message: 'Recommendations may be too vague to guide product work.',
+      classification: 'policy_warning',
+      severity: 'medium',
+      details: { actionability_score: actionabilityScore }
+    }));
   }
   if (benchmarkRequirementCoverage?.enabled === true && benchmarkRequirementCoverage.status !== 'passed') {
-    warnings.push('Benchmark requirement coverage is incomplete or lacks structured evidence.');
+    diagnostics.push(reportQualityDiagnostic({
+      code: 'AHR_REPORT_QUALITY_BENCHMARK_COVERAGE_INCOMPLETE',
+      message: 'Benchmark requirement coverage is incomplete or lacks structured evidence.',
+      classification: 'policy_warning',
+      severity: 'medium',
+      details: { status: benchmarkRequirementCoverage.status ?? null }
+    }));
   }
-  return warnings;
+  return diagnostics;
+}
+
+function reportQualityDiagnostic({ code, message, classification, severity, effort = null, required_for_effort = null, details = null }) {
+  return {
+    code,
+    message,
+    classification,
+    severity,
+    effort,
+    required_for_effort,
+    details,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function normalizeQualityDiagnostics(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return values
+    .filter((value) => value && typeof value === 'object' && typeof value.message === 'string')
+    .map((value) => reportQualityDiagnostic({
+      code: truncateText(value.code ?? 'AHR_REPORT_QUALITY_DIAGNOSTIC', 140),
+      message: truncateText(value.message, 700),
+      classification: ['expected_gap', 'policy_warning', 'failure_risk'].includes(value.classification) ? value.classification : 'policy_warning',
+      severity: ['info', 'low', 'medium', 'high', 'critical'].includes(value.severity) ? value.severity : 'medium',
+      effort: value.effort ?? null,
+      required_for_effort: value.required_for_effort ?? null,
+      details: value.details ?? null
+    }));
+}
+
+function reportQualityDiagnosticCountsAsWarning(diagnostic) {
+  return diagnostic?.classification === 'policy_warning' || diagnostic?.classification === 'failure_risk';
+}
+
+function reportQualityWarningMessages(diagnostics) {
+  return uniqueSorted(
+    normalizeQualityDiagnostics(diagnostics)
+      .filter(reportQualityDiagnosticCountsAsWarning)
+      .map((diagnostic) => diagnostic.message)
+  );
+}
+
+function summarizeQualityDiagnostics(diagnostics) {
+  const records = normalizeQualityDiagnostics(diagnostics);
+  const countsByClassification = Object.fromEntries(['expected_gap', 'policy_warning', 'failure_risk'].map((key) => [
+    key,
+    records.filter((record) => record.classification === key).length
+  ]));
+  const countsBySeverity = Object.fromEntries(['info', 'low', 'medium', 'high', 'critical'].map((key) => [
+    key,
+    records.filter((record) => record.severity === key).length
+  ]));
+  return {
+    schema_version: SCHEMA_VERSION,
+    diagnostics_version: HUMAN_REVIEW_QUALITY_DIAGNOSTICS_VERSION,
+    total_count: records.length,
+    warning_count: records.filter(reportQualityDiagnosticCountsAsWarning).length,
+    expected_gap_count: countsByClassification.expected_gap,
+    counts_by_classification: countsByClassification,
+    counts_by_severity: countsBySeverity,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
 }
 
 function normalizeReviewClaims(values) {

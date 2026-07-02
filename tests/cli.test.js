@@ -6987,6 +6987,8 @@ test('agentic human review editorial synthesis uses artifact output language set
     if (locale === 'ja') {
       assert.match(reportText, /## 統括レビュー/);
       assert.match(reportText, /成果物出力言語/);
+      assert.doesNotMatch(resultFile.editorial_synthesis.full_review, /The deterministic review found|Review the advisory output with the owner/);
+      assert.doesNotMatch(reportText, /The deterministic review found|Review the advisory output with the owner/);
     }
   }
 });
@@ -7197,7 +7199,33 @@ test('agentic human review staged effort run preserves the approved plan boundar
   assert.equal(standardResultFile.staged_effort_execution.original_effort, 'standard');
   assert.equal(standardResultFile.staged_effort_execution.stage_outputs_are_final_evidence, false);
   assert.equal(standardResultFile.xhigh_staged_execution, null);
+  assert.equal(standardResultFile.xhigh_multi_round_review.status, 'not_required');
+  assert.equal(standardResultFile.report_quality.quality_expectations.dedicated_critique_or_verification.required, false);
+  assert.equal(standardResultFile.report_quality.quality_diagnostics.some((item) => item.code === 'AHR_REPORT_QUALITY_DEDICATED_VERIFICATION_MISSING' && item.classification === 'expected_gap'), true);
+  assert.equal(standardResultFile.report_quality.quality_warnings.includes('No dedicated critique or verification output was present.'), false);
+  assert.equal(standardResultFile.review_quality_evaluation.quality_warnings.includes('No dedicated critique or verification output was present.'), false);
   assert.equal(standardResultFile.agentic_human_review_findings.every((finding) => finding.claim_numerator_eligible === false), true);
+
+  const standardQualityResult = await executeCli([
+    'agentic',
+    'review',
+    'report-quality',
+    '--result',
+    '.browser-debug/agentic-human-review-results/agentic-execution-staged-standard/result.json',
+    '--execution',
+    '.browser-debug/agentic-human-review-results/agentic-execution-staged-standard/execution.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(standardQualityResult.exitCode, 0);
+  const standardQuality = JSON.parse(standardQualityResult.stdout).data.agentic_human_review_report_quality;
+  assert.equal(standardQuality.quality_expectations.review_effort, 'standard');
+  assert.equal(standardQuality.quality_expectations.dedicated_critique_or_verification.status, 'not_required_for_effort');
+  assert.equal(standardQuality.quality_diagnostics.some((item) => item.code === 'AHR_REPORT_QUALITY_DEDICATED_VERIFICATION_MISSING' && item.classification === 'expected_gap'), true);
+  assert.equal(standardQuality.policy_diagnostics.some((item) => item.code === 'AHR_EVALUATOR_POLICY_VERIFICATION_BELOW_MINIMUM' && item.classification === 'expected_gap'), true);
+  assert.equal(standardQuality.policy_warnings.some((item) => item.code === 'AHR_EVALUATOR_POLICY_VERIFICATION_BELOW_MINIMUM'), false);
+  assert.equal(standardQuality.quality_warnings.includes('No dedicated critique or verification output was present.'), false);
+  assert.equal(standardQuality.human_review_maturity.gaps.some((gap) => gap.code === 'AHR_MATURITY_VERIFICATION_THIN'), false);
+  assert.equal(standardQuality.human_review_maturity.next_recommended_actions.some((item) => /Require complete xhigh role/.test(item)), false);
 
   const deepPlan = await executeCli([
     'agentic',
@@ -7263,6 +7291,32 @@ test('agentic human review staged effort run preserves the approved plan boundar
   assert.equal(deepResultFile.staged_effort_execution.original_effort, 'deep');
   assert.equal(deepResultFile.staged_effort_execution.stage_outputs_are_final_evidence, false);
   assert.equal(deepResultFile.xhigh_staged_execution, null);
+  assert.equal(deepResultFile.xhigh_multi_round_review.status, 'not_required');
+  assert.equal(deepResultFile.report_quality.quality_expectations.dedicated_critique_or_verification.required, false);
+  assert.equal(deepResultFile.report_quality.quality_diagnostics.some((item) => item.code === 'AHR_REPORT_QUALITY_DEDICATED_VERIFICATION_MISSING' && item.classification === 'expected_gap'), true);
+  assert.equal(deepResultFile.report_quality.quality_warnings.includes('No dedicated critique or verification output was present.'), false);
+  assert.equal(deepResultFile.review_quality_evaluation.quality_warnings.includes('No dedicated critique or verification output was present.'), false);
+
+  const deepQualityResult = await executeCli([
+    'agentic',
+    'review',
+    'report-quality',
+    '--result',
+    '.browser-debug/agentic-human-review-results/agentic-execution-staged-deep/result.json',
+    '--execution',
+    '.browser-debug/agentic-human-review-results/agentic-execution-staged-deep/execution.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(deepQualityResult.exitCode, 0);
+  const deepQuality = JSON.parse(deepQualityResult.stdout).data.agentic_human_review_report_quality;
+  assert.equal(deepQuality.quality_expectations.review_effort, 'deep');
+  assert.equal(deepQuality.quality_expectations.dedicated_critique_or_verification.status, 'not_required_for_effort');
+  assert.equal(deepQuality.quality_diagnostics.some((item) => item.code === 'AHR_REPORT_QUALITY_DEDICATED_VERIFICATION_MISSING' && item.classification === 'expected_gap'), true);
+  assert.equal(deepQuality.policy_diagnostics.some((item) => item.code === 'AHR_EVALUATOR_POLICY_VERIFICATION_BELOW_MINIMUM' && item.classification === 'expected_gap'), true);
+  assert.equal(deepQuality.policy_warnings.some((item) => item.code === 'AHR_EVALUATOR_POLICY_VERIFICATION_BELOW_MINIMUM'), false);
+  assert.equal(deepQuality.quality_warnings.includes('No dedicated critique or verification output was present.'), false);
+  assert.equal(deepQuality.human_review_maturity.gaps.some((gap) => gap.code === 'AHR_MATURITY_VERIFICATION_THIN'), false);
+  assert.equal(deepQuality.human_review_maturity.next_recommended_actions.some((item) => /Require complete xhigh role/.test(item)), false);
 
   const xhighPlan = await executeCli([
     'agentic',
@@ -7382,6 +7436,8 @@ test('agentic human review staged effort run preserves the approved plan boundar
   const qualityBody = JSON.parse(qualityResult.stdout);
   assert.equal(qualityBody.data.agentic_human_review_report_quality.xhigh_multi_round_review.status, 'complete');
   assert.equal(qualityBody.data.agentic_human_review_report_quality.xhigh_multi_round_review.true_multi_call_execution_performed, true);
+  assert.equal(qualityBody.data.agentic_human_review_report_quality.quality_expectations.dedicated_critique_or_verification.status, 'reported');
+  assert.equal(qualityBody.data.agentic_human_review_report_quality.quality_warnings.includes('No dedicated critique or verification output was present.'), false);
   assert.equal(qualityBody.data.agentic_human_review_report_quality.human_review_maturity.human_equivalence_claim.human_equivalent_claim_allowed, false);
   assert.equal(qualityBody.data.agentic_human_review_report_quality.human_review_maturity.human_equivalence_claim.human_superior_claim_allowed, false);
 });
@@ -7521,6 +7577,12 @@ test('agentic human review staged xhigh incomplete stage output remains non-proo
   assert.equal(qualityResult.exitCode, 0);
   const qualityBody = JSON.parse(qualityResult.stdout);
   assert.equal(qualityBody.data.agentic_human_review_report_quality.xhigh_multi_round_review.status, 'incomplete');
+  assert.equal(qualityBody.data.agentic_human_review_report_quality.quality_expectations.dedicated_critique_or_verification.status, 'required_missing');
+  assert.equal(qualityBody.data.agentic_human_review_report_quality.quality_diagnostics.some((item) => item.code === 'AHR_REPORT_QUALITY_DEDICATED_VERIFICATION_MISSING' && item.classification === 'policy_warning'), true);
+  assert.equal(qualityBody.data.agentic_human_review_report_quality.policy_diagnostics.some((item) => item.code === 'AHR_EVALUATOR_POLICY_VERIFICATION_BELOW_MINIMUM' && item.classification === 'policy_warning'), true);
+  assert.equal(qualityBody.data.agentic_human_review_report_quality.policy_warnings.some((item) => item.code === 'AHR_EVALUATOR_POLICY_VERIFICATION_BELOW_MINIMUM'), true);
+  assert.equal(qualityBody.data.agentic_human_review_report_quality.quality_warnings.includes('No dedicated critique or verification output was present.'), true);
+  assert.equal(qualityBody.data.agentic_human_review_report_quality.human_review_maturity.gaps.some((gap) => gap.code === 'AHR_MATURITY_VERIFICATION_THIN'), true);
   assert.equal(qualityBody.data.agentic_human_review_report_quality.human_review_maturity.human_equivalence_claim.human_equivalent_claim_allowed, false);
   assert.equal(qualityBody.data.agentic_human_review_report_quality.human_review_maturity.human_equivalence_claim.human_superior_claim_allowed, false);
 });
