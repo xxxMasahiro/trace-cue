@@ -1163,6 +1163,7 @@ function buildAgenticApiPayload({ plan, planPath, reviewPackage, transferFlags, 
       content_evidence: filteredPackage.content_evidence ?? null,
       source_text: filteredPackage.source_text ?? null,
       source_reading_review: filteredPackage.source_reading_review ?? null,
+      source_understanding_review: filteredPackage.source_understanding_review ?? null,
       evidence_plan: plan.evidence_plan ?? reviewPackage?.evidence_plan ?? null,
       visual_evidence_package_v2: filteredPackage.visual_evidence_package_v2 ?? null,
       visible_text_reading_contract: filteredPackage.visible_text_reading_contract ?? null,
@@ -1210,6 +1211,7 @@ function buildAgenticApiPayload({ plan, planPath, reviewPackage, transferFlags, 
       control_metadata_included: true,
       page_text_summary_included: transferFlags.supplied_flags?.includes('allow-page-text') === true,
       source_reading_review_included: transferFlags.supplied_flags?.includes('allow-page-text') === true && filteredPackage.source_reading_review?.status === 'completed',
+      source_understanding_review_included: transferFlags.supplied_flags?.includes('allow-page-text') === true && filteredPackage.source_understanding_review?.status === 'completed',
       dom_summary_included: transferFlags.supplied_flags?.includes('allow-dom-summary') === true,
       url_metadata_included: transferFlags.supplied_flags?.includes('allow-url') === true,
       artifact_references_included: transferFlags.supplied_flags?.includes('allow-artifact-refs') === true,
@@ -1266,6 +1268,9 @@ function filterReviewPackageForTransfer(reviewPackage, transferFlags) {
     source_reading_review: flags.has('allow-page-text')
       ? filterSourceReadingReviewForTransfer(reviewPackage?.source_reading_review)
       : null,
+    source_understanding_review: flags.has('allow-page-text')
+      ? filterSourceUnderstandingReviewForTransfer(reviewPackage?.source_understanding_review)
+      : null,
     visible_text_reading_contract: flags.has('allow-page-text')
       ? reviewPackage?.visible_text_reading_contract ?? null
       : {
@@ -1302,6 +1307,7 @@ function filterReviewPackageForTransfer(reviewPackage, transferFlags) {
       video_evidence_summary_included: flags.has('allow-page-text') && reviewPackage?.video_evidence?.status === 'available',
       content_evidence_summary_included: flags.has('allow-page-text') && Number(reviewPackage?.content_evidence?.supplemental_evidence_available_count ?? 0) > 0,
       source_reading_review_included: flags.has('allow-page-text') && reviewPackage?.source_reading_review?.status === 'completed',
+      source_understanding_review_included: flags.has('allow-page-text') && reviewPackage?.source_understanding_review?.status === 'completed',
       raw_video_embedded_in_json: false,
       raw_audio_embedded_in_json: false,
       raw_frames_embedded_in_json: false,
@@ -1469,6 +1475,91 @@ function filterSourceReadingReviewForTransfer(sourceReadingReview) {
   };
 }
 
+function filterSourceUnderstandingReviewForTransfer(sourceUnderstandingReview) {
+  if (!sourceUnderstandingReview || typeof sourceUnderstandingReview !== 'object') {
+    return null;
+  }
+  return {
+    schema_version: sourceUnderstandingReview.schema_version ?? SCHEMA_VERSION,
+    understanding_version: sourceUnderstandingReview.understanding_version ?? null,
+    status: sourceUnderstandingReview.status ?? 'not_supplied',
+    analyst_role: sourceUnderstandingReview.analyst_role ?? 'local_source_understanding_reviewer',
+    source_text_id: sourceUnderstandingReview.source_text_id ?? null,
+    source_type: sourceUnderstandingReview.source_type ?? 'other',
+    review_effort: sourceUnderstandingReview.review_effort ?? null,
+    understanding_depth: sourceUnderstandingReview.understanding_depth ?? null,
+    topic: truncateText(sourceUnderstandingReview.topic ?? '', 500),
+    thesis: truncateText(sourceUnderstandingReview.thesis ?? '', 900),
+    audience_promise: truncateText(sourceUnderstandingReview.audience_promise ?? '', 900),
+    narrative_arc: providerArray(sourceUnderstandingReview.narrative_arc).slice(0, 10).map((item) => ({
+      step: item?.step ?? null,
+      role: truncateText(item?.role ?? '', 120),
+      summary: truncateText(item?.summary ?? '', 900),
+      source_ref: item?.source_ref ?? null
+    })),
+    turning_points: providerTextArray(sourceUnderstandingReview.turning_points, 10, 900),
+    concrete_examples: providerStringArray(sourceUnderstandingReview.concrete_examples, 10, 900),
+    repeated_motifs: providerArray(sourceUnderstandingReview.repeated_motifs).slice(0, 10).map((item) => ({
+      motif: truncateText(item?.motif ?? '', 220),
+      occurrence_count: Number.isFinite(Number(item?.occurrence_count)) ? Number(item.occurrence_count) : null,
+      reviewer_use: truncateText(item?.reviewer_use ?? '', 700)
+    })).filter((item) => item.motif || item.reviewer_use),
+    must_not_miss_points: providerArray(sourceUnderstandingReview.must_not_miss_points).slice(0, 12).map((item) => ({
+      id: item?.id ?? null,
+      point: truncateText(item?.point ?? '', 900),
+      importance: truncateText(item?.importance ?? '', 160),
+      should_shape_final_review: item?.should_shape_final_review === true,
+      source_ref: item?.source_ref ?? null
+    })).filter((item) => item.point),
+    tensions_or_counterpoints: providerStringArray(sourceUnderstandingReview.tensions_or_counterpoints, 10, 900),
+    source_limitations: providerStringArray(sourceUnderstandingReview.source_limitations, 10, 900),
+    reviewer_implications: providerStringArray(sourceUnderstandingReview.reviewer_implications, 10, 900),
+    evidence_claims: providerArray(sourceUnderstandingReview.evidence_claims).slice(0, 12).map((item) => ({
+      id: item?.id ?? null,
+      claim: truncateText(item?.claim ?? '', 900),
+      evidence_refs: providerStringArray(item?.evidence_refs, 8, 160),
+      support_type: truncateText(item?.support_type ?? '', 160),
+      confidence: item?.confidence ?? null,
+      limitation: truncateText(item?.limitation ?? '', 700)
+    })).filter((item) => item.claim),
+    assistant_reference_quality: sourceUnderstandingReview.assistant_reference_quality ?? null,
+    source_excerpt_refs: providerArray(sourceUnderstandingReview.source_excerpt_refs).slice(0, 16).map((item) => ({
+      id: item?.id ?? null,
+      locator_included: false,
+      excerpt: undefined,
+      excerpt_hash: item?.excerpt_hash ?? null,
+      full_source_text_included: false
+    })),
+    coverage: sourceUnderstandingReview.coverage ? {
+      source_type: sourceUnderstandingReview.coverage.source_type ?? null,
+      chunk_count: Number(sourceUnderstandingReview.coverage.chunk_count ?? 0),
+      narrative_arc_step_count: Number(sourceUnderstandingReview.coverage.narrative_arc_step_count ?? 0),
+      must_not_miss_count: Number(sourceUnderstandingReview.coverage.must_not_miss_count ?? 0),
+      evidence_claim_count: Number(sourceUnderstandingReview.coverage.evidence_claim_count ?? 0),
+      has_location_refs: sourceUnderstandingReview.coverage.has_location_refs === true,
+      source_understanding_score: Number(sourceUnderstandingReview.coverage.source_understanding_score ?? 0),
+      evidence_ref_resolution_score: Number(sourceUnderstandingReview.coverage.evidence_ref_resolution_score ?? 0)
+    } : null,
+    boundary: {
+      ...(sourceUnderstandingReview.boundary ?? {}),
+      full_source_text_persisted: false,
+      full_source_text_transferred: false,
+      full_source_text_included: false,
+      chunk_text_transferred: false,
+      excerpt_text_transferred: false,
+      provider_call_performed: false,
+      api_call_performed: false,
+      deterministic_findings_mutated: false,
+      proof_contract_satisfied: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    full_source_text_included: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
 function providerArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -1477,6 +1568,14 @@ function providerStringArray(value, maxItems, maxLength) {
   return providerArray(value)
     .map((item) => typeof item === 'string' ? item : '')
     .filter((item) => item.trim())
+    .slice(0, maxItems)
+    .map((item) => truncateText(item, maxLength));
+}
+
+function providerTextArray(value, maxItems, maxLength) {
+  return providerArray(value)
+    .map((item) => typeof item === 'string' ? item : item?.point ?? item?.summary ?? item?.claim ?? '')
+    .filter((item) => String(item).trim())
     .slice(0, maxItems)
     .map((item) => truncateText(item, maxLength));
 }

@@ -4208,6 +4208,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.match(sourceTextResult.editorial_synthesis.full_review, /product can be built well and still fail/i);
   assert.match(sourceTextResult.editorial_synthesis.full_review, /Paid social advertising|Search engine optimization|sharing features/i);
   assert.match(sourceTextResult.editorial_synthesis.full_review, /budget, available time, existing user base, and measurable learning goal/i);
+  assert.match(sourceTextResult.editorial_synthesis.full_review, /counterpoints|evidence limits|what would change the conclusion|verification signal/i);
   assert.doesNotMatch(sourceTextResult.editorial_synthesis.full_review, /Deterministic fake|approved package metadata|The deterministic layer|Prioritize changes|Review quality target|Assistant-reference target|Step \d+|role=/i);
   assert.equal(sourceTextResult.editorial_synthesis.source_refs.some((ref) => ref.startsWith('source_understanding_review:')), true);
   assert.doesNotMatch(JSON.stringify(sourceTextResult.source_text), /Paid social advertising is framed/u);
@@ -4350,6 +4351,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(japaneseSourceTextResult.editorial_synthesis.composer.source_understanding_used, true);
   assert.match(japaneseSourceTextResult.editorial_synthesis.full_review, /この.+は/);
   assert.match(japaneseSourceTextResult.editorial_synthesis.full_review, /中心論点|強い点|改善方向/);
+  assert.match(japaneseSourceTextResult.editorial_synthesis.full_review, /反証可能性|証拠の限界|結論が変わる条件|検証観点/);
   assert.doesNotMatch(japaneseSourceTextResult.editorial_synthesis.full_review, /The full .*source text|The full-source reading gives|0:00-|Deterministic fake|approved package metadata|The deterministic layer|Prioritize changes|Review quality target|Assistant-reference target|Step \d+|role=/i);
 
   await writeFile(path.join(cwd, 'raw-source-text.json'), JSON.stringify({
@@ -4521,6 +4523,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     videoEvidencePath,
     '--content-evidence',
     contentEvidencePath,
+    '--source-text',
+    sourceTextPath,
     '--provider',
     'generic-api-provider',
     '--model',
@@ -4547,6 +4551,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiPlanBody.data.agentic_human_review_plan.transfer_permissions.default_external_transfer, true);
   assert.equal(apiPlanBody.data.agentic_human_review_plan.evidence_scope.scope, 'page_and_video_evidence');
   assert.equal(apiPlanBody.data.agentic_human_review_plan.video_evidence.status, 'available');
+  assert.equal(apiPlanBody.data.agentic_human_review_plan.source_understanding_review.status, 'completed');
+  assert.equal(apiPlanBody.data.agentic_human_review_plan.disclosure.source_understanding_review_included, true);
 
   let apiRequestPayload = null;
   let apiFetchCount = 0;
@@ -4826,6 +4832,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiRunBody.data.agentic_human_review_execution.artifact_refs_transferred, true);
   assert.equal(apiRunBody.data.agentic_human_review_execution.accessibility_summary_transferred, true);
   assert.equal(apiRequestPayload.disclosure_policy.page_text_summary_included, true);
+  assert.equal(apiRequestPayload.disclosure_policy.source_understanding_review_included, true);
   assert.equal(apiRequestPayload.disclosure_policy.artifact_references_included, true);
   assert.equal(apiRequestPayload.disclosure_policy.raw_pixel_bytes_included, false);
   assert.equal(apiRequestPayload.disclosure_policy.control_metadata_included, true);
@@ -4841,6 +4848,10 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiRequestPayload.plan.video_evidence.summaries.content_summary.length, 1);
   assert.equal(apiRequestPayload.plan.content_evidence.supplemental_evidence_available_count, 2);
   assert.equal(apiRequestPayload.plan.content_evidence.supplemental_source_types.includes('document'), true);
+  assert.equal(apiRequestPayload.plan.source_understanding_review.status, 'completed');
+  assert.equal(apiRequestPayload.plan.source_understanding_review.source_excerpt_refs.every((ref) => ref.excerpt === undefined), true);
+  assert.equal(apiRequestPayload.plan.source_understanding_review.source_excerpt_refs.every((ref) => ref.locator_included === false), true);
+  assert.equal(apiRequestPayload.plan.source_understanding_review.evidence_claims.length > 0, true);
   assert.equal(JSON.stringify(apiRequestPayload.plan.content_evidence).includes('example.invalid'), false);
   assert.equal(JSON.stringify(apiRequestPayload.plan.content_evidence).includes(contentEvidencePath), false);
   assert.equal(JSON.stringify(apiRequestPayload.plan.content_evidence).includes('section:intro'), false);
@@ -4859,6 +4870,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiRequestPayload.package.video_evidence.transfer_policy, 'video_evidence_summary_included_under_page_text_boundary');
   assert.equal(JSON.stringify(apiRequestPayload.package.video_evidence).includes(videoEvidencePath), false);
   assert.equal(apiRequestPayload.package.content_evidence.transfer_policy, 'content_evidence_included_under_page_text_boundary');
+  assert.equal(apiRequestPayload.package.source_understanding_review.status, 'completed');
+  assert.equal(apiRequestPayload.package.disclosure.source_understanding_review_included, true);
   assert.equal(JSON.stringify(apiRequestPayload.package.content_evidence).includes('example.invalid'), false);
   assert.equal(JSON.stringify(apiRequestPayload.package.content_evidence).includes(contentEvidencePath), false);
   assert.equal(JSON.stringify(apiRequestPayload.package.content_evidence).includes('section:intro'), false);
@@ -4872,6 +4885,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiRequestPayload.plan.provider_instruction_contract.output_sections.includes('editorial_synthesis'), false);
   assert.equal(apiRequestPayload.plan.strict_output_contract.required_output_sections.includes('editorial_synthesis'), false);
   assert.equal(apiFetchCount, 1);
+  assert.doesNotMatch(JSON.stringify(apiRequestPayload.plan.source_understanding_review), /source-transcript\.txt|chunk:|FULL SOURCE|excerpt":/u);
+  assert.doesNotMatch(JSON.stringify(apiRequestPayload.package.source_understanding_review), /source-transcript\.txt|chunk:|FULL SOURCE|excerpt":/u);
   assert.doesNotMatch(apiRunResult.stdout, /api-secret-value|provider\.example/);
   const apiResultFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-api', 'result.json'), 'utf8'));
   assert.equal(apiResultFile.review_claims.some((claim) => /human[- ]superior|human[- ]equivalent|better than human/i.test(claim.claim)), false);
