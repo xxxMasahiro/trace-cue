@@ -4091,11 +4091,14 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.match(contentOnlyEditorialParagraphs[0], /^This review uses supplied bounded content evidence for transcript/i);
   assert.match(contentOnlyResult.editorial_synthesis.full_review, /audience pain, likely value, and suggested next steps/);
   assert.match(contentOnlyResult.editorial_synthesis.full_review, /Only a bounded summary is supplied/i);
+  assert.match(contentOnlyResult.editorial_synthesis.full_review, /summary-only/i);
   assert.doesNotMatch(contentOnlyResult.editorial_synthesis.full_review, /:\./u);
   assert.doesNotMatch(contentOnlyResult.editorial_synthesis.full_review, /^Deterministic fake agentic human review completed/i);
   const contentOnlyReportText = await readFile(path.join(cwd, '.browser-debug', 'reports', 'agentic-execution-content-only-agentic-human-review.md'), 'utf8');
   assert.match(contentOnlyReportText, /Content Evidence/);
   assert.match(contentOnlyReportText, /Evidence scope: page_and_content_evidence/);
+  assert.match(contentOnlyReportText, /Content evidence density: summary only/);
+  assert.match(contentOnlyReportText, /Content review strength: Content-specific conclusions must stay cautious/);
   assert.doesNotMatch(contentOnlyReportText, /no supplemental content evidence was supplied/i);
 
   const planPath = '.browser-debug/agentic-human-review-plans/agentic-plan-fixed/plan.json';
@@ -5014,6 +5017,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(resultFile.editorial_synthesis.evidence_scope.scope, 'page_and_video_evidence');
   assert.equal(resultFile.editorial_synthesis.video_evidence.status, 'available');
   assert.equal(resultFile.editorial_synthesis.content_evidence.source_types.includes('document'), true);
+  assert.equal(resultFile.editorial_synthesis.content_evidence.display_source_types.includes('document'), true);
+  assert.equal(resultFile.editorial_synthesis.content_evidence.density.review_strength, 'supported_bounded');
   assert.equal(resultFile.editorial_synthesis.composer.evidence_first, true);
   const editorialParagraphs = resultFile.editorial_synthesis.full_review.split(/\n\n+/u).filter(Boolean);
   assert.equal(editorialParagraphs.length >= 3, true);
@@ -5069,6 +5074,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.match(reportText, /Risks Or Cautions/);
   assert.match(reportText, /Content Evidence/);
   assert.match(reportText, /Content understanding level/);
+  assert.match(reportText, /Content evidence density/);
+  assert.match(reportText, /Content review strength/);
   assert.match(reportText, /Language Settings/);
   assert.match(reportText, /Editorial synthesis language: en/);
   assert.match(reportText, /Artifact output language: unresolved/);
@@ -7243,6 +7250,15 @@ test('agentic human review content evidence source-type matrix remains bounded a
   });
 
   const sourceTypes = ['video', 'web_page', 'pdf', 'meeting_notes', 'document', 'transcript', 'other'];
+  const expectedEnglishLabels = {
+    video: 'video',
+    web_page: 'web page',
+    pdf: 'PDF',
+    meeting_notes: 'meeting notes',
+    document: 'document',
+    transcript: 'transcript',
+    other: 'other content'
+  };
   for (const sourceType of sourceTypes) {
     const slug = sourceType.replace(/[^a-z0-9]+/gu, '-');
     const fileName = `${slug}-content-evidence.json`;
@@ -7277,6 +7293,51 @@ test('agentic human review content evidence source-type matrix remains bounded a
     assert.equal(plan.content_evidence.supplemental_evidence[0].provenance.input_hash.length, 64);
     assert.equal(plan.content_evidence.supplemental_evidence[0].provenance.input_path, undefined);
     assert.equal(plan.evidence_plan.supplemental_content_evidence_policy.raw_content_allowed, false);
+    const requiredFlags = plan.transfer_permissions.required_flags.slice().sort();
+    const runResult = await executeCli([
+      'agentic',
+      'review',
+      'run',
+      '--plan',
+      `.browser-debug/agentic-human-review-plans/agentic-plan-content-matrix-${slug}/plan.json`,
+      '--plan-hash',
+      planBody.data.plan_hash,
+      ...requiredFlags.map((flag) => `--${flag}`),
+      '--provider',
+      'fake-agent',
+      '--model',
+      'fake-model',
+      '--execute',
+      '--json'
+    ], {
+      cwd,
+      now: fixedNow,
+      createId: (prefix) => {
+        if (prefix === 'agentic-human-review-execution') {
+          return `agentic-execution-content-matrix-${slug}`;
+        }
+        if (prefix === 'agentic-human-review-result') {
+          return `agentic-result-content-matrix-${slug}`;
+        }
+        return `unexpected-agentic-content-matrix-${slug}`;
+      }
+    });
+    assert.equal(runResult.exitCode, 0, sourceType);
+    const resultFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', `agentic-execution-content-matrix-${slug}`, 'result.json'), 'utf8'));
+    assert.equal(resultFile.editorial_synthesis.content_evidence.source_types.includes(sourceType), true);
+    assert.equal(resultFile.editorial_synthesis.content_evidence.display_source_types.includes(expectedEnglishLabels[sourceType]), true);
+    assert.equal(resultFile.editorial_synthesis.content_evidence.density.review_strength, 'supported_bounded');
+    assert.match(resultFile.editorial_synthesis.full_review, new RegExp(`bounded content evidence for ${escapeRegExp(expectedEnglishLabels[sourceType])}`, 'i'));
+    assert.match(resultFile.editorial_synthesis.full_review, new RegExp(`SOURCE-TYPE-${escapeRegExp(sourceType)}`));
+    assert.equal(resultFile.editorial_synthesis.boundary.provider_call_performed, false);
+    assert.equal(resultFile.editorial_synthesis.gate_effect, 'none');
+    const reportText = await readFile(path.join(cwd, '.browser-debug', 'reports', `agentic-execution-content-matrix-${slug}-agentic-human-review.md`), 'utf8');
+    assert.match(reportText, new RegExp(`Content evidence types: ${escapeRegExp(expectedEnglishLabels[sourceType])}`));
+    assert.match(reportText, /Content evidence density/);
+    assert.match(reportText, /Content review strength/);
+    if (expectedEnglishLabels[sourceType] !== sourceType) {
+      assert.doesNotMatch(reportText, new RegExp(`Content evidence types: ${escapeRegExp(sourceType)}\\n`));
+    }
   }
 
   const rejectedTruthyRawFlags = [
@@ -7566,15 +7627,18 @@ test('agentic human review editorial synthesis localizes chrome while preserving
   const resultFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-editorial-source-text', 'result.json'), 'utf8'));
   assert.equal(resultFile.editorial_synthesis.language, 'ja');
   assert.equal(resultFile.editorial_synthesis.language_resolution.source_text_preserved, true);
+  assert.equal(resultFile.editorial_synthesis.language_resolution.source_text_policy, 'preserve_original_without_translation');
   assert.equal(resultFile.editorial_synthesis.language_resolution.translation_execution_enabled, false);
   assert.equal(resultFile.editorial_synthesis.language_resolution.raw_evidence_translated, false);
   assert.equal(resultFile.editorial_synthesis.language_resolution.provider_output_translated, false);
-  assert.match(resultFile.editorial_synthesis.full_review, /このレビューは meeting_notes の bounded content evidence を使用します/);
+  assert.match(resultFile.editorial_synthesis.full_review, /このレビューは 議事録 の bounded content evidence を使用します/);
   assert.match(resultFile.editorial_synthesis.full_review, /提供された bounded content evidence/);
   assert.match(resultFile.editorial_synthesis.full_review, /レビューでは、次の制限を慎重に扱う必要があります/);
+  assert.match(resultFile.editorial_synthesis.full_review, /原文のまま保持されます/);
   assert.match(resultFile.editorial_synthesis.full_review, /SOURCE-KEEP-ENGLISH-SUMMARY: Keep this source sentence unchanged\./);
   assert.match(resultFile.editorial_synthesis.full_review, /SOURCE-KEEP-JA-EXCERPT: 日本語の原文を保持します。/);
   assert.match(resultFile.editorial_synthesis.full_review, /SOURCE-KEEP-CLAIM: The owner needs a clear next action\./);
+  assert.doesNotMatch(resultFile.editorial_synthesis.full_review, /このレビューは meeting_notes の bounded content evidence/);
   assert.doesNotMatch(resultFile.editorial_synthesis.full_review, /The supplied bounded content evidence frames|The clearest reader-facing value|The review should stay cautious/i);
 
   const reportText = await readFile(path.join(cwd, '.browser-debug', 'reports', 'agentic-execution-editorial-source-text-agentic-human-review.md'), 'utf8');
@@ -7584,6 +7648,10 @@ test('agentic human review editorial synthesis localizes chrome while preserving
   assert.match(reportText, /### リスクまたは注意点/);
   assert.match(reportText, /## 内容証拠/);
   assert.match(reportText, /原文保持: true/);
+  assert.match(reportText, /原文保持方針: 翻訳実行が無効なため、出典本文とプロバイダ本文は原文のまま保持されます。/);
+  assert.match(reportText, /内容証拠の種類: 議事録/);
+  assert.match(reportText, /内容証拠の濃度/);
+  assert.match(reportText, /内容レビューの強さ/);
   assert.match(reportText, /SOURCE-KEEP-ENGLISH-SUMMARY: Keep this source sentence unchanged\./);
   assert.match(reportText, /SOURCE-KEEP-JA-EXCERPT: 日本語の原文を保持します。/);
 });

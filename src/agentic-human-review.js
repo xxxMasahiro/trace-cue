@@ -11648,6 +11648,9 @@ function renderEditorialSynthesisReportSection(editorialSynthesis, result = null
   }
   const languageResolution = editorialSynthesis.language_resolution ?? {};
   const t = (key, fallback) => resolveAgenticReportText(result ?? { editorial_synthesis: editorialSynthesis }, key, fallback);
+  const sourceTextPolicy = languageResolution.source_text_preserved === true && languageResolution.translation_execution_enabled !== true
+    ? t('report.ahr.value.source_text_preserved_no_translation', 'Source and provider text is preserved in its original wording because translation execution is disabled.')
+    : (languageResolution.source_text_policy ?? 'unknown');
   return [
     `## ${t('report.ahr.section.editorial_synthesis', 'Editorial Synthesis')}`,
     '',
@@ -11663,6 +11666,7 @@ function renderEditorialSynthesisReportSection(editorialSynthesis, result = null
     `- ${t('report.ahr.label.translation_mode', 'Translation mode')}: ${languageResolution.translation_mode ?? 'none'}`,
     `- ${t('report.ahr.label.translation_execution', 'Translation execution')}: ${languageResolution.translation_execution_enabled === true}`,
     `- ${t('report.ahr.label.source_text_preserved', 'Source text preserved')}: ${languageResolution.source_text_preserved === true}`,
+    `- ${t('report.ahr.label.source_text_policy', 'Source text policy')}: ${sourceTextPolicy}`,
     `- ${t('report.ahr.label.evidence_scope', 'Evidence scope')}: ${editorialSynthesis.evidence_scope?.scope ?? 'page_only'}`,
     '',
     `### ${t('report.ahr.section.key_observations', 'Key Observations')}`,
@@ -11696,17 +11700,23 @@ function renderContentEvidenceReportSection(contentEvidence, result = null) {
     return [];
   }
   const t = (key, fallback) => resolveAgenticReportText(result ?? {}, key, fallback);
+  const language = result?.editorial_synthesis?.language
+    ?? result?.language_settings?.artifact_output?.language
+    ?? 'en';
   const supplemental = Array.isArray(contentEvidence.supplemental_evidence) ? contentEvidence.supplemental_evidence : [];
+  const density = contentEvidence.density ?? classifyContentEvidenceDensity(contentEvidence);
   return [
     `## ${t('report.ahr.section.content_evidence', 'Content Evidence')}`,
     '',
-    `${t('report.ahr.label.content_evidence_types', 'Content evidence types')}: ${(contentEvidence.supplemental_source_types ?? []).join(', ') || 'none'}`,
+    `${t('report.ahr.label.content_evidence_types', 'Content evidence types')}: ${formatContentEvidenceSourceTypes(contentEvidence.supplemental_source_types, language) || 'none'}`,
     `${t('report.ahr.label.content_understanding_level', 'Content understanding level')}: ${contentEvidence.content_understanding_level ?? 'none'}`,
+    `${t('report.ahr.label.content_evidence_density', 'Content evidence density')}: ${localizeContentEvidenceDensity(density.density, language)}`,
+    `${t('report.ahr.label.content_evidence_review_strength', 'Content review strength')}: ${contentEvidenceReviewStrengthText(density.review_strength, language)}`,
     `${t('report.ahr.label.content_unit_count', 'Content unit count')}: ${contentEvidence.supplemental_content_unit_count ?? 0}`,
     `${t('report.ahr.label.content_claim_count', 'Content claim count')}: ${contentEvidence.supplemental_claim_count ?? 0}`,
     '',
     ...supplemental.slice(0, 6).flatMap((item) => [
-      `- ${item.source_type ?? 'content'}: ${item.source?.title ?? item.id ?? 'untitled'} (${item.coverage?.content_understanding_level ?? 'unknown'})`,
+      `- ${contentEvidenceSourceTypeLabel(item.source_type, language)}: ${item.source?.title ?? item.id ?? 'untitled'} (${item.coverage?.content_understanding_level ?? 'unknown'})`,
       ...normalizeStringArray(item.limitations).slice(0, 2).map((limitation) => `  - ${t('report.ahr.label.limitation', 'Limitation')}: ${limitation}`)
     ])
   ];
@@ -13744,6 +13754,7 @@ function buildEditorialSynthesis({
   addRecords({ sourceField: 'agentic_human_review_action_plan', sourceId: 'next_actions', values: actionPlan?.next_actions });
   addContentEvidenceEditorialRecords({ addRecords, contentEvidence });
   addVideoEvidenceEditorialRecords({ addRecords, videoEvidence });
+  addReviewEffortEditorialRecords({ addRecords, reviewEffort: plan.review_effort?.mode, critiqueRecords, xhighCompletion });
   addXhighEditorialRecords({ addRecords, critiqueRecords, xhighCompletion, qualityPreview, reviewQualityEvaluation });
 
   for (const opinion of reportedRoleOpinions(roleOpinions).slice(0, 8)) {
@@ -13784,6 +13795,7 @@ function buildEditorialSynthesis({
     sourceTexts: records.map((record) => record.text)
   });
   const language = languageResolution.language;
+  const reviewEffort = normalizeObservedReviewEffort(plan.review_effort?.mode) ?? DEFAULT_REVIEW_EFFORT;
   const localizedRecords = localizeEditorialGeneratedRecords(records, language);
   const keyObservations = editorialTextsBySource(localizedRecords, [
     'content_evidence',
@@ -13874,6 +13886,8 @@ function buildEditorialSynthesis({
       limitations,
       evidenceScope,
       contentEvidence,
+      languageResolution,
+      reviewEffort,
       sourceRecords: localizedRecords
     }),
     evidence_scope: evidenceScope,
@@ -13884,6 +13898,8 @@ function buildEditorialSynthesis({
       composer_version: HUMAN_REVIEW_EDITORIAL_COMPOSER_VERSION,
       evidence_first: true,
       content_units_used: Number(contentEvidence?.supplemental_content_unit_count ?? 0),
+      content_evidence_density: classifyContentEvidenceDensity(contentEvidence).density,
+      review_effort: reviewEffort,
       source_record_count: localizedRecords.length,
       provider_call_performed: false,
       advisory_only: true,
@@ -14020,6 +14036,32 @@ function addContentEvidenceEditorialRecords({ addRecords, contentEvidence }) {
   }
 }
 
+function addReviewEffortEditorialRecords({ addRecords, reviewEffort, critiqueRecords }) {
+  const effort = normalizeObservedReviewEffort(reviewEffort);
+  if (!effort) {
+    return;
+  }
+  const reportedCritique = Array.isArray(critiqueRecords)
+    ? critiqueRecords.some((record) => record.status === 'reported' || record.status === 'integrated')
+    : false;
+  const values = [];
+  if (effort === 'quick') {
+    values.push('This quick effort is useful for triage, but it should not be read as a complete human-review pass.');
+  } else if (effort === 'standard') {
+    values.push('This standard effort can support a practical review, but dedicated critique or verification is not required for this effort mode.');
+  } else if (effort === 'deep') {
+    values.push('This deep effort can support a fuller review, but dedicated critique or verification is still not required unless the plan uses xhigh.');
+  } else if (effort === 'xhigh' && !reportedCritique) {
+    values.push('This xhigh effort is intended to include dedicated critique and verification, so missing completion keeps the prose provisional.');
+  }
+  addRecords({
+    sourceField: 'review_effort_quality',
+    sourceId: `review_effort_${effort}`,
+    sourceKind: 'quality_diagnostic',
+    values
+  });
+}
+
 function addXhighEditorialRecords({ addRecords, critiqueRecords, xhighCompletion }) {
   const reportedCritique = Array.isArray(critiqueRecords)
     ? critiqueRecords.filter((record) => record.status === 'reported' || record.status === 'integrated')
@@ -14151,17 +14193,197 @@ function buildEditorialContentEvidenceSummary(contentEvidence) {
       raw_content_included: false
     };
   }
+  const density = classifyContentEvidenceDensity(contentEvidence);
   return {
     supplemental_evidence_count: Number(contentEvidence.supplemental_evidence_count ?? 0),
     supplemental_evidence_available_count: Number(contentEvidence.supplemental_evidence_available_count ?? 0),
     source_types: contentEvidence.supplemental_source_types ?? [],
+    display_source_types: displayContentEvidenceSourceTypes(contentEvidence.supplemental_source_types),
     content_unit_count: Number(contentEvidence.supplemental_content_unit_count ?? 0),
     claim_count: Number(contentEvidence.supplemental_claim_count ?? 0),
     content_understanding_level: contentEvidence.content_understanding_level ?? 'none',
+    density,
+    content_evidence_density: density.density,
+    review_strength: density.review_strength,
     raw_content_included: false,
     advisory_only: true,
     gate_effect: 'none'
   };
+}
+
+function contentEvidenceSourceTypeLabel(value, language = 'en') {
+  const normalized = normalizeContentEvidenceSourceType(value);
+  const fallback = contentEvidenceSourceTypeFallbackLabel(normalized);
+  return resolveReportTemplateText(`report.ahr.content_source_type.${normalized}`, language, fallback);
+}
+
+function contentEvidenceSourceTypeFallbackLabel(value) {
+  switch (value) {
+    case 'web_page':
+      return 'web page';
+    case 'meeting_notes':
+      return 'meeting notes';
+    case 'pdf':
+      return 'PDF';
+    case 'other':
+      return 'other content';
+    default:
+      return value;
+  }
+}
+
+function normalizeContentEvidenceSourceType(value) {
+  const sourceType = String(value ?? '').trim();
+  return CONTENT_EVIDENCE_SOURCE_TYPES.has(sourceType) ? sourceType : 'other';
+}
+
+function displayContentEvidenceSourceTypes(values, language = 'en') {
+  return normalizeStringArray(values).map((value) => contentEvidenceSourceTypeLabel(value, language));
+}
+
+function formatContentEvidenceSourceTypes(values, language = 'en') {
+  return formatEditorialList(displayContentEvidenceSourceTypes(values, language), language);
+}
+
+function localizeContentEvidenceDensity(value, language = 'en') {
+  const density = String(value ?? 'none').trim() || 'none';
+  return resolveReportTemplateText(`report.ahr.content_density.${density}`, language, density);
+}
+
+function contentEvidenceReviewStrengthText(value, language = 'en') {
+  const strength = String(value ?? 'none').trim() || 'none';
+  return resolveReportTemplateText(
+    `report.ahr.content_review_strength.${strength}`,
+    language,
+    contentEvidenceReviewStrengthFallback(strength)
+  );
+}
+
+function contentEvidenceReviewStrengthFallback(value) {
+  switch (value) {
+    case 'cautious_metadata':
+      return 'Only metadata-level content review is supported.';
+    case 'cautious_summary':
+      return 'Content-specific conclusions must stay cautious because only bounded summaries are available.';
+    case 'supported_bounded':
+      return 'Content-specific review is supported by bounded summaries, excerpts, claims, or limitations, but not by full-source proof.';
+    default:
+      return 'No content-specific review is supported.';
+  }
+}
+
+function classifyContentEvidenceDensity(contentEvidence) {
+  const supplemental = Array.isArray(contentEvidence?.supplemental_evidence)
+    ? contentEvidence.supplemental_evidence
+    : [];
+  if (supplemental.length === 0) {
+    return contentEvidenceDensityRecord({
+      density: 'none',
+      reviewStrength: 'none',
+      supplemental,
+      available: []
+    });
+  }
+  const available = supplemental.filter((item) => item?.status === 'available');
+  if (available.length === 0) {
+    return contentEvidenceDensityRecord({
+      density: 'unavailable',
+      reviewStrength: 'none',
+      supplemental,
+      available
+    });
+  }
+  const summaryCount = available.reduce((count, item) => count + contentEvidenceSummaryCount(item), 0);
+  const unitCount = available.reduce((count, item) => count + normalizeArray(item.content_units).length, 0);
+  const claimCount = available.reduce((count, item) => count + normalizeArray(item.claims_observed).length, 0);
+  const limitationCount = available.reduce((count, item) => count + normalizeStringArray(item.limitations).length, 0);
+  const understandingLevel = strongestContentUnderstandingLevel(available.map((item) => item.coverage?.content_understanding_level ?? 'none'));
+  const originalTextScore = averageNumeric(available.map((item) => item.coverage?.original_text_coverage_score));
+  const locationScore = averageNumeric(available.map((item) => item.coverage?.location_reference_coverage_score));
+  let density = 'metadata_only';
+  let reviewStrength = 'cautious_metadata';
+  if (summaryCount > 0 && unitCount === 0 && claimCount === 0) {
+    density = 'summary_only';
+    reviewStrength = 'cautious_summary';
+  } else if (summaryCount > 0 && unitCount === 0 && claimCount > 0) {
+    density = 'summary_with_claims';
+    reviewStrength = 'cautious_summary';
+  } else if (unitCount > 0 && (claimCount > 0 || limitationCount > 0 || summaryCount > 0)) {
+    density = originalTextScore >= 0.6 || locationScore >= 0.5 || understandingLevel === 'excerpt'
+      ? 'excerpt_supported'
+      : 'summary_with_claims';
+    reviewStrength = 'supported_bounded';
+  }
+  if (unitCount > 1 && claimCount > 0 && limitationCount > 0 && originalTextScore >= 0.6) {
+    density = 'rich_bounded';
+    reviewStrength = 'supported_bounded';
+  }
+  return contentEvidenceDensityRecord({
+    density,
+    reviewStrength,
+    supplemental,
+    available,
+    summaryCount,
+    unitCount,
+    claimCount,
+    limitationCount,
+    understandingLevel,
+    originalTextScore,
+    locationScore
+  });
+}
+
+function contentEvidenceDensityRecord({
+  density,
+  reviewStrength,
+  supplemental,
+  available,
+  summaryCount = 0,
+  unitCount = 0,
+  claimCount = 0,
+  limitationCount = 0,
+  understandingLevel = 'none',
+  originalTextScore = 0,
+  locationScore = 0
+}) {
+  return {
+    schema_version: SCHEMA_VERSION,
+    density,
+    review_strength: reviewStrength,
+    evidence_count: supplemental.length,
+    available_count: available.length,
+    summary_count: summaryCount,
+    content_unit_count: unitCount,
+    claim_count: claimCount,
+    limitation_count: limitationCount,
+    content_understanding_level: understandingLevel,
+    original_text_coverage_score: clampScore(originalTextScore),
+    location_reference_coverage_score: clampScore(locationScore),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function normalizeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function contentEvidenceSummaryCount(item) {
+  const summaries = item?.summaries && typeof item.summaries === 'object' ? item.summaries : {};
+  return normalizeStringArray(summaries.content_summary).length
+    + normalizeStringArray(summaries.section_summary).length
+    + normalizeStringArray(summaries.transcript_summary).length
+    + normalizeStringArray(summaries.visible_text_summary).length;
+}
+
+function averageNumeric(values) {
+  const numeric = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+  if (numeric.length === 0) {
+    return 0;
+  }
+  return numeric.reduce((sum, value) => sum + value, 0) / numeric.length;
 }
 
 function normalizeEvidenceScopeRecord(value, videoEvidence = null, contentEvidence = null) {
@@ -14424,6 +14646,7 @@ function resolveEditorialSynthesisLanguage({ languageSettings, sourceTexts }) {
     provider_dispatch_enabled: artifactOutput?.provider_dispatch_enabled === true,
     external_sending_enabled: artifactOutput?.external_sending_enabled === true,
     source_text_preserved: sourceTextPreserved,
+    source_text_policy: translationExecutionEnabled ? 'translation_execution_enabled' : 'preserve_original_without_translation',
     raw_evidence_translated: false,
     provider_output_translated: false,
     report_body_translated: false,
@@ -14512,6 +14735,22 @@ function localizeEditorialGeneratedText(value, language = 'en') {
     [
       'The xhigh completion contract is not fully satisfied, so stronger natural prose must remain provisional rather than claiming proof.',
       'report.ahr.editorial.xhigh.incomplete'
+    ],
+    [
+      'This quick effort is useful for triage, but it should not be read as a complete human-review pass.',
+      'report.ahr.editorial.effort.quick'
+    ],
+    [
+      'This standard effort can support a practical review, but dedicated critique or verification is not required for this effort mode.',
+      'report.ahr.editorial.effort.standard'
+    ],
+    [
+      'This deep effort can support a fuller review, but dedicated critique or verification is still not required unless the plan uses xhigh.',
+      'report.ahr.editorial.effort.deep'
+    ],
+    [
+      'This xhigh effort is intended to include dedicated critique and verification, so missing completion keeps the prose provisional.',
+      'report.ahr.editorial.effort.xhigh_without_complete_verification'
     ]
   ]);
   const key = exactTemplateKeys.get(textValue);
@@ -14627,6 +14866,8 @@ function buildEditorialFullReview({
   limitations,
   evidenceScope,
   contentEvidence,
+  languageResolution,
+  reviewEffort,
   sourceRecords = []
 }) {
   const contentFirstReview = buildContentEvidenceFirstEditorialReview({
@@ -14642,6 +14883,8 @@ function buildEditorialFullReview({
     limitations,
     evidenceScope,
     contentEvidence,
+    languageResolution,
+    reviewEffort,
     sourceRecords
   });
   if (contentFirstReview) {
@@ -14681,6 +14924,8 @@ function buildContentEvidenceFirstEditorialReview({
   limitations,
   evidenceScope,
   contentEvidence,
+  languageResolution,
+  reviewEffort,
   sourceRecords = []
 }) {
   const buckets = buildEditorialSignalBuckets({
@@ -14701,6 +14946,10 @@ function buildContentEvidenceFirstEditorialReview({
   }
   const text = (key, fallback) => resolveReportTemplateText(key, language, fallback);
   const evidenceScopeText = contentEvidenceScopePhrase({ evidenceScope, contentEvidence, language });
+  const density = classifyContentEvidenceDensity(contentEvidence);
+  const contentCautionText = contentEvidenceDensityCautionPhrase(density, language);
+  const sourceTextPolicyText = sourceTextPreservationPhrase({ languageResolution, language });
+  const effortText = reviewEffortEditorialPhrase({ reviewEffort, sourceRecords, language });
   const directionSignals = editorialSpecificTexts([
     recommendedDirection
   ].filter((item) => !isNoOwnerDecisionEditorialText(item, language))).slice(0, 1);
@@ -14727,8 +14976,12 @@ function buildContentEvidenceFirstEditorialReview({
     composeEditorialParagraph([
       ...directionSignals,
       ...buckets.xhighSignals.slice(0, 1),
+      ...buckets.effortSignals.slice(0, 1),
+      effortText,
+      contentCautionText,
+      sourceTextPolicyText,
       ...buckets.boundaryLimitations.slice(0, status === 'limited' ? 2 : 1)
-    ], { maxItems: 4 })
+    ], { maxItems: 6 })
   ];
   const deduped = uniqueEditorialParagraphs(paragraphs);
   return deduped.length > 0 ? deduped.join('\n\n') : '';
@@ -14760,6 +15013,7 @@ function buildEditorialSignalBuckets({
     'content_evidence_limitations'
   ], 4));
   const xhighTexts = editorialSpecificTexts(editorialTextsBySource(sourceRecords, ['xhigh_quality'], 2));
+  const effortSignals = editorialSpecificTexts(editorialTextsBySource(sourceRecords, ['review_effort_quality'], 2));
   const narrativeSignals = editorialSpecificTexts([
     takeaway,
     ...observations,
@@ -14776,6 +15030,7 @@ function buildEditorialSignalBuckets({
     contentClaims,
     contentLimitations,
     xhighSignals: xhighTexts,
+    effortSignals,
     narrativeSignals,
     cautionSignals,
     recommendations: editorialSpecificTexts([recommendedDirection]),
@@ -14791,12 +15046,66 @@ function contentEvidenceScopePhrase({ evidenceScope, contentEvidence, language =
     contentEvidence?.supplemental_source_types
     ?? evidenceScope?.content_evidence_source_types
   ).slice(0, 4);
-  const sourceTypeText = sourceTypes.length > 0 ? formatEditorialList(sourceTypes, language) : 'content';
+  const sourceTypeText = sourceTypes.length > 0 ? formatContentEvidenceSourceTypes(sourceTypes, language) : contentEvidenceSourceTypeLabel('other', language);
   return resolveReportTemplateText(
     'report.ahr.editorial.composer.scope',
     language,
     'This review uses supplied bounded content evidence for {source_types}; it does not treat that evidence as full-source proof.'
   ).replace('{source_types}', sourceTypeText);
+}
+
+function contentEvidenceDensityCautionPhrase(density, language = 'en') {
+  const densityValue = density?.density ?? 'none';
+  if (densityValue === 'summary_only' || densityValue === 'summary_with_claims') {
+    return resolveReportTemplateText(
+      'report.ahr.editorial.composer.summary_only_caution',
+      language,
+      'Because the supplied content evidence is summary-only, this review should not claim detailed source verification.'
+    );
+  }
+  if (densityValue === 'metadata_only') {
+    return resolveReportTemplateText(
+      'report.ahr.editorial.composer.metadata_only_caution',
+      language,
+      'Because the supplied content evidence is metadata-only, this review can describe positioning but not detailed content quality.'
+    );
+  }
+  return '';
+}
+
+function sourceTextPreservationPhrase({ languageResolution, language = 'en' }) {
+  if (languageResolution?.source_text_preserved !== true || languageResolution?.translation_execution_enabled === true) {
+    return '';
+  }
+  return resolveReportTemplateText(
+    'report.ahr.editorial.composer.source_text_preserved',
+    language,
+    'Source and provider text is kept in its original wording because translation execution is disabled.'
+  );
+}
+
+function reviewEffortEditorialPhrase({ reviewEffort, sourceRecords = [], language = 'en' }) {
+  const effort = normalizeObservedReviewEffort(reviewEffort);
+  if (!effort) {
+    return '';
+  }
+  const existing = editorialTextsBySource(sourceRecords, ['review_effort_quality'], 1)[0];
+  if (existing) {
+    return existing;
+  }
+  if (effort === 'xhigh') {
+    return '';
+  }
+  const key = effort === 'xhigh'
+    ? 'report.ahr.editorial.effort.xhigh_without_complete_verification'
+    : `report.ahr.editorial.effort.${effort}`;
+  const fallback = {
+    quick: 'This quick effort is useful for triage, but it should not be read as a complete human-review pass.',
+    standard: 'This standard effort can support a practical review, but dedicated critique or verification is not required for this effort mode.',
+    deep: 'This deep effort can support a fuller review, but dedicated critique or verification is still not required unless the plan uses xhigh.',
+    xhigh: 'This xhigh effort is intended to include dedicated critique and verification, so missing completion keeps the prose provisional.'
+  }[effort] ?? '';
+  return resolveReportTemplateText(key, language, fallback);
 }
 
 function composeEditorialParagraph(values, { maxItems = 4, minItems = 1 } = {}) {
@@ -15304,6 +15613,7 @@ function buildContentEvidenceQuality(contentEvidence) {
     : [];
   const present = supplemental.length > 0;
   const available = supplemental.filter((item) => item.status === 'available');
+  const density = classifyContentEvidenceDensity(contentEvidence);
   const levels = available.map((item) => item.coverage?.content_understanding_level ?? 'none');
   const level = strongestContentUnderstandingLevel(levels);
   const levelScores = {
@@ -15324,9 +15634,13 @@ function buildContentEvidenceQuality(contentEvidence) {
     available_count: available.length,
     evidence_count: supplemental.length,
     source_types: uniqueStrings(supplemental.map((item) => item.source_type).filter(Boolean)),
+    display_source_types: displayContentEvidenceSourceTypes(uniqueStrings(supplemental.map((item) => item.source_type).filter(Boolean))),
     content_unit_count: Number(contentEvidence?.supplemental_content_unit_count ?? 0),
     claim_count: Number(contentEvidence?.supplemental_claim_count ?? 0),
     content_understanding_level: level,
+    density,
+    content_evidence_density: density.density,
+    review_strength: density.review_strength,
     content_understanding_score: clampScore(levelScores[level] ?? 0),
     original_text_coverage_score: clampScore(avg(originalTextScores)),
     location_reference_coverage_score: clampScore(avg(locationScores)),
