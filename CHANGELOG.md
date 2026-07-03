@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added read-only Agentic Human Review editorial-quality comparison through `agentic review compare --comparison-kind editorial-quality`, including workspace-confined reference review intake, effort-target scoring against candidate `editorial_synthesis.full_review`, schema/help/docs/test coverage, raw reference/candidate prose suppression, and no provider-call, MCP, proof-contract, gate, or equality/superiority-claim expansion.
 - Added Agentic Human Review source-understanding editorial integration for `--source-text`, including bounded `source_understanding_review`, `editorial_integrator`, natural full-review prose that suppresses scaffold markers from the review body, Source Understanding Markdown output, source-understanding report-quality diagnostics, compact adapter payload coverage, schema/package coverage, and no full-source persistence, provider-call, MCP, proof-contract, gate, or equality/superiority-claim expansion.
 - Added read-only Agentic Human Review owner-labeled human baseline validation/comparison, evidence-set baseline coverage, longitudinal owner-label requirements, schema/API/package coverage, and no-provider/no-MCP/no-gate-mutation boundaries for human-review comparison evidence.
 - Added optional `AGENTIC_HUMAN_REVIEW_API_TIMEOUT_MS` support for the Agentic Human Review generic API provider while preserving the 30000 ms default, provider capability-hash validation, env-only configuration, and no raw-response/credential/MCP expansion boundaries.

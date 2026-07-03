@@ -944,7 +944,7 @@ function usageText(topic) {
       `       ${CLI_NAME} agentic review dogfood readiness [--provider <id>] [--json]`,
       `       ${CLI_NAME} agentic review dogfood plan --case <benchmark-case-id> [--provider <id>] [--json]`,
       `       ${CLI_NAME} agentic review calibrate --result <agentic-human-review-result> --case <benchmark-case-id> [--json]`,
-      `       ${CLI_NAME} agentic review compare --baseline <agentic-human-review-result> --candidate <agentic-human-review-result> [--comparison-kind quality-delta|direct-vs-tracecue|provider-dogfood|benchmark-regression] [--json]`,
+      `       ${CLI_NAME} agentic review compare --baseline <agentic-human-review-result-or-reference-review> --candidate <agentic-human-review-result> [--comparison-kind quality-delta|direct-vs-tracecue|provider-dogfood|benchmark-regression|editorial-quality] [--json]`,
       `       ${CLI_NAME} agentic review compare batch --dataset <workspace-json> [--json]`,
       `       ${CLI_NAME} agentic review evidence-set validate --input <workspace-json> [--json]`,
       `       ${CLI_NAME} agentic review evidence-set summarize --input <workspace-json> [--json]`,
@@ -966,7 +966,7 @@ function usageText(topic) {
       `       ${CLI_NAME} agentic review status --execution <agentic-human-review-execution> [--json]`,
       `       ${CLI_NAME} agentic review list [--json]`,
       '',
-      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider and dogfood readiness perform no provider call; running requires matching hash, explicit --execute, and exact flags; report quality, benchmark, dogfood planning, calibration, comparison, evidence-set, evidence-set regeneration planning, human-baseline, xhigh, longitudinal, evaluator, and claim-policy commands are read-only advisory checks. MCP execution remains excluded.'
+      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider and dogfood readiness perform no provider call; running requires matching hash, explicit --execute, and exact flags; report quality, benchmark, dogfood planning, calibration, comparison, evidence-set, evidence-set regeneration planning, human-baseline, xhigh, longitudinal, evaluator, and claim-policy commands are read-only advisory checks. For --comparison-kind editorial-quality, --baseline is a workspace-confined reference review text or JSON artifact and the command emits scores only, not the reference or candidate prose. MCP execution remains excluded.'
     ].join('\n');
   }
 

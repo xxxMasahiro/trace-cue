@@ -1337,6 +1337,7 @@ const schemas = Object.freeze({
       metric_diagnostics: { type: 'array' },
       summary: { type: 'object' },
       direct_vs_tracecue_analysis: { type: ['object', 'null'] },
+      editorial_quality_comparison: { type: ['object', 'null'] },
       warnings: { type: 'array' },
       advisory_only: { const: true },
       gate_effect: { const: 'none' },

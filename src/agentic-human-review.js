@@ -67,6 +67,7 @@ export const HUMAN_REVIEW_SOURCE_UNDERSTANDING_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EDITORIAL_COMPOSER_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EDITORIAL_INTEGRATOR_VERSION = '1.0.0';
 export const HUMAN_REVIEW_ASSISTANT_REFERENCE_QUALITY_VERSION = '1.0.0';
+export const HUMAN_REVIEW_EDITORIAL_QUALITY_COMPARISON_VERSION = '1.0.0';
 export const HUMAN_REVIEW_QUALITY_DIAGNOSTICS_VERSION = '1.0.0';
 
 const DEFAULT_PROVIDER_ID = 'fake-agent';
@@ -87,6 +88,8 @@ const MAX_SOURCE_TEXT_EXCERPTS = 12;
 const MAX_SOURCE_TEXT_EXCERPT = 900;
 const MAX_SOURCE_READING_ITEMS = 12;
 const MAX_SOURCE_UNDERSTANDING_ITEMS = 12;
+const MAX_REFERENCE_REVIEW_TEXT = 12000;
+const MAX_EDITORIAL_COMPARISON_ITEMS = 12;
 const MAX_PROPOSAL_BRIEF_BYTES = 32 * 1024;
 const AGENTIC_REVIEW_EXECUTION_MODES = new Set(['one-shot', 'staged']);
 const STAGED_EFFORT_EXECUTION_VERSION = '1.0.0';
@@ -1728,6 +1731,51 @@ export async function runAgenticHumanReviewCompare(options = {}, context = {}) {
   if (!maxBytes.ok) {
     return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
   }
+  const comparisonKind = normalizeComparisonKind(options['comparison-kind']);
+  if (comparisonKind === 'editorial-quality') {
+    const referenceRead = await readReferenceReviewForPlan({
+      cwd,
+      options: { 'reference-review': options.baseline },
+      maxBytes: maxBytes.value
+    });
+    if (!referenceRead.ok) {
+      return errorResult(referenceRead.error.code, referenceRead.error.message, referenceRead.error.details);
+    }
+    const candidateRead = await readWorkspaceJson({
+      cwd,
+      inputPath: options.candidate,
+      label: 'candidate agentic human review result',
+      maxBytes: maxBytes.value
+    });
+    if (!candidateRead.ok) {
+      return errorResult(candidateRead.error.code, candidateRead.error.message, candidateRead.error.details);
+    }
+    const validation = validateAdvisoryResultArtifact({
+      result: candidateRead.value,
+      resultPath: candidateRead.relativePath
+    });
+    if (!validation.ok) {
+      return errorResult(validation.error.code, validation.error.message, { ...validation.error.details, role: 'candidate' });
+    }
+    const comparison = buildEditorialQualityComparison({
+      referenceReview: referenceRead.referenceReview,
+      referencePath: referenceRead.relativePath,
+      referenceHash: referenceRead.hash,
+      candidate: candidateRead.value,
+      candidatePath: candidateRead.relativePath,
+      now
+    });
+    return {
+      status: 'ok',
+      data: {
+        agentic_human_review_comparison: comparison,
+        boundary: comparison.boundary
+      },
+      warnings: comparison.warnings,
+      errors: [],
+      artifacts: []
+    };
+  }
   const baselineRead = await readWorkspaceJson({
     cwd,
     inputPath: options.baseline,
@@ -1758,7 +1806,7 @@ export async function runAgenticHumanReviewCompare(options = {}, context = {}) {
     candidate: candidateRead.value,
     candidatePath: candidateRead.relativePath,
     now,
-    comparisonKind: options['comparison-kind']
+    comparisonKind
   });
   return {
     status: 'ok',
@@ -6100,6 +6148,280 @@ async function readSourceTextForPlan({ cwd, options, maxBytes, reviewEffort = DE
   };
 }
 
+async function readReferenceReviewForPlan({ cwd, options, maxBytes }) {
+  const inputPath = options['reference-review'];
+  const inlineText = options['reference-review-text'];
+  if (inputPath && inlineText) {
+    return validationError('AGENTIC_REVIEW_REFERENCE_REVIEW_AMBIGUOUS', 'Provide either --reference-review or --reference-review-text, not both.', {
+      reference_review: inputPath,
+      reference_review_text_supplied: true
+    });
+  }
+  if (!inputPath && !inlineText) {
+    return { ok: true, referenceReview: null, relativePath: null, hash: null, warnings: [] };
+  }
+  if (inlineText) {
+    const text = String(inlineText);
+    if (Buffer.byteLength(text, 'utf8') > maxBytes) {
+      return validationError('AGENTIC_REVIEW_REFERENCE_REVIEW_TOO_LARGE', 'The inline reference review exceeds the configured max byte limit.', {
+        max_bytes: maxBytes
+      });
+    }
+    const normalized = normalizeReferenceReviewArtifact({
+      text,
+      inputPath: null,
+      inputHash: hashText(text),
+      inputMode: 'inline_text'
+    });
+    if (!normalized.ok) {
+      return { ok: false, error: normalized.error };
+    }
+    return {
+      ok: true,
+      referenceReview: normalized.referenceReview,
+      relativePath: null,
+      hash: hashText(text),
+      warnings: normalized.warnings
+    };
+  }
+  const read = await readWorkspaceText({
+    cwd,
+    inputPath,
+    label: 'agentic human review reference review',
+    maxBytes
+  });
+  if (!read.ok) {
+    return { ok: false, error: read.error };
+  }
+  const normalized = normalizeReferenceReviewArtifact({
+    text: read.text,
+    inputPath: read.relativePath,
+    inputHash: hashText(read.text),
+    inputMode: 'workspace_file'
+  });
+  if (!normalized.ok) {
+    return { ok: false, error: normalized.error };
+  }
+  return {
+    ok: true,
+    referenceReview: normalized.referenceReview,
+    relativePath: read.relativePath,
+    hash: hashText(read.text),
+    warnings: normalized.warnings
+  };
+}
+
+function normalizeReferenceReviewArtifact({ text, inputPath, inputHash, inputMode }) {
+  const parsed = parseReferenceReviewInput(text);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  const disallowed = findDisallowedReferenceReviewContent(parsed.rawInput, [], text);
+  if (disallowed.length > 0) {
+    return validationError('AGENTIC_REVIEW_REFERENCE_REVIEW_RAW_CONTENT_REJECTED', 'Reference reviews must not include raw media, binary payloads, base64 payloads, credentials, or secret-bearing structured fields.', {
+      input: inputPath,
+      rejected_fields: disallowed.slice(0, 20)
+    });
+  }
+  const normalizedText = normalizeReferenceReviewBody(parsed.text);
+  if (!normalizedText) {
+    return validationError('AGENTIC_REVIEW_REFERENCE_REVIEW_EMPTY', 'The reference review did not contain readable review text after normalization.', {
+      input: inputPath
+    });
+  }
+  const boundedText = secretSafeText(normalizedText, MAX_REFERENCE_REVIEW_TEXT);
+  return {
+    ok: true,
+    referenceReview: redact({
+      schema_version: SCHEMA_VERSION,
+      reference_review_version: HUMAN_REVIEW_EDITORIAL_QUALITY_COMPARISON_VERSION,
+      status: 'available',
+      reference_kind: parsed.referenceKind,
+      id: truncateText(parsed.id ?? `reference-review-${inputHash.slice(0, 12)}`, 120),
+      label: secretSafeText(parsed.label ?? parsed.title ?? parsed.referenceKind, 240),
+      review_text: boundedText,
+      text_stats: {
+        char_count: normalizedText.length,
+        stored_review_text_chars: boundedText.length,
+        stored_review_text_bounded: true,
+        truncated: normalizedText.length > boundedText.length,
+        source_hash: inputHash
+      },
+      source: {
+        title: secretSafeText(parsed.title ?? '', 300),
+        author_role: truncateText(parsed.authorRole ?? parsed.referenceKind, 120),
+        artifact_type: truncateText(parsed.artifactType ?? parsed.inputType ?? 'reference_review', 120),
+        locator_included: false
+      },
+      provenance: {
+        input_path: inputPath,
+        input_hash: inputHash,
+        input_mode: inputMode,
+        input_type: parsed.inputType,
+        source_tool: stringOrNull(parsed.sourceTool)
+      },
+      comparison_contract: referenceReviewComparisonContract(parsed.referenceKind),
+      boundary: referenceReviewBoundary(),
+      advisory_only: true,
+      gate_effect: 'none'
+    }),
+    warnings: []
+  };
+}
+
+function parseReferenceReviewInput(text) {
+  const raw = String(text ?? '');
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const extracted = extractReferenceReviewText(parsed);
+      return {
+        ok: true,
+        rawInput: parsed,
+        text: extracted.text,
+        referenceKind: normalizeReferenceReviewKind(parsed.reference_kind ?? parsed.comparison_target ?? parsed.kind ?? extracted.kind),
+        id: parsed.id ?? parsed.reference_id ?? parsed.review_id ?? extracted.id,
+        label: parsed.label ?? parsed.name ?? parsed.title ?? extracted.label,
+        title: parsed.title ?? extracted.title,
+        authorRole: parsed.author_role ?? parsed.author ?? extracted.authorRole,
+        artifactType: extracted.artifactType ?? parsed.type ?? parsed.result_type,
+        inputType: stringOrNull(parsed.type ?? parsed.result_type ?? parsed.evidence_kind) ?? 'reference_review',
+        sourceTool: parsed.source_tool ?? parsed.tool ?? parsed.provider?.id ?? parsed.provider_id
+      };
+    }
+  } catch {
+    // Plain text is accepted for assistant, owner, subscription, or provider reference reviews.
+  }
+  return {
+    ok: true,
+    rawInput: null,
+    text: raw,
+    referenceKind: 'assistant_reference_review',
+    id: null,
+    label: null,
+    title: null,
+    authorRole: null,
+    artifactType: 'plain_text_reference_review',
+    inputType: 'reference_review_plain_text',
+    sourceTool: null
+  };
+}
+
+function extractReferenceReviewText(input) {
+  const advisory = input.data?.agentic_human_review_advisory ?? input.agentic_human_review_advisory ?? input;
+  const editorial = advisory.editorial_synthesis ?? input.editorial_synthesis ?? input.data?.editorial_synthesis;
+  const humanReport = advisory.human_report_v3 ?? input.human_report_v3 ?? input.data?.human_report_v3;
+  const directText = firstString(
+    input.review_text,
+    input.reference_review,
+    input.full_review,
+    input.text,
+    input.body,
+    input.summary,
+    editorial?.full_review,
+    editorial?.one_sentence_takeaway,
+    humanReport?.reader_story,
+    humanReport?.plain_language_takeaway,
+    null
+  );
+  return {
+    text: directText,
+    kind: input.reference_kind ?? (editorial ? 'tracecue_editorial_synthesis' : 'assistant_reference_review'),
+    id: input.id ?? advisory.id ?? editorial?.id ?? null,
+    label: input.label ?? input.name ?? editorial?.audience ?? null,
+    title: input.title ?? advisory.title ?? null,
+    authorRole: input.author_role ?? input.author ?? null,
+    artifactType: input.type ?? input.result_type ?? advisory.result_type ?? null
+  };
+}
+
+function normalizeReferenceReviewKind(value) {
+  const normalized = String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/gu, '_').replace(/^_+|_+$/gu, '');
+  const allowed = new Set([
+    'assistant_reference_review',
+    'owner_approved_reference_review',
+    'subscription_reference_review',
+    'api_reference_review',
+    'tracecue_editorial_synthesis',
+    'human_baseline_reference_review',
+    'other_reference_review'
+  ]);
+  return allowed.has(normalized) ? normalized : 'assistant_reference_review';
+}
+
+function normalizeReferenceReviewBody(text) {
+  return String(text ?? '')
+    .replace(/^\uFEFF/u, '')
+    .replace(/\r\n?/gu, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function findDisallowedReferenceReviewContent(value, pathParts = [], rawText = '') {
+  const sourceTextRejected = findDisallowedSourceTextContent(value, pathParts);
+  if (sourceTextRejected.length > 0) {
+    return sourceTextRejected;
+  }
+  if (typeof rawText === 'string' && /"(?:token|authorization|secret|credential|password|cookie|raw_[^"]*|[^"]*base64[^"]*)"\s*:/iu.test(rawText)) {
+    return ['structured_reference_review'];
+  }
+  if (!value || typeof value !== 'object') {
+    return [];
+  }
+  const rejected = [];
+  for (const [key, item] of Object.entries(value)) {
+    const normalizedKey = key.replace(/[^a-z0-9]+/giu, '_').toLowerCase();
+    const currentPath = [...pathParts, key];
+    const disallowedKey = /(raw_video|raw_audio|raw_pixels|raw_frames|pixel_bytes|binary|base64|cookie|cookies|token|authorization|secret|credential|private_key|password)/u.test(normalizedKey);
+    if (disallowedKey && valueHasMeaningfulContent(item)) {
+      rejected.push(currentPath.join('.'));
+      continue;
+    }
+    if (typeof item === 'string' && /^(data:|blob:)/iu.test(item.trim())) {
+      rejected.push(currentPath.join('.'));
+      continue;
+    }
+    if (item && typeof item === 'object') {
+      rejected.push(...findDisallowedReferenceReviewContent(item, currentPath));
+    }
+  }
+  return rejected;
+}
+
+function referenceReviewComparisonContract(referenceKind = 'assistant_reference_review') {
+  return {
+    schema_version: SCHEMA_VERSION,
+    comparison_target: normalizeReferenceReviewKind(referenceKind),
+    target_is_claim_proof: false,
+    high_quality_review_claim_supported_only: true,
+    human_equivalent_claim_allowed: false,
+    human_superior_claim_allowed: false,
+    provider_payload_inclusion_allowed: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function referenceReviewBoundary() {
+  return {
+    local_workspace_file_or_inline_text_only: true,
+    reference_review_text_stored_bounded: true,
+    reference_review_text_transferred_to_provider: false,
+    provider_call_performed: false,
+    api_call_performed: false,
+    external_evidence_transfer_performed: false,
+    raw_media_allowed: false,
+    raw_binary_allowed: false,
+    credential_values_recorded: false,
+    human_equivalence_claim_authorized: false,
+    human_superiority_claim_authorized: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
 function normalizeSourceTextArtifact({ text, inputPath, inputHash, reviewEffort = DEFAULT_REVIEW_EFFORT }) {
   const parsed = parseSourceTextInput(text);
   if (!parsed.ok) {
@@ -9368,6 +9690,401 @@ function buildComparisonResult({ baseline, baselinePath, candidate, candidatePat
   });
 }
 
+function buildEditorialQualityComparison({ referenceReview, referencePath, referenceHash, candidate, candidatePath, now }) {
+  const candidateText = normalizeReferenceReviewBody(candidate?.editorial_synthesis?.full_review ?? '');
+  const referenceText = normalizeReferenceReviewBody(referenceReview?.review_text ?? '');
+  const candidateEffort = normalizeObservedReviewEffort(
+    candidate?.agentic_human_review_advisory?.review_effort
+      ?? candidate?.review_effort
+      ?? candidate?.report_quality?.quality_expectations?.review_effort
+  ) ?? DEFAULT_REVIEW_EFFORT;
+  const target = assistantReferenceQualityTarget(candidateEffort);
+  const targetSignals = editorialQualityTargetSignals(candidate);
+  const comparable = Boolean(candidateText && referenceText);
+  const targetMaterialAvailable = targetSignals.length > 0;
+  const candidateScores = comparable
+    ? editorialQualityScores({ text: candidateText, targetSignals, result: candidate })
+    : emptyEditorialQualityScores();
+  const referenceScores = comparable
+    ? editorialQualityScores({ text: referenceText, targetSignals, result: null })
+    : emptyEditorialQualityScores();
+  const deltas = Object.fromEntries(Object.keys(candidateScores).map((key) => [
+    key,
+    clampDelta(candidateScores[key] - referenceScores[key])
+  ]));
+  const threshold = editorialQualityTargetDelta(candidateEffort);
+  const targetStatus = !comparable
+    ? 'not_comparable'
+    : (!targetMaterialAvailable
+        ? 'insufficient_target_material'
+        : (deltas.overall_score >= threshold ? 'target_met' : 'target_not_met'));
+  const warnings = [
+    ...(!candidateText ? [{
+      code: 'AHR_EDITORIAL_QUALITY_CANDIDATE_REVIEW_MISSING',
+      message: 'The candidate result did not include editorial_synthesis.full_review.'
+    }] : []),
+    ...(!referenceText ? [{
+      code: 'AHR_EDITORIAL_QUALITY_REFERENCE_REVIEW_MISSING',
+      message: 'The reference review did not include readable review text.'
+    }] : []),
+    ...(comparable && !targetMaterialAvailable ? [{
+      code: 'AHR_EDITORIAL_QUALITY_TARGET_MATERIAL_THIN',
+      message: 'The candidate result did not include enough source-understanding target signals for effort-target comparison.'
+    }] : [])
+  ];
+  const comparison = {
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_comparison',
+    comparison_version: HUMAN_REVIEW_CALIBRATION_VERSION,
+    comparison_kind: 'editorial-quality',
+    generated_at: now.toISOString(),
+    baseline: {
+      reference_review: {
+        status: referenceReview?.status ?? 'not_supplied',
+        reference_kind: referenceReview?.reference_kind ?? 'assistant_reference_review',
+        input_hash: referenceHash ?? referenceReview?.provenance?.input_hash ?? null,
+        text_hash: referenceText ? hashText(referenceText) : null,
+        text_char_count: referenceText.length,
+        path_included: false,
+        text_included: false,
+        raw_text_included: false,
+        source_locator_included: false
+      }
+    },
+    candidate: {
+      result_id: candidate?.id ?? null,
+      result_hash: candidate ? hashJson(candidate) : null,
+      result_path_included: false,
+      effort: candidateEffort,
+      editorial_synthesis_hash: candidateText ? hashText(candidateText) : null,
+      editorial_text_char_count: candidateText.length,
+      source_ref_count: normalizeStringArray(candidate?.editorial_synthesis?.source_refs).length,
+      source_understanding_status: candidate?.source_understanding_review?.status ?? 'not_supplied',
+      source_understanding_depth: candidate?.source_understanding_review?.understanding_depth ?? 'none',
+      source_understanding_score: clampScore(candidate?.source_understanding_review?.coverage?.source_understanding_score ?? 0),
+      text_included: false
+    },
+    deltas,
+    regression_diagnostics: editorialQualityDeltaDiagnostics({
+      candidateScores,
+      referenceScores,
+      deltas,
+      direction: 'regression'
+    }),
+    improvement_diagnostics: editorialQualityDeltaDiagnostics({
+      candidateScores,
+      referenceScores,
+      deltas,
+      direction: 'improvement'
+    }),
+    metric_diagnostics: editorialQualityMetricDiagnostics({ candidateScores, referenceScores, deltas }),
+    summary: {
+      status: targetStatus,
+      comparable,
+      target_material_available: targetMaterialAvailable,
+      comparison_target: referenceReview?.comparison_contract?.comparison_target ?? referenceReview?.reference_kind ?? 'assistant_reference_review',
+      assistant_reference_target: target.target,
+      effort_target_delta: threshold,
+      overall_candidate_score: candidateScores.overall_score,
+      overall_reference_score: referenceScores.overall_score,
+      overall_delta: deltas.overall_score,
+      candidate_meets_effort_target: targetStatus === 'target_met',
+      high_quality_review_allowed: comparable && candidateScores.overall_score >= 0.65 && candidateScores.source_understanding_coverage_score >= 0.55,
+      human_equivalent_claim_allowed: false,
+      human_superior_claim_allowed: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    editorial_quality_comparison: {
+      schema_version: SCHEMA_VERSION,
+      editorial_quality_comparison_version: HUMAN_REVIEW_EDITORIAL_QUALITY_COMPARISON_VERSION,
+      status: targetStatus,
+      reference_review: {
+        reference_kind: referenceReview?.reference_kind ?? 'assistant_reference_review',
+        input_hash: referenceHash ?? referenceReview?.provenance?.input_hash ?? null,
+        text_hash: referenceText ? hashText(referenceText) : null,
+        raw_text_included: false,
+        source_locator_included: false
+      },
+      candidate_editorial_synthesis: {
+        result_id: candidate?.id ?? null,
+        full_review_hash: candidateText ? hashText(candidateText) : null,
+        source_ref_count: normalizeStringArray(candidate?.editorial_synthesis?.source_refs).length,
+        full_review_included: false
+      },
+      effort_target: {
+        effort: candidateEffort,
+        target: target.target,
+        minimum_delta: threshold,
+        target_met: targetStatus === 'target_met',
+        human_equivalence_claim_allowed: false,
+        human_superiority_claim_allowed: false
+      },
+      scores: {
+        candidate: candidateScores,
+        reference: referenceScores,
+        deltas
+      },
+      strengths_against_reference: editorialQualityStrengths({ deltas, candidateScores, referenceScores, targetSignals }),
+      gaps_against_reference: editorialQualityGaps({ deltas, candidateScores, referenceScores, targetStatus }),
+      diagnostics: editorialQualityDiagnostics({ comparable, targetMaterialAvailable, targetStatus, warnings, deltas }),
+      target_signal_summary: {
+        source_understanding_signal_count: targetSignals.length,
+        text_included: false,
+        signals_included: false
+      },
+      claim_support: {
+        high_quality_review_allowed: comparable && candidateScores.overall_score >= 0.65 && candidateScores.source_understanding_coverage_score >= 0.55,
+        human_equivalent_claim_allowed: false,
+        human_superior_claim_allowed: false,
+        reason: 'Editorial-quality comparison supports owner review of review quality only; equality and superiority claims remain disabled by policy.'
+      },
+      boundary: {
+        read_only: true,
+        provider_call_performed: false,
+        api_call_performed: false,
+        external_evidence_transfer: false,
+        reference_review_text_transferred_to_provider: false,
+        reference_review_text_in_output: false,
+        candidate_full_review_in_output: false,
+        source_text_in_output: false,
+        deterministic_findings_mutated: false,
+        release_gate_mutated: false,
+        mcp_execution_exposed: false,
+        proof_contract_satisfied: false,
+        advisory_only: true,
+        gate_effect: 'none'
+      },
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    direct_vs_tracecue_analysis: null,
+    warnings,
+    advisory_only: true,
+    gate_effect: 'none',
+    boundary: agenticHumanReviewBoundary({
+      read_only: true,
+      dogfood_comparison_performed: true,
+      report_quality_gate_effect: 'none'
+    })
+  };
+  return redact(comparison);
+}
+
+function editorialQualityTargetSignals(result) {
+  const sourceUnderstanding = result?.source_understanding_review ?? {};
+  const signals = [
+    sourceUnderstanding.thesis,
+    sourceUnderstanding.audience_promise,
+    ...normalizeArray(sourceUnderstanding.must_not_miss_points).map((item) => typeof item === 'string' ? item : [item.point, item.reason].filter(Boolean).join(' ')),
+    ...normalizeArray(sourceUnderstanding.evidence_claims).map((item) => typeof item === 'string' ? item : [item.claim, item.limitation].filter(Boolean).join(' ')),
+    ...normalizeStringArray(sourceUnderstanding.reviewer_implications),
+    ...normalizeStringArray(sourceUnderstanding.tensions_or_counterpoints),
+    ...normalizeStringArray(sourceUnderstanding.source_limitations),
+    ...normalizeStringArray(result?.editorial_synthesis?.risks_or_cautions),
+    result?.editorial_synthesis?.recommended_direction
+  ];
+  return uniqueEditorialTexts(signals).slice(0, MAX_EDITORIAL_COMPARISON_ITEMS);
+}
+
+function editorialQualityScores({ text, targetSignals, result }) {
+  const sentenceCount = splitEditorialQualitySentences(text).length;
+  const tokenCount = editorialQualityTokens(text).length;
+  const sourceCoverage = averageSignalCoverage(text, targetSignals);
+  const specificity = clampScore(
+    (Math.min(tokenCount, 260) / 260 * 0.45)
+    + (countPatternMatches(text, /[「"“][^」"”]{8,}[」"”]/gu) > 0 ? 0.15 : 0)
+    + (countPatternMatches(text, /\b(?:because|therefore|evidence|specific|example|理由|根拠|具体|たとえば|例えば)\b/giu) > 0 ? 0.2 : 0)
+    + (sourceCoverage * 0.2)
+  );
+  const evidenceGrounding = clampScore(
+    (sourceCoverage * 0.55)
+    + (normalizeStringArray(result?.editorial_synthesis?.source_refs).length > 0 ? 0.2 : 0)
+    + (countPatternMatches(text, /\b(?:evidence|source|observed|transcript|本文|原文|証拠|根拠|確認できる)\b/giu) > 0 ? 0.25 : 0)
+  );
+  const nuance = clampScore(
+    (countPatternMatches(text, /\b(?:however|while|although|risk|caution|limitation|uncertain|一方|ただし|注意|制限|揺れ|不確実)\b/giu) > 0 ? 0.45 : 0)
+    + (averageSignalCoverage(text, normalizeStringArray(result?.source_understanding_review?.tensions_or_counterpoints)) * 0.3)
+    + (averageSignalCoverage(text, normalizeStringArray(result?.source_understanding_review?.source_limitations)) * 0.25)
+  );
+  const actionability = clampScore(
+    (countPatternMatches(text, /\b(?:should|recommend|improve|priority|next|方向|改善|推奨|優先|問い|示す|整理)\b/giu) > 0 ? 0.45 : 0)
+    + (averageSignalCoverage(text, normalizeStringArray(result?.source_understanding_review?.reviewer_implications)) * 0.35)
+    + (sentenceCount >= 3 ? 0.2 : 0)
+  );
+  const naturalness = clampScore(
+    (sentenceCount >= 3 ? 0.35 : 0.15)
+    + (sentenceCount <= 10 ? 0.25 : 0.1)
+    + (!/\b(?:Deterministic fake|Step \d+|role=|Assistant-reference target|Review quality target)\b/iu.test(text) ? 0.3 : 0)
+    + (tokenCount >= 80 ? 0.1 : 0)
+  );
+  const overall = clampScore(
+    (sourceCoverage * 0.3)
+    + (specificity * 0.15)
+    + (evidenceGrounding * 0.15)
+    + (nuance * 0.15)
+    + (actionability * 0.15)
+    + (naturalness * 0.1)
+  );
+  return {
+    overall_score: overall,
+    source_understanding_coverage_score: sourceCoverage,
+    specificity_score: specificity,
+    evidence_grounding_score: evidenceGrounding,
+    nuance_score: nuance,
+    actionability_score: actionability,
+    naturalness_score: naturalness
+  };
+}
+
+function emptyEditorialQualityScores() {
+  return {
+    overall_score: 0,
+    source_understanding_coverage_score: 0,
+    specificity_score: 0,
+    evidence_grounding_score: 0,
+    nuance_score: 0,
+    actionability_score: 0,
+    naturalness_score: 0
+  };
+}
+
+function editorialQualityTargetDelta(effort) {
+  if (effort === 'xhigh') {
+    return 0.12;
+  }
+  if (effort === 'deep') {
+    return 0.05;
+  }
+  return -0.03;
+}
+
+function editorialQualityStrengths({ deltas, candidateScores, targetSignals }) {
+  const strengths = [];
+  if (deltas.source_understanding_coverage_score > 0.03) {
+    strengths.push('Candidate covers more source-understanding target signals than the reference review.');
+  }
+  if (deltas.evidence_grounding_score > 0.03) {
+    strengths.push('Candidate is more strongly grounded in source-understanding or evidence-reference signals.');
+  }
+  if (deltas.nuance_score > 0.03) {
+    strengths.push('Candidate preserves more cautions, tensions, limitations, or uncertainty.');
+  }
+  if (deltas.actionability_score > 0.03) {
+    strengths.push('Candidate gives more actionable review direction.');
+  }
+  if (candidateScores.overall_score >= 0.65 && targetSignals.length > 0) {
+    strengths.push('Candidate reaches the configured high-quality advisory threshold for this local comparison.');
+  }
+  return strengths.slice(0, MAX_EDITORIAL_COMPARISON_ITEMS);
+}
+
+function editorialQualityGaps({ deltas, candidateScores, targetStatus }) {
+  const gaps = [];
+  if (targetStatus === 'not_comparable') {
+    gaps.push('Comparison could not run because either the candidate review or the reference review was missing readable text.');
+  }
+  if (targetStatus === 'insufficient_target_material') {
+    gaps.push('Source-understanding target material is too thin to judge effort-specific review quality.');
+  }
+  if (deltas.overall_score < 0) {
+    gaps.push('Candidate overall score is below the reference score.');
+  }
+  if (deltas.naturalness_score < -0.03) {
+    gaps.push('Candidate prose is less natural than the reference review.');
+  }
+  if (deltas.specificity_score < -0.03) {
+    gaps.push('Candidate is less specific than the reference review.');
+  }
+  if (candidateScores.source_understanding_coverage_score < 0.55) {
+    gaps.push('Candidate does not cover enough source-understanding target signals for a strong quality claim.');
+  }
+  return gaps.slice(0, MAX_EDITORIAL_COMPARISON_ITEMS);
+}
+
+function editorialQualityDiagnostics({ comparable, targetMaterialAvailable, targetStatus, warnings, deltas }) {
+  return [
+    ...warnings.map((warning) => ({
+      code: warning.code,
+      message: warning.message,
+      severity: 'medium',
+      advisory_only: true,
+      gate_effect: 'none'
+    })),
+    {
+      code: 'AHR_EDITORIAL_QUALITY_TARGET_STATUS',
+      message: `Editorial-quality effort target status: ${targetStatus}.`,
+      severity: targetStatus === 'target_met' ? 'info' : 'medium',
+      details: {
+        comparable,
+        target_material_available: targetMaterialAvailable,
+        overall_delta: deltas.overall_score
+      },
+      advisory_only: true,
+      gate_effect: 'none'
+    }
+  ];
+}
+
+function editorialQualityMetricDiagnostics({ candidateScores, referenceScores, deltas }) {
+  return Object.keys(candidateScores).sort().map((metric) => ({
+    metric,
+    reference_score: clampScore(referenceScores[metric] ?? 0),
+    candidate_score: clampScore(candidateScores[metric] ?? 0),
+    delta: clampDelta(deltas[metric] ?? 0),
+    direction: deltas[metric] < -0.0001 ? 'regressed' : (deltas[metric] > 0.0001 ? 'improved' : 'unchanged'),
+    critical_for_claim_readiness: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  }));
+}
+
+function editorialQualityDeltaDiagnostics({ candidateScores, referenceScores, deltas, direction }) {
+  return editorialQualityMetricDiagnostics({
+    candidateScores,
+    referenceScores,
+    deltas
+  }).filter((item) => direction === 'regression' ? item.direction === 'regressed' : item.direction === 'improved');
+}
+
+function averageSignalCoverage(text, signals) {
+  const normalizedSignals = normalizeStringArray(signals).filter(Boolean);
+  if (normalizedSignals.length === 0) {
+    return 0;
+  }
+  const textTokens = new Set(editorialQualityTokens(text));
+  if (textTokens.size === 0) {
+    return 0;
+  }
+  const scores = normalizedSignals.map((signal) => {
+    const signalTokens = [...new Set(editorialQualityTokens(signal))].slice(0, 16);
+    if (signalTokens.length === 0) {
+      return 0;
+    }
+    const matched = signalTokens.filter((token) => textTokens.has(token)).length;
+    return matched / signalTokens.length;
+  });
+  return clampScore(scores.reduce((sum, score) => sum + score, 0) / scores.length);
+}
+
+function editorialQualityTokens(text) {
+  const normalized = String(text ?? '').toLowerCase();
+  const tokens = normalized.match(/[\p{L}\p{N}]{2,}/gu) ?? [];
+  const stop = new Set(['this', 'that', 'with', 'from', 'have', 'will', 'should', 'review', 'candidate', 'reference', 'the', 'and', 'for', 'but', 'you', 'your', 'これ', 'それ', 'この', 'その', 'ため', 'こと', 'よう', 'レビュー']);
+  return tokens.filter((token) => !stop.has(token));
+}
+
+function splitEditorialQualitySentences(text) {
+  return String(text ?? '')
+    .split(/(?<=[。.!?！？])\s+|\n{2,}/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function countPatternMatches(text, pattern) {
+  return (String(text ?? '').match(pattern) ?? []).length;
+}
+
 function buildHumanBaselineValidation({ input, inputPath, inputHash, now }) {
   const source = normalizeHumanBaselineSource(input);
   const ownerLabelSet = normalizeHumanBaselineOwnerLabelSet(source);
@@ -9856,7 +10573,7 @@ function buildHumanBaselineComparison({ baseline, result, resultPath, resultHash
 
 function normalizeComparisonKind(value) {
   const normalized = String(value ?? 'quality-delta').trim() || 'quality-delta';
-  return ['quality-delta', 'direct-vs-tracecue', 'provider-dogfood', 'benchmark-regression'].includes(normalized)
+  return ['quality-delta', 'direct-vs-tracecue', 'provider-dogfood', 'benchmark-regression', 'editorial-quality'].includes(normalized)
     ? normalized
     : 'quality-delta';
 }

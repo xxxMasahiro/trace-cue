@@ -4220,6 +4220,70 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.match(sourceTextReport, /Source Key Points/);
   assert.match(sourceTextReport, /Source Excerpt Refs/);
 
+  const referenceReviewPath = 'assistant-reference-review.md';
+  await writeFile(path.join(cwd, referenceReviewPath), [
+    'This lightweight reference intentionally omits the source-understanding details.',
+    'It says the video is broadly useful for product marketing and recommends clearer next steps.',
+    'Reference leak sentinel should never appear in comparison JSON output.'
+  ].join('\n\n'), 'utf8');
+  const editorialQualityComparison = await executeCli([
+    'agentic',
+    'review',
+    'compare',
+    '--baseline',
+    referenceReviewPath,
+    '--candidate',
+    '.browser-debug/agentic-human-review-results/agentic-execution-source-text/result.json',
+    '--comparison-kind',
+    'editorial-quality',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(editorialQualityComparison.exitCode, 0);
+  const editorialQualityBody = JSON.parse(editorialQualityComparison.stdout);
+  const editorialQualityData = editorialQualityBody.data.agentic_human_review_comparison;
+  assert.equal(editorialQualityBody.command, 'agentic review compare');
+  assert.equal(editorialQualityData.comparison_kind, 'editorial-quality');
+  assert.equal(editorialQualityData.summary.comparable, true);
+  assert.equal(editorialQualityData.summary.human_equivalent_claim_allowed, false);
+  assert.equal(editorialQualityData.summary.human_superior_claim_allowed, false);
+  assert.equal(typeof editorialQualityData.summary.candidate_meets_effort_target, 'boolean');
+  assert.equal(editorialQualityData.baseline.reference_review.text_included, false);
+  assert.equal(editorialQualityData.baseline.reference_review.raw_text_included, false);
+  assert.equal(editorialQualityData.baseline.reference_review.path_included, false);
+  assert.equal(editorialQualityData.candidate.result_path_included, false);
+  assert.equal(editorialQualityData.candidate.text_included, false);
+  assert.equal(editorialQualityData.editorial_quality_comparison.status, editorialQualityData.summary.status);
+  assert.equal(editorialQualityData.editorial_quality_comparison.effort_target.effort, 'xhigh');
+  assert.equal(editorialQualityData.editorial_quality_comparison.effort_target.minimum_delta, 0.12);
+  assert.equal(editorialQualityData.editorial_quality_comparison.reference_review.raw_text_included, false);
+  assert.equal(editorialQualityData.editorial_quality_comparison.candidate_editorial_synthesis.full_review_included, false);
+  assert.equal(editorialQualityData.editorial_quality_comparison.boundary.provider_call_performed, false);
+  assert.equal(editorialQualityData.editorial_quality_comparison.boundary.reference_review_text_in_output, false);
+  assert.equal(editorialQualityData.editorial_quality_comparison.boundary.candidate_full_review_in_output, false);
+  assert.equal(editorialQualityData.gate_effect, 'none');
+  assert.equal(Array.isArray(editorialQualityData.metric_diagnostics), true);
+  assert.doesNotMatch(editorialQualityComparison.stdout, /Reference leak sentinel/u);
+  assert.doesNotMatch(editorialQualityComparison.stdout, /product can be built well and still fail/u);
+
+  await writeFile(path.join(cwd, 'unsafe-reference-review.json'), JSON.stringify({
+    review_text: 'Readable review text is not enough when secret-bearing fields are present.',
+    token: 'not-a-real-token'
+  }, null, 2), 'utf8');
+  const unsafeEditorialQualityComparison = await executeCli([
+    'agentic',
+    'review',
+    'compare',
+    '--baseline',
+    'unsafe-reference-review.json',
+    '--candidate',
+    '.browser-debug/agentic-human-review-results/agentic-execution-source-text/result.json',
+    '--comparison-kind',
+    'editorial-quality',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(unsafeEditorialQualityComparison.exitCode, 1);
+  assert.equal(JSON.parse(unsafeEditorialQualityComparison.stdout).errors[0].code, 'AGENTIC_REVIEW_REFERENCE_REVIEW_RAW_CONTENT_REJECTED');
+
   const japaneseSourceTextPath = 'source-transcript-ja.txt';
   await writeFile(path.join(cwd, japaneseSourceTextPath), [
     '変化の速い時代には、何を信じてよいかわからなくなる疲れがある。',
