@@ -147,6 +147,7 @@ async function main() {
     await assertFile(packageDir, 'schemas/visual-review-result.schema.json');
     await assertFile(packageDir, 'schemas/visual-review-aggregation.schema.json');
     await assertFile(packageDir, 'schemas/review.schema.json');
+    await assertFile(packageDir, 'schemas/content-evidence.schema.json');
     await assertFile(packageDir, 'templates/review-target-manifest.json');
     await assertFile(packageDir, 'templates/status-dashboard-content-ux-target-manifest.json');
     await assertFile(packageDir, '.codex-plugin/plugin.json');
@@ -182,6 +183,7 @@ async function main() {
     const apiPath = requireFromInstall.resolve(PRODUCT_IDENTITY.packageName);
     const reviewSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('review'));
     const visualEvidenceSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('visual-evidence'));
+    const contentEvidenceSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('content-evidence'));
     const captureHandoffSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('capture-handoff'));
     const capturePlanSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('capture-plan'));
     const identityAuditSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('identity-audit'));
@@ -243,6 +245,7 @@ async function main() {
     assert.equal(path.normalize(apiPath), path.join(packageDir, 'src/api.js'));
     assert.equal(path.normalize(reviewSchemaPath), path.join(packageDir, 'schemas/review.schema.json'));
     assert.equal(path.normalize(visualEvidenceSchemaPath), path.join(packageDir, 'schemas/visual-evidence.schema.json'));
+    assert.equal(path.normalize(contentEvidenceSchemaPath), path.join(packageDir, 'schemas/content-evidence.schema.json'));
     assert.equal(path.normalize(captureHandoffSchemaPath), path.join(packageDir, 'schemas/capture-handoff.schema.json'));
     assert.equal(path.normalize(capturePlanSchemaPath), path.join(packageDir, 'schemas/capture-plan.schema.json'));
     assert.equal(path.normalize(identityAuditSchemaPath), path.join(packageDir, 'schemas/identity-audit.schema.json'));
@@ -465,6 +468,7 @@ async function main() {
     assert.equal(api.schemaNames().includes('operation_provider_readiness'), true);
     assert.equal(api.schemaNames().includes('visual_evidence'), true);
     assert.equal(api.schemaNames().includes('video_evidence'), true);
+    assert.equal(api.schemaNames().includes('content_evidence'), true);
     assert.equal(api.schemaNames().includes('visual_review_provider_policy'), true);
     assert.equal(api.schemaNames().includes('visual_review_result_preparation'), true);
     assert.equal(api.schemaNames().includes('visual_review_dashboard'), true);
@@ -703,6 +707,7 @@ async function main() {
     assert.ok(schemaNames.includes('operation_provider_readiness'));
     assert.ok(schemaNames.includes('visual_evidence'));
     assert.ok(schemaNames.includes('video_evidence'));
+    assert.ok(schemaNames.includes('content_evidence'));
     assert.ok(schemaNames.includes('visual_review_provider_policy'));
     assert.ok(schemaNames.includes('visual_review_result_preparation'));
     assert.ok(schemaNames.includes('visual_review_dashboard'));

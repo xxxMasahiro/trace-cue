@@ -3040,6 +3040,31 @@ function buildLocalEvidenceReferenceCatalog(traceCueRequest) {
       content_included: true
     });
   }
+  for (const [evidenceIndex, evidence] of arrayOrEmpty(traceCueRequest?.package?.content_evidence?.supplemental_evidence).entries()) {
+    const evidenceId = evidence?.id ?? `supplemental-content-${evidenceIndex + 1}`;
+    addReference({
+      id: evidenceId,
+      type: 'supplemental_content_evidence',
+      description: `Supplemental ${evidence?.source_type ?? 'content'} evidence ${evidenceId} from the approved request payload.`,
+      content_included: arrayOrEmpty(evidence?.content_units).length > 0
+    });
+    for (const [unitIndex] of arrayOrEmpty(evidence?.content_units).entries()) {
+      addReference({
+        id: `${evidenceId}:content-unit-${unitIndex + 1}`,
+        type: 'bounded_content_unit',
+        description: `Bounded supplemental content unit ${unitIndex + 1} from ${evidenceId}.`,
+        content_included: true
+      });
+    }
+    for (const [claimIndex] of arrayOrEmpty(evidence?.claims_observed).entries()) {
+      addReference({
+        id: `${evidenceId}:claim-${claimIndex + 1}`,
+        type: 'supplemental_content_claim',
+        description: `Supplemental content claim ${claimIndex + 1} from ${evidenceId}.`,
+        content_included: true
+      });
+    }
+  }
   for (const [index, reference] of arrayOrEmpty(traceCueRequest?.package?.artifact_references).entries()) {
     addReference({
       id: reference?.id ?? reference?.ref_id ?? `artifact-reference-${index + 1}`,
@@ -3480,6 +3505,7 @@ function compactProviderPlanPayload(plan, reviewPackage = null) {
     review_effort: compactReviewEffort(plan.review_effort),
     sub_agents: compactProviderSubAgents(plan.sub_agents),
     rounds: normalizeNumericArray(plan.rounds).slice(0, 12),
+    content_evidence: compactProviderContentEvidence(plan.content_evidence ?? reviewPackage?.content_evidence),
     evidence_plan: compactProviderEvidencePlan(plan.evidence_plan ?? reviewPackage?.evidence_plan),
     human_review_contract: compactProviderHumanReviewContract(plan.human_review_contract ?? reviewPackage?.human_review_input_contract),
     provider_instruction_contract: compactProviderInstructionContract(plan.provider_instruction_contract),
@@ -3992,8 +4018,97 @@ function compactProviderContentEvidence(value) {
     text_snippet_count: Number.isFinite(Number(value.text_snippet_count)) ? Number(value.text_snippet_count) : undefined,
     text_snippets: compactTextArray(value.text_snippets, PROVIDER_CONTEXT_LIMITS.contentSnippets, PROVIDER_CONTEXT_LIMITS.contentSnippetText),
     headings: compactTextArray(value.headings, PROVIDER_CONTEXT_LIMITS.headingText, 180),
-    action_text: compactTextArray(value.action_text, PROVIDER_CONTEXT_LIMITS.headingText, 140)
+    action_text: compactTextArray(value.action_text, PROVIDER_CONTEXT_LIMITS.headingText, 140),
+    supplemental_evidence_count: Number.isFinite(Number(value.supplemental_evidence_count)) ? Number(value.supplemental_evidence_count) : undefined,
+    supplemental_evidence_available_count: Number.isFinite(Number(value.supplemental_evidence_available_count)) ? Number(value.supplemental_evidence_available_count) : undefined,
+    supplemental_source_types: arrayOrEmpty(value.supplemental_source_types).slice(0, 20),
+    supplemental_content_unit_count: Number.isFinite(Number(value.supplemental_content_unit_count)) ? Number(value.supplemental_content_unit_count) : undefined,
+    supplemental_claim_count: Number.isFinite(Number(value.supplemental_claim_count)) ? Number(value.supplemental_claim_count) : undefined,
+    content_understanding_level: value.content_understanding_level,
+    supplemental_evidence: arrayOrEmpty(value.supplemental_evidence).slice(0, 20).map((item) => compactProviderSupplementalContentEvidence(item))
   });
+}
+
+function compactProviderSupplementalContentEvidence(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    evidence_kind: 'content_evidence',
+    id: value.id,
+    status: value.status,
+    source_type: value.source_type,
+    source: compactAdapterObject({
+      kind: value.source?.kind,
+      title: compactProviderContentText(firstString(value.source?.title, null), PROVIDER_OUTPUT_LIMITS.shortText),
+      media_id: value.source?.media_id,
+      duration_seconds: value.source?.duration_seconds,
+      page_count: value.source?.page_count
+    }),
+    summaries: compactAdapterObject({
+      content_summary: compactProviderContentTextArray(value.summaries?.content_summary, 12, PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+      transcript_summary: compactProviderContentTextArray(value.summaries?.transcript_summary, 12, PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+      visible_text_summary: compactProviderContentTextArray(value.summaries?.visible_text_summary, 12, PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+      section_summary: compactProviderContentTextArray(value.summaries?.section_summary, 12, PROVIDER_CONTEXT_LIMITS.contentSnippetText)
+    }),
+    content_units: arrayOrEmpty(value.content_units).slice(0, 20).map((unit) => compactAdapterObject({
+      id: unit?.id,
+      unit_type: unit?.unit_type,
+      text: compactProviderContentText(firstString(unit?.text, unit?.summary, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+      summary: compactProviderContentText(firstString(unit?.summary, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+      confidence: unit?.confidence
+    })).filter((unit) => unit.text || unit.summary),
+    claims_observed: arrayOrEmpty(value.claims_observed).slice(0, 20).map((claim) => compactAdapterObject({
+      id: claim?.id,
+      claim: compactProviderContentText(firstString(claim?.claim, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+      evidence: compactProviderContentText(firstString(claim?.evidence, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+      confidence: claim?.confidence
+    })).filter((claim) => claim.claim || claim.evidence),
+    limitations: compactProviderContentTextArray(value.limitations, 12, PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+    coverage: compactAdapterObject({
+      content_understanding_level: value.coverage?.content_understanding_level,
+      has_summary: value.coverage?.has_summary === true,
+      has_bounded_units: value.coverage?.has_bounded_units === true,
+      has_original_text: value.coverage?.has_original_text === true,
+      has_full_text: value.coverage?.has_full_text === true,
+      has_location_refs: value.coverage?.has_location_refs === true
+    }),
+    provenance: value.provenance ? {
+      input_hash: value.provenance.input_hash ?? null,
+      input_type: value.provenance.input_type ?? 'content_evidence',
+      source_tool: value.provenance.source_tool ?? null
+    } : null,
+    raw_content_embedded_in_json: false,
+    raw_binary_embedded_in_json: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+}
+
+function compactProviderContentTextArray(values, maxItems, maxLength) {
+  return normalizeStringArray(values)
+    .slice(0, maxItems)
+    .map((value) => compactProviderContentText(value, maxLength))
+    .filter(Boolean);
+}
+
+function compactProviderContentText(value, maxLength) {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const text = value.trim();
+  if (!text || isProviderContentRawLike(text)) {
+    return undefined;
+  }
+  return truncateText(redactString(text), maxLength);
+}
+
+function isProviderContentRawLike(value) {
+  const text = String(value ?? '').trim();
+  return /^blob:/iu.test(text)
+    || /^data:(?:(?:video|audio|image)\/|application\/pdf(?:[;,]|$)|text\/html(?:[;,]|$))/iu.test(text)
+    || /^%PDF-/u.test(text)
+    || /<\s*(?:!doctype\s+html|html|body|script|iframe|object|embed)\b/iu.test(text);
 }
 
 function compactProviderVisibleTextProvenance(value) {

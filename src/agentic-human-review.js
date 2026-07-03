@@ -60,6 +60,8 @@ export const HUMAN_REVIEW_MULTI_STEP_XHIGH_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EVIDENCE_PROVENANCE_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EDITORIAL_SYNTHESIS_VERSION = '1.0.0';
 export const HUMAN_REVIEW_VIDEO_EVIDENCE_VERSION = '1.0.0';
+export const HUMAN_REVIEW_CONTENT_EVIDENCE_VERSION = '1.0.0';
+export const HUMAN_REVIEW_EDITORIAL_COMPOSER_VERSION = '1.0.0';
 export const HUMAN_REVIEW_QUALITY_DIAGNOSTICS_VERSION = '1.0.0';
 
 const DEFAULT_PROVIDER_ID = 'fake-agent';
@@ -73,6 +75,8 @@ const MAX_ROLE_OPINIONS = 12;
 const MAX_FINDINGS = 50;
 const MAX_HUMAN_BASELINE_LABELS = 100;
 const MAX_VIDEO_EVIDENCE_ITEMS = 20;
+const MAX_CONTENT_EVIDENCE_ITEMS = 40;
+const MAX_CONTENT_EVIDENCE_TEXT = 1200;
 const MAX_PROPOSAL_BRIEF_BYTES = 32 * 1024;
 const AGENTIC_REVIEW_EXECUTION_MODES = new Set(['one-shot', 'staged']);
 const STAGED_EFFORT_EXECUTION_VERSION = '1.0.0';
@@ -108,7 +112,27 @@ const VIDEO_EVIDENCE_SCOPE_VALUES = new Set([
   'page_only',
   'video_evidence_only',
   'page_and_video_evidence',
-  'insufficient_video_evidence'
+  'insufficient_video_evidence',
+  'content_evidence_only',
+  'page_and_content_evidence',
+  'insufficient_content_evidence'
+]);
+const CONTENT_EVIDENCE_SOURCE_TYPES = new Set([
+  'video',
+  'web_page',
+  'pdf',
+  'meeting_notes',
+  'document',
+  'transcript',
+  'other'
+]);
+const CONTENT_UNDERSTANDING_LEVELS = new Set([
+  'none',
+  'metadata',
+  'summary',
+  'excerpt',
+  'full_text',
+  'multimodal'
 ]);
 
 const TRANSFER_CLASSES = Object.freeze([
@@ -373,6 +397,14 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
   if (!videoEvidenceRead.ok) {
     return errorResult(videoEvidenceRead.error.code, videoEvidenceRead.error.message, videoEvidenceRead.error.details);
   }
+  const contentEvidenceRead = await readContentEvidenceForPlan({
+    cwd,
+    options,
+    maxBytes: maxBytes.value
+  });
+  if (!contentEvidenceRead.ok) {
+    return errorResult(contentEvidenceRead.error.code, contentEvidenceRead.error.message, contentEvidenceRead.error.details);
+  }
   const reviewIndexPreview = await buildProposalReviewIndexPreview({
     cwd,
     options,
@@ -382,7 +414,8 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
     brief: briefRead.brief,
     maxBytes: maxBytes.value,
     provider: provider.provider,
-    videoEvidence: videoEvidenceRead.evidence
+    videoEvidence: videoEvidenceRead.evidence,
+    contentEvidence: contentEvidenceRead.evidence
   });
   if (!reviewIndexPreview.ok) {
     return errorResult(reviewIndexPreview.error.code, reviewIndexPreview.error.message, reviewIndexPreview.error.details);
@@ -426,6 +459,8 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
       review_index_hash: reviewIndexPreview.reviewIndexHash,
       video_evidence_path: videoEvidenceRead.relativePath,
       video_evidence_hash: videoEvidenceRead.hash,
+      content_evidence_path: contentEvidenceRead.relativePath,
+      content_evidence_hash: contentEvidenceRead.hash,
       case_id: stringOrNull(options['case-id']),
       fixture_id: stringOrNull(options['fixture-id'])
     },
@@ -445,6 +480,7 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
       benchmark_case_id: stringOrNull(options['benchmark-case'] ?? options['case-id']),
       human_baseline_path: ownerBaselineContractRead.relativePath,
       video_evidence_path: videoEvidenceRead.relativePath,
+      content_evidence_path: contentEvidenceRead.relativePath,
       rubric_profile_id: stringOrNull(options['rubric-profile']),
       evidence_plan_mode: stringOrNull(options['evidence-plan-mode']),
       dogfood_metadata: buildDogfoodMetadataFromOptions(options)
@@ -471,6 +507,7 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
     transfer_preview: reviewIndexPreview.transferPermissions,
     owner_baseline_requirement_preview: ownerBaselineContractRead.contract,
     video_evidence_preview: videoEvidenceRead.evidence,
+    content_evidence_preview: contentEvidenceRead.evidence,
     provider: provider.provider,
     model,
     surface: surfaceSummary(surface),
@@ -538,7 +575,7 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
       approval_required: true,
       boundary: proposal.boundary
     },
-    warnings: [...briefRead.warnings, ...reviewIndexPreview.warnings, ...videoEvidenceRead.warnings, ...ownerBaselineContractRead.warnings],
+    warnings: [...briefRead.warnings, ...reviewIndexPreview.warnings, ...videoEvidenceRead.warnings, ...contentEvidenceRead.warnings, ...ownerBaselineContractRead.warnings],
     errors: [],
     artifacts: [
       artifactObject({
@@ -612,6 +649,14 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
   if (!videoEvidenceRead.ok) {
     return errorResult(videoEvidenceRead.error.code, videoEvidenceRead.error.message, videoEvidenceRead.error.details);
   }
+  const contentEvidenceRead = await readContentEvidenceForPlan({
+    cwd,
+    options: planOptions,
+    maxBytes: maxBytes.value
+  });
+  if (!contentEvidenceRead.ok) {
+    return errorResult(contentEvidenceRead.error.code, contentEvidenceRead.error.message, contentEvidenceRead.error.details);
+  }
   const intentRead = await resolveIntent(planOptions, context);
   if (!intentRead.ok) {
     return errorResult(intentRead.error.code, intentRead.error.message, intentRead.error.details);
@@ -657,6 +702,7 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
     reviewIndexHash: hashText(reviewIndexRead.text),
     reviewArtifact,
     videoEvidence: videoEvidenceRead.evidence,
+    contentEvidence: contentEvidenceRead.evidence,
     intent: intentRead.intent,
     targetAudience: planOptions['target-audience'],
     expectedImpression: planOptions['expected-impression']
@@ -814,6 +860,7 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
     transfer_permissions: transferPermissions,
     evidence_plan: evidencePlan,
     video_evidence: reviewPackage.video_evidence,
+    content_evidence: reviewPackage.content_evidence,
     disclosure: {
       scope: 'agentic_human_review_plan',
       raw_pixels_may_be_transferred_after_flag: transferPermissions.classes.raw_pixels.required_for_execution,
@@ -822,6 +869,7 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
       url_metadata_included: transferPermissions.classes.url.included,
       artifact_references_included: transferPermissions.classes.artifact_refs.included,
       accessibility_summary_included: transferPermissions.classes.accessibility_summary.included,
+      content_evidence_summary_included: Number(reviewPackage.content_evidence?.supplemental_evidence_count ?? 0) > 0,
       external_evidence_transfer_authorized: false,
       provider_execution_authorized: false,
       raw_provider_response_storage_allowed: false
@@ -947,7 +995,7 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
   await writeJsonArtifact(root, ['agentic-human-review-plans', id, 'plan.json'], plan);
   await writeJsonArtifact(root, ['receipts', `${id}-agentic-plan.json`], planReceipt);
 
-  const warnings = [...reviewArtifact.warnings, ...videoEvidenceRead.warnings, ...intentRead.warnings, ...ownerBaselineContractRead.warnings];
+  const warnings = [...reviewArtifact.warnings, ...videoEvidenceRead.warnings, ...contentEvidenceRead.warnings, ...intentRead.warnings, ...ownerBaselineContractRead.warnings];
   return {
     status: 'ok',
     data: {
@@ -5613,6 +5661,7 @@ function buildReviewPackage({
   reviewIndexHash,
   reviewArtifact,
   videoEvidence = null,
+  contentEvidence = null,
   intent,
   targetAudience,
   expectedImpression
@@ -5652,7 +5701,9 @@ function buildReviewPackage({
       artifact_count: artifactRefs.length,
       evidence_classes: normalizeStringArray(reviewIndex.evidence_classes),
       video_evidence_path: videoEvidence?.provenance?.input_path ?? null,
-      video_evidence_hash: videoEvidence?.provenance?.input_hash ?? null
+      video_evidence_hash: videoEvidence?.provenance?.input_hash ?? null,
+      content_evidence_path: contentEvidence?.provenance?.input_path ?? null,
+      content_evidence_hash: contentEvidence?.provenance?.input_hash ?? null
     },
     visual_evidence: {
       reference_count: artifactRefs.filter(isVisualReference).length,
@@ -5666,7 +5717,12 @@ function buildReviewPackage({
       viewport
     }),
     video_evidence: buildVideoEvidencePackage(videoEvidence),
-    content_evidence: {
+    content_evidence: buildPackageContentEvidence({
+      textSnippets,
+      contentEvidence,
+      videoEvidence
+    }),
+    page_content_evidence: {
       text_snippet_count: textSnippets.length,
       text_snippets: textSnippets,
       page_text_included_as_bounded_summary: textSnippets.length > 0,
@@ -5712,6 +5768,7 @@ function buildReviewPackage({
       url_metadata_included: Boolean(route),
       local_artifact_references_included: artifactRefs.length > 0,
       video_evidence_summary_included: videoEvidence?.status === 'available',
+      content_evidence_summary_included: contentEvidence?.status === 'available',
       external_evidence_transfer_authorized: false,
       provider_execution_authorized: false
     },
@@ -5887,6 +5944,466 @@ function buildVideoEvidencePackage(videoEvidence) {
   };
 }
 
+function buildPackageContentEvidence({ textSnippets = [], contentEvidence = null, videoEvidence = null } = {}) {
+  const supplementalEvidence = [
+    buildContentEvidencePackage(contentEvidence),
+    buildContentEvidenceFromVideoEvidence(videoEvidence)
+  ].filter((item) => item && item.status !== 'not_supplied');
+  const usableEvidence = supplementalEvidence.filter((item) => item.status === 'available');
+  const sourceTypes = uniqueStrings(supplementalEvidence.map((item) => item.source_type).filter(Boolean));
+  const contentUnitCount = supplementalEvidence.reduce((count, item) => count + Number(item.content_unit_count ?? 0), 0);
+  const claimCount = supplementalEvidence.reduce((count, item) => count + Number(item.claim_count ?? 0), 0);
+  const understandingLevel = strongestContentUnderstandingLevel(supplementalEvidence.map((item) => item.coverage?.content_understanding_level));
+  return {
+    text_snippet_count: textSnippets.length,
+    text_snippets: textSnippets,
+    page_text_included_as_bounded_summary: textSnippets.length > 0,
+    raw_dom_included: false,
+    raw_report_body_included: false,
+    supplemental_evidence_count: supplementalEvidence.length,
+    supplemental_evidence_available_count: usableEvidence.length,
+    supplemental_evidence: supplementalEvidence,
+    supplemental_source_types: sourceTypes,
+    supplemental_content_unit_count: contentUnitCount,
+    supplemental_claim_count: claimCount,
+    content_understanding_level: understandingLevel,
+    raw_content_embedded_in_json: false,
+    raw_binary_embedded_in_json: false,
+    full_source_text_embedded_in_json: supplementalEvidence.some((item) => item.coverage?.has_full_text === true),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+async function readContentEvidenceForPlan({ cwd, options, maxBytes }) {
+  const inputPath = options['content-evidence'];
+  if (!inputPath) {
+    return { ok: true, evidence: null, relativePath: null, hash: null, warnings: [] };
+  }
+  const read = await readWorkspaceJson({
+    cwd,
+    inputPath,
+    label: 'agentic human review content evidence',
+    maxBytes
+  });
+  if (!read.ok) {
+    return { ok: false, error: read.error };
+  }
+  const normalized = normalizeContentEvidenceArtifact({
+    input: read.value,
+    inputPath: read.relativePath,
+    inputHash: hashText(read.text)
+  });
+  if (!normalized.ok) {
+    return { ok: false, error: normalized.error };
+  }
+  return {
+    ok: true,
+    evidence: normalized.evidence,
+    relativePath: read.relativePath,
+    hash: hashText(read.text),
+    warnings: normalized.warnings
+  };
+}
+
+function normalizeContentEvidenceArtifact({ input, inputPath, inputHash }) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return validationError('AGENTIC_REVIEW_CONTENT_EVIDENCE_INVALID', 'Content evidence must be a JSON object.', {
+      input: inputPath
+    });
+  }
+  const disallowed = findDisallowedContentEvidenceContent(input);
+  if (disallowed.length > 0) {
+    return validationError('AGENTIC_REVIEW_CONTENT_EVIDENCE_RAW_CONTENT_REJECTED', 'Content evidence must use bounded summaries or content units and must not include raw media, base64 payloads, raw HTML/PDF bytes, full documents, or full transcripts.', {
+      input: inputPath,
+      rejected_fields: disallowed.slice(0, 20)
+    });
+  }
+
+  const sourceType = normalizeEnum(input.source_type ?? input.content_type ?? input.kind, [...CONTENT_EVIDENCE_SOURCE_TYPES], 'other');
+  const source = normalizeContentEvidenceSource(input, sourceType);
+  const provider = normalizeContentEvidenceProvider(input);
+  const summaries = normalizeContentEvidenceSummaries(input);
+  const contentUnits = normalizeContentEvidenceUnits(input.content_units ?? input.units ?? input.excerpts ?? input.sections ?? input.chunks);
+  const claimsObserved = normalizeContentEvidenceClaims(input.claims_observed ?? input.observed_claims ?? input.claims ?? input.content_claims);
+  const limitations = normalizeStringArray(input.limitations ?? input.uncertainties ?? input.analysis_limitations).slice(0, MAX_CONTENT_EVIDENCE_ITEMS);
+  const coverage = normalizeContentEvidenceCoverage({
+    sourceType,
+    input,
+    summaries,
+    contentUnits,
+    claimsObserved
+  });
+  const evidenceCount = contentUnits.length
+    + claimsObserved.length
+    + Object.values(summaries).reduce((count, value) => count + value.length, 0);
+  const status = evidenceCount > 0 ? 'available' : 'insufficient';
+  const warnings = status === 'insufficient'
+    ? [{
+        code: 'AGENTIC_REVIEW_CONTENT_EVIDENCE_INSUFFICIENT',
+        message: 'The supplied content evidence did not include summaries, bounded content units, or observed claims.',
+        details: { input: inputPath }
+      }]
+    : [];
+
+  return {
+    ok: true,
+    evidence: redact({
+      schema_version: SCHEMA_VERSION,
+      evidence_version: HUMAN_REVIEW_CONTENT_EVIDENCE_VERSION,
+      evidence_kind: 'content_evidence',
+      id: truncateText(input.id ?? input.evidence_id ?? input.ref_id ?? `content-evidence-${inputHash.slice(0, 12)}`, 120),
+      status,
+      source_type: sourceType,
+      source,
+      provider,
+      summaries,
+      content_units: contentUnits,
+      claims_observed: claimsObserved,
+      limitations,
+      coverage,
+      privacy: {
+        raw_media_embedded_in_json: false,
+        raw_binary_embedded_in_json: false,
+        raw_html_embedded_in_json: false,
+        raw_pdf_embedded_in_json: false,
+        full_transcript_embedded_in_json: false,
+        full_document_embedded_in_json: coverage.has_full_text === true,
+        bounded_text_units_only: true
+      },
+      provenance: {
+        input_path: inputPath,
+        input_hash: inputHash,
+        input_type: stringOrNull(input.type ?? input.evidence_kind) ?? 'content_evidence',
+        generated_at: stringOrNull(input.generated_at ?? input.created_at),
+        source_tool: stringOrNull(input.source_tool ?? input.tool ?? input.provider?.id ?? input.provider_id)
+      },
+      boundary: contentEvidenceBoundary(),
+      advisory_only: true,
+      gate_effect: 'none'
+    }),
+    warnings
+  };
+}
+
+function buildContentEvidencePackage(contentEvidence) {
+  if (!contentEvidence) {
+    return null;
+  }
+  return {
+    schema_version: SCHEMA_VERSION,
+    evidence_version: HUMAN_REVIEW_CONTENT_EVIDENCE_VERSION,
+    evidence_kind: 'content_evidence',
+    id: contentEvidence.id,
+    status: contentEvidence.status,
+    source_type: contentEvidence.source_type ?? 'other',
+    source: {
+      kind: contentEvidence.source?.kind ?? null,
+      title: contentEvidence.source?.title ?? null,
+      locator: contentEvidence.source?.locator ?? null,
+      media_id: contentEvidence.source?.media_id ?? null,
+      duration_seconds: contentEvidence.source?.duration_seconds ?? null,
+      page_count: contentEvidence.source?.page_count ?? null
+    },
+    provider: contentEvidence.provider ?? null,
+    summaries: contentEvidence.summaries ?? {},
+    content_units: Array.isArray(contentEvidence.content_units) ? contentEvidence.content_units : [],
+    claims_observed: Array.isArray(contentEvidence.claims_observed) ? contentEvidence.claims_observed : [],
+    limitations: Array.isArray(contentEvidence.limitations) ? contentEvidence.limitations : [],
+    coverage: contentEvidence.coverage ?? { content_understanding_level: 'none' },
+    summary_count: Object.values(contentEvidence.summaries ?? {}).reduce((count, value) => count + (Array.isArray(value) ? value.length : 0), 0),
+    content_unit_count: Array.isArray(contentEvidence.content_units) ? contentEvidence.content_units.length : 0,
+    claim_count: Array.isArray(contentEvidence.claims_observed) ? contentEvidence.claims_observed.length : 0,
+    provenance: {
+      input_hash: contentEvidence.provenance?.input_hash ?? null,
+      input_type: contentEvidence.provenance?.input_type ?? 'content_evidence',
+      source_tool: contentEvidence.provenance?.source_tool ?? null
+    },
+    raw_content_embedded_in_json: false,
+    raw_binary_embedded_in_json: false,
+    boundary: contentEvidenceBoundary(),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildContentEvidenceFromVideoEvidence(videoEvidence) {
+  if (!videoEvidence) {
+    return null;
+  }
+  const packageValue = buildVideoEvidencePackage(videoEvidence);
+  if (packageValue.status === 'not_supplied') {
+    return null;
+  }
+  const timelineUnits = (packageValue.summaries?.timeline ?? []).map((item, index) => ({
+    id: truncateText(`video-timeline-${index + 1}`, 120),
+    unit_type: 'timeline_summary',
+    locator: truncateText(item.time_range ?? '', 160),
+    text: secretSafeText([item.time_range, item.summary, ...(item.observations ?? [])].filter(Boolean).join(' '), MAX_CONTENT_EVIDENCE_TEXT),
+    summary: secretSafeText(item.summary ?? '', 700),
+    source_refs: [`video_evidence:${packageValue.id ?? 'video'}`],
+    confidence: 'medium'
+  })).filter((item) => item.text || item.summary);
+  const summaryUnits = [
+    ...(packageValue.summaries?.content_summary ?? []).map((text, index) => ({ id: `video-content-summary-${index + 1}`, unit_type: 'summary', text })),
+    ...(packageValue.summaries?.transcript_summary ?? []).map((text, index) => ({ id: `video-transcript-summary-${index + 1}`, unit_type: 'transcript_summary', text })),
+    ...(packageValue.summaries?.visible_text_summary ?? []).map((text, index) => ({ id: `video-visible-text-summary-${index + 1}`, unit_type: 'visible_text_summary', text }))
+  ].map((item) => ({
+    id: truncateText(item.id, 120),
+    unit_type: item.unit_type,
+    locator: null,
+    text: secretSafeText(item.text, MAX_CONTENT_EVIDENCE_TEXT),
+    summary: secretSafeText(item.text, 700),
+    source_refs: [`video_evidence:${packageValue.id ?? 'video'}`],
+    confidence: 'medium'
+  })).filter((item) => item.text);
+  const contentUnits = [...timelineUnits, ...summaryUnits].slice(0, MAX_CONTENT_EVIDENCE_ITEMS);
+  const summaries = {
+    content_summary: packageValue.summaries?.content_summary ?? [],
+    transcript_summary: packageValue.summaries?.transcript_summary ?? [],
+    visible_text_summary: packageValue.summaries?.visible_text_summary ?? [],
+    section_summary: normalizeVideoTimelineEditorialText(packageValue.summaries?.timeline).slice(0, MAX_CONTENT_EVIDENCE_ITEMS)
+  };
+  const summaryCount = Object.values(summaries).reduce((count, value) => count + value.length, 0);
+  const status = packageValue.status === 'available' && (summaryCount + contentUnits.length + (packageValue.claims_observed ?? []).length) > 0
+    ? 'available'
+    : 'insufficient';
+  return {
+    schema_version: SCHEMA_VERSION,
+    evidence_version: HUMAN_REVIEW_CONTENT_EVIDENCE_VERSION,
+    evidence_kind: 'content_evidence',
+    id: packageValue.id ? `content-from-${packageValue.id}` : 'content-from-video-evidence',
+    status,
+    source_type: 'video',
+    source: {
+      kind: packageValue.source?.kind ?? 'external_video_evidence',
+      title: packageValue.source?.title ?? null,
+      locator: null,
+      media_id: packageValue.source?.media_id ?? null,
+      duration_seconds: packageValue.source?.duration_seconds ?? null,
+      page_count: null
+    },
+    provider: packageValue.provider ?? null,
+    summaries,
+    content_units: contentUnits,
+    claims_observed: packageValue.claims_observed ?? [],
+    limitations: packageValue.limitations ?? [],
+    coverage: {
+      source_type: 'video',
+      content_understanding_level: contentUnits.length > 0 ? 'summary' : 'metadata',
+      has_summary: summaryCount > 0,
+      has_bounded_units: contentUnits.length > 0,
+      has_original_text: false,
+      has_full_text: false,
+      has_location_refs: timelineUnits.length > 0,
+      original_text_coverage_score: 0,
+      location_reference_coverage_score: timelineUnits.length > 0 ? 1 : 0,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    summary_count: summaryCount,
+    content_unit_count: contentUnits.length,
+    claim_count: packageValue.claim_count ?? 0,
+    provenance: packageValue.provenance,
+    raw_content_embedded_in_json: false,
+    raw_binary_embedded_in_json: false,
+    boundary: contentEvidenceBoundary(),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function normalizeContentEvidenceSource(input, sourceType) {
+  const source = input.source && typeof input.source === 'object' ? input.source : input;
+  return {
+    kind: truncateText(source.kind ?? source.source_kind ?? sourceType, 120),
+    locator: stringOrNull(source.locator ?? source.url ?? source.source_url ?? source.document_url ?? input.url),
+    media_id: truncateText(source.media_id ?? source.video_id ?? source.document_id ?? input.media_id ?? input.video_id ?? input.document_id, 160),
+    title: secretSafeText(source.title ?? input.title ?? '', 300),
+    duration_seconds: Number(source.duration_seconds ?? input.duration_seconds) || null,
+    page_count: Number(source.page_count ?? source.pages ?? input.page_count) || null
+  };
+}
+
+function normalizeContentEvidenceProvider(input) {
+  const provider = input.provider && typeof input.provider === 'object' ? input.provider : {};
+  return {
+    id: truncateText(provider.id ?? input.provider_id ?? input.tool_id ?? 'external-content-evidence-provider', 160),
+    kind: truncateText(provider.kind ?? input.provider_kind ?? 'external_metadata', 120),
+    version: stringOrNull(provider.version ?? input.provider_version ?? input.tool_version),
+    local_execution_declared: provider.local_execution === true || input.local_execution === true,
+    api_call_declared: provider.api_call_performed === true || input.api_call_performed === true
+  };
+}
+
+function normalizeContentEvidenceSummaries(input) {
+  return {
+    content_summary: normalizeStringArray(input.content_summary ?? input.summary ?? input.document_summary ?? input.narrative_summary).slice(0, MAX_CONTENT_EVIDENCE_ITEMS),
+    transcript_summary: normalizeStringArray(input.transcript_summary ?? input.transcript?.summary ?? input.speech_summary ?? input.audio_summary).slice(0, MAX_CONTENT_EVIDENCE_ITEMS),
+    visible_text_summary: normalizeStringArray(input.visible_text_summary ?? input.visible_text?.summary ?? input.ocr_summary ?? input.screen_text_summary).slice(0, MAX_CONTENT_EVIDENCE_ITEMS),
+    section_summary: normalizeContentEvidenceSectionSummaries(input.section_summary ?? input.sections_summary ?? input.timeline_summary ?? input.timeline)
+  };
+}
+
+function normalizeContentEvidenceSectionSummaries(value) {
+  const items = Array.isArray(value) ? value : normalizeStringArray(value).map((summary) => ({ summary }));
+  return items.slice(0, MAX_CONTENT_EVIDENCE_ITEMS).map((item, index) => {
+    const record = item && typeof item === 'object' ? item : { summary: item };
+    const label = record.label ?? record.heading ?? record.time_range ?? record.page ?? record.location ?? '';
+    const summary = record.summary ?? record.description ?? record.text ?? '';
+    return secretSafeText([label, summary].filter(Boolean).join(': '), MAX_CONTENT_EVIDENCE_TEXT);
+  }).filter(Boolean);
+}
+
+function normalizeContentEvidenceUnits(value) {
+  const items = Array.isArray(value) ? value : normalizeStringArray(value).map((text) => ({ text }));
+  return items.slice(0, MAX_CONTENT_EVIDENCE_ITEMS).map((item, index) => {
+    const record = item && typeof item === 'object' ? item : { text: item };
+    return {
+      id: truncateText(record.id ?? `content-unit-${index + 1}`, 120),
+      unit_type: truncateText(record.unit_type ?? record.type ?? record.kind ?? 'excerpt', 80),
+      locator: truncateText(record.locator ?? record.location ?? record.time_range ?? record.page ?? record.heading ?? '', 160),
+      text: secretSafeText(record.text ?? record.excerpt ?? record.quote ?? record.content ?? '', MAX_CONTENT_EVIDENCE_TEXT),
+      summary: secretSafeText(record.summary ?? record.description ?? '', 700),
+      source_refs: normalizeStringArray(record.source_refs ?? record.evidence_refs).slice(0, 8),
+      confidence: normalizeEnum(record.confidence, ['low', 'medium', 'high', 'inconclusive'], 'inconclusive')
+    };
+  }).filter((item) => item.text || item.summary);
+}
+
+function normalizeContentEvidenceClaims(value) {
+  const items = Array.isArray(value) ? value : normalizeStringArray(value).map((claim) => ({ claim }));
+  return items.slice(0, MAX_CONTENT_EVIDENCE_ITEMS).map((item, index) => {
+    const record = item && typeof item === 'object' ? item : { claim: item };
+    return {
+      id: truncateText(record.id ?? `content-claim-${index + 1}`, 120),
+      claim: secretSafeText(record.claim ?? record.summary ?? record.text ?? '', 700),
+      evidence: secretSafeText(record.evidence ?? record.reason ?? record.context ?? '', 700),
+      locator: truncateText(record.locator ?? record.location ?? record.time_range ?? record.page ?? '', 160),
+      confidence: normalizeEnum(record.confidence, ['low', 'medium', 'high', 'inconclusive'], 'inconclusive')
+    };
+  }).filter((item) => item.claim);
+}
+
+function normalizeContentEvidenceCoverage({ sourceType, input, summaries, contentUnits, claimsObserved }) {
+  const declared = input.coverage && typeof input.coverage === 'object' ? input.coverage : {};
+  const summaryCount = Object.values(summaries).reduce((count, value) => count + value.length, 0);
+  const hasOriginalText = declared.has_original_text === true || contentUnits.some((item) => item.text && item.unit_type.includes('excerpt'));
+  const hasFullText = declared.has_full_text === true || declared.full_text === true;
+  const hasLocationRefs = declared.has_location_refs === true || contentUnits.some((item) => item.locator) || claimsObserved.some((item) => item.locator);
+  const level = normalizeContentUnderstandingLevel({
+    declared: declared.content_understanding_level ?? input.content_understanding_level,
+    sourceType,
+    hasFullText,
+    hasOriginalText,
+    hasLocationRefs,
+    summaryCount,
+    contentUnitCount: contentUnits.length
+  });
+  return {
+    source_type: sourceType,
+    content_understanding_level: level,
+    has_summary: summaryCount > 0,
+    has_bounded_units: contentUnits.length > 0,
+    has_original_text: hasOriginalText,
+    has_full_text: hasFullText,
+    has_location_refs: hasLocationRefs,
+    original_text_coverage_score: clampScore(Number(declared.original_text_coverage_score ?? (hasFullText ? 1 : hasOriginalText ? 0.6 : summaryCount > 0 ? 0.25 : 0))),
+    location_reference_coverage_score: clampScore(Number(declared.location_reference_coverage_score ?? (hasLocationRefs ? 1 : 0))),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function normalizeContentUnderstandingLevel({ declared, sourceType, hasFullText, hasOriginalText, hasLocationRefs, summaryCount, contentUnitCount }) {
+  const order = ['none', 'metadata', 'summary', 'excerpt', 'full_text', 'multimodal'];
+  const supported = hasFullText
+    ? 'full_text'
+    : (hasOriginalText || contentUnitCount > 0)
+      ? (sourceType === 'video' && hasLocationRefs ? 'multimodal' : 'excerpt')
+      : summaryCount > 0
+        ? 'summary'
+        : 'metadata';
+  if (CONTENT_UNDERSTANDING_LEVELS.has(declared)) {
+    return order.indexOf(declared) <= order.indexOf(supported) ? declared : supported;
+  }
+  return supported;
+}
+
+function strongestContentUnderstandingLevel(levels) {
+  const order = ['none', 'metadata', 'summary', 'excerpt', 'full_text', 'multimodal'];
+  return levels.reduce((best, level) => {
+    const normalized = CONTENT_UNDERSTANDING_LEVELS.has(level) ? level : 'none';
+    return order.indexOf(normalized) > order.indexOf(best) ? normalized : best;
+  }, 'none');
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.map((value) => typeof value === 'string' ? value.trim() : '').filter(Boolean))];
+}
+
+function findDisallowedContentEvidenceContent(value, trail = []) {
+  const rejected = [];
+  if (!value || typeof value !== 'object') {
+    return rejected;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const nextTrail = [...trail, key];
+    const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]+/gu, '_');
+    const pathLabel = nextTrail.join('.');
+    const withinBoundedUnit = nextTrail.includes('content_units') || nextTrail.includes('units') || nextTrail.includes('excerpts') || nextTrail.includes('sections') || nextTrail.includes('chunks');
+    const boundedTextKey = withinBoundedUnit && ['text', 'excerpt', 'quote', 'content', 'summary', 'description'].includes(normalizedKey);
+    const rawBinaryKey = /(^|_)(raw|base64|bytes|binary|blob|data_uri|payload)($|_)/u.test(normalizedKey);
+    const fullSourceKey = /(^|_)(full_transcript|transcript_full|raw_transcript|full_text|raw_text|document_body|raw_document|raw_html|html_body|pdf_bytes|raw_pdf|raw_content)($|_)/u.test(normalizedKey);
+    const rawMediaKey = rawBinaryKey && /(video|audio|pixel|frame|image|thumbnail|media|document|pdf|html|content|payload|transcript|text)/u.test(normalizedKey);
+    if (!boundedTextKey && (rawMediaKey || fullSourceKey) && hasNonEmptyValue(child)) {
+      rejected.push(pathLabel);
+      continue;
+    }
+    if (typeof child === 'string') {
+      const trimmed = child.trim();
+      if (/^blob:/iu.test(trimmed) || /^data:(?:(?:video|audio|image)\/|application\/pdf(?:[;,]|$)|text\/html(?:[;,]|$))/iu.test(trimmed)) {
+        rejected.push(pathLabel);
+        continue;
+      }
+      if (/^%PDF-/u.test(trimmed) || /<\s*(?:!doctype\s+html|html|body|script|iframe|object|embed)\b/iu.test(trimmed)) {
+        rejected.push(pathLabel);
+        continue;
+      }
+      if (boundedTextKey && trimmed.length > MAX_CONTENT_EVIDENCE_TEXT * 2) {
+        rejected.push(pathLabel);
+        continue;
+      }
+    }
+    if (child && typeof child === 'object') {
+      rejected.push(...findDisallowedContentEvidenceContent(child, nextTrail));
+    }
+  }
+  return rejected;
+}
+
+function contentEvidenceBoundary() {
+  return {
+    bounded_summary_or_units_only: true,
+    workspace_confined_input: true,
+    raw_media_read_by_tracecue: false,
+    raw_binary_read_by_tracecue: false,
+    raw_html_read_by_tracecue: false,
+    raw_pdf_read_by_tracecue: false,
+    raw_media_embedded_in_json: false,
+    raw_binary_embedded_in_json: false,
+    raw_content_transferred: false,
+    provider_call_performed: false,
+    api_call_performed: false,
+    external_evidence_transfer: false,
+    credential_values_recorded: false,
+    mcp_execution_exposed: false,
+    deterministic_findings_mutated: false,
+    release_gate_mutated: false,
+    gate_effect: 'none'
+  };
+}
+
 function normalizeVideoEvidenceSource(input) {
   const source = input.source && typeof input.source === 'object' ? input.source : input;
   return {
@@ -5952,7 +6469,7 @@ function findDisallowedVideoEvidenceContent(value, trail = []) {
       rejected.push(pathLabel);
       continue;
     }
-    if (typeof child === 'string' && /^data:(video|audio|image)\//iu.test(child.trim())) {
+    if (typeof child === 'string' && (/^blob:/iu.test(child.trim()) || /^data:(?:video|audio|image)\//iu.test(child.trim()))) {
       rejected.push(pathLabel);
       continue;
     }
@@ -8622,7 +9139,12 @@ function inferRubricProfileId(reviewPackage) {
     reviewPackage?.task?.intent,
     reviewPackage?.source?.review_mode,
     reviewPackage?.source?.route,
-    ...(reviewPackage?.content_evidence?.text_snippets ?? []).map((item) => item.text)
+    ...(reviewPackage?.content_evidence?.text_snippets ?? []).map((item) => item.text),
+    ...(reviewPackage?.content_evidence?.supplemental_evidence ?? []).flatMap((item) => [
+      item.source_type,
+      ...(item.summaries?.content_summary ?? []),
+      ...(item.content_units ?? []).map((unit) => unit.text ?? unit.summary)
+    ])
   ].filter(Boolean).join(' ').toLowerCase();
   if (/\b(blog|article|post|readability|copy|content)\b/.test(text)) {
     return 'blog-content';
@@ -8648,7 +9170,8 @@ function buildEvidencePlan({ reviewPackage, intent, provider, rubricProfile, mod
   const profilePriority = new Set(rubricProfile?.evidence_priority ?? []);
   const hasVisualReference = Number(reviewPackage.visual_evidence?.reference_count ?? 0) > 0;
   const hasVideoEvidence = reviewPackage.video_evidence?.status === 'available';
-  const hasText = Number(reviewPackage.content_evidence?.text_snippet_count ?? 0) > 0;
+  const hasText = Number(reviewPackage.content_evidence?.text_snippet_count ?? 0) > 0
+    || Number(reviewPackage.content_evidence?.supplemental_evidence_available_count ?? 0) > 0;
   const hasRoute = Boolean(reviewPackage.source?.route);
   const hasArtifacts = Number(reviewPackage.source?.artifact_count ?? 0) > 0;
   const classInputs = {
@@ -8713,6 +9236,10 @@ function buildEvidencePlan({ reviewPackage, intent, provider, rubricProfile, mod
     },
     content_policy: {
       bounded_text_snippets_allowed: hasText,
+      supplemental_content_evidence_allowed: Number(reviewPackage.content_evidence?.supplemental_evidence_available_count ?? 0) > 0,
+      supplemental_source_types: reviewPackage.content_evidence?.supplemental_source_types ?? [],
+      supplemental_content_unit_count: Number(reviewPackage.content_evidence?.supplemental_content_unit_count ?? 0),
+      content_understanding_level: reviewPackage.content_evidence?.content_understanding_level ?? 'none',
       raw_dom_allowed: false,
       raw_report_body_allowed: false
     },
@@ -8727,6 +9254,19 @@ function buildEvidencePlan({ reviewPackage, intent, provider, rubricProfile, mod
       raw_audio_allowed: false,
       raw_frames_allowed: false,
       raw_media_embedded_in_json: false,
+      external_transfer_requires_existing_text_transfer_boundary: true,
+      provider_payload_path_disclosure_allowed: false
+    },
+    supplemental_content_evidence_policy: {
+      evidence_version: HUMAN_REVIEW_CONTENT_EVIDENCE_VERSION,
+      source_types: reviewPackage.content_evidence?.supplemental_source_types ?? [],
+      evidence_count: Number(reviewPackage.content_evidence?.supplemental_evidence_count ?? 0),
+      available_count: Number(reviewPackage.content_evidence?.supplemental_evidence_available_count ?? 0),
+      content_unit_count: Number(reviewPackage.content_evidence?.supplemental_content_unit_count ?? 0),
+      claim_count: Number(reviewPackage.content_evidence?.supplemental_claim_count ?? 0),
+      content_understanding_level: reviewPackage.content_evidence?.content_understanding_level ?? 'none',
+      raw_content_allowed: false,
+      raw_binary_allowed: false,
       external_transfer_requires_existing_text_transfer_boundary: true,
       provider_payload_path_disclosure_allowed: false
     },
@@ -9059,7 +9599,9 @@ function buildXhighRoundPlanV2({ orchestration }) {
 function buildTransferPermissions({ reviewPackage, intent, provider = null, evidencePlan = null }) {
   const intentWantsText = /\b(copy|content|text|read|readability|comprehension|meaning|tone|文章|文言|読解|内容)\b/i.test(intent);
   const rawPixelsRequired = Number(reviewPackage.visual_evidence?.reference_count ?? 0) > 0;
-  const pageTextRequired = intentWantsText || Number(reviewPackage.content_evidence?.text_snippet_count ?? 0) > 0;
+  const pageTextRequired = intentWantsText
+    || Number(reviewPackage.content_evidence?.text_snippet_count ?? 0) > 0
+    || Number(reviewPackage.content_evidence?.supplemental_evidence_available_count ?? 0) > 0;
   const providerExternal = provider?.external_evidence_transfer === true;
   const providerClasses = new Set(Array.isArray(provider?.transferable_evidence_classes)
     ? provider.transferable_evidence_classes
@@ -10334,6 +10876,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     roleInstructionCoverage,
     stagedExecution: input.xhigh_staged_execution ?? null
   });
+  const contentEvidence = normalizeContentEvidenceResultPackage(plan.content_evidence);
   const qualityPreview = buildReportQualityFromParts({
     reviewEffort: plan.review_effort?.mode,
     roleOpinions,
@@ -10344,7 +10887,8 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     integrationRecord,
     humanReviewCoverage,
     readerExperienceReview,
-    benchmarkRequirementCoverage
+    benchmarkRequirementCoverage,
+    contentEvidence
   });
   const reviewQualityEvaluation = buildReviewQualityEvaluation({
     quality: qualityPreview,
@@ -10378,13 +10922,14 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
   const consensusSummary = buildConsensusSummary({ roleOpinions, findings, input });
   const dissentSummary = buildDissentSummary({ roleOpinions, input });
   const boundedLanguageSettings = boundedAgenticLanguageSettings(languageSettings);
-  const evidenceScope = normalizeEvidenceScopeRecord(plan.evidence_scope, plan.video_evidence);
+  const evidenceScope = normalizeEvidenceScopeRecord(plan.evidence_scope, plan.video_evidence, plan.content_evidence);
   const videoEvidence = normalizeVideoEvidenceResultPackage(plan.video_evidence);
   const editorialSynthesis = buildEditorialSynthesis({
     plan,
     languageSettings: boundedLanguageSettings,
     evidenceScope,
     videoEvidence,
+    contentEvidence,
     safeInputSummary,
     roleOpinions,
     findings,
@@ -10397,6 +10942,10 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     dissentSummary,
     consensusAnalysis,
     dissentAnalysis,
+    critiqueRecords,
+    xhighCompletion,
+    qualityPreview,
+    reviewQualityEvaluation,
     actionPlan
   });
   const privacyDisclosureAudit = buildPrivacyDisclosureAudit({
@@ -10462,6 +11011,7 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     rubric_profile: plan.rubric_profile ?? null,
     evidence_scope: evidenceScope,
     video_evidence: videoEvidence,
+    content_evidence: contentEvidence,
     evidence_plan: plan.evidence_plan ?? null,
     orchestration_contract: plan.orchestration_contract ?? null,
     effort_execution_contract: plan.effort_execution_contract ?? null,
@@ -11013,6 +11563,8 @@ function renderAgenticReviewReport(result) {
     '',
     ...renderEditorialSynthesisReportSection(editorialSynthesis, result),
     '',
+    ...renderContentEvidenceReportSection(result.content_evidence, result),
+    '',
     `## ${t('report.ahr.section.mechanical_vs_human', 'Mechanical Review Compared With Human Review')}`,
     '',
     ...normalizeStringArray(result.mechanical_vs_human_review?.balanced_takeaways).map((item) => `- ${localizeGenerated(item)}`),
@@ -11118,6 +11670,27 @@ function renderEditorialSynthesisReportSection(editorialSynthesis, result = null
     `### ${t('report.ahr.section.source_findings', 'Source Findings')}`,
     '',
     ...normalizeStringArray(editorialSynthesis.source_refs).map((item) => `- ${item}`)
+  ];
+}
+
+function renderContentEvidenceReportSection(contentEvidence, result = null) {
+  if (!contentEvidence || Number(contentEvidence.supplemental_evidence_count ?? 0) === 0) {
+    return [];
+  }
+  const t = (key, fallback) => resolveAgenticReportText(result ?? {}, key, fallback);
+  const supplemental = Array.isArray(contentEvidence.supplemental_evidence) ? contentEvidence.supplemental_evidence : [];
+  return [
+    `## ${t('report.ahr.section.content_evidence', 'Content Evidence')}`,
+    '',
+    `${t('report.ahr.label.content_evidence_types', 'Content evidence types')}: ${(contentEvidence.supplemental_source_types ?? []).join(', ') || 'none'}`,
+    `${t('report.ahr.label.content_understanding_level', 'Content understanding level')}: ${contentEvidence.content_understanding_level ?? 'none'}`,
+    `${t('report.ahr.label.content_unit_count', 'Content unit count')}: ${contentEvidence.supplemental_content_unit_count ?? 0}`,
+    `${t('report.ahr.label.content_claim_count', 'Content claim count')}: ${contentEvidence.supplemental_claim_count ?? 0}`,
+    '',
+    ...supplemental.slice(0, 6).flatMap((item) => [
+      `- ${item.source_type ?? 'content'}: ${item.source?.title ?? item.id ?? 'untitled'} (${item.coverage?.content_understanding_level ?? 'unknown'})`,
+      ...normalizeStringArray(item.limitations).slice(0, 2).map((limitation) => `  - ${t('report.ahr.label.limitation', 'Limitation')}: ${limitation}`)
+    ])
   ];
 }
 
@@ -11328,12 +11901,12 @@ function buildHumanReviewContract({ intent, targetAudience, expectedImpression }
   };
 }
 
-async function buildProposalReviewIndexPreview({ cwd, options, artifactRootInput, id, now, brief, maxBytes, provider, videoEvidence = null }) {
+async function buildProposalReviewIndexPreview({ cwd, options, artifactRootInput, id, now, brief, maxBytes, provider, videoEvidence = null, contentEvidence = null }) {
   if (!options['review-index']) {
     const emptyPackage = {
       visual_evidence: { reference_count: 0 },
       video_evidence: buildVideoEvidencePackage(videoEvidence),
-      content_evidence: { text_snippet_count: 0 },
+      content_evidence: buildPackageContentEvidence({ textSnippets: [], contentEvidence, videoEvidence }),
       source: { route: null, artifact_count: 0 }
     };
     return {
@@ -11372,6 +11945,7 @@ async function buildProposalReviewIndexPreview({ cwd, options, artifactRootInput
     reviewIndexHash: hashText(reviewIndexRead.text),
     reviewArtifact,
     videoEvidence,
+    contentEvidence,
     intent: brief,
     targetAudience: options['target-audience'],
     expectedImpression: options['expected-impression']
@@ -11483,6 +12057,7 @@ function applyProposalDefaults(options, proposal) {
     'benchmark-case': options['benchmark-case'] ?? candidate.benchmark_case_id,
     'human-baseline': options['human-baseline'] ?? candidate.human_baseline_path,
     'video-evidence': options['video-evidence'] ?? candidate.video_evidence_path,
+    'content-evidence': options['content-evidence'] ?? candidate.content_evidence_path,
     'rubric-profile': options['rubric-profile'] ?? candidate.rubric_profile_id,
     'evidence-plan-mode': options['evidence-plan-mode'] ?? candidate.evidence_plan_mode,
     'case-id': options['case-id'] ?? candidate.dogfood_metadata?.case_id,
@@ -11874,6 +12449,11 @@ function buildSourceEvidenceSummary(reviewPackage) {
     video_evidence_timeline_item_count: Number(reviewPackage.video_evidence?.timeline_item_count ?? 0),
     video_evidence_claim_count: Number(reviewPackage.video_evidence?.claim_count ?? 0),
     text_snippet_count: Number(reviewPackage.content_evidence?.text_snippet_count ?? 0),
+    supplemental_content_evidence_count: Number(reviewPackage.content_evidence?.supplemental_evidence_count ?? 0),
+    supplemental_content_evidence_available_count: Number(reviewPackage.content_evidence?.supplemental_evidence_available_count ?? 0),
+    supplemental_content_evidence_source_types: reviewPackage.content_evidence?.supplemental_source_types ?? [],
+    supplemental_content_unit_count: Number(reviewPackage.content_evidence?.supplemental_content_unit_count ?? 0),
+    content_understanding_level: reviewPackage.content_evidence?.content_understanding_level ?? 'none',
     artifact_reference_count: Number(reviewPackage.source?.artifact_count ?? 0),
     deterministic_finding_count: Number(reviewPackage.existing_review_state?.findings_count ?? 0),
     local_release_gate: reviewPackage.existing_review_state?.local_release_gate ?? null,
@@ -11899,13 +12479,21 @@ function buildEvidenceScopeRecord(reviewPackage) {
       + Number(reviewPackage.video_evidence?.claim_count ?? 0)
     ) > 0;
   const hasInsufficientVideoEvidence = videoStatus === 'insufficient';
+  const hasUsableContentEvidence = Number(reviewPackage.content_evidence?.supplemental_evidence_available_count ?? 0) > 0;
+  const hasContentEvidence = Number(reviewPackage.content_evidence?.supplemental_evidence_count ?? 0) > 0;
   let scope = 'page_only';
   if (hasUsableVideoEvidence && hasPageEvidence) {
     scope = 'page_and_video_evidence';
   } else if (hasUsableVideoEvidence) {
     scope = 'video_evidence_only';
+  } else if (hasUsableContentEvidence && hasPageEvidence) {
+    scope = 'page_and_content_evidence';
+  } else if (hasUsableContentEvidence) {
+    scope = 'content_evidence_only';
   } else if (hasInsufficientVideoEvidence) {
     scope = 'insufficient_video_evidence';
+  } else if (hasContentEvidence) {
+    scope = 'insufficient_content_evidence';
   }
   if (!VIDEO_EVIDENCE_SCOPE_VALUES.has(scope)) {
     scope = 'page_only';
@@ -11920,6 +12508,14 @@ function buildEvidenceScopeRecord(reviewPackage) {
     video_evidence_summary_count: Number(reviewPackage.video_evidence?.summary_count ?? 0),
     video_evidence_timeline_item_count: Number(reviewPackage.video_evidence?.timeline_item_count ?? 0),
     video_evidence_claim_count: Number(reviewPackage.video_evidence?.claim_count ?? 0),
+    content_evidence_present: hasContentEvidence,
+    content_evidence_usable: hasUsableContentEvidence,
+    content_evidence_source_types: reviewPackage.content_evidence?.supplemental_source_types ?? [],
+    content_evidence_count: Number(reviewPackage.content_evidence?.supplemental_evidence_count ?? 0),
+    content_evidence_available_count: Number(reviewPackage.content_evidence?.supplemental_evidence_available_count ?? 0),
+    content_evidence_unit_count: Number(reviewPackage.content_evidence?.supplemental_content_unit_count ?? 0),
+    content_evidence_claim_count: Number(reviewPackage.content_evidence?.supplemental_claim_count ?? 0),
+    content_understanding_level: reviewPackage.content_evidence?.content_understanding_level ?? 'none',
     raw_media_included: false,
     advisory_only: true,
     gate_effect: 'none'
@@ -13078,6 +13674,7 @@ function buildEditorialSynthesis({
   languageSettings,
   evidenceScope,
   videoEvidence,
+  contentEvidence,
   safeInputSummary,
   roleOpinions,
   findings,
@@ -13090,6 +13687,10 @@ function buildEditorialSynthesis({
   dissentSummary,
   consensusAnalysis,
   dissentAnalysis,
+  critiqueRecords = [],
+  xhighCompletion = null,
+  qualityPreview = null,
+  reviewQualityEvaluation = null,
   actionPlan
 }) {
   const records = [];
@@ -13123,7 +13724,9 @@ function buildEditorialSynthesis({
   addRecords({ sourceField: 'dissent_analysis', sourceId: 'residual_uncertainties', values: dissentAnalysis?.residual_uncertainties });
   addRecords({ sourceField: 'agentic_human_review_action_plan', sourceId: 'suggested_fixes', values: actionPlan?.suggested_fixes });
   addRecords({ sourceField: 'agentic_human_review_action_plan', sourceId: 'next_actions', values: actionPlan?.next_actions });
+  addContentEvidenceEditorialRecords({ addRecords, contentEvidence });
   addVideoEvidenceEditorialRecords({ addRecords, videoEvidence });
+  addXhighEditorialRecords({ addRecords, critiqueRecords, xhighCompletion, qualityPreview, reviewQualityEvaluation });
 
   for (const opinion of reportedRoleOpinions(roleOpinions).slice(0, 8)) {
     addRecords({
@@ -13165,6 +13768,7 @@ function buildEditorialSynthesis({
   const language = languageResolution.language;
   const localizedRecords = localizeEditorialGeneratedRecords(records, language);
   const keyObservations = editorialTextsBySource(localizedRecords, [
+    'content_evidence',
     'video_evidence',
     'human_report_v3',
     'reader_experience_review',
@@ -13173,6 +13777,8 @@ function buildEditorialSynthesis({
     'role_opinions'
   ], 6);
   const strengths = editorialTextsById(localizedRecords, [
+    'content_evidence_content_summary',
+    'content_evidence_units',
     'video_content_summary',
     'video_visible_text_summary',
     'what_works',
@@ -13181,6 +13787,9 @@ function buildEditorialSynthesis({
     'trust_assessment'
   ], 5);
   const risksOrCautions = editorialTextsById(localizedRecords, [
+    'content_evidence_limitations',
+    'content_evidence_claims_observed',
+    'xhigh_quality_stance',
     'video_limitations',
     'video_claims_observed',
     'what_gets_lost',
@@ -13189,6 +13798,7 @@ function buildEditorialSynthesis({
     'shared_risks'
   ], 5);
   const keyTensions = editorialTextsBySource(localizedRecords, [
+    'xhigh_quality',
     'dissent_summary',
     'dissent_analysis',
     'mechanical_vs_human_review'
@@ -13216,6 +13826,7 @@ function buildEditorialSynthesis({
     ? ownerDecisionTexts.join(' ')
     : text('report.ahr.editorial.fallback.no_owner_decision', 'No explicit owner decision was requested by the existing advisory output.');
   const limitations = [
+    ...contentEvidenceEditorialLimitations(evidenceScope, contentEvidence, language),
     ...videoEvidenceEditorialLimitations(evidenceScope, videoEvidence, language),
     ...(status === 'limited'
       ? [text('report.ahr.editorial.limitation.sparse_input', 'The existing AHR result has too few evidence-backed findings or reported role opinions for a fuller editorial review.')]
@@ -13242,10 +13853,22 @@ function buildEditorialSynthesis({
       keyTensions,
       recommendedDirection,
       ownerDecisionSummary,
-      limitations
+      limitations,
+      sourceRecords: localizedRecords
     }),
     evidence_scope: evidenceScope,
     video_evidence: buildEditorialVideoEvidenceSummary(videoEvidence),
+    content_evidence: buildEditorialContentEvidenceSummary(contentEvidence),
+    composer: {
+      schema_version: SCHEMA_VERSION,
+      composer_version: HUMAN_REVIEW_EDITORIAL_COMPOSER_VERSION,
+      evidence_first: true,
+      content_units_used: Number(contentEvidence?.supplemental_content_unit_count ?? 0),
+      source_record_count: localizedRecords.length,
+      provider_call_performed: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
     key_observations: keyObservations,
     key_tensions: keyTensions,
     strengths,
@@ -13266,6 +13889,8 @@ function buildEditorialSynthesis({
       raw_video_transferred: false,
       raw_audio_transferred: false,
       raw_frames_transferred: false,
+      raw_content_read: false,
+      raw_content_transferred: false,
       credential_values_recorded: false,
       raw_provider_response_stored: false,
       existing_review_mutated: false,
@@ -13274,7 +13899,8 @@ function buildEditorialSynthesis({
       release_gate_mutated: false,
       mcp_execution_exposed: false,
       mechanical_proof_contract_satisfied: false,
-      derived_from_video_evidence_summary: evidenceScope?.video_evidence_usable === true
+      derived_from_video_evidence_summary: evidenceScope?.video_evidence_usable === true,
+      derived_from_content_evidence: evidenceScope?.content_evidence_usable === true
     },
     advisory_only: true,
     gate_effect: 'none'
@@ -13323,6 +13949,101 @@ function addVideoEvidenceEditorialRecords({ addRecords, videoEvidence }) {
   });
 }
 
+function addContentEvidenceEditorialRecords({ addRecords, contentEvidence }) {
+  const supplemental = Array.isArray(contentEvidence?.supplemental_evidence)
+    ? contentEvidence.supplemental_evidence
+    : [];
+  for (const evidence of supplemental.filter((item) => item?.status === 'available').slice(0, 8)) {
+    const evidenceId = evidence.id ?? `${evidence.source_type ?? 'content'}-evidence`;
+    addRecords({
+      sourceField: 'content_evidence',
+      sourceId: 'content_evidence_content_summary',
+      sourceKind: evidence.source_type ?? 'content_evidence',
+      values: evidence.summaries?.content_summary
+    });
+    addRecords({
+      sourceField: 'content_evidence',
+      sourceId: 'content_evidence_section_summary',
+      sourceKind: evidence.source_type ?? 'content_evidence',
+      values: evidence.summaries?.section_summary
+    });
+    addRecords({
+      sourceField: 'content_evidence',
+      sourceId: 'content_evidence_transcript_summary',
+      sourceKind: evidence.source_type ?? 'content_evidence',
+      values: evidence.summaries?.transcript_summary
+    });
+    addRecords({
+      sourceField: 'content_evidence',
+      sourceId: 'content_evidence_visible_text_summary',
+      sourceKind: evidence.source_type ?? 'content_evidence',
+      values: evidence.summaries?.visible_text_summary
+    });
+    addRecords({
+      sourceField: 'content_evidence',
+      sourceId: 'content_evidence_units',
+      sourceKind: evidence.source_type ?? 'content_evidence',
+      values: normalizeContentUnitEditorialText(evidence.content_units, evidenceId)
+    });
+    addRecords({
+      sourceField: 'content_evidence',
+      sourceId: 'content_evidence_claims_observed',
+      sourceKind: evidence.source_type ?? 'content_evidence',
+      values: normalizeContentClaimEditorialText(evidence.claims_observed)
+    });
+    addRecords({
+      sourceField: 'content_evidence',
+      sourceId: 'content_evidence_limitations',
+      sourceKind: evidence.source_type ?? 'content_evidence',
+      values: evidence.limitations
+    });
+  }
+}
+
+function addXhighEditorialRecords({ addRecords, critiqueRecords, xhighCompletion }) {
+  const reportedCritique = Array.isArray(critiqueRecords)
+    ? critiqueRecords.filter((record) => record.status === 'reported' || record.status === 'integrated')
+    : [];
+  addRecords({
+    sourceField: 'xhigh_quality',
+    sourceId: 'xhigh_quality_stance',
+    sourceKind: 'quality_diagnostic',
+    values: reportedCritique.length > 0
+      ? ['Dedicated critique or verification output was reported, so the editorial synthesis can treat the review stance as more thoroughly challenged while remaining advisory-only.']
+      : []
+  });
+  addRecords({
+    sourceField: 'xhigh_quality',
+    sourceId: 'xhigh_completion',
+    sourceKind: 'quality_diagnostic',
+    values: xhighCompletion?.required === true && xhighCompletion?.status !== 'complete'
+      ? ['The xhigh completion contract is not fully satisfied, so stronger natural prose must remain provisional rather than claiming proof.']
+      : []
+  });
+}
+
+function normalizeContentUnitEditorialText(values, evidenceId) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return values.slice(0, MAX_CONTENT_EVIDENCE_ITEMS).map((item, index) => {
+    const locator = item?.locator ? `[${item.locator}]` : `[${evidenceId}:content-unit-${index + 1}]`;
+    return [locator, item?.text ?? item?.summary].filter(Boolean).join(' ');
+  }).filter(Boolean);
+}
+
+function normalizeContentClaimEditorialText(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return values.map((item) => {
+    if (typeof item === 'string') {
+      return item;
+    }
+    return [item?.claim, item?.evidence, item?.locator].filter(Boolean).join(' ');
+  }).filter(Boolean);
+}
+
 function normalizeVideoTimelineEditorialText(values) {
   if (!Array.isArray(values)) {
     return [];
@@ -13352,12 +14073,26 @@ function normalizeVideoClaimEditorialText(values) {
 function videoEvidenceEditorialLimitations(evidenceScope, videoEvidence, language = 'en') {
   const text = (key, fallback) => resolveReportTemplateText(key, language, fallback);
   if (!videoEvidence || evidenceScope?.video_evidence_present !== true) {
-    return [text('report.ahr.editorial.scope.page_only', 'This synthesis is based on page evidence only; no separate video evidence summary was supplied.')];
+    if (evidenceScope?.content_evidence_present === true) {
+      return [];
+    }
+    return [text('report.ahr.editorial.scope.page_only', 'This synthesis is based on page evidence only; no supplemental content evidence was supplied.')];
   }
   if (evidenceScope.video_evidence_usable !== true) {
     return [text('report.ahr.editorial.scope.video_insufficient', 'A video evidence artifact was supplied, but it did not contain enough metadata summary to support video-content review.')];
   }
   return [text('report.ahr.editorial.scope.page_and_video', 'This synthesis can use both page evidence and supplied video-evidence summaries, but it does not embed or inspect raw video, audio, frames, or full transcripts.')];
+}
+
+function contentEvidenceEditorialLimitations(evidenceScope, contentEvidence, language = 'en') {
+  const text = (key, fallback) => resolveReportTemplateText(key, language, fallback);
+  if (!contentEvidence || evidenceScope?.content_evidence_present !== true) {
+    return [];
+  }
+  if (evidenceScope.content_evidence_usable !== true) {
+    return [text('report.ahr.editorial.scope.content_evidence', 'This synthesis can use supplied bounded content evidence, but it does not embed or inspect raw media, raw binaries, raw HTML/PDF bytes, full documents, or full transcripts.')];
+  }
+  return [text('report.ahr.editorial.scope.content_evidence', 'This synthesis can use supplied bounded content evidence, but it does not embed or inspect raw media, raw binaries, raw HTML/PDF bytes, full documents, or full transcripts.')];
 }
 
 function buildEditorialVideoEvidenceSummary(videoEvidence) {
@@ -13387,12 +14122,39 @@ function buildEditorialVideoEvidenceSummary(videoEvidence) {
   };
 }
 
-function normalizeEvidenceScopeRecord(value, videoEvidence = null) {
+function buildEditorialContentEvidenceSummary(contentEvidence) {
+  if (!contentEvidence) {
+    return {
+      status: 'not_supplied',
+      raw_content_included: false
+    };
+  }
+  return {
+    supplemental_evidence_count: Number(contentEvidence.supplemental_evidence_count ?? 0),
+    supplemental_evidence_available_count: Number(contentEvidence.supplemental_evidence_available_count ?? 0),
+    source_types: contentEvidence.supplemental_source_types ?? [],
+    content_unit_count: Number(contentEvidence.supplemental_content_unit_count ?? 0),
+    claim_count: Number(contentEvidence.supplemental_claim_count ?? 0),
+    content_understanding_level: contentEvidence.content_understanding_level ?? 'none',
+    raw_content_included: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function normalizeEvidenceScopeRecord(value, videoEvidence = null, contentEvidence = null) {
   const source = value && typeof value === 'object' ? value : {};
   const videoStatus = source.video_evidence_status ?? videoEvidence?.status ?? 'not_supplied';
   const videoSummaryCount = Number(source.video_evidence_summary_count ?? videoEvidence?.summary_count ?? 0);
   const timelineItemCount = Number(source.video_evidence_timeline_item_count ?? videoEvidence?.timeline_item_count ?? 0);
   const claimCount = Number(source.video_evidence_claim_count ?? videoEvidence?.claim_count ?? 0);
+  const supplementalCount = Number(source.content_evidence_unit_count ?? contentEvidence?.supplemental_content_unit_count ?? 0);
+  const supplementalClaimCount = Number(source.content_evidence_claim_count ?? contentEvidence?.supplemental_claim_count ?? 0);
+  const supplementalAvailable = Number(source.content_evidence_available_count ?? contentEvidence?.supplemental_evidence_available_count ?? 0);
+  const supplementalTotal = Number(source.content_evidence_count ?? contentEvidence?.supplemental_evidence_count ?? 0);
+  const contentTypes = source.content_evidence_source_types ?? contentEvidence?.supplemental_source_types ?? [];
+  const contentUsable = source.content_evidence_usable === true || supplementalAvailable > 0;
+  const contentPresent = source.content_evidence_present === true || supplementalTotal > 0;
   const videoUsable = source.video_evidence_usable === true || (
     videoStatus === 'available'
     && (videoSummaryCount + timelineItemCount + claimCount) > 0
@@ -13404,9 +14166,15 @@ function normalizeEvidenceScopeRecord(value, videoEvidence = null) {
       ? 'page_and_video_evidence'
       : videoUsable
         ? 'video_evidence_only'
-        : videoStatus === 'insufficient'
-          ? 'insufficient_video_evidence'
-          : 'page_only';
+        : contentUsable && pagePresent
+          ? 'page_and_content_evidence'
+          : contentUsable
+            ? 'content_evidence_only'
+            : videoStatus === 'insufficient'
+              ? 'insufficient_video_evidence'
+              : contentPresent
+                ? 'insufficient_content_evidence'
+                : 'page_only';
   }
   return {
     schema_version: SCHEMA_VERSION,
@@ -13418,6 +14186,14 @@ function normalizeEvidenceScopeRecord(value, videoEvidence = null) {
     video_evidence_summary_count: videoSummaryCount,
     video_evidence_timeline_item_count: timelineItemCount,
     video_evidence_claim_count: claimCount,
+    content_evidence_present: contentPresent,
+    content_evidence_usable: contentUsable,
+    content_evidence_source_types: normalizeStringArray(contentTypes),
+    content_evidence_count: supplementalTotal,
+    content_evidence_available_count: supplementalAvailable,
+    content_evidence_unit_count: supplementalCount,
+    content_evidence_claim_count: supplementalClaimCount,
+    content_understanding_level: source.content_understanding_level ?? contentEvidence?.content_understanding_level ?? 'none',
     raw_media_included: false,
     advisory_only: true,
     gate_effect: 'none'
@@ -13448,6 +14224,59 @@ function normalizeVideoEvidenceResultPackage(value) {
   };
   delete packageValue.source?.url;
   return packageValue;
+}
+
+function normalizeContentEvidenceResultPackage(value) {
+  if (!value || typeof value !== 'object') {
+    return buildPackageContentEvidence({ textSnippets: [] });
+  }
+  const supplementalEvidence = Array.isArray(value.supplemental_evidence)
+    ? value.supplemental_evidence.map((item) => normalizeSupplementalContentEvidenceResult(item)).filter(Boolean)
+    : [];
+  return {
+    ...value,
+    text_snippet_count: Number(value.text_snippet_count ?? 0),
+    text_snippets: Array.isArray(value.text_snippets) ? value.text_snippets : [],
+    supplemental_evidence: supplementalEvidence,
+    supplemental_evidence_count: supplementalEvidence.length,
+    supplemental_evidence_available_count: supplementalEvidence.filter((item) => item.status === 'available').length,
+    supplemental_source_types: uniqueStrings(supplementalEvidence.map((item) => item.source_type).filter(Boolean)),
+    supplemental_content_unit_count: supplementalEvidence.reduce((count, item) => count + Number(item.content_unit_count ?? 0), 0),
+    supplemental_claim_count: supplementalEvidence.reduce((count, item) => count + Number(item.claim_count ?? 0), 0),
+    content_understanding_level: strongestContentUnderstandingLevel(supplementalEvidence.map((item) => item.coverage?.content_understanding_level)),
+    raw_content_embedded_in_json: false,
+    raw_binary_embedded_in_json: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function normalizeSupplementalContentEvidenceResult(value) {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const normalized = {
+    ...value,
+    source: value.source ? {
+      kind: value.source.kind ?? null,
+      title: value.source.title ?? null,
+      media_id: value.source.media_id ?? null,
+      duration_seconds: value.source.duration_seconds ?? null,
+      page_count: value.source.page_count ?? null
+    } : null,
+    provenance: value.provenance ? {
+      input_hash: value.provenance.input_hash ?? null,
+      input_type: value.provenance.input_type ?? 'content_evidence',
+      source_tool: value.provenance.source_tool ?? null
+    } : null,
+    raw_content_embedded_in_json: false,
+    raw_binary_embedded_in_json: false,
+    boundary: contentEvidenceBoundary(),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  delete normalized.source?.locator;
+  return normalized;
 }
 
 function normalizeEditorialTextArray(value) {
@@ -13625,6 +14454,14 @@ function localizeEditorialGeneratedText(value, language = 'en') {
     [
       'The existing advisory result needs owner review before product decisions are made.',
       'report.ahr.editorial.fallback.owner_review_needed'
+    ],
+    [
+      'Dedicated critique or verification output was reported, so the editorial synthesis can treat the review stance as more thoroughly challenged while remaining advisory-only.',
+      'report.ahr.editorial.xhigh.reported'
+    ],
+    [
+      'The xhigh completion contract is not fully satisfied, so stronger natural prose must remain provisional rather than claiming proof.',
+      'report.ahr.editorial.xhigh.incomplete'
     ]
   ]);
   const key = exactTemplateKeys.get(textValue);
@@ -13647,6 +14484,10 @@ function localizeReportQualityDiagnosticText(value, language = 'en') {
     [
       'Verification score is below the evaluator policy minimum because dedicated critique or verification is not required for this effort mode.',
       'report.ahr.quality.expected_gap.verification_below_minimum'
+    ],
+    [
+      'Supplemental content evidence is present, but original-text or location-referenced coverage is limited; content-specific review should stay cautious.',
+      'report.ahr.quality.expected_gap.content_evidence_summary_only'
     ],
     [
       'No dedicated critique or verification output was present.',
@@ -13722,19 +14563,28 @@ function buildEditorialFullReview({
   keyTensions,
   recommendedDirection,
   ownerDecisionSummary,
-  limitations
+  limitations,
+  sourceRecords = []
 }) {
-  const sourceOnlyParagraphs = [
-    takeaway,
-    ...observations.slice(0, 2),
-    ...strengths.slice(0, 1),
-    ...risksOrCautions.slice(0, 1),
-    ...keyTensions.slice(0, 1),
-    recommendedDirection,
-    ownerDecisionSummary,
-    ...limitations
-  ].filter(Boolean);
-  return sourceOnlyParagraphs.join('\n\n');
+  const contentEvidenceTexts = editorialTextsBySource(sourceRecords, ['content_evidence'], 4);
+  const xhighTexts = editorialTextsBySource(sourceRecords, ['xhigh_quality'], 2);
+  const paragraphs = [];
+  const addParagraph = (values) => {
+    const text = mergeEditorialSentences(values);
+    if (text) {
+      paragraphs.push(text);
+    }
+  };
+  addParagraph([takeaway, ...contentEvidenceTexts.slice(0, 2)]);
+  addParagraph([...observations.slice(0, 2), ...strengths.slice(0, 1)]);
+  addParagraph([...risksOrCautions.slice(0, 2), ...keyTensions.slice(0, 1)]);
+  addParagraph([...xhighTexts, ...limitations.slice(0, status === 'limited' ? 2 : 1)]);
+  addParagraph([recommendedDirection, ownerDecisionSummary]);
+  const deduped = uniqueEditorialParagraphs(paragraphs);
+  if (deduped.length > 0) {
+    return deduped.join('\n\n');
+  }
+  return editorialFirstText([takeaway, ...limitations], language);
 }
 
 function formatEditorialList(values) {
@@ -13746,6 +14596,39 @@ function formatEditorialList(values) {
     return `${items[0]} and ${items[1]}`;
   }
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
+function mergeEditorialSentences(values) {
+  const texts = uniqueEditorialTexts(values).slice(0, 4);
+  if (texts.length === 0) {
+    return '';
+  }
+  return texts.join(' ');
+}
+
+function uniqueEditorialParagraphs(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values) {
+    const text = editorialSafeText(value, 1800);
+    const fingerprint = editorialFingerprint(text);
+    if (!text || seen.has(fingerprint)) {
+      continue;
+    }
+    seen.add(fingerprint);
+    result.push(text);
+  }
+  return result;
+}
+
+function editorialFingerprint(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[`*_#[\]()]/gu, '')
+    .replace(/\b(the|a|an|this|that|and|or|but|is|are|was|were|です|ます|ある|いる)\b/giu, '')
+    .replace(/[^\p{Letter}\p{Number}]+/gu, ' ')
+    .trim()
+    .slice(0, 240);
 }
 
 function buildCalibrationMetadata({ plan, input, quality, benchmarkRequirementCoverage = null }) {
@@ -13783,7 +14666,8 @@ function buildReportQuality({ result, resultPath, execution, evaluatorPolicy = n
     integrationRecord: result.integration_record ?? null,
     humanReviewCoverage: result.human_review_coverage ?? null,
     readerExperienceReview: result.reader_experience_review ?? null,
-    benchmarkRequirementCoverage: result.benchmark_requirement_coverage ?? null
+    benchmarkRequirementCoverage: result.benchmark_requirement_coverage ?? null,
+    contentEvidence: result.content_evidence ?? null
   });
   const policyDiagnostics = reportQualityPolicyDiagnostics({
     quality,
@@ -14072,9 +14956,10 @@ function buildHumanReviewMaturityNextActions({ missingEfforts, missingBenchmarkC
   return actions;
 }
 
-function buildReportQualityFromParts({ reviewEffort = null, roleOpinions, findings, ownerDecisions, claims, critiqueRecords, integrationRecord, humanReviewCoverage = null, readerExperienceReview = null, benchmarkRequirementCoverage = null }) {
+function buildReportQualityFromParts({ reviewEffort = null, roleOpinions, findings, ownerDecisions, claims, critiqueRecords, integrationRecord, humanReviewCoverage = null, readerExperienceReview = null, benchmarkRequirementCoverage = null, contentEvidence = null }) {
   const actualRoleOpinions = reportedRoleOpinions(roleOpinions);
   const qualityExpectations = buildReportQualityExpectations({ reviewEffort, critiqueRecords });
+  const contentEvidenceQuality = buildContentEvidenceQuality(contentEvidence);
   const completenessScore = clampScore(
     (actualRoleOpinions.length > 0 ? 0.25 : 0)
     + (claims.length > 0 || findings.length > 0 ? 0.25 : 0)
@@ -14117,7 +15002,8 @@ function buildReportQualityFromParts({ reviewEffort = null, roleOpinions, findin
     humanReviewCoverage,
     actionabilityScore,
     benchmarkRequirementCoverage,
-    qualityExpectations
+    qualityExpectations,
+    contentEvidenceQuality
   });
   return {
     quality_evaluator_version: HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION,
@@ -14135,12 +15021,56 @@ function buildReportQualityFromParts({ reviewEffort = null, roleOpinions, findin
     finding_count: findings.length,
     claim_count: claims.length,
     owner_decision_count: ownerDecisions.length,
+    content_evidence_quality: contentEvidenceQuality,
+    content_evidence_present: contentEvidenceQuality.present,
+    content_evidence_understanding_level: contentEvidenceQuality.content_understanding_level,
+    content_evidence_understanding_score: contentEvidenceQuality.content_understanding_score,
+    content_evidence_original_text_coverage_score: contentEvidenceQuality.original_text_coverage_score,
+    content_evidence_location_reference_coverage_score: contentEvidenceQuality.location_reference_coverage_score,
     quality_warning_classification_version: HUMAN_REVIEW_QUALITY_DIAGNOSTICS_VERSION,
     quality_expectations: qualityExpectations,
     quality_diagnostics: qualityDiagnostics,
     quality_diagnostic_summary: summarizeQualityDiagnostics(qualityDiagnostics),
     quality_effort_notes: qualityDiagnostics.filter((diagnostic) => diagnostic.classification === 'expected_gap'),
     quality_warnings: reportQualityWarningMessages(qualityDiagnostics),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildContentEvidenceQuality(contentEvidence) {
+  const supplemental = Array.isArray(contentEvidence?.supplemental_evidence)
+    ? contentEvidence.supplemental_evidence
+    : [];
+  const present = supplemental.length > 0;
+  const available = supplemental.filter((item) => item.status === 'available');
+  const levels = available.map((item) => item.coverage?.content_understanding_level ?? 'none');
+  const level = strongestContentUnderstandingLevel(levels);
+  const levelScores = {
+    none: 0,
+    metadata: 0.15,
+    summary: 0.4,
+    excerpt: 0.7,
+    full_text: 0.9,
+    multimodal: 1
+  };
+  const originalTextScores = available.map((item) => Number(item.coverage?.original_text_coverage_score ?? 0));
+  const locationScores = available.map((item) => Number(item.coverage?.location_reference_coverage_score ?? 0));
+  const avg = (values) => values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+  return {
+    schema_version: SCHEMA_VERSION,
+    evaluator_version: HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION,
+    present,
+    available_count: available.length,
+    evidence_count: supplemental.length,
+    source_types: uniqueStrings(supplemental.map((item) => item.source_type).filter(Boolean)),
+    content_unit_count: Number(contentEvidence?.supplemental_content_unit_count ?? 0),
+    claim_count: Number(contentEvidence?.supplemental_claim_count ?? 0),
+    content_understanding_level: level,
+    content_understanding_score: clampScore(levelScores[level] ?? 0),
+    original_text_coverage_score: clampScore(avg(originalTextScores)),
+    location_reference_coverage_score: clampScore(avg(locationScores)),
+    raw_content_included: false,
     advisory_only: true,
     gate_effect: 'none'
   };
@@ -14178,7 +15108,7 @@ function buildReportQualityExpectations({ reviewEffort = null, critiqueRecords =
   };
 }
 
-function reportQualityDiagnostics({ roleOpinions, claims, ownerDecisions, critiqueRecords, humanReviewCoverage = null, actionabilityScore = 0, benchmarkRequirementCoverage = null, qualityExpectations = null }) {
+function reportQualityDiagnostics({ roleOpinions, claims, ownerDecisions, critiqueRecords, humanReviewCoverage = null, actionabilityScore = 0, benchmarkRequirementCoverage = null, qualityExpectations = null, contentEvidenceQuality = null }) {
   const diagnostics = [];
   if (reportedRoleOpinions(roleOpinions).length === 0) {
     diagnostics.push(reportQualityDiagnostic({
@@ -14242,6 +15172,26 @@ function reportQualityDiagnostics({ roleOpinions, claims, ownerDecisions, critiq
       classification: 'policy_warning',
       severity: 'medium',
       details: { status: benchmarkRequirementCoverage.status ?? null }
+    }));
+  }
+  if (
+    contentEvidenceQuality?.present === true
+    && (
+      contentEvidenceQuality.content_understanding_score < 0.7
+      || contentEvidenceQuality.original_text_coverage_score < 0.6
+      || contentEvidenceQuality.location_reference_coverage_score < 0.5
+    )
+  ) {
+    diagnostics.push(reportQualityDiagnostic({
+      code: 'AHR_REPORT_QUALITY_CONTENT_EVIDENCE_SUMMARY_ONLY',
+      message: 'Supplemental content evidence is present, but original-text or location-referenced coverage is limited; content-specific review should stay cautious.',
+      classification: 'expected_gap',
+      severity: 'info',
+      details: {
+        content_understanding_level: contentEvidenceQuality.content_understanding_level,
+        original_text_coverage_score: contentEvidenceQuality.original_text_coverage_score,
+        location_reference_coverage_score: contentEvidenceQuality.location_reference_coverage_score
+      }
     }));
   }
   return diagnostics;

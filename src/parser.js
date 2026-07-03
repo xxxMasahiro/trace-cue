@@ -95,6 +95,7 @@ const VALUE_OPTIONS = new Set([
   'until-selector',
   'until-url',
   'video-evidence',
+  'content-evidence',
   'viewport',
   'workflow'
 ]);
@@ -1139,6 +1140,7 @@ function parseAgentic(args, globals) {
       'fixture-id',
       'human-baseline',
       'video-evidence',
+      'content-evidence',
       'baseline-snapshot-hash',
       'comparison-run-id',
       'rubric-profile',
@@ -1209,6 +1211,7 @@ function parseAgentic(args, globals) {
       'fixture-id',
       'human-baseline',
       'video-evidence',
+      'content-evidence',
       'baseline-snapshot-hash',
       'comparison-run-id',
       'rubric-profile',

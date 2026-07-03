@@ -45,6 +45,7 @@
     "human_review_coverage": { "type": "object" },
     "evidence_scope": { "type": "object" },
     "video_evidence": { "type": "object" },
+    "content_evidence": { "type": "object" },
     "benchmark_requirement_coverage": { "type": "object" },
     "xhigh_multi_round_review": { "type": "object" },
     "xhigh_mechanical_enforcement": { "type": "object" },

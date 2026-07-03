@@ -1160,6 +1160,7 @@ function buildAgenticApiPayload({ plan, planPath, reviewPackage, transferFlags, 
       rubric_profile: plan.rubric_profile ?? null,
       evidence_scope: plan.evidence_scope ?? null,
       video_evidence: filterVideoEvidenceForTransfer(plan.video_evidence ?? reviewPackage?.video_evidence, transferFlags),
+      content_evidence: filteredPackage.content_evidence ?? null,
       evidence_plan: plan.evidence_plan ?? reviewPackage?.evidence_plan ?? null,
       visual_evidence_package_v2: filteredPackage.visual_evidence_package_v2 ?? null,
       visible_text_reading_contract: filteredPackage.visible_text_reading_contract ?? null,
@@ -1254,7 +1255,7 @@ function filterReviewPackageForTransfer(reviewPackage, transferFlags) {
         },
     video_evidence: filterVideoEvidenceForTransfer(reviewPackage?.video_evidence, transferFlags),
     content_evidence: flags.has('allow-page-text')
-      ? reviewPackage?.content_evidence ?? null
+      ? filterContentEvidenceForTransfer(reviewPackage?.content_evidence, transferFlags)
       : { text_snippet_count: 0, text_snippets: [], page_text_included_as_bounded_summary: false },
     visible_text_reading_contract: flags.has('allow-page-text')
       ? reviewPackage?.visible_text_reading_contract ?? null
@@ -1290,12 +1291,202 @@ function filterReviewPackageForTransfer(reviewPackage, transferFlags) {
       raw_pixel_bytes_included: false,
       visual_references_included: flags.has('allow-raw-pixels'),
       video_evidence_summary_included: flags.has('allow-page-text') && reviewPackage?.video_evidence?.status === 'available',
+      content_evidence_summary_included: flags.has('allow-page-text') && Number(reviewPackage?.content_evidence?.supplemental_evidence_available_count ?? 0) > 0,
       raw_video_embedded_in_json: false,
       raw_audio_embedded_in_json: false,
       raw_frames_embedded_in_json: false,
       full_transcript_embedded_in_json: false
     }
   };
+}
+
+function filterContentEvidenceForTransfer(contentEvidence, transferFlags) {
+  const flags = new Set(transferFlags?.supplied_flags ?? []);
+  const allowed = flags.has('allow-page-text');
+  const base = {
+    text_snippet_count: Number(contentEvidence?.text_snippet_count ?? 0),
+    page_text_included_as_bounded_summary: allowed && contentEvidence?.page_text_included_as_bounded_summary === true,
+    supplemental_evidence_count: allowed ? Number(contentEvidence?.supplemental_evidence_count ?? 0) : 0,
+    supplemental_evidence_available_count: allowed ? Number(contentEvidence?.supplemental_evidence_available_count ?? 0) : 0,
+    supplemental_source_types: allowed && Array.isArray(contentEvidence?.supplemental_source_types) ? contentEvidence.supplemental_source_types.slice(0, 20) : [],
+    supplemental_content_unit_count: allowed ? Number(contentEvidence?.supplemental_content_unit_count ?? 0) : 0,
+    supplemental_claim_count: allowed ? Number(contentEvidence?.supplemental_claim_count ?? 0) : 0,
+    content_understanding_level: allowed ? contentEvidence?.content_understanding_level ?? 'none' : 'none',
+    raw_content_embedded_in_json: false,
+    raw_binary_embedded_in_json: false,
+    local_path_included: false,
+    source_url_included: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  if (!allowed) {
+    return {
+      ...base,
+      text_snippet_count: 0,
+      text_snippets: [],
+      supplemental_evidence: [],
+      transfer_policy: 'content_evidence_requires_allow_page_text'
+    };
+  }
+  return {
+    ...base,
+    text_snippets: Array.isArray(contentEvidence?.text_snippets) ? contentEvidence.text_snippets.slice(0, 20) : [],
+    supplemental_evidence: Array.isArray(contentEvidence?.supplemental_evidence)
+      ? contentEvidence.supplemental_evidence.slice(0, 20).map((item) => filterSupplementalContentEvidenceItem(item)).filter(Boolean)
+      : [],
+    transfer_policy: 'content_evidence_included_under_page_text_boundary'
+  };
+}
+
+function filterSupplementalContentEvidenceItem(item) {
+  if (!item || typeof item !== 'object') {
+    return null;
+  }
+  return {
+    schema_version: item.schema_version ?? null,
+    evidence_version: item.evidence_version ?? null,
+    evidence_kind: 'content_evidence',
+    id: item.id ?? null,
+    status: item.status ?? 'not_supplied',
+    source_type: item.source_type ?? 'other',
+    source: item.source ? {
+      kind: item.source.kind ?? null,
+      title: filterSupplementalContentText(item.source.title, 300),
+      media_id: item.source.media_id ?? null,
+      duration_seconds: item.source.duration_seconds ?? null,
+      page_count: item.source.page_count ?? null
+    } : null,
+    provider: filterSupplementalContentProvider(item.provider),
+    summaries: filterSupplementalContentSummaries(item.summaries),
+    content_units: Array.isArray(item.content_units)
+      ? item.content_units.slice(0, 40).map((unit) => filterSupplementalContentUnit(unit)).filter(Boolean)
+      : [],
+    claims_observed: Array.isArray(item.claims_observed)
+      ? item.claims_observed.slice(0, 40).map((claim) => filterSupplementalContentClaim(claim)).filter(Boolean)
+      : [],
+    limitations: filterSupplementalContentTextArray(item.limitations, 40, 700),
+    coverage: filterSupplementalContentCoverage(item.coverage),
+    summary_count: Number(item.summary_count ?? 0),
+    content_unit_count: Number(item.content_unit_count ?? 0),
+    claim_count: Number(item.claim_count ?? 0),
+    provenance: item.provenance ? {
+      input_hash: item.provenance.input_hash ?? null,
+      input_type: item.provenance.input_type ?? 'content_evidence',
+      source_tool: item.provenance.source_tool ?? null
+    } : null,
+    raw_content_embedded_in_json: false,
+    raw_binary_embedded_in_json: false,
+    source_url_included: false,
+    local_path_included: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function filterSupplementalContentProvider(provider) {
+  if (!provider || typeof provider !== 'object') {
+    return null;
+  }
+  return {
+    id: provider.id ? truncateText(provider.id, 160) : null,
+    kind: provider.kind ? truncateText(provider.kind, 120) : null,
+    version: provider.version ? truncateText(provider.version, 80) : null,
+    local_execution_declared: provider.local_execution_declared === true,
+    api_call_declared: provider.api_call_declared === true
+  };
+}
+
+function filterSupplementalContentSummaries(summaries) {
+  if (!summaries || typeof summaries !== 'object') {
+    return {};
+  }
+  return {
+    content_summary: filterSupplementalContentTextArray(summaries.content_summary, 20, 1200),
+    transcript_summary: filterSupplementalContentTextArray(summaries.transcript_summary, 20, 1200),
+    visible_text_summary: filterSupplementalContentTextArray(summaries.visible_text_summary, 20, 1200),
+    section_summary: filterSupplementalContentTextArray(summaries.section_summary, 20, 1200)
+  };
+}
+
+function filterSupplementalContentCoverage(coverage) {
+  if (!coverage || typeof coverage !== 'object') {
+    return null;
+  }
+  return {
+    source_type: coverage.source_type ? truncateText(coverage.source_type, 80) : null,
+    content_understanding_level: coverage.content_understanding_level ? truncateText(coverage.content_understanding_level, 40) : 'none',
+    has_summary: coverage.has_summary === true,
+    has_bounded_units: coverage.has_bounded_units === true,
+    has_original_text: coverage.has_original_text === true,
+    has_full_text: false,
+    has_location_refs: coverage.has_location_refs === true,
+    original_text_coverage_score: Number(coverage.original_text_coverage_score ?? 0),
+    location_reference_coverage_score: Number(coverage.location_reference_coverage_score ?? 0),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function filterSupplementalContentTextArray(value, limit, maxLength) {
+  const values = Array.isArray(value) ? value : (typeof value === 'string' ? [value] : []);
+  return values
+    .slice(0, limit)
+    .map((item) => filterSupplementalContentText(item, maxLength))
+    .filter(Boolean);
+}
+
+function filterSupplementalContentUnit(unit) {
+  if (!unit || typeof unit !== 'object') {
+    return null;
+  }
+  const text = filterSupplementalContentText(unit.text, 1200);
+  const summary = filterSupplementalContentText(unit.summary, 700);
+  if (!text && !summary) {
+    return null;
+  }
+  return {
+    id: unit.id ?? null,
+    unit_type: unit.unit_type ?? null,
+    text,
+    summary,
+    confidence: unit.confidence ?? null
+  };
+}
+
+function filterSupplementalContentClaim(claim) {
+  if (!claim || typeof claim !== 'object') {
+    return null;
+  }
+  const claimText = filterSupplementalContentText(claim.claim, 700);
+  const evidence = filterSupplementalContentText(claim.evidence, 700);
+  if (!claimText && !evidence) {
+    return null;
+  }
+  return {
+    id: claim.id ?? null,
+    claim: claimText,
+    evidence,
+    confidence: claim.confidence ?? null
+  };
+}
+
+function filterSupplementalContentText(value, maxLength) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const text = value.trim();
+  if (!text || isSupplementalContentRawLike(text)) {
+    return null;
+  }
+  return truncateText(text, maxLength);
+}
+
+function isSupplementalContentRawLike(value) {
+  const text = String(value ?? '').trim();
+  return /^blob:/iu.test(text)
+    || /^data:(?:(?:video|audio|image)\/|application\/pdf(?:[;,]|$)|text\/html(?:[;,]|$))/iu.test(text)
+    || /^%PDF-/u.test(text)
+    || /<\s*(?:!doctype\s+html|html|body|script|iframe|object|embed)\b/iu.test(text);
 }
 
 function filterVideoEvidenceForTransfer(videoEvidence, transferFlags) {

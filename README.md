@@ -38,6 +38,7 @@ The goal is to provide an agent-independent Playwright interface that can observ
 - Aggregate multiple existing local visual review results into bounded, source-attributed advisory groups and conflicts without running providers, reading raw pixels, writing artifacts, or exposing MCP execution.
 - Run a loopback-only Agentic Human Review Responses adapter so the existing generic provider contract can dogfood a live Responses-compatible model without sending credentials through CLI arguments, storing raw provider responses, exposing MCP execution, or changing deterministic gates.
 - Evaluate Agentic Human Review dogfood quality with structured benchmark coverage, effort-aware report-quality diagnostics, reusable human-baseline registry/overlay/draft/approval/claim-readiness diagnostics, owner-labeled human baseline comparison, evidence-set summaries, evidence regeneration planning, batch comparison, evaluator policy diagnostics, xhigh round planning, longitudinal rollups, claim audit diagnostics, and a fail-closed claim standard gate without calling providers, writing artifacts, exposing MCP execution, treating AI drafts or synthetic/fake/local fixtures as proof, or turning advisory output into release gates.
+- Attach bounded Agentic Human Review content evidence from videos, web pages, PDFs, meeting notes, documents, transcripts, or other textual artifacts with `--content-evidence`; `--video-evidence` remains a compatibility input. TraceCue normalizes summaries, bounded content units, claims, limitations, and coverage only, rejects raw media/full documents/full transcripts, strips paths and source locators from provider payloads, and keeps the output advisory-only.
 
 ## Current Status
 
@@ -111,7 +112,7 @@ node ./bin/trace-cue.js agent execution plan --package .browser-debug/agent-pack
 node ./bin/trace-cue.js agent execution run --execution .browser-debug/agent-executions/<id>/execution.json --package .browser-debug/agent-packages/<id>/packet.json --surface local-subscription-agent --provider fake-agent --model fake-model --execute --json
 node ./bin/trace-cue.js agent execution status --execution .browser-debug/agent-executions/<id>/execution.json --json
 node ./bin/trace-cue.js agent execution list --json
-node ./bin/trace-cue.js agentic review propose --brief "Review first impression, UI/UX, visible text, trust, and likely reader feeling." --review-index .browser-debug/review-artifacts/<id>.json --effort standard --json
+node ./bin/trace-cue.js agentic review propose --brief "Review first impression, UI/UX, visible text, trust, and likely reader feeling." --review-index .browser-debug/review-artifacts/<id>.json --content-evidence evidence.json --effort standard --json
 node ./bin/trace-cue.js agentic review plan --proposal .browser-debug/agentic-human-review-proposals/<id>/proposal.json --json
 node ./bin/trace-cue.js agentic review provider-readiness --plan .browser-debug/agentic-human-review-plans/<id>/plan.json --provider generic-api-provider --json
 node ./bin/trace-cue.js agentic review run --plan .browser-debug/agentic-human-review-plans/<id>/plan.json --plan-hash <sha256> --allow-page-text --allow-url --allow-artifact-refs --allow-accessibility-summary --execute --json
