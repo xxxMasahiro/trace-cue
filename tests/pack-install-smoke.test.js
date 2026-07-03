@@ -116,6 +116,7 @@ async function main() {
     await assertFile(packageDir, 'schemas/agentic-human-review-claim-audit.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-dogfood-readiness.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-dogfood-plan.schema.json');
+    await assertFile(packageDir, 'schemas/source-understanding-review.schema.json');
     await assertFile(packageDir, 'schemas/capture-handoff.schema.json');
     await assertFile(packageDir, 'schemas/capture-plan.schema.json');
     await assertFile(packageDir, 'schemas/identity-audit.schema.json');
@@ -246,6 +247,7 @@ async function main() {
     const agenticHumanReviewClaimAuditSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-claim-audit'));
     const agenticHumanReviewDogfoodReadinessSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-dogfood-readiness'));
     const agenticHumanReviewDogfoodPlanSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-dogfood-plan'));
+    const sourceUnderstandingReviewSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('source-understanding-review'));
     assert.equal(path.normalize(apiPath), path.join(packageDir, 'src/api.js'));
     assert.equal(path.normalize(reviewSchemaPath), path.join(packageDir, 'schemas/review.schema.json'));
     assert.equal(path.normalize(visualEvidenceSchemaPath), path.join(packageDir, 'schemas/visual-evidence.schema.json'));
@@ -308,6 +310,7 @@ async function main() {
     assert.equal(path.normalize(agenticHumanReviewClaimStandardGateSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-claim-standard-gate.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewEvidenceRegenerationPlanSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-evidence-regeneration-plan.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewClaimAuditSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-claim-audit.schema.json'));
+    assert.equal(path.normalize(sourceUnderstandingReviewSchemaPath), path.join(packageDir, 'schemas/source-understanding-review.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewDogfoodReadinessSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-dogfood-readiness.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewDogfoodPlanSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-dogfood-plan.schema.json'));
 
@@ -475,6 +478,7 @@ async function main() {
     assert.equal(api.schemaNames().includes('visual_evidence'), true);
     assert.equal(api.schemaNames().includes('video_evidence'), true);
     assert.equal(api.schemaNames().includes('content_evidence'), true);
+    assert.equal(api.schemaNames().includes('source_understanding_review'), true);
     assert.equal(api.schemaNames().includes('visual_review_provider_policy'), true);
     assert.equal(api.schemaNames().includes('visual_review_result_preparation'), true);
     assert.equal(api.schemaNames().includes('visual_review_dashboard'), true);
@@ -714,6 +718,7 @@ async function main() {
     assert.ok(schemaNames.includes('visual_evidence'));
     assert.ok(schemaNames.includes('video_evidence'));
     assert.ok(schemaNames.includes('content_evidence'));
+    assert.ok(schemaNames.includes('source_understanding_review'));
     assert.ok(schemaNames.includes('visual_review_provider_policy'));
     assert.ok(schemaNames.includes('visual_review_result_preparation'));
     assert.ok(schemaNames.includes('visual_review_dashboard'));

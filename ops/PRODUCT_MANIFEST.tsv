@@ -54,6 +54,7 @@ product.agent_workflow_schema	optional	all	all	schemas/agent-workflow.schema.jso
 product.agent_advisory_result_schema	optional	all	all	schemas/agent-advisory-result.schema.json	doc	file_nonempty	workflow	Public schema for normalized untrusted agent advisory results.
 product.agent_disclosure_policy_schema	optional	all	all	schemas/agent-disclosure-policy.schema.json	doc	file_nonempty	workflow	Public schema for agent evidence disclosure policies.
 product.content_evidence_schema	optional	all	all	schemas/content-evidence.schema.json	doc	file_nonempty	workflow	Public schema for bounded generic content evidence used by Agentic Human Review.
+product.source_understanding_review_schema	optional	all	all	schemas/source-understanding-review.schema.json	doc	file_nonempty	workflow	Public schema for bounded full-source understanding used by Agentic Human Review editorial integration.
 product.agentic_human_review_plan_schema	optional	all	all	schemas/agentic-human-review-plan.schema.json	doc	file_nonempty	workflow	Public schema for local Agentic Human Review plans.
 product.agentic_human_review_proposal_schema	optional	all	all	schemas/agentic-human-review-proposal.schema.json	doc	file_nonempty	workflow	Public schema for local non-executing Agentic Human Review proposals.
 product.agentic_human_review_provider_readiness_schema	optional	all	all	schemas/agentic-human-review-provider-readiness.schema.json	doc	file_nonempty	workflow	Public schema for Agentic Human Review provider readiness diagnostics.

@@ -2182,6 +2182,7 @@ test('schema commands expose machine-readable contracts', async () => {
     ['content_evidence', '../schemas/content-evidence.schema.json'],
     ['source_text', '../schemas/source-text.schema.json'],
     ['source_reading_review', '../schemas/source-reading-review.schema.json'],
+    ['source_understanding_review', '../schemas/source-understanding-review.schema.json'],
     ['visual_review_provider_policy', '../schemas/visual-review-provider-policy.schema.json'],
     ['visual_review_result_preparation', '../schemas/visual-review-result-preparation.schema.json'],
     ['visual_review_dashboard', '../schemas/visual-review-dashboard.schema.json'],
@@ -4149,11 +4150,20 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(sourcePlan.source_reading_review.status, 'completed');
   assert.equal(sourcePlan.source_reading_review.reading_depth, 'xhigh_source_reading');
   assert.equal(sourcePlan.source_reading_review.quality_target.target, 'exceed_assistant_reference_review');
+  assert.equal(sourcePlan.source_understanding_review.status, 'completed');
+  assert.equal(sourcePlan.source_understanding_review.understanding_depth, 'xhigh_source_understanding');
+  assert.equal(sourcePlan.source_understanding_review.assistant_reference_quality.target, 'clearly_exceed_assistant_reference_review');
+  assert.equal(sourcePlan.source_understanding_review.source_excerpt_refs.every((ref) => ref.excerpt === undefined), true);
   assert.equal(sourcePlan.evidence_scope.source_reading_review_usable, true);
+  assert.equal(sourcePlan.evidence_scope.source_understanding_review_usable, true);
+  assert.equal(sourcePlan.evidence_plan.source_text_policy.derived_understanding_review_allowed, true);
   assert.equal(sourcePlan.evidence_plan.source_text_policy.full_source_text_persisted, false);
   assert.equal(sourcePlan.disclosure.source_reading_review_included, true);
+  assert.equal(sourcePlan.disclosure.source_understanding_review_included, true);
   assert.equal(sourcePlan.provider_instruction_contract.required_behavior.some((item) => /source_reading_review/.test(item)), true);
+  assert.equal(sourcePlan.provider_instruction_contract.required_behavior.some((item) => /source_understanding_review/.test(item)), true);
   assert.equal(sourcePlan.provider_instruction_contract.output_sections.includes('source_reading_review'), true);
+  assert.equal(sourcePlan.provider_instruction_contract.output_sections.includes('source_understanding_review'), true);
   assert.equal(sourcePlan.transfer_permissions.required_flags.includes('allow-page-text'), true);
   assert.doesNotMatch(JSON.stringify(sourcePlan.source_text), /Paid social advertising is framed/u);
 
@@ -4184,19 +4194,99 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(sourceTextRun.exitCode, 0);
   const sourceTextResult = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-source-text', 'result.json'), 'utf8'));
   assert.equal(sourceTextResult.source_reading_review.status, 'completed');
+  assert.equal(sourceTextResult.source_understanding_review.status, 'completed');
+  assert.equal(sourceTextResult.source_understanding_review.source_excerpt_refs.every((ref) => ref.excerpt === undefined), true);
   assert.equal(sourceTextResult.editorial_synthesis.boundary.derived_from_source_reading_review, true);
+  assert.equal(sourceTextResult.editorial_synthesis.boundary.derived_from_source_understanding_review, true);
   assert.equal(sourceTextResult.editorial_synthesis.composer.source_reading_used, true);
+  assert.equal(sourceTextResult.editorial_synthesis.composer.source_understanding_used, true);
+  assert.equal(sourceTextResult.editorial_integrator.integration_strategy, 'source_understanding_first_tracecue_cross_check');
+  assert.equal(sourceTextResult.report_quality.source_understanding_present, true);
+  assert.equal(sourceTextResult.report_quality.source_understanding_score > 0, true);
+  assert.equal(sourceTextResult.report_quality.useful_recommendation_score > 0, true);
   assert.equal(sourceTextResult.editorial_synthesis.source_text.full_source_text_persisted, false);
   assert.match(sourceTextResult.editorial_synthesis.full_review, /product can be built well and still fail/i);
   assert.match(sourceTextResult.editorial_synthesis.full_review, /Paid social advertising|Search engine optimization|sharing features/i);
   assert.match(sourceTextResult.editorial_synthesis.full_review, /budget, available time, existing user base, and measurable learning goal/i);
-  assert.equal(sourceTextResult.editorial_synthesis.source_refs.some((ref) => ref.startsWith('source_reading_review:')), true);
+  assert.doesNotMatch(sourceTextResult.editorial_synthesis.full_review, /Deterministic fake|approved package metadata|The deterministic layer|Prioritize changes|Review quality target|Assistant-reference target|Step \d+|role=/i);
+  assert.equal(sourceTextResult.editorial_synthesis.source_refs.some((ref) => ref.startsWith('source_understanding_review:')), true);
   assert.doesNotMatch(JSON.stringify(sourceTextResult.source_text), /Paid social advertising is framed/u);
   const sourceTextReport = await readFile(path.join(cwd, '.browser-debug', 'reports', 'agentic-execution-source-text-agentic-human-review.md'), 'utf8');
+  assert.match(sourceTextReport, /Source Understanding/);
+  assert.match(sourceTextReport, /Source-understanding depth: xhigh_source_understanding/);
+  assert.match(sourceTextReport, /Must-Not-Miss Points/);
   assert.match(sourceTextReport, /Source Reading/);
   assert.match(sourceTextReport, /Source-reading depth: xhigh_source_reading/);
   assert.match(sourceTextReport, /Source Key Points/);
   assert.match(sourceTextReport, /Source Excerpt Refs/);
+
+  const japaneseSourceTextPath = 'source-transcript-ja.txt';
+  await writeFile(path.join(cwd, japaneseSourceTextPath), [
+    '変化の速い時代には、何を信じてよいかわからなくなる疲れがある。',
+    '動画は、変わらない一貫性が人を安心させるという問題意識から始まる。',
+    'ブランドの価値は、ロゴや色の見た目だけではなく、背景にある物語、哲学、必然性から生まれる。',
+    '会社の看板や肩書きが消えたときに最後に残るのは、自分一人で何かを生み出せる力である。',
+    '改善方向としては、抽象的な精神論だけで終わらせず、視聴者が自分の軸を言語化するための問いを明確にするとよい。'
+  ].join('\n\n'), 'utf8');
+  const japaneseSourceTextPlan = await executeCli([
+    'agentic',
+    'review',
+    'plan',
+    '--review-index',
+    reviewIndexPath,
+    '--intent',
+    '日本語の全文 transcript を読み、自然な統括レビューとしてまとめる。',
+    '--effort',
+    'xhigh',
+    '--source-text',
+    japaneseSourceTextPath,
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'agentic-plan-source-text-ja'
+  });
+  assert.equal(japaneseSourceTextPlan.exitCode, 0);
+  const japanesePlanBody = JSON.parse(japaneseSourceTextPlan.stdout);
+  const japanesePlan = japanesePlanBody.data.agentic_human_review_plan;
+  const japaneseSourceTextRun = await executeCli([
+    'agentic',
+    'review',
+    'run',
+    '--plan',
+    '.browser-debug/agentic-human-review-plans/agentic-plan-source-text-ja/plan.json',
+    '--plan-hash',
+    japanesePlanBody.data.plan_hash,
+    ...japanesePlan.transfer_permissions.required_flags.map((flag) => `--${flag}`),
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => {
+      if (prefix === 'agentic-human-review-execution') {
+        return 'agentic-execution-source-text-ja';
+      }
+      if (prefix === 'agentic-human-review-result') {
+        return 'agentic-result-source-text-ja';
+      }
+      return 'unexpected-agentic-source-text-ja-id';
+    }
+  });
+  assert.equal(japaneseSourceTextRun.exitCode, 0);
+  const japaneseSourceTextResult = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-source-text-ja', 'result.json'), 'utf8'));
+  assert.equal(japaneseSourceTextResult.editorial_synthesis.language, 'ja');
+  assert.equal(japaneseSourceTextResult.source_understanding_review.status, 'completed');
+  assert.equal(japaneseSourceTextResult.editorial_synthesis.composer.source_understanding_used, true);
+  assert.match(japaneseSourceTextResult.editorial_synthesis.full_review, /この.+は/);
+  assert.match(japaneseSourceTextResult.editorial_synthesis.full_review, /中心論点|強い点|改善方向/);
+  assert.doesNotMatch(japaneseSourceTextResult.editorial_synthesis.full_review, /The full .*source text|The full-source reading gives|0:00-|Deterministic fake|approved package metadata|The deterministic layer|Prioritize changes|Review quality target|Assistant-reference target|Step \d+|role=/i);
 
   await writeFile(path.join(cwd, 'raw-source-text.json'), JSON.stringify({
     schema_version: '1.0.0',
@@ -7295,8 +7385,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(listResult.exitCode, 0);
   const listBody = JSON.parse(listResult.stdout);
   assert.equal(listBody.command, 'agentic review list');
-  assert.equal(listBody.data.summary.total, 13);
-  assert.equal(listBody.data.summary.completed, 6);
+  assert.equal(listBody.data.summary.total, 14);
+  assert.equal(listBody.data.summary.completed, 7);
   assert.equal(listBody.data.summary.failed, 3);
   assert.equal(listBody.data.summary.blocked, 4);
   assert.equal(listBody.data.summary.api_call_performed, true);
@@ -10364,6 +10454,70 @@ test('agentic human review responses adapter compacts real-shaped owner-baseline
       }
     }]
   };
+  request.package.source_understanding_review = {
+    understanding_version: '1.0.0',
+    status: 'completed',
+    analyst_role: 'local_source_understanding_reviewer',
+    source_text_id: 'adapter-source-text',
+    source_type: 'transcript',
+    review_effort: 'xhigh',
+    understanding_depth: 'xhigh_source_understanding',
+    topic: 'Adapter source understanding topic.',
+    thesis: 'Adapter source understanding thesis.',
+    audience_promise: 'Adapter source understanding audience promise.',
+    narrative_arc: [{
+      step: 1,
+      role: 'opening',
+      summary: 'Adapter source understanding arc summary.',
+      source_ref: 'source-chunk-1'
+    }],
+    turning_points: ['Adapter turning point.'],
+    concrete_examples: ['Adapter concrete source example.'],
+    repeated_motifs: [{
+      motif: 'adapter motif',
+      occurrence_count: 2,
+      reviewer_use: 'Use as a repeated source signal.'
+    }],
+    must_not_miss_points: [{
+      id: 'adapter-must-not-miss',
+      point: 'Adapter must-not-miss source point.',
+      importance: 'central_thesis',
+      should_shape_final_review: true
+    }],
+    tensions_or_counterpoints: ['Adapter source tension.'],
+    source_limitations: ['Adapter source limitation.'],
+    reviewer_implications: ['Adapter reviewer implication.'],
+    evidence_claims: [{
+      id: 'adapter-source-claim',
+      claim: 'Adapter source-understanding claim.',
+      evidence_refs: ['source-chunk-1'],
+      support_type: 'derived_source_understanding',
+      confidence: 'medium',
+      limitation: 'Adapter source-understanding claim limitation.'
+    }],
+    assistant_reference_quality: {
+      target: 'clearly_exceed_assistant_reference_review'
+    },
+    source_excerpt_refs: [{
+      id: 'source-chunk-1',
+      locator: 'chunk:adapter-secret',
+      excerpt: 'FULL SOURCE TRANSCRIPT TEXT MUST NOT TRANSFER TO THE PROVIDER REQUEST',
+      excerpt_hash: 'hash-source-chunk-1',
+      full_source_text_included: false
+    }],
+    coverage: {
+      source_type: 'transcript',
+      chunk_count: 1,
+      narrative_arc_step_count: 1,
+      must_not_miss_count: 1,
+      evidence_claim_count: 1,
+      has_location_refs: true,
+      source_understanding_score: 1,
+      evidence_ref_resolution_score: 1
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
   request.package.artifact_references = Array.from({ length: 80 }, (_value, index) => ({
     id: `large-artifact-${index + 1}`,
     type: 'review_artifact_reference',
@@ -10413,6 +10567,8 @@ test('agentic human review responses adapter compacts real-shaped owner-baseline
   assert.equal(input.review_request.plan.provider_instruction_contract.owner_baseline_requirement_contract, undefined);
   assert.equal(input.review_request.package.artifact_references, undefined);
   assert.equal(input.review_request.package.artifact_reference_count, request.package.artifact_references.length);
+  assert.equal(input.review_request.package.source_understanding_review.source_excerpt_refs[0].excerpt, undefined);
+  assert.equal(input.review_request.package.source_understanding_review.repeated_motifs[0].motif, 'adapter motif');
   assert.match(serialized, /Bounded adapter content summary/);
   assert.match(serialized, /Bounded adapter content unit/);
   assert.match(serialized, /Bounded adapter content claim/);
@@ -10428,6 +10584,7 @@ test('agentic human review responses adapter compacts real-shaped owner-baseline
   assert.match(serialized, /Owner-approved exact required mention 1/);
   assert.doesNotMatch(serialized, /must not be copied verbatim into provider requests/);
   assert.doesNotMatch(serialized, /\.browser-debug|adapter-secret-value|provider-secret-value/);
+  assert.doesNotMatch(serialized, /FULL SOURCE TRANSCRIPT TEXT MUST NOT TRANSFER|chunk:adapter-secret/);
   assert.doesNotMatch(serialized, /example\.invalid|section:adapter-secret|document:adapter-secret|private-adapter-content/);
   assert.doesNotMatch(serialized, /data:text\/html|data:application\/pdf|blob:https|raw html must not transfer/);
 });

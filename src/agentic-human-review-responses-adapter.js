@@ -3057,6 +3057,31 @@ function buildLocalEvidenceReferenceCatalog(traceCueRequest) {
       });
     }
   }
+  if (traceCueRequest?.package?.source_understanding_review?.status === 'completed') {
+    const understanding = traceCueRequest.package.source_understanding_review;
+    addReference({
+      id: understanding.source_text_id ? `${understanding.source_text_id}:source-understanding-review` : 'source-understanding-review',
+      type: 'source_understanding_review',
+      description: `Full-source understanding review for ${understanding.source_type ?? 'source text'} using ${understanding.understanding_depth ?? 'unknown'} depth.`,
+      content_included: true
+    });
+    for (const [index] of arrayOrEmpty(understanding.source_excerpt_refs).entries()) {
+      addReference({
+        id: `${understanding.source_text_id ?? 'source-text'}:understanding-excerpt-${index + 1}`,
+        type: 'source_understanding_excerpt_ref',
+        description: `Bounded source-understanding excerpt reference ${index + 1}.`,
+        content_included: false
+      });
+    }
+    for (const [index] of arrayOrEmpty(understanding.evidence_claims).entries()) {
+      addReference({
+        id: `${understanding.source_text_id ?? 'source-text'}:understanding-claim-${index + 1}`,
+        type: 'source_understanding_claim',
+        description: `Bounded source-understanding evidence claim ${index + 1}.`,
+        content_included: true
+      });
+    }
+  }
   for (const [evidenceIndex, evidence] of arrayOrEmpty(traceCueRequest?.package?.content_evidence?.supplemental_evidence).entries()) {
     const evidenceId = evidence?.id ?? `supplemental-content-${evidenceIndex + 1}`;
     addReference({
@@ -3525,6 +3550,7 @@ function compactProviderPlanPayload(plan, reviewPackage = null) {
     content_evidence: compactProviderContentEvidence(plan.content_evidence ?? reviewPackage?.content_evidence),
     source_text: compactProviderSourceText(plan.source_text ?? reviewPackage?.source_text),
     source_reading_review: compactProviderSourceReadingReview(plan.source_reading_review ?? reviewPackage?.source_reading_review),
+    source_understanding_review: compactProviderSourceUnderstandingReview(plan.source_understanding_review ?? reviewPackage?.source_understanding_review),
     evidence_plan: compactProviderEvidencePlan(plan.evidence_plan ?? reviewPackage?.evidence_plan),
     human_review_contract: compactProviderHumanReviewContract(plan.human_review_contract ?? reviewPackage?.human_review_input_contract),
     provider_instruction_contract: compactProviderInstructionContract(plan.provider_instruction_contract),
@@ -3563,6 +3589,7 @@ function compactProviderPackagePayload(reviewPackage) {
     content_evidence: compactProviderContentEvidence(reviewPackage.content_evidence),
     source_text: compactProviderSourceText(reviewPackage.source_text),
     source_reading_review: compactProviderSourceReadingReview(reviewPackage.source_reading_review),
+    source_understanding_review: compactProviderSourceUnderstandingReview(reviewPackage.source_understanding_review),
     visible_text_provenance: compactProviderVisibleTextProvenance(reviewPackage.visible_text_provenance),
     visible_text_reading_contract: compactProviderVisibleTextReadingContract(reviewPackage.visible_text_reading_contract),
     screen_text_understanding_contract: compactProviderScreenTextUnderstandingContract(reviewPackage.screen_text_understanding_contract),
@@ -4141,6 +4168,101 @@ function compactProviderSourceReadingReview(value) {
     }),
     advisory_only: true,
     gate_effect: 'none'
+  });
+}
+
+function compactProviderSourceUnderstandingReview(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return compactAdapterObject({
+    understanding_version: value.understanding_version,
+    status: value.status,
+    analyst_role: value.analyst_role,
+    source_text_id: value.source_text_id,
+    source_type: value.source_type,
+    review_effort: value.review_effort,
+    understanding_depth: value.understanding_depth,
+    topic: compactProviderContentText(firstString(value.topic, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+    thesis: compactProviderContentText(firstString(value.thesis, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+    audience_promise: compactProviderContentText(firstString(value.audience_promise, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+    narrative_arc: arrayOrEmpty(value.narrative_arc).slice(0, 10).map((item) => compactAdapterObject({
+      step: item?.step,
+      role: compactProviderContentText(firstString(item?.role, null), PROVIDER_OUTPUT_LIMITS.shortText),
+      summary: compactProviderContentText(firstString(item?.summary, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+      source_ref: item?.source_ref
+    })),
+    turning_points: compactProviderSourceUnderstandingPoints(value.turning_points, 8),
+    concrete_examples: compactProviderContentTextArray(value.concrete_examples, 8, PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+    repeated_motifs: arrayOrEmpty(value.repeated_motifs).slice(0, 8).map((item) => {
+      if (typeof item === 'string') {
+        return compactProviderContentText(item, PROVIDER_CONTEXT_LIMITS.contentSnippetText);
+      }
+      return compactAdapterObject({
+        motif: compactProviderContentText(firstString(item?.motif, null), PROVIDER_OUTPUT_LIMITS.shortText),
+        occurrence_count: item?.occurrence_count,
+        reviewer_use: compactProviderContentText(firstString(item?.reviewer_use, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText)
+      });
+    }).filter(Boolean),
+    must_not_miss_points: compactProviderSourceUnderstandingPoints(value.must_not_miss_points, 12),
+    tensions_or_counterpoints: compactProviderContentTextArray(value.tensions_or_counterpoints, 8, PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+    source_limitations: compactProviderContentTextArray(value.source_limitations, 8, PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+    reviewer_implications: compactProviderContentTextArray(value.reviewer_implications, 8, PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+    evidence_claims: arrayOrEmpty(value.evidence_claims).slice(0, 12).map((claim) => compactAdapterObject({
+      id: claim?.id,
+      claim: compactProviderContentText(firstString(claim?.claim, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+      evidence_refs: compactTextArray(claim?.evidence_refs, 8, 160),
+      support_type: claim?.support_type,
+      confidence: claim?.confidence,
+      limitation: compactProviderContentText(firstString(claim?.limitation, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText)
+    })),
+    assistant_reference_quality: value.assistant_reference_quality,
+    source_excerpt_refs: arrayOrEmpty(value.source_excerpt_refs).slice(0, 12).map((item) => compactAdapterObject({
+      id: item?.id,
+      excerpt_hash: item?.excerpt_hash,
+      full_source_text_included: false
+    })),
+    coverage: compactAdapterObject({
+      source_type: value.coverage?.source_type,
+      chunk_count: value.coverage?.chunk_count,
+      narrative_arc_step_count: value.coverage?.narrative_arc_step_count,
+      must_not_miss_count: value.coverage?.must_not_miss_count,
+      evidence_claim_count: value.coverage?.evidence_claim_count,
+      has_location_refs: value.coverage?.has_location_refs === true,
+      source_understanding_score: value.coverage?.source_understanding_score,
+      evidence_ref_resolution_score: value.coverage?.evidence_ref_resolution_score
+    }),
+    boundary: compactAdapterObject({
+      full_source_text_persisted: false,
+      full_source_text_transferred: false,
+      full_source_text_embedded_in_json: false,
+      full_source_text_embedded_in_markdown: false,
+      provider_call_performed: false,
+      api_call_performed: false,
+      deterministic_findings_mutated: false,
+      proof_contract_satisfied: false,
+      human_equivalence_claim_authorized: false,
+      human_superiority_claim_authorized: false
+    }),
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+}
+
+function compactProviderSourceUnderstandingPoints(values, limit) {
+  return arrayOrEmpty(values).slice(0, limit).map((item, index) => {
+    if (typeof item === 'string') {
+      return compactAdapterObject({
+        id: `source-understanding-point-${index + 1}`,
+        point: compactProviderContentText(item, PROVIDER_CONTEXT_LIMITS.contentSnippetText)
+      });
+    }
+    return compactAdapterObject({
+      id: item?.id ?? `source-understanding-point-${index + 1}`,
+      point: compactProviderContentText(firstString(item?.point, item?.summary, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+      reason: compactProviderContentText(firstString(item?.reason, null), PROVIDER_CONTEXT_LIMITS.contentSnippetText),
+      source_ref: item?.source_ref
+    });
   });
 }
 
