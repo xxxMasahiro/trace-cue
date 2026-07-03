@@ -219,6 +219,7 @@ Phase 29 agent execution stays separate from the current advisory workflow. It a
 - `docs/product/IMPLEMENTATION_PLAN.md`
 - `docs/workflow/TASK_TRACKER.md`
 - `docs/workflow/HANDOFF.md`
+- `docs/workflow/INSTRUCTION_MEMORY.md`
 
 ## Local Checks
 

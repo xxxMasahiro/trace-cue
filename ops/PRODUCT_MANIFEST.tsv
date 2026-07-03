@@ -100,6 +100,7 @@ product.pack_install_smoke_tool	optional	all	all	tools/pack-install-smoke.mjs	cu
 product.requirements	required	all	all	docs/product/REQUIREMENTS.md	doc	file_nonempty	workflow	Canonical requirements.
 product.specification	required	all	all	docs/product/SPECIFICATION.md	doc	file_nonempty	workflow	Canonical specification.
 product.plan	required	all	all	docs/product/IMPLEMENTATION_PLAN.md	doc	file_nonempty	workflow	Canonical implementation plan.
+product.instruction_memory	optional	all	all	docs/workflow/INSTRUCTION_MEMORY.md	doc	file_nonempty	workflow	Durable workflow instruction memory for approved autonomous implementation protocol and completion reporting.
 product.release_policy	optional	all	all	docs/workflow/RELEASE.md	doc	file_nonempty	workflow	Local release readiness checklist and publication blockers.
 product.identity_migration	optional	all	all	docs/workflow/IDENTITY_MIGRATION.md	doc	file_nonempty	workflow	Runbook for approved future package, repository, CLI, MCP, and plugin identity migrations.
 product.ci_check	optional	all	all	tools/check_product_ci.sh	custom	file_nonempty	workflow	Product-local CI workflow validation without remote execution.

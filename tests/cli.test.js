@@ -3463,7 +3463,14 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
       time_range: '0:00-0:20',
       confidence: 'medium'
     }],
-    limitations: ['Video evidence is a metadata summary; raw video, raw audio, frames, and full transcript are not supplied.']
+    limitations: ['Video evidence is a metadata summary; raw video, raw audio, frames, and full transcript are not supplied.'],
+    boundary: {
+      raw_video_read_by_tracecue: false,
+      raw_audio_read_by_tracecue: false,
+      raw_pixels_read_by_tracecue: false,
+      raw_media_embedded_in_json: false,
+      raw_media_transferred: false
+    }
   }, null, 2), 'utf8');
   const contentEvidencePath = 'content-evidence.json';
   await writeFile(path.join(cwd, contentEvidencePath), JSON.stringify({
@@ -3497,7 +3504,29 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
       locator: 'section:audience',
       confidence: 'high'
     }],
-    limitations: ['The content evidence is bounded and does not include the full source document.']
+    limitations: ['The content evidence is bounded and does not include the full source document.'],
+    full_text: false,
+    coverage: {
+      has_full_text: false
+    },
+    privacy: {
+      raw_media_embedded_in_json: false,
+      raw_binary_embedded_in_json: false,
+      raw_html_embedded_in_json: false,
+      raw_pdf_embedded_in_json: false,
+      raw_content_embedded_in_json: false,
+      full_transcript_embedded_in_json: false,
+      full_document_embedded_in_json: false
+    },
+    boundary: {
+      raw_media_read_by_tracecue: false,
+      raw_binary_read_by_tracecue: false,
+      raw_html_read_by_tracecue: false,
+      raw_pdf_read_by_tracecue: false,
+      raw_media_embedded_in_json: false,
+      raw_binary_embedded_in_json: false,
+      raw_content_transferred: false
+    }
   }, null, 2), 'utf8');
 
   const parsedProposal = parseCliArgs([
@@ -4057,6 +4086,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     contentOnlyResult.report_quality.quality_diagnostics.some((diagnostic) => diagnostic.code === 'AHR_REPORT_QUALITY_CONTENT_EVIDENCE_SUMMARY_ONLY'),
     true
   );
+  assert.match(contentOnlyResult.editorial_synthesis.full_review, /audience pain, likely value, and suggested next steps/);
+  assert.doesNotMatch(contentOnlyResult.editorial_synthesis.full_review, /^Deterministic fake agentic human review completed/i);
   const contentOnlyReportText = await readFile(path.join(cwd, '.browser-debug', 'reports', 'agentic-execution-content-only-agentic-human-review.md'), 'utf8');
   assert.match(contentOnlyReportText, /Content Evidence/);
   assert.match(contentOnlyReportText, /Evidence scope: page_and_content_evidence/);
@@ -4980,8 +5011,22 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(resultFile.editorial_synthesis.content_evidence.source_types.includes('document'), true);
   assert.equal(resultFile.editorial_synthesis.composer.evidence_first, true);
   assert.match(resultFile.editorial_synthesis.full_review, /product promise|target reader|clear onboarding|trust evidence|first action/i);
+  assert.match(resultFile.editorial_synthesis.full_review, /intended for non-engineer decision makers/i);
+  assert.match(resultFile.editorial_synthesis.full_review, /bounded and does not include the full source document/i);
+  assert.doesNotMatch(resultFile.editorial_synthesis.full_review, /^Deterministic fake agentic human review completed/i);
+  assert.equal(
+    resultFile.editorial_synthesis.full_review.indexOf('product promise') < (
+      resultFile.editorial_synthesis.full_review.indexOf('Deterministic fake agentic human review completed') === -1
+        ? Number.POSITIVE_INFINITY
+        : resultFile.editorial_synthesis.full_review.indexOf('Deterministic fake agentic human review completed')
+    ),
+    true
+  );
   assert.equal(resultFile.editorial_synthesis.source_refs.length > 0, true);
   assert.equal(resultFile.editorial_synthesis.source_refs.some((ref) => ref.startsWith('content_evidence:')), true);
+  assert.equal(resultFile.editorial_synthesis.source_refs.includes('content_evidence:content_evidence_units'), true);
+  assert.equal(resultFile.editorial_synthesis.source_refs.includes('content_evidence:content_evidence_claims_observed'), true);
+  assert.equal(resultFile.editorial_synthesis.source_refs.includes('content_evidence:content_evidence_limitations'), true);
   assert.equal(resultFile.editorial_synthesis.source_refs.some((ref) => ref.startsWith('video_evidence:')), true);
   assert.equal(resultFile.editorial_synthesis.source_ref_details.every((ref) => typeof ref.source_field === 'string' && typeof ref.source_id === 'string'), true);
   assert.equal(resultFile.editorial_synthesis.source_ref_details.some((ref) => ref.source_field === 'agentic_human_review_findings'), true);

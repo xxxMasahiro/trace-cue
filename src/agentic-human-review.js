@@ -6482,10 +6482,16 @@ function findDisallowedVideoEvidenceContent(value, trail = []) {
 
 function hasNonEmptyValue(value) {
   if (Array.isArray(value)) {
-    return value.length > 0;
+    return value.some((item) => hasNonEmptyValue(item));
   }
   if (value && typeof value === 'object') {
-    return Object.keys(value).length > 0;
+    return Object.values(value).some((item) => hasNonEmptyValue(item));
+  }
+  if (typeof value === 'boolean') {
+    return value === true;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value !== 0;
   }
   return value !== null && value !== undefined && String(value).trim() !== '';
 }
@@ -10922,8 +10928,8 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
   const consensusSummary = buildConsensusSummary({ roleOpinions, findings, input });
   const dissentSummary = buildDissentSummary({ roleOpinions, input });
   const boundedLanguageSettings = boundedAgenticLanguageSettings(languageSettings);
-  const evidenceScope = normalizeEvidenceScopeRecord(plan.evidence_scope, plan.video_evidence, plan.content_evidence);
   const videoEvidence = normalizeVideoEvidenceResultPackage(plan.video_evidence);
+  const evidenceScope = normalizeEvidenceScopeRecord(plan.evidence_scope, videoEvidence, contentEvidence);
   const editorialSynthesis = buildEditorialSynthesis({
     plan,
     languageSettings: boundedLanguageSettings,
@@ -14026,9 +14032,11 @@ function normalizeContentUnitEditorialText(values, evidenceId) {
   if (!Array.isArray(values)) {
     return [];
   }
-  return values.slice(0, MAX_CONTENT_EVIDENCE_ITEMS).map((item, index) => {
-    const locator = item?.locator ? `[${item.locator}]` : `[${evidenceId}:content-unit-${index + 1}]`;
-    return [locator, item?.text ?? item?.summary].filter(Boolean).join(' ');
+  void evidenceId;
+  return values.slice(0, MAX_CONTENT_EVIDENCE_ITEMS).flatMap((item) => {
+    const text = item?.text ? String(item.text) : '';
+    const summary = item?.summary ? String(item.summary) : '';
+    return uniqueEditorialTexts([text, summary]);
   }).filter(Boolean);
 }
 
@@ -14040,7 +14048,7 @@ function normalizeContentClaimEditorialText(values) {
     if (typeof item === 'string') {
       return item;
     }
-    return [item?.claim, item?.evidence, item?.locator].filter(Boolean).join(' ');
+    return [item?.claim, item?.evidence].filter(Boolean).join(' ');
   }).filter(Boolean);
 }
 
@@ -14255,8 +14263,28 @@ function normalizeSupplementalContentEvidenceResult(value) {
   if (!value || typeof value !== 'object') {
     return null;
   }
+  const sourceType = normalizeEnum(value.source_type ?? value.content_type ?? value.kind, [...CONTENT_EVIDENCE_SOURCE_TYPES], 'other');
+  const summaries = normalizeContentEvidenceSummaries({
+    ...value,
+    content_summary: value.summaries?.content_summary ?? value.content_summary,
+    transcript_summary: value.summaries?.transcript_summary ?? value.transcript_summary,
+    visible_text_summary: value.summaries?.visible_text_summary ?? value.visible_text_summary,
+    section_summary: value.summaries?.section_summary ?? value.section_summary
+  });
+  const contentUnits = normalizeContentEvidenceUnits(value.content_units ?? value.units ?? value.excerpts ?? value.sections ?? value.chunks);
+  const claimsObserved = normalizeContentEvidenceClaims(value.claims_observed ?? value.observed_claims ?? value.claims ?? value.content_claims);
+  const limitations = normalizeStringArray(value.limitations ?? value.uncertainties ?? value.analysis_limitations).slice(0, MAX_CONTENT_EVIDENCE_ITEMS);
+  const coverage = normalizeContentEvidenceCoverage({
+    sourceType,
+    input: value,
+    summaries,
+    contentUnits,
+    claimsObserved
+  });
+  const summaryCount = Object.values(summaries).reduce((count, item) => count + item.length, 0);
   const normalized = {
     ...value,
+    source_type: sourceType,
     source: value.source ? {
       kind: value.source.kind ?? null,
       title: value.source.title ?? null,
@@ -14264,6 +14292,14 @@ function normalizeSupplementalContentEvidenceResult(value) {
       duration_seconds: value.source.duration_seconds ?? null,
       page_count: value.source.page_count ?? null
     } : null,
+    summaries,
+    content_units: contentUnits,
+    claims_observed: claimsObserved,
+    limitations,
+    coverage,
+    summary_count: summaryCount,
+    content_unit_count: contentUnits.length,
+    claim_count: claimsObserved.length,
     provenance: value.provenance ? {
       input_hash: value.provenance.input_hash ?? null,
       input_type: value.provenance.input_type ?? 'content_evidence',
@@ -14566,6 +14602,22 @@ function buildEditorialFullReview({
   limitations,
   sourceRecords = []
 }) {
+  const contentFirstReview = buildContentEvidenceFirstEditorialReview({
+    language,
+    status,
+    takeaway,
+    observations,
+    strengths,
+    risksOrCautions,
+    keyTensions,
+    recommendedDirection,
+    ownerDecisionSummary,
+    limitations,
+    sourceRecords
+  });
+  if (contentFirstReview) {
+    return contentFirstReview;
+  }
   const contentEvidenceTexts = editorialTextsBySource(sourceRecords, ['content_evidence'], 4);
   const xhighTexts = editorialTextsBySource(sourceRecords, ['xhigh_quality'], 2);
   const paragraphs = [];
@@ -14585,6 +14637,113 @@ function buildEditorialFullReview({
     return deduped.join('\n\n');
   }
   return editorialFirstText([takeaway, ...limitations], language);
+}
+
+function buildContentEvidenceFirstEditorialReview({
+  language,
+  status,
+  takeaway,
+  observations,
+  strengths,
+  risksOrCautions,
+  keyTensions,
+  recommendedDirection,
+  ownerDecisionSummary,
+  limitations,
+  sourceRecords = []
+}) {
+  const contentSummaries = editorialSpecificTexts(editorialTextsById(sourceRecords, [
+    'content_evidence_content_summary',
+    'content_evidence_section_summary',
+    'content_evidence_transcript_summary',
+    'content_evidence_visible_text_summary'
+  ], 6));
+  const contentUnits = editorialSpecificTexts(editorialTextsById(sourceRecords, [
+    'content_evidence_units'
+  ], 8));
+  const contentClaims = editorialSpecificTexts(editorialTextsById(sourceRecords, [
+    'content_evidence_claims_observed'
+  ], 4));
+  const contentLimitations = editorialSpecificTexts(editorialTextsById(sourceRecords, [
+    'content_evidence_limitations'
+  ], 4));
+  const hasContentMaterial = contentSummaries.length + contentUnits.length + contentClaims.length > 0;
+  if (!hasContentMaterial) {
+    return '';
+  }
+  const xhighTexts = editorialSpecificTexts(editorialTextsBySource(sourceRecords, ['xhigh_quality'], 2));
+  const narrativeSignals = editorialSpecificTexts([
+    takeaway,
+    ...observations,
+    ...strengths
+  ]).slice(0, 4);
+  const cautionSignals = editorialSpecificTexts([
+    ...contentLimitations,
+    ...risksOrCautions,
+    ...keyTensions
+  ]).slice(0, 5);
+  const directionSignals = editorialSpecificTexts([
+    recommendedDirection
+  ].filter((item) => !isNoOwnerDecisionEditorialText(item, language))).slice(0, 2);
+  const boundaryLimitations = editorialSpecificTexts(limitations).slice(0, status === 'limited' ? 2 : 1);
+  const paragraphs = [];
+  const addParagraph = (values) => {
+    const text = mergeEditorialSentences(values);
+    if (text) {
+      paragraphs.push(text);
+    }
+  };
+  addParagraph([
+    ...contentSummaries.slice(0, 3),
+    ...contentUnits.slice(0, contentSummaries.length > 0 ? 1 : 2)
+  ]);
+  addParagraph([
+    ...contentUnits.slice(contentSummaries.length > 0 ? 1 : 2, contentSummaries.length > 0 ? 3 : 4),
+    ...contentClaims.slice(0, 2)
+  ]);
+  addParagraph([
+    ...contentClaims.slice(2, 4),
+    ...narrativeSignals.slice(0, 3)
+  ]);
+  addParagraph([
+    ...cautionSignals.slice(0, 4)
+  ]);
+  addParagraph([
+    ...directionSignals,
+    ...xhighTexts,
+    ...boundaryLimitations
+  ]);
+  const deduped = uniqueEditorialParagraphs(paragraphs);
+  return deduped.length > 0 ? deduped.join('\n\n') : '';
+}
+
+function editorialSpecificTexts(values) {
+  return uniqueEditorialTexts(values).filter((value) => !isLowSpecificityEditorialText(value));
+}
+
+function isLowSpecificityEditorialText(value) {
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return true;
+  }
+  return /^(?:deterministic fake agentic human review completed|runtime model advisory completed|agentic human review completed)\b/iu.test(text)
+    || /too few evidence-backed findings or reported role opinions/iu.test(text)
+    || /review the advisory output with the owner(?: before implementation| and prioritize)/iu.test(text)
+    || /existing advisory result needs owner review before product decisions are made/iu.test(text)
+    || /existing AHR result has too few evidence-backed findings/iu.test(text);
+}
+
+function isNoOwnerDecisionEditorialText(value, language = 'en') {
+  const text = editorialSafeText(value, 700);
+  if (!text) {
+    return true;
+  }
+  const fallback = resolveReportTemplateText(
+    'report.ahr.editorial.fallback.no_owner_decision',
+    language,
+    'No explicit owner decision was requested by the existing advisory output.'
+  );
+  return text === fallback || /no explicit owner decision was requested/iu.test(text);
 }
 
 function formatEditorialList(values) {
