@@ -7663,6 +7663,174 @@ test('agentic human review content evidence source-type matrix remains bounded a
   }
 });
 
+test('agentic human review source-text effort and source-type matrix composes natural generic reviews', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-source-text-matrix-'));
+  const png = minimalPngBuffer(120, 80);
+  await writeFile(path.join(cwd, 'screen.png'), png);
+
+  const imageReview = await executeCli(['review', '--image', 'screen.png', '--json'], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'image-review-source-text-matrix'
+  });
+  assert.equal(imageReview.exitCode, 0);
+
+  const sourceTypes = ['video', 'web_page', 'pdf', 'meeting_notes', 'document'];
+  const expectedEnglishLabels = {
+    video: 'video',
+    web_page: 'web page',
+    pdf: 'PDF',
+    meeting_notes: 'meeting notes',
+    document: 'document'
+  };
+  const efforts = ['standard', 'deep', 'xhigh'];
+  const reviewsByEffort = new Map();
+  const sourceTextArtifact = (sourceType, effort) => ({
+    schema_version: '1.0.0',
+    evidence_kind: 'source_text',
+    id: `matrix-source-${sourceType}-${effort}`,
+    source_type: sourceType,
+    source: {
+      kind: `external_${sourceType}_text`,
+      title: `Matrix ${expectedEnglishLabels[sourceType]} source`
+    },
+    provider: {
+      id: 'matrix-source-text-provider',
+      kind: 'source_text_export',
+      version: '1.0.0',
+      local_execution: true,
+      api_call_performed: false
+    },
+    text: [
+      `Matrix ${sourceType} source opens with a central audience problem: reviewers need complete source understanding before judging the artifact.`,
+      `The middle section gives a concrete example SOURCE-EXAMPLE-${sourceType}: users compare the promise, evidence, and next action before trusting the result.`,
+      `It explains reader value SOURCE-VALUE-${sourceType}: the review should connect the artifact's claim to a practical decision for the intended audience.`,
+      `A tension remains SOURCE-TENSION-${sourceType}: summary-only interpretation can miss nuance if the source flow and existing advisory findings are not cross-checked.`,
+      `The practical recommendation SOURCE-ACTION-${sourceType}: prioritize the clearest audience decision, evidence limit, and next action.`
+    ].join('\n\n'),
+    chunks: [
+      {
+        id: `${sourceType}-${effort}-opening`,
+        locator: 'section:opening',
+        text: `Opening SOURCE-OPENING-${sourceType}: complete source understanding is required before judging the artifact.`
+      },
+      {
+        id: `${sourceType}-${effort}-example`,
+        locator: 'section:example',
+        text: `Example SOURCE-EXAMPLE-${sourceType}: users compare promise, evidence, and next action before trusting the result.`
+      },
+      {
+        id: `${sourceType}-${effort}-tension`,
+        locator: 'section:tension',
+        text: `Tension SOURCE-TENSION-${sourceType}: summary-only interpretation can miss nuance without cross-checking existing advisory findings.`
+      }
+    ]
+  });
+
+  for (const sourceType of sourceTypes) {
+    for (const effort of efforts) {
+      const slug = `${sourceType}-${effort}`.replace(/[^a-z0-9]+/gu, '-');
+      const sourceFile = `${slug}-source-text.json`;
+      await writeFile(path.join(cwd, sourceFile), JSON.stringify(sourceTextArtifact(sourceType, effort), null, 2), 'utf8');
+      const planResult = await executeCli([
+        'agentic',
+        'review',
+        'plan',
+        '--review-index',
+        '.browser-debug/review-artifacts/image-review-source-text-matrix.json',
+        '--intent',
+        `Review ${sourceType} source text with ${effort} effort and compose a natural source-grounded advisory review.`,
+        '--effort',
+        effort,
+        '--source-text',
+        sourceFile,
+        '--provider',
+        'fake-agent',
+        '--model',
+        'fake-model',
+        '--json'
+      ], {
+        cwd,
+        now: fixedNow,
+        createId: () => `agentic-plan-source-text-matrix-${slug}`
+      });
+      assert.equal(planResult.exitCode, 0, `${sourceType}/${effort}`);
+      const planBody = JSON.parse(planResult.stdout);
+      const plan = planBody.data.agentic_human_review_plan;
+      assert.equal(plan.source_text.source_type, sourceType);
+      assert.equal(plan.source_text.text_stats.stored_full_text, false);
+      assert.equal(plan.source_text.chunk_index.every((chunk) => chunk.text_included === false), true);
+      assert.equal(plan.source_reading_review.reading_depth, `${effort}_source_reading`);
+      assert.equal(plan.source_understanding_review.understanding_depth, `${effort}_source_understanding`);
+      assert.equal(plan.source_understanding_review.source_excerpt_refs.every((ref) => ref.excerpt === undefined), true);
+      assert.equal(plan.disclosure.source_understanding_review_included, true);
+      assert.doesNotMatch(JSON.stringify(plan.source_text), /SOURCE-EXAMPLE-/u);
+
+      const requiredFlags = plan.transfer_permissions.required_flags.slice().sort();
+      const runResult = await executeCli([
+        'agentic',
+        'review',
+        'run',
+        '--plan',
+        `.browser-debug/agentic-human-review-plans/agentic-plan-source-text-matrix-${slug}/plan.json`,
+        '--plan-hash',
+        planBody.data.plan_hash,
+        ...requiredFlags.map((flag) => `--${flag}`),
+        '--provider',
+        'fake-agent',
+        '--model',
+        'fake-model',
+        '--execute',
+        '--json'
+      ], {
+        cwd,
+        now: fixedNow,
+        createId: (prefix) => {
+          if (prefix === 'agentic-human-review-execution') {
+            return `agentic-execution-source-text-matrix-${slug}`;
+          }
+          if (prefix === 'agentic-human-review-result') {
+            return `agentic-result-source-text-matrix-${slug}`;
+          }
+          return `unexpected-agentic-source-text-matrix-${slug}`;
+        }
+      });
+      assert.equal(runResult.exitCode, 0, `${sourceType}/${effort}`);
+      const resultFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', `agentic-execution-source-text-matrix-${slug}`, 'result.json'), 'utf8'));
+      const fullReview = resultFile.editorial_synthesis.full_review;
+      reviewsByEffort.set(`${sourceType}:${effort}`, fullReview);
+      assert.equal(resultFile.editorial_synthesis.source_text.source_type, sourceType);
+      assert.equal(resultFile.source_reading_review.reading_depth, `${effort}_source_reading`);
+      assert.equal(resultFile.source_understanding_review.understanding_depth, `${effort}_source_understanding`);
+      assert.equal(resultFile.editorial_synthesis.composer.source_understanding_used, true);
+      assert.match(fullReview, new RegExp(`This ${escapeRegExp(expectedEnglishLabels[sourceType])}`, 'i'));
+      assert.match(fullReview, new RegExp(`SOURCE-(?:EXAMPLE|VALUE|TENSION|ACTION)-${escapeRegExp(sourceType)}`));
+      assert.match(fullReview, /Existing advisory signals cross-check|The review should preserve the tension|Recommended direction/i);
+      assert.doesNotMatch(fullReview, /Deterministic fake|approved package metadata|The deterministic layer|Review quality target|Assistant-reference target|Step \d+|role=/i);
+      assert.doesNotMatch(JSON.stringify(resultFile.source_text), /SOURCE-EXAMPLE-/u);
+      assert.equal(resultFile.editorial_synthesis.boundary.provider_call_performed, false);
+      assert.equal(resultFile.editorial_synthesis.boundary.full_source_text_persisted, false);
+      assert.equal(resultFile.editorial_synthesis.gate_effect, 'none');
+
+      if (effort === 'standard') {
+        assert.doesNotMatch(fullReview, /strictest review mode|what would change the conclusion|verification signal/i);
+      }
+      if (effort === 'deep') {
+        assert.match(fullReview, /For the audience|evidence-backed claims|practical direction/i);
+        assert.doesNotMatch(fullReview, /strictest review mode|what would change the conclusion/i);
+      }
+      if (effort === 'xhigh') {
+        assert.match(fullReview, /strictest review mode|counterpoints|evidence limits|what would change the conclusion|verification signal/i);
+      }
+      if (sourceType !== 'video') {
+        assert.doesNotMatch(fullReview, /raw video|raw audio|raw frames|watching the video/i);
+      }
+    }
+    assert.notEqual(reviewsByEffort.get(`${sourceType}:standard`), reviewsByEffort.get(`${sourceType}:deep`));
+    assert.notEqual(reviewsByEffort.get(`${sourceType}:deep`), reviewsByEffort.get(`${sourceType}:xhigh`));
+  }
+});
+
 test('agentic human review editorial synthesis uses artifact output language settings for supported locales', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-editorial-locale-'));
   const png = minimalPngBuffer(120, 80);

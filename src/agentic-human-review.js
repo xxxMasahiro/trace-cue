@@ -17954,6 +17954,25 @@ function buildSourceUnderstandingFirstEditorialReview({
   const critiqueSignals = naturalCritiqueRecordTexts(critiqueRecords, effort);
   const effortSignals = editorialTextsBySource(sourceRecords, ['review_effort_quality'], 2);
   const xhighComplete = effort === 'xhigh' && xhighCompletion?.status === 'complete';
+  const ahrSignals = buildSourceUnderstandingAhrSignalBuckets({ sourceRecords, reviewEffort: effort });
+  const narrativePlan = buildSourceUnderstandingNarrativePlan({
+    sourceType,
+    topic,
+    thesis,
+    arc,
+    mustNotMiss,
+    examples,
+    motifs,
+    tensions,
+    implications,
+    limitations,
+    evidenceClaims,
+    critiqueSignals,
+    xhighSignals,
+    ahrSignals,
+    reviewEffort: effort,
+    status
+  });
   const qualityScores = {
     verification_score: clampScore(reviewQualityEvaluation?.verification_score ?? 0),
     human_likeness_score: clampScore(reviewQualityEvaluation?.human_likeness_score ?? 0),
@@ -17980,7 +17999,9 @@ function buildSourceUnderstandingFirstEditorialReview({
       xhighComplete,
       qualityScores,
       reviewEffort: effort,
-      status
+      status,
+      narrativePlan,
+      ahrSignals
     })
     : buildDefaultSourceUnderstandingReviewParagraphs({
       sourceType,
@@ -18001,10 +18022,132 @@ function buildSourceUnderstandingFirstEditorialReview({
       xhighComplete,
       qualityScores,
       reviewEffort: effort,
-      status
+      status,
+      narrativePlan,
+      ahrSignals
     });
   const deduped = uniqueEditorialParagraphs(paragraphs);
   return deduped.length > 0 ? deduped.join('\n\n') : '';
+}
+
+function buildSourceUnderstandingNarrativePlan({
+  sourceType,
+  topic,
+  thesis,
+  arc,
+  mustNotMiss,
+  examples,
+  motifs,
+  tensions,
+  implications,
+  limitations,
+  evidenceClaims,
+  critiqueSignals,
+  xhighSignals,
+  ahrSignals,
+  reviewEffort,
+  status
+}) {
+  const centralThesis = selectNarrativeSignal([
+    thesis,
+    topic,
+    ...mustNotMiss,
+    ...arc
+  ]);
+  const flowSignals = selectDistinctEditorialTexts(
+    [...arc, ...mustNotMiss, ...examples],
+    [centralThesis],
+    reviewEffort === 'xhigh' ? 5 : reviewEffort === 'deep' ? 4 : 3
+  );
+  const concreteAnchors = selectDistinctEditorialTexts(
+    [...examples, ...evidenceClaims, ...mustNotMiss],
+    [centralThesis, ...flowSignals],
+    reviewEffort === 'xhigh' ? 4 : reviewEffort === 'deep' ? 3 : 2
+  );
+  const audienceValue = selectNarrativeSignal([
+    ...implications,
+    ...mustNotMiss,
+    ...evidenceClaims
+  ], [centralThesis, ...flowSignals, ...concreteAnchors]);
+  const primaryTension = selectNarrativeSignal([
+    ...tensions,
+    ...limitations
+  ], [centralThesis, ...flowSignals, ...concreteAnchors, audienceValue]);
+  const evidenceLimit = selectNarrativeSignal([
+    ...limitations,
+    ...tensions,
+    ...critiqueSignals
+  ], [centralThesis, ...flowSignals, ...concreteAnchors, audienceValue, primaryTension]);
+  const verificationFocus = selectDistinctEditorialTexts(
+    [...critiqueSignals, ...xhighSignals, ...ahrSignals?.verification ?? [], ...limitations, ...tensions],
+    [centralThesis, ...flowSignals, ...concreteAnchors, audienceValue],
+    reviewEffort === 'xhigh' ? 3 : 1
+  );
+  const repeatedMotifs = selectDistinctEditorialTexts(motifs, [], reviewEffort === 'xhigh' ? 4 : 3);
+  const crossCheck = selectDistinctEditorialTexts(
+    [...ahrSignals?.findings ?? [], ...ahrSignals?.readerImpact ?? [], ...ahrSignals?.roleOpinions ?? []],
+    [centralThesis, ...flowSignals, ...concreteAnchors],
+    reviewEffort === 'xhigh' ? 4 : reviewEffort === 'deep' ? 3 : 2
+  );
+  const actionDirection = selectNarrativeSignal(
+    [...ahrSignals?.actions ?? [], audienceValue, concreteAnchors[0], primaryTension, centralThesis],
+    [centralThesis, ...flowSignals]
+  );
+  return {
+    schema_version: SCHEMA_VERSION,
+    plan_version: '1.0.0',
+    status: status === 'completed' ? 'completed' : 'limited',
+    source_type: sourceType,
+    review_effort: reviewEffort,
+    central_thesis: centralThesis,
+    narrative_flow: flowSignals,
+    concrete_anchors: concreteAnchors,
+    repeated_motifs: repeatedMotifs,
+    audience_value: audienceValue,
+    primary_tension: primaryTension,
+    evidence_limit: evidenceLimit,
+    verification_focus: verificationFocus,
+    review_cross_check: crossCheck,
+    recommended_focus: actionDirection,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function selectNarrativeSignal(values, avoidValues = []) {
+  return selectDistinctEditorialTexts(values, avoidValues, 1)[0] ?? '';
+}
+
+function buildSourceUnderstandingAhrSignalBuckets({ sourceRecords, reviewEffort }) {
+  const effort = normalizeObservedReviewEffort(reviewEffort) ?? DEFAULT_REVIEW_EFFORT;
+  const limit = effort === 'xhigh' ? 5 : effort === 'deep' ? 4 : 3;
+  return {
+    readerImpact: editorialSpecificTexts(editorialTextsBySource(sourceRecords, [
+      'reader_experience_review',
+      'human_report_v3',
+      'mechanical_vs_human_review'
+    ], limit)),
+    findings: editorialSpecificTexts(editorialTextsBySource(sourceRecords, [
+      'agentic_human_review_findings',
+      'owner_baseline_findings',
+      'consensus_summary',
+      'dissent_summary',
+      'dissent_analysis'
+    ], limit)),
+    roleOpinions: editorialSpecificTexts(editorialTextsBySource(sourceRecords, [
+      'role_opinions'
+    ], effort === 'xhigh' ? 4 : 2)),
+    actions: editorialSpecificTexts(editorialTextsBySource(sourceRecords, [
+      'agentic_human_review_action_plan',
+      'owner_decision_requests',
+      'source_understanding_review'
+    ], limit)),
+    verification: editorialSpecificTexts(editorialTextsBySource(sourceRecords, [
+      'xhigh_quality',
+      'dissent_analysis',
+      'source_understanding_tensions'
+    ], effort === 'xhigh' ? 4 : 2))
+  };
 }
 
 function buildJapaneseSourceUnderstandingReviewParagraphs({
@@ -18026,30 +18169,38 @@ function buildJapaneseSourceUnderstandingReviewParagraphs({
   xhighComplete,
   qualityScores,
   reviewEffort,
-  status
+  status,
+  narrativePlan,
+  ahrSignals
 }) {
   const artifactLabel = japaneseSourceArtifactLabel(sourceType, language);
-  const theme = naturalizeJapaneseSourceThesis(thesis, { topic, motifs, mustNotMiss, examples });
+  const theme = naturalizeJapaneseSourceThesis(narrativePlan?.central_thesis ?? thesis, { topic, motifs, mustNotMiss, examples });
   const motifLimit = reviewEffort === 'xhigh' ? 4 : reviewEffort === 'deep' ? 4 : 3;
-  const motifText = formatJapaneseEditorialItems(naturalizeJapaneseSourceMotifs(motifs, { mustNotMiss, examples }).slice(0, motifLimit));
-  const arcTheme = naturalizeJapaneseSourceArc({ arc, mustNotMiss, examples, motifs });
-  const anchor = selectJapaneseSourceReviewAnchor({ mustNotMiss, implications, thesis: theme });
-  const exampleText = formatJapaneseQuotedList(examples.slice(0, reviewEffort === 'xhigh' ? 4 : reviewEffort === 'deep' ? 3 : 2));
+  const motifText = formatJapaneseEditorialItems(naturalizeJapaneseSourceMotifs(narrativePlan?.repeated_motifs ?? motifs, { mustNotMiss, examples }).slice(0, motifLimit));
+  const arcSignals = normalizeArray(narrativePlan?.narrative_flow).length > 0 ? narrativePlan.narrative_flow : arc;
+  const arcTheme = naturalizeJapaneseSourceArc({ arc: arcSignals, mustNotMiss, examples, motifs });
+  const anchor = selectJapaneseSourceReviewAnchor({ mustNotMiss: [narrativePlan?.recommended_focus, ...mustNotMiss], implications, thesis: theme });
+  const exampleSignals = normalizeArray(narrativePlan?.concrete_anchors).length > 0 ? narrativePlan.concrete_anchors : examples;
+  const tensionSignals = [narrativePlan?.primary_tension, ...tensions].filter(Boolean);
+  const limitationSignals = [narrativePlan?.evidence_limit, ...limitations].filter(Boolean);
+  const exampleText = formatJapaneseQuotedList(exampleSignals.slice(0, reviewEffort === 'xhigh' ? 4 : reviewEffort === 'deep' ? 3 : 2));
   const mustNotMissText = formatJapaneseQuotedList(mustNotMiss.slice(0, reviewEffort === 'xhigh' ? 4 : reviewEffort === 'deep' ? 3 : 2));
-  const tensionText = formatJapaneseQuotedList(tensions.slice(0, reviewEffort === 'xhigh' ? 3 : 2));
-  const limitationText = formatJapaneseQuotedList(limitations.slice(0, reviewEffort === 'xhigh' ? 3 : 1));
+  const tensionText = formatJapaneseQuotedList(tensionSignals.slice(0, reviewEffort === 'xhigh' ? 3 : 2));
+  const limitationText = formatJapaneseQuotedList(limitationSignals.slice(0, reviewEffort === 'xhigh' ? 3 : 1));
   const audienceSignals = selectDistinctEditorialTexts(
-    [anchor, ...implications, ...mustNotMiss.slice(2), ...evidenceClaims],
-    [theme, topic, ...mustNotMiss.slice(0, 2), ...examples.slice(0, 1)],
+    [narrativePlan?.audience_value, anchor, ...implications, ...mustNotMiss.slice(2), ...evidenceClaims],
+    [theme, topic, ...mustNotMiss.slice(0, 2), ...exampleSignals.slice(0, 1)],
     reviewEffort === 'xhigh' ? 3 : 2
   );
   const audienceText = formatJapaneseQuotedList(audienceSignals.slice(0, reviewEffort === 'xhigh' ? 2 : 1));
   const evidenceSupportSignals = selectDistinctEditorialTexts(
-    [...evidenceClaims.slice(2), ...examples, ...mustNotMiss.slice(3)],
+    [...evidenceClaims.slice(2), ...exampleSignals, ...mustNotMiss.slice(3)],
     [theme, topic, ...mustNotMiss.slice(0, 2), ...audienceSignals],
     reviewEffort === 'xhigh' ? 3 : 2
   );
   const evidenceSupportText = formatJapaneseQuotedList(evidenceSupportSignals);
+  const crossCheckText = formatJapaneseQuotedList(normalizeArray(narrativePlan?.review_cross_check).slice(0, reviewEffort === 'xhigh' ? 3 : 2));
+  const actionText = narrativePlan?.recommended_focus ? formatJapaneseQuotedList([narrativePlan.recommended_focus]) : '';
   const opening = [
     `${artifactLabel}は${topic ? `「${topic}」を入口にしながら、` : ''}${theme ? `${theme}という中心論点を扱っています。` : '中心論点を丁寧に追う必要がある内容です。'}`,
     motifText ? `その論点は${motifText}の反復で支えられています。` : ''
@@ -18061,12 +18212,14 @@ function buildJapaneseSourceUnderstandingReviewParagraphs({
   const strengthParagraph = [
     `強い点は、抽象的な主張を${motifText || '具体的な材料'}へ落としていることです。`,
     exampleText ? `特に${exampleText}があるため、レビューは要約ではなく、出典本文で何が語られたかに踏み込めます。` : '',
-    reviewEffort !== 'standard' && audienceText ? `さらに${audienceText}までつなぐと、話は単なるブランド論ではなく、視聴者自身の判断基準の話として読めます。` : ''
+    crossCheckText ? `既存レビューの所見と照らしても、${crossCheckText}が評価の補助線になります。` : '',
+    reviewEffort !== 'standard' && audienceText ? `さらに${audienceText}までつなぐと、話は単なる概要説明ではなく、受け手自身の判断基準の話として読めます。` : ''
   ].filter(Boolean).join('');
   const deepParagraph = reviewEffort === 'deep' || reviewEffort === 'xhigh'
     ? [
       audienceText ? `実用面では、${audienceText}を手がかりにすると、読者は「結局、自分は何を判断すべきか」を追いやすくなります。` : '',
-      evidenceSupportText ? `同時に、${evidenceSupportText}という本文由来の根拠を残すことで、感想だけのレビューになりにくくなります。` : ''
+      evidenceSupportText ? `同時に、${evidenceSupportText}という本文由来の根拠を残すことで、感想だけのレビューになりにくくなります。` : '',
+      actionText ? `改善の優先順位は、${actionText}を起点に置くと整理しやすくなります。` : ''
     ].filter(Boolean).join('')
     : '';
   const cautionParagraph = [
@@ -18079,8 +18232,8 @@ function buildJapaneseSourceUnderstandingReviewParagraphs({
       xhighSignals,
       critiqueSignals,
       effortSignals,
-      limitations,
-      tensions,
+      limitations: limitationSignals,
+      tensions: tensionSignals,
       qualityScores
     })
     : '';
@@ -18088,7 +18241,7 @@ function buildJapaneseSourceUnderstandingReviewParagraphs({
     reviewEffort,
     anchor,
     mustNotMiss,
-    implications,
+    implications: [...normalizeArray(ahrSignals?.actions), ...implications],
     evidenceClaims,
     status
   });
@@ -18114,47 +18267,58 @@ function buildDefaultSourceUnderstandingReviewParagraphs({
   xhighComplete,
   qualityScores,
   reviewEffort,
-  status
+  status,
+  narrativePlan,
+  ahrSignals
 }) {
   const artifactLabel = englishSourceArtifactLabel(sourceType, language);
-  const motifText = formatEditorialList(motifs.slice(0, reviewEffort === 'xhigh' ? 4 : reviewEffort === 'deep' ? 4 : 3), 'en');
-  const exampleText = formatEnglishQuotedList(examples.slice(0, reviewEffort === 'xhigh' ? 4 : reviewEffort === 'deep' ? 3 : 2));
+  const centralThesis = narrativePlan?.central_thesis || thesis;
+  const flowSignals = normalizeArray(narrativePlan?.narrative_flow).length > 0 ? narrativePlan.narrative_flow : arc;
+  const exampleSignals = normalizeArray(narrativePlan?.concrete_anchors).length > 0 ? narrativePlan.concrete_anchors : examples;
+  const tensionSignals = [narrativePlan?.primary_tension, ...tensions].filter(Boolean);
+  const limitationSignals = [narrativePlan?.evidence_limit, ...limitations].filter(Boolean);
+  const motifText = formatEditorialList((narrativePlan?.repeated_motifs ?? motifs).slice(0, reviewEffort === 'xhigh' ? 4 : reviewEffort === 'deep' ? 4 : 3), 'en');
+  const exampleText = formatEnglishQuotedList(exampleSignals.slice(0, reviewEffort === 'xhigh' ? 4 : reviewEffort === 'deep' ? 3 : 2));
   const mustNotMissText = formatEnglishQuotedList(mustNotMiss.slice(0, reviewEffort === 'xhigh' ? 4 : reviewEffort === 'deep' ? 3 : 2));
   const audienceSignals = selectDistinctEditorialTexts(
-    [...implications, ...mustNotMiss.slice(2), ...evidenceClaims],
-    [thesis, topic, ...mustNotMiss.slice(0, 2), ...examples.slice(0, 1)],
+    [narrativePlan?.audience_value, ...implications, ...mustNotMiss.slice(2), ...evidenceClaims],
+    [centralThesis, topic, ...mustNotMiss.slice(0, 2), ...exampleSignals.slice(0, 1)],
     reviewEffort === 'xhigh' ? 3 : 2
   );
   const audienceText = formatEnglishQuotedList(audienceSignals.slice(0, reviewEffort === 'xhigh' ? 2 : 1));
   const evidenceSupportSignals = selectDistinctEditorialTexts(
-    [...evidenceClaims.slice(2), ...examples, ...mustNotMiss.slice(3)],
-    [thesis, topic, ...mustNotMiss.slice(0, 2), ...audienceSignals],
+    [...evidenceClaims.slice(2), ...exampleSignals, ...mustNotMiss.slice(3)],
+    [centralThesis, topic, ...mustNotMiss.slice(0, 2), ...audienceSignals],
     reviewEffort === 'xhigh' ? 3 : 2
   );
   const evidenceSupportText = formatEnglishQuotedList(evidenceSupportSignals);
+  const crossCheckText = formatEnglishQuotedList(normalizeArray(narrativePlan?.review_cross_check).slice(0, reviewEffort === 'xhigh' ? 3 : 2));
+  const actionText = narrativePlan?.recommended_focus ? formatEnglishQuotedList([narrativePlan.recommended_focus]) : '';
   const opening = [
     `This ${artifactLabel}${topic ? ` starts from "${topic}"` : ' should be read from the supplied source text'}.`,
-    thesis ? `The central thesis is that ${thesis}.` : '',
+    centralThesis ? `The central thesis is that ${centralThesis}.` : '',
     motifText ? `The source keeps returning to ${motifText}.` : ''
   ].filter(Boolean).join(' ');
   const arcParagraph = [
-    arc.length > 0 ? `The source develops through ${formatEnglishQuotedList(arc.slice(0, reviewEffort === 'xhigh' ? 5 : 4))}.` : '',
+    flowSignals.length > 0 ? `The source develops through ${formatEnglishQuotedList(flowSignals.slice(0, reviewEffort === 'xhigh' ? 5 : 4))}.` : '',
     mustNotMissText ? `The review should not miss ${mustNotMissText}.` : ''
   ].filter(Boolean).join(' ');
   const strengthParagraph = [
     `The strong point is that the source turns its abstract claim into ${motifText || 'concrete source material'}.`,
     exampleText ? `${exampleText} gives the review concrete source anchors rather than leaving it as a general summary.` : '',
+    crossCheckText ? `Existing advisory signals cross-check that reading through ${crossCheckText}.` : '',
     reviewEffort !== 'standard' && audienceText ? `A deeper synthesis can connect those anchors to ${audienceText}, so the review becomes about the audience's own judgment criteria rather than topic summary alone.` : ''
   ].filter(Boolean).join(' ');
   const deepParagraph = reviewEffort === 'deep' || reviewEffort === 'xhigh'
     ? [
       audienceText ? `For the audience, the useful review move is to foreground ${audienceText} so the reader understands the practical decision at stake.` : '',
-      evidenceSupportText ? `The evidence-backed claims to preserve are ${evidenceSupportText}.` : ''
+      evidenceSupportText ? `The evidence-backed claims to preserve are ${evidenceSupportText}.` : '',
+      actionText ? `The practical direction should start from ${actionText}.` : ''
     ].filter(Boolean).join(' ')
     : '';
   const cautionParagraph = [
-    tensions.length > 0 ? `The review should preserve the tension around ${formatEnglishQuotedList(tensions.slice(0, reviewEffort === 'xhigh' ? 3 : 2))}.` : '',
-    limitations.length > 0 ? `It should also separate the evidence limits around ${formatEnglishQuotedList(limitations.slice(0, reviewEffort === 'xhigh' ? 3 : 1))}.` : 'Without that tension, the final review becomes too flat and loses the uncertainty that shapes the audience experience.'
+    tensionSignals.length > 0 ? `The review should preserve the tension around ${formatEnglishQuotedList(tensionSignals.slice(0, reviewEffort === 'xhigh' ? 3 : 2))}.` : '',
+    limitationSignals.length > 0 ? `It should also separate the evidence limits around ${formatEnglishQuotedList(limitationSignals.slice(0, reviewEffort === 'xhigh' ? 3 : 1))}.` : 'Without that tension, the final review becomes too flat and loses the uncertainty that shapes the audience experience.'
   ].filter(Boolean).join(' ');
   const xhighParagraph = reviewEffort === 'xhigh'
     ? buildDefaultXhighSourceUnderstandingParagraph({
@@ -18162,14 +18326,14 @@ function buildDefaultSourceUnderstandingReviewParagraphs({
       xhighSignals,
       critiqueSignals,
       effortSignals,
-      limitations,
-      tensions,
+      limitations: limitationSignals,
+      tensions: tensionSignals,
       qualityScores
     })
     : '';
   const recommendation = defaultSourceUnderstandingRecommendation({
     reviewEffort,
-    implications,
+    implications: [...normalizeArray(ahrSignals?.actions), ...implications],
     mustNotMiss,
     evidenceClaims,
     status
@@ -18321,43 +18485,32 @@ function isNaturalSourceReviewSignal(value) {
 }
 
 function naturalizeJapaneseSourceThesis(thesis, { topic, motifs, mustNotMiss, examples }) {
-  const source = [thesis, topic, ...motifs, ...mustNotMiss, ...examples].join(' ');
-  if (/変わらない|一貫|軸/u.test(source) && /速|変化|映り変/u.test(source) && /価値/u.test(source)) {
-    return '変化が速い時代だからこそ、変わらない軸や一貫性の価値が上がる';
-  }
-  if (/会社|肩書/u.test(source) && /自分|一人|生み出/u.test(source)) {
-    return '肩書きや所属が消えても残る、自分で生み出す力を見つめる';
-  }
-  return thesis ? `「${thesis}」` : '';
+  const candidates = uniqueEditorialTexts([thesis, topic, ...mustNotMiss, ...examples, ...motifs]
+    .map((item) => sourceEditorialCleanText(item, 220))
+    .filter((item) => isNaturalSourceReviewSignal(item)));
+  const selected = candidates.find((item) => item.length >= 18) ?? candidates[0] ?? '';
+  return selected ? `「${selected}」` : '';
 }
 
 function naturalizeJapaneseSourceMotifs(motifs, { mustNotMiss, examples }) {
-  const source = [...motifs, ...mustNotMiss, ...examples].join(' ');
-  const result = [];
-  if (/自分|軸|優先順位|やらない/u.test(source)) {
-    result.push('自分の軸');
-  }
-  if (/ロゴ|ブランド/u.test(source)) {
-    result.push('ロゴやブランド');
-  }
-  if (/デザイン|見た目|背景|必然/u.test(source)) {
-    result.push('デザインの必然性');
-  }
-  if (/価値観|価値/u.test(source)) {
-    result.push('価値観');
-  }
-  return uniqueEditorialTexts([...result, ...motifs]);
+  return uniqueEditorialTexts([...motifs, ...mustNotMiss, ...examples]
+    .map((item) => sourceEditorialCleanText(item, 80))
+    .filter((item) => item.length >= 2 && !/^\d+$/u.test(item)))
+    .slice(0, 5);
 }
 
 function naturalizeJapaneseSourceArc({ arc, mustNotMiss, examples, motifs }) {
-  const source = [...arc, ...mustNotMiss, ...examples, ...motifs].join(' ');
-  if (/変化|速|疲れ/u.test(source) && /ロゴ|ブランド|デザイン|背景/u.test(source) && /自分|軸|生み出/u.test(source)) {
-    return '話の流れは、変化の速さへの疲れから始まり、ロゴやブランドの背後にある理由へ進み、最後は自分の軸や一人で生み出す力の話へ広がります。';
+  const signals = uniqueEditorialTexts([...arc, ...mustNotMiss, ...examples, ...motifs]
+    .map((item) => sourceEditorialCleanText(item, 180))
+    .filter((item) => isNaturalSourceReviewSignal(item)))
+    .slice(0, 4);
+  if (signals.length >= 3) {
+    return `話の流れは、${formatJapaneseQuotedList([signals[0]])}から始まり、${formatJapaneseQuotedList(signals.slice(1, -1))}へ進み、最後に${formatJapaneseQuotedList([signals[signals.length - 1]])}へ広がります。`;
   }
-  if (/ロゴ|ブランド|デザイン/u.test(source) && /自分|軸/u.test(source)) {
-    return '話の流れは、見た目やブランドの一貫性から、自分の軸や働き方の話へ広がります。';
+  if (signals.length === 2) {
+    return `話の流れは、${formatJapaneseQuotedList([signals[0]])}から${formatJapaneseQuotedList([signals[1]])}へ進みます。`;
   }
-  return '';
+  return signals[0] ? `話の流れは、${formatJapaneseQuotedList([signals[0]])}を中心に展開します。` : '';
 }
 
 function selectJapaneseSourceReviewAnchor({ mustNotMiss, implications, thesis }) {
@@ -18366,10 +18519,13 @@ function selectJapaneseSourceReviewAnchor({ mustNotMiss, implications, thesis })
     ...implications,
     thesis
   ].map((value) => sourceEditorialCleanText(value, 220)));
-  return candidates.find((item) => /自分|軸|優先順位|やらない|生み出/u.test(item))
-    ?? candidates.find((item) => /理由|必然|背景|ブランド|ロゴ/u.test(item))
-    ?? candidates.find((item) => item && !/変化が速い時代/u.test(item))
-    ?? '';
+  return candidates
+    .map((item, index) => ({
+      item,
+      index,
+      score: sourceReadingSentenceScore(item, index)
+    }))
+    .sort((left, right) => right.score - left.score || left.index - right.index)[0]?.item ?? '';
 }
 
 function formatJapaneseEditorialItems(values) {
@@ -18478,7 +18634,7 @@ function japaneseSourceUnderstandingRecommendation({
 }) {
   const base = '改善方向としては、中心論点を先に見せたうえで、具体例、視聴者に残る問い、行動へのつながりを分けて整理するとよいです。';
   const deep = anchor || mustNotMiss[0]
-    ? `特に${formatJapaneseQuotedList([anchor || mustNotMiss[0]])}を軸に置くと、抽象的な雑感ではなく、視聴者が自分の軸を考えるレビューになります。`
+    ? `特に${formatJapaneseQuotedList([anchor || mustNotMiss[0]])}を軸に置くと、抽象的な雑感ではなく、受け手が自分の判断基準を考えるレビューになります。`
     : '';
   const evidenceAnchor = evidenceClaims[0] || implications[0] || mustNotMiss[0] || anchor;
   const xhigh = evidenceAnchor
