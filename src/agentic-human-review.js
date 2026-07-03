@@ -6354,7 +6354,7 @@ function findDisallowedContentEvidenceContent(value, trail = []) {
     const withinBoundedUnit = nextTrail.includes('content_units') || nextTrail.includes('units') || nextTrail.includes('excerpts') || nextTrail.includes('sections') || nextTrail.includes('chunks');
     const boundedTextKey = withinBoundedUnit && ['text', 'excerpt', 'quote', 'content', 'summary', 'description'].includes(normalizedKey);
     const rawBinaryKey = /(^|_)(raw|base64|bytes|binary|blob|data_uri|payload)($|_)/u.test(normalizedKey);
-    const fullSourceKey = /(^|_)(full_transcript|transcript_full|raw_transcript|full_text|raw_text|document_body|raw_document|raw_html|html_body|pdf_bytes|raw_pdf|raw_content)($|_)/u.test(normalizedKey);
+    const fullSourceKey = /(^|_)(full_transcript|transcript_full|raw_transcript|full_document|document_full|full_text|raw_text|document_body|raw_document|raw_html|html_body|pdf_bytes|raw_pdf|raw_binary|raw_content)($|_)/u.test(normalizedKey);
     const rawMediaKey = rawBinaryKey && /(video|audio|pixel|frame|image|thumbnail|media|document|pdf|html|content|payload|transcript|text)/u.test(normalizedKey);
     if (!boundedTextKey && (rawMediaKey || fullSourceKey) && hasNonEmptyValue(child)) {
       rejected.push(pathLabel);
@@ -11665,6 +11665,18 @@ function renderEditorialSynthesisReportSection(editorialSynthesis, result = null
     `- ${t('report.ahr.label.source_text_preserved', 'Source text preserved')}: ${languageResolution.source_text_preserved === true}`,
     `- ${t('report.ahr.label.evidence_scope', 'Evidence scope')}: ${editorialSynthesis.evidence_scope?.scope ?? 'page_only'}`,
     '',
+    `### ${t('report.ahr.section.key_observations', 'Key Observations')}`,
+    '',
+    ...normalizeStringArray(editorialSynthesis.key_observations).map((item) => `- ${item}`),
+    '',
+    `### ${t('report.ahr.section.strengths', 'Strengths')}`,
+    '',
+    ...normalizeStringArray(editorialSynthesis.strengths).map((item) => `- ${item}`),
+    '',
+    `### ${t('report.ahr.section.risks_or_cautions', 'Risks Or Cautions')}`,
+    '',
+    ...normalizeStringArray(editorialSynthesis.risks_or_cautions).map((item) => `- ${item}`),
+    '',
     `### ${t('report.ahr.section.key_tensions', 'Key Tensions')}`,
     '',
     ...normalizeStringArray(editorialSynthesis.key_tensions).map((item) => `- ${item}`),
@@ -13860,6 +13872,8 @@ function buildEditorialSynthesis({
       recommendedDirection,
       ownerDecisionSummary,
       limitations,
+      evidenceScope,
+      contentEvidence,
       sourceRecords: localizedRecords
     }),
     evidence_scope: evidenceScope,
@@ -14554,17 +14568,28 @@ function localizeEditorialLanguageLimitations(limitations, language = 'en') {
 }
 
 function uniqueEditorialTexts(values) {
-  const seen = new Set();
+  const seen = [];
   const result = [];
   for (const value of values) {
     const normalized = editorialSafeText(value, 700);
-    if (!normalized || seen.has(normalized)) {
+    const fingerprint = editorialFingerprint(normalized);
+    if (!normalized || !fingerprint || seen.some((item) => editorialFingerprintsOverlap(item, fingerprint))) {
       continue;
     }
-    seen.add(normalized);
+    seen.push(fingerprint);
     result.push(normalized);
   }
   return result;
+}
+
+function editorialFingerprintsOverlap(left, right) {
+  if (left === right) {
+    return true;
+  }
+  if (left.length < 80 || right.length < 80) {
+    return false;
+  }
+  return left.includes(right) || right.includes(left);
 }
 
 function uniqueEditorialSourceRefs(records) {
@@ -14600,6 +14625,8 @@ function buildEditorialFullReview({
   recommendedDirection,
   ownerDecisionSummary,
   limitations,
+  evidenceScope,
+  contentEvidence,
   sourceRecords = []
 }) {
   const contentFirstReview = buildContentEvidenceFirstEditorialReview({
@@ -14613,6 +14640,8 @@ function buildEditorialFullReview({
     recommendedDirection,
     ownerDecisionSummary,
     limitations,
+    evidenceScope,
+    contentEvidence,
     sourceRecords
   });
   if (contentFirstReview) {
@@ -14650,7 +14679,70 @@ function buildContentEvidenceFirstEditorialReview({
   recommendedDirection,
   ownerDecisionSummary,
   limitations,
+  evidenceScope,
+  contentEvidence,
   sourceRecords = []
+}) {
+  const buckets = buildEditorialSignalBuckets({
+    sourceRecords,
+    takeaway,
+    observations,
+    strengths,
+    risksOrCautions,
+    keyTensions,
+    recommendedDirection,
+    limitations
+  });
+  const hasContentMaterial = buckets.contentSummaries.length
+    + buckets.contentUnits.length
+    + buckets.contentClaims.length > 0;
+  if (!hasContentMaterial) {
+    return '';
+  }
+  const text = (key, fallback) => resolveReportTemplateText(key, language, fallback);
+  const evidenceScopeText = contentEvidenceScopePhrase({ evidenceScope, contentEvidence, language });
+  const directionSignals = editorialSpecificTexts([
+    recommendedDirection
+  ].filter((item) => !isNoOwnerDecisionEditorialText(item, language))).slice(0, 1);
+  const paragraphs = [
+    composeEditorialParagraph([
+      evidenceScopeText,
+      text('report.ahr.editorial.composer.overview', 'The supplied bounded content evidence frames the artifact this way:'),
+      ...buckets.contentSummaries.slice(0, 3)
+    ], { maxItems: 4, minItems: 2 }),
+    composeEditorialParagraph([
+      text('report.ahr.editorial.composer.value', 'The clearest reader-facing value is:'),
+      ...buckets.contentUnits.slice(0, 2),
+      ...buckets.contentClaims.slice(0, 1)
+    ], { maxItems: 4, minItems: 2 }),
+    composeEditorialParagraph([
+      text('report.ahr.editorial.composer.interpretation', 'As a review signal, this means the owner should judge whether the intended audience can quickly understand the promise, usefulness, and next step.'),
+      ...buckets.contentClaims.slice(1, 3),
+      ...buckets.narrativeSignals.slice(0, 2)
+    ], { maxItems: 4, minItems: 2 }),
+    composeEditorialParagraph([
+      text('report.ahr.editorial.composer.caution', 'The review should stay cautious about the following limits:'),
+      ...buckets.cautionSignals.slice(0, 4)
+    ], { maxItems: 5, minItems: 2 }),
+    composeEditorialParagraph([
+      ...directionSignals,
+      ...buckets.xhighSignals.slice(0, 1),
+      ...buckets.boundaryLimitations.slice(0, status === 'limited' ? 2 : 1)
+    ], { maxItems: 4 })
+  ];
+  const deduped = uniqueEditorialParagraphs(paragraphs);
+  return deduped.length > 0 ? deduped.join('\n\n') : '';
+}
+
+function buildEditorialSignalBuckets({
+  sourceRecords,
+  takeaway,
+  observations,
+  strengths,
+  risksOrCautions,
+  keyTensions,
+  recommendedDirection,
+  limitations
 }) {
   const contentSummaries = editorialSpecificTexts(editorialTextsById(sourceRecords, [
     'content_evidence_content_summary',
@@ -14667,10 +14759,6 @@ function buildContentEvidenceFirstEditorialReview({
   const contentLimitations = editorialSpecificTexts(editorialTextsById(sourceRecords, [
     'content_evidence_limitations'
   ], 4));
-  const hasContentMaterial = contentSummaries.length + contentUnits.length + contentClaims.length > 0;
-  if (!hasContentMaterial) {
-    return '';
-  }
   const xhighTexts = editorialSpecificTexts(editorialTextsBySource(sourceRecords, ['xhigh_quality'], 2));
   const narrativeSignals = editorialSpecificTexts([
     takeaway,
@@ -14682,39 +14770,49 @@ function buildContentEvidenceFirstEditorialReview({
     ...risksOrCautions,
     ...keyTensions
   ]).slice(0, 5);
-  const directionSignals = editorialSpecificTexts([
-    recommendedDirection
-  ].filter((item) => !isNoOwnerDecisionEditorialText(item, language))).slice(0, 2);
-  const boundaryLimitations = editorialSpecificTexts(limitations).slice(0, status === 'limited' ? 2 : 1);
-  const paragraphs = [];
-  const addParagraph = (values) => {
-    const text = mergeEditorialSentences(values);
-    if (text) {
-      paragraphs.push(text);
-    }
+  return {
+    contentSummaries,
+    contentUnits,
+    contentClaims,
+    contentLimitations,
+    xhighSignals: xhighTexts,
+    narrativeSignals,
+    cautionSignals,
+    recommendations: editorialSpecificTexts([recommendedDirection]),
+    boundaryLimitations: editorialSpecificTexts(limitations)
   };
-  addParagraph([
-    ...contentSummaries.slice(0, 3),
-    ...contentUnits.slice(0, contentSummaries.length > 0 ? 1 : 2)
-  ]);
-  addParagraph([
-    ...contentUnits.slice(contentSummaries.length > 0 ? 1 : 2, contentSummaries.length > 0 ? 3 : 4),
-    ...contentClaims.slice(0, 2)
-  ]);
-  addParagraph([
-    ...contentClaims.slice(2, 4),
-    ...narrativeSignals.slice(0, 3)
-  ]);
-  addParagraph([
-    ...cautionSignals.slice(0, 4)
-  ]);
-  addParagraph([
-    ...directionSignals,
-    ...xhighTexts,
-    ...boundaryLimitations
-  ]);
-  const deduped = uniqueEditorialParagraphs(paragraphs);
-  return deduped.length > 0 ? deduped.join('\n\n') : '';
+}
+
+function contentEvidenceScopePhrase({ evidenceScope, contentEvidence, language = 'en' }) {
+  if (evidenceScope?.content_evidence_usable !== true) {
+    return '';
+  }
+  const sourceTypes = normalizeStringArray(
+    contentEvidence?.supplemental_source_types
+    ?? evidenceScope?.content_evidence_source_types
+  ).slice(0, 4);
+  const sourceTypeText = sourceTypes.length > 0 ? formatEditorialList(sourceTypes, language) : 'content';
+  return resolveReportTemplateText(
+    'report.ahr.editorial.composer.scope',
+    language,
+    'This review uses supplied bounded content evidence for {source_types}; it does not treat that evidence as full-source proof.'
+  ).replace('{source_types}', sourceTypeText);
+}
+
+function composeEditorialParagraph(values, { maxItems = 4, minItems = 1 } = {}) {
+  const texts = editorialSpecificTexts(values).slice(0, maxItems);
+  if (texts.length < minItems) {
+    return '';
+  }
+  return texts.map(ensureEditorialSentence).join(' ');
+}
+
+function ensureEditorialSentence(value) {
+  const text = editorialSafeText(value, 700).trim();
+  if (!text) {
+    return '';
+  }
+  return /[.!?:：。！？]$/u.test(text) ? text : `${text}.`;
 }
 
 function editorialSpecificTexts(values) {
@@ -14746,10 +14844,13 @@ function isNoOwnerDecisionEditorialText(value, language = 'en') {
   return text === fallback || /no explicit owner decision was requested/iu.test(text);
 }
 
-function formatEditorialList(values) {
+function formatEditorialList(values, language = 'en') {
   const items = values.filter(Boolean);
   if (items.length <= 1) {
     return items[0] ?? '';
+  }
+  if (language === 'ja') {
+    return items.join('、');
   }
   if (items.length === 2) {
     return `${items[0]} and ${items[1]}`;

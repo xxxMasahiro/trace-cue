@@ -87,33 +87,30 @@ During implementation:
 After implementation and local verification are complete:
 
 1. Review the final diff and confirm that only intended files changed.
-2. Request developer approval before committing. If the developer's latest
-   instruction already explicitly authorizes committing the current change,
-   that instruction counts as the commit approval.
+2. Treat the approved roadmap implementation scope as approval to commit the
+   completed implementation after required local checks pass. Do not add a
+   separate commit-only approval checkpoint unless an irregular condition,
+   unsafe operation, destructive action, unclear requirement, external-send
+   decision, repository policy conflict, or unexpected repository state occurs.
 3. Commit the completed implementation with a clear commit message only after
    the required local checks pass.
-4. Push, remote operations, GitHub operations, PR CI, merge, main CI, and
-   local/remote synchronization remain approval-bound until the current
-   developer instruction or the approved implementation workflow explicitly
-   authorizes those post-commit completion steps.
-5. After an approved commit is complete, continue push, integration checks, CI
-   confirmation, and local/remote synchronization autonomously when those
-   post-commit completion steps are authorized. No additional developer
-   approval is required after the commit unless an irregular condition occurs.
-6. Push the commit to the configured remote branch only when push is approved
-   by the current post-commit completion scope.
-7. Complete the repository's configured integration route when CI or
-   integration verification is approved by the current post-commit completion
-   scope:
+4. Continue push, remote operations, GitHub operations, PR CI, merge, main CI,
+   and local/remote synchronization as part of the same approved roadmap
+   completion scope. Do not add separate per-action approval checkpoints unless
+   an irregular condition occurs.
+5. Push the commit to the configured remote branch as part of the approved
+   completion scope.
+6. Complete the repository's configured integration route as part of the
+   approved completion scope:
    - If the repository is using pull requests, complete PR CI, merge, and then
      confirm main CI.
    - If the repository is using direct main pushes for the current task,
      confirm the main CI run for the pushed commit.
-8. If approved CI fails, fix the failure, recommit or amend as appropriate,
-   push again, and repeat CI confirmation within the approved scope.
-9. Fetch the remote branch and confirm local `HEAD` and the remote tracking
-   branch point to the same commit when synchronization is approved.
-10. Confirm that the working tree is clean.
+7. If CI fails, fix the failure, recommit or amend as appropriate, push again,
+   and repeat CI confirmation within the approved scope.
+8. Fetch the remote branch and confirm local `HEAD` and the remote tracking
+   branch point to the same commit.
+9. Confirm that the working tree is clean.
 
 Do not treat implementation as complete while local changes remain uncommitted,
 local and remote branches are out of sync, or the main CI status is unknown or
@@ -127,12 +124,12 @@ finished:
 1. Present a pre-implementation proposal for what should be done next.
 2. Keep the proposal grounded in the product goal, current repository state,
    completed work, remaining risks, and user-facing value.
-3. Wait for developer approval before moving from the proposal to the next
-   roadmap.
+3. Continue directly to the next roadmap slice proposal unless an irregular
+   condition requires developer input.
 
 ## F. Roadmap
 
-After the next proposal is approved:
+After the next proposal is presented:
 
 1. Slice the next implementation roadmap into numbered integer steps starting
    at `1` unless the developer requests a different range.
@@ -140,7 +137,9 @@ After the next proposal is approved:
    the implementation goal.
 3. Include code, contract, document, test, verification, and release/sync work
    as separate slices when that makes progress easier to audit.
-4. Wait for developer approval before starting the next implementation range.
+4. Report the completed implementation range and the next roadmap to the
+   developer. Start the next implementation range only after the developer
+   approves that new range or gives an equivalent continuation instruction.
 
 ## End And Loop
 

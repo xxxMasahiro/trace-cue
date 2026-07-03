@@ -53,6 +53,9 @@ const REPORT_TEMPLATE_KEYS = Object.freeze([
   reportKey('report.ahr.label.translation_execution', 'Translation execution', 'label'),
   reportKey('report.ahr.label.source_text_preserved', 'Source text preserved', 'label'),
   reportKey('report.ahr.label.evidence_scope', 'Evidence scope', 'label'),
+  reportKey('report.ahr.section.key_observations', 'Key Observations', 'heading'),
+  reportKey('report.ahr.section.strengths', 'Strengths', 'heading'),
+  reportKey('report.ahr.section.risks_or_cautions', 'Risks Or Cautions', 'heading'),
   reportKey('report.ahr.section.key_tensions', 'Key Tensions', 'heading'),
   reportKey('report.ahr.section.recommended_direction', 'Recommended Direction', 'heading'),
   reportKey('report.ahr.section.source_findings', 'Source Findings', 'heading'),
@@ -115,7 +118,12 @@ const REPORT_TEMPLATE_KEYS = Object.freeze([
   reportKey('report.ahr.editorial.xhigh.reported', 'Dedicated critique or verification output was reported, so the editorial synthesis can treat the review stance as more thoroughly challenged while remaining advisory-only.', 'sentence'),
   reportKey('report.ahr.editorial.xhigh.incomplete', 'The xhigh completion contract is not fully satisfied, so stronger natural prose must remain provisional rather than claiming proof.', 'sentence'),
   reportKey('report.ahr.editorial.limitation.unresolved_language', 'The artifact output language was unresolved, so the editorial synthesis used the local source-text language fallback.', 'sentence'),
-  reportKey('report.ahr.editorial.limitation.source_preserved', 'The selected artifact output language was recorded from local language settings, but source advisory text was preserved because translation execution is disabled.', 'sentence')
+  reportKey('report.ahr.editorial.limitation.source_preserved', 'The selected artifact output language was recorded from local language settings, but source advisory text was preserved because translation execution is disabled.', 'sentence'),
+  reportKey('report.ahr.editorial.composer.scope', 'This review uses supplied bounded content evidence for {source_types}; it does not treat that evidence as full-source proof.', 'sentence'),
+  reportKey('report.ahr.editorial.composer.overview', 'The supplied bounded content evidence frames the artifact this way:', 'sentence'),
+  reportKey('report.ahr.editorial.composer.value', 'The clearest reader-facing value is:', 'sentence'),
+  reportKey('report.ahr.editorial.composer.interpretation', 'As a review signal, this means the owner should judge whether the intended audience can quickly understand the promise, usefulness, and next step.', 'sentence'),
+  reportKey('report.ahr.editorial.composer.caution', 'The review should stay cautious about the following limits:', 'sentence')
 ]);
 
 const RAW_EVIDENCE_FIELDS = Object.freeze([
@@ -155,6 +163,9 @@ const REPORT_TEMPLATE_TRANSLATIONS = Object.freeze({
     'report.ahr.label.translation_execution': '翻訳実行',
     'report.ahr.label.source_text_preserved': '原文保持',
     'report.ahr.label.evidence_scope': '証拠スコープ',
+    'report.ahr.section.key_observations': '主な観察',
+    'report.ahr.section.strengths': '強み',
+    'report.ahr.section.risks_or_cautions': 'リスクまたは注意点',
     'report.ahr.section.key_tensions': '主な揺れ',
     'report.ahr.section.recommended_direction': '推奨方針',
     'report.ahr.section.source_findings': '参照元所見',
@@ -217,7 +228,12 @@ const REPORT_TEMPLATE_TRANSLATIONS = Object.freeze({
     'report.ahr.editorial.xhigh.reported': '専用の批評または検証出力が報告されているため、統括レビューは助言専用のまま、より検証された姿勢として扱えます。',
     'report.ahr.editorial.xhigh.incomplete': 'xhigh 完了契約が完全には満たされていないため、より強い自然文でも証明を主張せず暫定的に扱う必要があります。',
     'report.ahr.editorial.limitation.unresolved_language': '成果物出力言語が解決できなかったため、統括レビューはローカルの原文言語推定を使用しました。',
-    'report.ahr.editorial.limitation.source_preserved': '選択された成果物出力言語はローカル言語設定から記録されていますが、翻訳実行が無効なため、元の助言本文は保持されています。'
+    'report.ahr.editorial.limitation.source_preserved': '選択された成果物出力言語はローカル言語設定から記録されていますが、翻訳実行が無効なため、元の助言本文は保持されています。',
+    'report.ahr.editorial.composer.scope': 'このレビューは {source_types} の bounded content evidence を使用します。ただし、それを全文証明としては扱いません。',
+    'report.ahr.editorial.composer.overview': '提供された bounded content evidence は、成果物を次のように位置づけています:',
+    'report.ahr.editorial.composer.value': '読者にとって最も明確な価値は次の点です:',
+    'report.ahr.editorial.composer.interpretation': 'レビュー上のシグナルとしては、想定読者が約束、実用性、次の行動をすばやく理解できるかをオーナーが確認すべきです。',
+    'report.ahr.editorial.composer.caution': 'レビューでは、次の制限を慎重に扱う必要があります:'
   })
 });
 

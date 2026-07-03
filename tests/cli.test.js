@@ -4000,7 +4000,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
       fileName,
       '--json'
     ], { cwd, now: fixedNow });
-    assert.equal(rejectedPlan.exitCode, 1);
+    assert.equal(rejectedPlan.exitCode, 1, fileName);
     assert.equal(JSON.parse(rejectedPlan.stdout).errors[0].code, 'AGENTIC_REVIEW_CONTENT_EVIDENCE_RAW_CONTENT_REJECTED');
   }
 
@@ -4086,7 +4086,12 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     contentOnlyResult.report_quality.quality_diagnostics.some((diagnostic) => diagnostic.code === 'AHR_REPORT_QUALITY_CONTENT_EVIDENCE_SUMMARY_ONLY'),
     true
   );
+  const contentOnlyEditorialParagraphs = contentOnlyResult.editorial_synthesis.full_review.split(/\n\n+/u).filter(Boolean);
+  assert.equal(contentOnlyEditorialParagraphs.length >= 2, true);
+  assert.match(contentOnlyEditorialParagraphs[0], /^This review uses supplied bounded content evidence for transcript/i);
   assert.match(contentOnlyResult.editorial_synthesis.full_review, /audience pain, likely value, and suggested next steps/);
+  assert.match(contentOnlyResult.editorial_synthesis.full_review, /Only a bounded summary is supplied/i);
+  assert.doesNotMatch(contentOnlyResult.editorial_synthesis.full_review, /:\./u);
   assert.doesNotMatch(contentOnlyResult.editorial_synthesis.full_review, /^Deterministic fake agentic human review completed/i);
   const contentOnlyReportText = await readFile(path.join(cwd, '.browser-debug', 'reports', 'agentic-execution-content-only-agentic-human-review.md'), 'utf8');
   assert.match(contentOnlyReportText, /Content Evidence/);
@@ -5010,9 +5015,15 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(resultFile.editorial_synthesis.video_evidence.status, 'available');
   assert.equal(resultFile.editorial_synthesis.content_evidence.source_types.includes('document'), true);
   assert.equal(resultFile.editorial_synthesis.composer.evidence_first, true);
+  const editorialParagraphs = resultFile.editorial_synthesis.full_review.split(/\n\n+/u).filter(Boolean);
+  assert.equal(editorialParagraphs.length >= 3, true);
+  assert.equal(editorialParagraphs.length <= 5, true);
+  assert.match(editorialParagraphs[0], /^This review uses supplied bounded content evidence/i);
   assert.match(resultFile.editorial_synthesis.full_review, /product promise|target reader|clear onboarding|trust evidence|first action/i);
   assert.match(resultFile.editorial_synthesis.full_review, /intended for non-engineer decision makers/i);
   assert.match(resultFile.editorial_synthesis.full_review, /bounded and does not include the full source document/i);
+  assert.doesNotMatch(resultFile.editorial_synthesis.full_review, /:\./u);
+  assert.doesNotMatch(resultFile.editorial_synthesis.full_review, /section:intro|document:intro|example\.invalid/i);
   assert.doesNotMatch(resultFile.editorial_synthesis.full_review, /^Deterministic fake agentic human review completed/i);
   assert.equal(
     resultFile.editorial_synthesis.full_review.indexOf('product promise') < (
@@ -5053,6 +5064,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.match(reportText, /Mechanical Review Compared With Human Review/);
   assert.match(reportText, /Human Report V3/);
   assert.match(reportText, /Editorial Synthesis/);
+  assert.match(reportText, /Key Observations/);
+  assert.match(reportText, /Strengths/);
+  assert.match(reportText, /Risks Or Cautions/);
   assert.match(reportText, /Content Evidence/);
   assert.match(reportText, /Content understanding level/);
   assert.match(reportText, /Language Settings/);
@@ -7164,6 +7178,142 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(listBody.data.boundary.mcp_execution_exposed, false);
 });
 
+test('agentic human review content evidence source-type matrix remains bounded and generic', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-content-matrix-'));
+  const png = minimalPngBuffer(120, 80);
+  await writeFile(path.join(cwd, 'screen.png'), png);
+
+  const imageReview = await executeCli(['review', '--image', 'screen.png', '--json'], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'image-review-content-evidence-matrix'
+  });
+  assert.equal(imageReview.exitCode, 0);
+
+  const boundedEvidence = (sourceType) => ({
+    schema_version: '1.0.0',
+    evidence_kind: 'content_evidence',
+    id: `matrix-${sourceType}`,
+    source_type: sourceType,
+    source: {
+      kind: `external_${sourceType}_summary`,
+      title: `Matrix ${sourceType} evidence`
+    },
+    provider: {
+      id: 'matrix-content-analyzer',
+      kind: 'bounded_summary',
+      version: '1.0.0'
+    },
+    content_summary: [`Matrix ${sourceType} summary SOURCE-TYPE-${sourceType}.`],
+    content_units: [{
+      id: `${sourceType}-unit`,
+      unit_type: 'excerpt',
+      text: `Matrix ${sourceType} bounded excerpt SOURCE-UNIT-${sourceType}.`,
+      confidence: 'medium'
+    }],
+    claims_observed: [{
+      id: `${sourceType}-claim`,
+      claim: `Matrix ${sourceType} claim is bounded.`,
+      evidence: `Matrix ${sourceType} summary evidence.`,
+      confidence: 'medium'
+    }],
+    limitations: [`Matrix ${sourceType} limitation: no full source is included.`],
+    full_text: false,
+    coverage: {
+      has_full_text: false
+    },
+    privacy: {
+      raw_media_embedded_in_json: false,
+      raw_binary_embedded_in_json: false,
+      raw_html_embedded_in_json: false,
+      raw_pdf_embedded_in_json: false,
+      raw_content_embedded_in_json: false,
+      full_transcript_embedded_in_json: false,
+      full_document_embedded_in_json: false
+    },
+    boundary: {
+      raw_media_read_by_tracecue: false,
+      raw_binary_read_by_tracecue: false,
+      raw_html_read_by_tracecue: false,
+      raw_pdf_read_by_tracecue: false,
+      raw_media_embedded_in_json: false,
+      raw_binary_embedded_in_json: false,
+      raw_content_transferred: false
+    }
+  });
+
+  const sourceTypes = ['video', 'web_page', 'pdf', 'meeting_notes', 'document', 'transcript', 'other'];
+  for (const sourceType of sourceTypes) {
+    const slug = sourceType.replace(/[^a-z0-9]+/gu, '-');
+    const fileName = `${slug}-content-evidence.json`;
+    await writeFile(path.join(cwd, fileName), JSON.stringify(boundedEvidence(sourceType), null, 2), 'utf8');
+    const planResult = await executeCli([
+      'agentic',
+      'review',
+      'plan',
+      '--review-index',
+      '.browser-debug/review-artifacts/image-review-content-evidence-matrix.json',
+      '--intent',
+      `Review bounded ${sourceType} content evidence without assuming full source access.`,
+      '--content-evidence',
+      fileName,
+      '--provider',
+      'fake-agent',
+      '--model',
+      'fake-model',
+      '--json'
+    ], {
+      cwd,
+      now: fixedNow,
+      createId: () => `agentic-plan-content-matrix-${slug}`
+    });
+    assert.equal(planResult.exitCode, 0);
+    const planBody = JSON.parse(planResult.stdout);
+    const plan = planBody.data.agentic_human_review_plan;
+    assert.equal(plan.content_evidence.supplemental_evidence_available_count, 1);
+    assert.equal(plan.content_evidence.supplemental_source_types.includes(sourceType), true);
+    assert.equal(plan.content_evidence.full_source_text_embedded_in_json, false);
+    assert.equal(plan.content_evidence.raw_content_embedded_in_json, false);
+    assert.equal(plan.content_evidence.supplemental_evidence[0].provenance.input_hash.length, 64);
+    assert.equal(plan.content_evidence.supplemental_evidence[0].provenance.input_path, undefined);
+    assert.equal(plan.evidence_plan.supplemental_content_evidence_policy.raw_content_allowed, false);
+  }
+
+  const rejectedTruthyRawFlags = [
+    ['raw-pdf-privacy.json', { privacy: { raw_pdf_embedded_in_json: true } }],
+    ['raw-html-privacy.json', { privacy: { raw_html_embedded_in_json: true } }],
+    ['raw-binary-privacy.json', { privacy: { raw_binary_embedded_in_json: true } }],
+    ['full-document-privacy.json', { privacy: { full_document_embedded_in_json: true } }],
+    ['full-transcript-privacy.json', { privacy: { full_transcript_embedded_in_json: true } }],
+    ['raw-content-boundary.json', { boundary: { raw_content_transferred: true } }],
+    ['raw-media-boundary.json', { boundary: { raw_media_embedded_in_json: true } }]
+  ];
+  for (const [fileName, override] of rejectedTruthyRawFlags) {
+    await writeFile(path.join(cwd, fileName), JSON.stringify({
+      ...boundedEvidence('document'),
+      ...override
+    }, null, 2), 'utf8');
+    const rejectedPlan = await executeCli([
+      'agentic',
+      'review',
+      'plan',
+      '--review-index',
+      '.browser-debug/review-artifacts/image-review-content-evidence-matrix.json',
+      '--intent',
+      'Review must reject truthy raw or full content declarations.',
+      '--content-evidence',
+      fileName,
+      '--provider',
+      'fake-agent',
+      '--model',
+      'fake-model',
+      '--json'
+    ], { cwd, now: fixedNow });
+    assert.equal(rejectedPlan.exitCode, 1, fileName);
+    assert.equal(JSON.parse(rejectedPlan.stdout).errors[0].code, 'AGENTIC_REVIEW_CONTENT_EVIDENCE_RAW_CONTENT_REJECTED');
+  }
+});
+
 test('agentic human review editorial synthesis uses artifact output language settings for supported locales', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-editorial-locale-'));
   const png = minimalPngBuffer(120, 80);
@@ -7277,6 +7427,165 @@ test('agentic human review editorial synthesis uses artifact output language set
       assert.doesNotMatch(reportText, /The deterministic review found|Review the advisory output with the owner/);
     }
   }
+});
+
+test('agentic human review editorial synthesis localizes chrome while preserving content source text', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-editorial-source-text-'));
+  const png = minimalPngBuffer(120, 80);
+  await writeFile(path.join(cwd, 'screen.png'), png);
+  await mkdir(path.join(cwd, 'ops'), { recursive: true });
+  await writeFile(path.join(cwd, 'ops', 'DASHBOARD_SETTINGS.json'), JSON.stringify({
+    schema_version: '1.0.0',
+    ui_locale: 'ja',
+    profiles: {
+      reports: {
+        language: {
+          source_language: 'en',
+          output_language_mode: 'explicit',
+          output_language: 'ja',
+          translation_mode: 'none'
+        }
+      }
+    }
+  }, null, 2), 'utf8');
+  await writeFile(path.join(cwd, 'meeting-notes-content-evidence.json'), JSON.stringify({
+    schema_version: '1.0.0',
+    evidence_kind: 'content_evidence',
+    id: 'source-preservation-content-evidence',
+    source_type: 'meeting_notes',
+    source: {
+      kind: 'external_meeting_notes_summary',
+      title: 'Source preservation meeting notes'
+    },
+    provider: {
+      id: 'source-preservation-analyzer',
+      kind: 'bounded_summary',
+      version: '1.0.0'
+    },
+    content_summary: ['SOURCE-KEEP-ENGLISH-SUMMARY: Keep this source sentence unchanged.'],
+    content_units: [{
+      id: 'source-preservation-unit',
+      unit_type: 'excerpt',
+      text: 'SOURCE-KEEP-JA-EXCERPT: 日本語の原文を保持します。',
+      confidence: 'high'
+    }],
+    claims_observed: [{
+      id: 'source-preservation-claim',
+      claim: 'SOURCE-KEEP-CLAIM: The owner needs a clear next action.',
+      evidence: 'SOURCE-KEEP-EVIDENCE: Meeting notes mention the next action explicitly.',
+      confidence: 'medium'
+    }],
+    limitations: ['SOURCE-KEEP-LIMITATION: This is bounded evidence, not the full meeting record.'],
+    full_text: false,
+    coverage: {
+      has_full_text: false
+    },
+    privacy: {
+      raw_media_embedded_in_json: false,
+      raw_binary_embedded_in_json: false,
+      raw_html_embedded_in_json: false,
+      raw_pdf_embedded_in_json: false,
+      raw_content_embedded_in_json: false,
+      full_transcript_embedded_in_json: false,
+      full_document_embedded_in_json: false
+    },
+    boundary: {
+      raw_media_read_by_tracecue: false,
+      raw_binary_read_by_tracecue: false,
+      raw_html_read_by_tracecue: false,
+      raw_pdf_read_by_tracecue: false,
+      raw_media_embedded_in_json: false,
+      raw_binary_embedded_in_json: false,
+      raw_content_transferred: false
+    }
+  }, null, 2), 'utf8');
+
+  const imageReview = await executeCli(['review', '--image', 'screen.png', '--json'], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'image-review-editorial-source-text'
+  });
+  assert.equal(imageReview.exitCode, 0);
+
+  const planResult = await executeCli([
+    'agentic',
+    'review',
+    'plan',
+    '--review-index',
+    '.browser-debug/review-artifacts/image-review-editorial-source-text.json',
+    '--intent',
+    'Review meeting-note content evidence while preserving source text.',
+    '--effort',
+    'xhigh',
+    '--content-evidence',
+    'meeting-notes-content-evidence.json',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'agentic-plan-editorial-source-text'
+  });
+  assert.equal(planResult.exitCode, 0);
+  const planBody = JSON.parse(planResult.stdout);
+  const requiredFlags = planBody.data.agentic_human_review_plan.transfer_permissions.required_flags.slice().sort();
+
+  const runResult = await executeCli([
+    'agentic',
+    'review',
+    'run',
+    '--plan',
+    '.browser-debug/agentic-human-review-plans/agentic-plan-editorial-source-text/plan.json',
+    '--plan-hash',
+    planBody.data.plan_hash,
+    ...requiredFlags.map((flag) => `--${flag}`),
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => {
+      if (prefix === 'agentic-human-review-execution') {
+        return 'agentic-execution-editorial-source-text';
+      }
+      if (prefix === 'agentic-human-review-result') {
+        return 'agentic-result-editorial-source-text';
+      }
+      return 'unexpected-agentic-editorial-source-text';
+    }
+  });
+  assert.equal(runResult.exitCode, 0);
+
+  const resultFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-editorial-source-text', 'result.json'), 'utf8'));
+  assert.equal(resultFile.editorial_synthesis.language, 'ja');
+  assert.equal(resultFile.editorial_synthesis.language_resolution.source_text_preserved, true);
+  assert.equal(resultFile.editorial_synthesis.language_resolution.translation_execution_enabled, false);
+  assert.equal(resultFile.editorial_synthesis.language_resolution.raw_evidence_translated, false);
+  assert.equal(resultFile.editorial_synthesis.language_resolution.provider_output_translated, false);
+  assert.match(resultFile.editorial_synthesis.full_review, /このレビューは meeting_notes の bounded content evidence を使用します/);
+  assert.match(resultFile.editorial_synthesis.full_review, /提供された bounded content evidence/);
+  assert.match(resultFile.editorial_synthesis.full_review, /レビューでは、次の制限を慎重に扱う必要があります/);
+  assert.match(resultFile.editorial_synthesis.full_review, /SOURCE-KEEP-ENGLISH-SUMMARY: Keep this source sentence unchanged\./);
+  assert.match(resultFile.editorial_synthesis.full_review, /SOURCE-KEEP-JA-EXCERPT: 日本語の原文を保持します。/);
+  assert.match(resultFile.editorial_synthesis.full_review, /SOURCE-KEEP-CLAIM: The owner needs a clear next action\./);
+  assert.doesNotMatch(resultFile.editorial_synthesis.full_review, /The supplied bounded content evidence frames|The clearest reader-facing value|The review should stay cautious/i);
+
+  const reportText = await readFile(path.join(cwd, '.browser-debug', 'reports', 'agentic-execution-editorial-source-text-agentic-human-review.md'), 'utf8');
+  assert.match(reportText, /## 統括レビュー/);
+  assert.match(reportText, /### 主な観察/);
+  assert.match(reportText, /### 強み/);
+  assert.match(reportText, /### リスクまたは注意点/);
+  assert.match(reportText, /## 内容証拠/);
+  assert.match(reportText, /原文保持: true/);
+  assert.match(reportText, /SOURCE-KEEP-ENGLISH-SUMMARY: Keep this source sentence unchanged\./);
+  assert.match(reportText, /SOURCE-KEEP-JA-EXCERPT: 日本語の原文を保持します。/);
 });
 
 test('agentic human review injected runner redacts sensitive advisory text', async () => {
