@@ -98,6 +98,14 @@ Phase 35 HTTP MCP integration hardening adds token-free `browser-debug mcp confi
 
 This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and TASK_TRACKER workflow-state pair synchronized whenever task state changes.
 
+## Current Handoff
+
+- Agentic Human Review source-text reading is additive and local. Use `--source-text <workspace-text-or-json>` on `agentic review propose` or `agentic review plan` when the review needs full transcript, article, PDF-extracted text, meeting-note, document, or other textual source understanding.
+- TraceCue reads that source locally and writes only metadata plus a bounded `source_reading_review`; full source text and chunk text are not persisted in JSON, Markdown, or provider payloads.
+- Editorial synthesis uses source-reading material first when available, then integrates existing role opinions, findings, recommendations, video evidence, and content evidence.
+- Provider transfer remains under the existing `allow-page-text` boundary and includes only bounded source-reading review data, never full source text.
+- The feature remains advisory-only and does not change deterministic findings, metrics, release gates, owner-baseline proof, benchmark proof, MCP exposure, provider approval requirements, or equality/superiority claim policy.
+
 ## What Has Been Decided
 
 - Product name: TraceCue.

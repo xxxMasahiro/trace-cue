@@ -1161,6 +1161,8 @@ function buildAgenticApiPayload({ plan, planPath, reviewPackage, transferFlags, 
       evidence_scope: plan.evidence_scope ?? null,
       video_evidence: filterVideoEvidenceForTransfer(plan.video_evidence ?? reviewPackage?.video_evidence, transferFlags),
       content_evidence: filteredPackage.content_evidence ?? null,
+      source_text: filteredPackage.source_text ?? null,
+      source_reading_review: filteredPackage.source_reading_review ?? null,
       evidence_plan: plan.evidence_plan ?? reviewPackage?.evidence_plan ?? null,
       visual_evidence_package_v2: filteredPackage.visual_evidence_package_v2 ?? null,
       visible_text_reading_contract: filteredPackage.visible_text_reading_contract ?? null,
@@ -1207,6 +1209,7 @@ function buildAgenticApiPayload({ plan, planPath, reviewPackage, transferFlags, 
       visual_references_included: transferFlags.supplied_flags?.includes('allow-raw-pixels') === true,
       control_metadata_included: true,
       page_text_summary_included: transferFlags.supplied_flags?.includes('allow-page-text') === true,
+      source_reading_review_included: transferFlags.supplied_flags?.includes('allow-page-text') === true && filteredPackage.source_reading_review?.status === 'completed',
       dom_summary_included: transferFlags.supplied_flags?.includes('allow-dom-summary') === true,
       url_metadata_included: transferFlags.supplied_flags?.includes('allow-url') === true,
       artifact_references_included: transferFlags.supplied_flags?.includes('allow-artifact-refs') === true,
@@ -1254,9 +1257,15 @@ function filterReviewPackageForTransfer(reviewPackage, transferFlags) {
           gate_effect: 'none'
         },
     video_evidence: filterVideoEvidenceForTransfer(reviewPackage?.video_evidence, transferFlags),
-    content_evidence: flags.has('allow-page-text')
+      content_evidence: flags.has('allow-page-text')
       ? filterContentEvidenceForTransfer(reviewPackage?.content_evidence, transferFlags)
       : { text_snippet_count: 0, text_snippets: [], page_text_included_as_bounded_summary: false },
+    source_text: flags.has('allow-page-text')
+      ? filterSourceTextForTransfer(reviewPackage?.source_text)
+      : filterSourceTextMetadataOnly(reviewPackage?.source_text),
+    source_reading_review: flags.has('allow-page-text')
+      ? filterSourceReadingReviewForTransfer(reviewPackage?.source_reading_review)
+      : null,
     visible_text_reading_contract: flags.has('allow-page-text')
       ? reviewPackage?.visible_text_reading_contract ?? null
       : {
@@ -1292,6 +1301,7 @@ function filterReviewPackageForTransfer(reviewPackage, transferFlags) {
       visual_references_included: flags.has('allow-raw-pixels'),
       video_evidence_summary_included: flags.has('allow-page-text') && reviewPackage?.video_evidence?.status === 'available',
       content_evidence_summary_included: flags.has('allow-page-text') && Number(reviewPackage?.content_evidence?.supplemental_evidence_available_count ?? 0) > 0,
+      source_reading_review_included: flags.has('allow-page-text') && reviewPackage?.source_reading_review?.status === 'completed',
       raw_video_embedded_in_json: false,
       raw_audio_embedded_in_json: false,
       raw_frames_embedded_in_json: false,
@@ -1336,6 +1346,139 @@ function filterContentEvidenceForTransfer(contentEvidence, transferFlags) {
       : [],
     transfer_policy: 'content_evidence_included_under_page_text_boundary'
   };
+}
+
+function filterSourceTextForTransfer(sourceText) {
+  if (!sourceText || typeof sourceText !== 'object') {
+    return filterSourceTextMetadataOnly(null);
+  }
+  return {
+    schema_version: sourceText.schema_version ?? SCHEMA_VERSION,
+    evidence_version: sourceText.evidence_version ?? null,
+    evidence_kind: 'source_text',
+    id: sourceText.id ?? null,
+    status: sourceText.status ?? 'not_supplied',
+    source_type: sourceText.source_type ?? 'other',
+    source: sourceText.source ? {
+      kind: sourceText.source.kind ?? null,
+      title: truncateText(sourceText.source.title ?? '', 220),
+      media_id: sourceText.source.media_id ?? null,
+      page_count: sourceText.source.page_count ?? null,
+      duration_seconds: sourceText.source.duration_seconds ?? null,
+      locator_included: false
+    } : null,
+    text_stats: {
+      char_count: Number(sourceText.text_stats?.char_count ?? 0),
+      line_count: Number(sourceText.text_stats?.line_count ?? 0),
+      chunk_count: Number(sourceText.text_stats?.chunk_count ?? 0),
+      stored_full_text: false,
+      stored_chunk_text: false,
+      source_hash: sourceText.text_stats?.source_hash ?? null
+    },
+    chunk_index: providerArray(sourceText.chunk_index).slice(0, 160).map((chunk) => ({
+      id: chunk?.id ?? null,
+      locator: truncateText(chunk?.locator ?? '', 120),
+      char_start: chunk?.char_start ?? null,
+      char_end: chunk?.char_end ?? null,
+      hash: chunk?.hash ?? null,
+      text_included: false
+    })),
+    coverage: sourceText.coverage ?? null,
+    privacy: {
+      full_source_text_persisted: false,
+      full_transcript_embedded_in_json: false,
+      full_document_embedded_in_json: false,
+      derived_reading_review_only: true
+    },
+    boundary: sourceText.boundary ?? null,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function filterSourceTextMetadataOnly(sourceText) {
+  return {
+    schema_version: sourceText?.schema_version ?? SCHEMA_VERSION,
+    evidence_version: sourceText?.evidence_version ?? null,
+    evidence_kind: 'source_text',
+    id: sourceText?.id ?? null,
+    status: sourceText?.status ?? 'not_supplied',
+    source_type: sourceText?.source_type ?? 'other',
+    text_stats: {
+      char_count: Number(sourceText?.text_stats?.char_count ?? 0),
+      line_count: Number(sourceText?.text_stats?.line_count ?? 0),
+      chunk_count: Number(sourceText?.text_stats?.chunk_count ?? 0),
+      stored_full_text: false,
+      stored_chunk_text: false,
+      source_hash: null
+    },
+    chunk_index: [],
+    full_source_text_included: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function filterSourceReadingReviewForTransfer(sourceReadingReview) {
+  if (!sourceReadingReview || typeof sourceReadingReview !== 'object') {
+    return null;
+  }
+  return {
+    schema_version: sourceReadingReview.schema_version ?? SCHEMA_VERSION,
+    reading_version: sourceReadingReview.reading_version ?? null,
+    status: sourceReadingReview.status ?? 'not_supplied',
+    analyst_role: sourceReadingReview.analyst_role ?? 'source_reading_analyst',
+    source_text_id: sourceReadingReview.source_text_id ?? null,
+    source_type: sourceReadingReview.source_type ?? 'other',
+    review_effort: sourceReadingReview.review_effort ?? null,
+    reading_depth: sourceReadingReview.reading_depth ?? null,
+    topic: truncateText(sourceReadingReview.topic ?? '', 500),
+    narrative_flow: providerArray(sourceReadingReview.narrative_flow).slice(0, 8).map((item) => ({
+      step: item?.step ?? null,
+      summary: truncateText(item?.summary ?? '', 700),
+      source_ref: item?.source_ref ?? null
+    })),
+    key_points: providerStringArray(sourceReadingReview.key_points, 12, 700),
+    concrete_examples: providerStringArray(sourceReadingReview.concrete_examples, 8, 700),
+    tensions_or_open_questions: providerStringArray(sourceReadingReview.tensions_or_open_questions, 8, 700),
+    reader_value: truncateText(sourceReadingReview.reader_value ?? '', 900),
+    risks_or_cautions: providerStringArray(sourceReadingReview.risks_or_cautions, 8, 700),
+    recommended_direction: truncateText(sourceReadingReview.recommended_direction ?? '', 900),
+    natural_review_seed: truncateText(sourceReadingReview.natural_review_seed ?? '', 2400),
+    source_excerpt_refs: providerArray(sourceReadingReview.source_excerpt_refs).slice(0, 12).map((item) => ({
+      id: item?.id ?? null,
+      locator: truncateText(item?.locator ?? '', 120),
+      excerpt: truncateText(item?.excerpt ?? '', 900),
+      excerpt_hash: item?.excerpt_hash ?? null,
+      full_source_text_included: false
+    })),
+    quality_target: sourceReadingReview.quality_target ?? null,
+    boundary: {
+      ...(sourceReadingReview.boundary ?? {}),
+      full_source_text_persisted: false,
+      full_source_text_transferred: false,
+      provider_call_performed: false,
+      api_call_performed: false,
+      deterministic_findings_mutated: false,
+      proof_contract_satisfied: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function providerArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function providerStringArray(value, maxItems, maxLength) {
+  return providerArray(value)
+    .map((item) => typeof item === 'string' ? item : '')
+    .filter((item) => item.trim())
+    .slice(0, maxItems)
+    .map((item) => truncateText(item, maxLength));
 }
 
 function filterSupplementalContentEvidenceItem(item) {

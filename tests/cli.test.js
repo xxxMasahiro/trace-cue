@@ -2180,6 +2180,8 @@ test('schema commands expose machine-readable contracts', async () => {
     ['mcp_execution_gates', '../schemas/mcp-execution-gates.schema.json'],
     ['video_evidence', '../schemas/video-evidence.schema.json'],
     ['content_evidence', '../schemas/content-evidence.schema.json'],
+    ['source_text', '../schemas/source-text.schema.json'],
+    ['source_reading_review', '../schemas/source-reading-review.schema.json'],
     ['visual_review_provider_policy', '../schemas/visual-review-provider-policy.schema.json'],
     ['visual_review_result_preparation', '../schemas/visual-review-result-preparation.schema.json'],
     ['visual_review_dashboard', '../schemas/visual-review-dashboard.schema.json'],
@@ -3528,6 +3530,17 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
       raw_content_transferred: false
     }
   }, null, 2), 'utf8');
+  const sourceTextPath = 'source-transcript.txt';
+  const sourceTranscriptText = [
+    'The transcript opens by naming the core problem: a product can be built well and still fail when the intended audience cannot find it.',
+    'It then separates acquisition paths by situation. Paid social advertising is framed as useful when the owner has budget and needs fast validation.',
+    'Search engine optimization and app store optimization are framed as slower but more durable choices for owners who can invest time.',
+    'Social posting is described as useful only when the message is specific enough for the intended audience to recognize their own pain.',
+    'Sharing features are positioned as a product-level growth loop, especially when existing users have a reason to invite someone else.',
+    'The transcript cautions that beginners may feel scattered if advertising, social posting, SEO, ASO, and sharing loops are listed without priority.',
+    'The practical recommendation is to choose the first distribution action from the owner context: budget, available time, existing user base, and measurable learning goal.'
+  ].join('\n\n');
+  await writeFile(path.join(cwd, sourceTextPath), sourceTranscriptText, 'utf8');
 
   const parsedProposal = parseCliArgs([
     'agentic',
@@ -3776,6 +3789,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     videoEvidencePath,
     '--content-evidence',
     contentEvidencePath,
+    '--source-text',
+    sourceTextPath,
     '--json'
   ]);
   assert.equal(parsedPlan.ok, true);
@@ -4100,6 +4115,110 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.match(contentOnlyReportText, /Content evidence density: summary only/);
   assert.match(contentOnlyReportText, /Content review strength: Content-specific conclusions must stay cautious/);
   assert.doesNotMatch(contentOnlyReportText, /no supplemental content evidence was supplied/i);
+
+  const sourceTextPlan = await executeCli([
+    'agentic',
+    'review',
+    'plan',
+    '--review-index',
+    reviewIndexPath,
+    '--intent',
+    'Review the artifact using the full source transcript and then synthesize a natural owner-facing review.',
+    '--effort',
+    'xhigh',
+    '--source-text',
+    sourceTextPath,
+    '--surface',
+    'local-subscription-agent',
+    '--provider',
+    'fake-agent',
+    '--model',
+    'fake-model',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'agentic-plan-source-text'
+  });
+  assert.equal(sourceTextPlan.exitCode, 0);
+  const sourceTextPlanBody = JSON.parse(sourceTextPlan.stdout);
+  const sourcePlan = sourceTextPlanBody.data.agentic_human_review_plan;
+  assert.equal(sourcePlan.source_text.status, 'available');
+  assert.equal(sourcePlan.source_text.text_stats.stored_full_text, false);
+  assert.equal(sourcePlan.source_text.chunk_index.every((chunk) => chunk.text_included === false), true);
+  assert.equal(sourcePlan.source_reading_review.status, 'completed');
+  assert.equal(sourcePlan.source_reading_review.reading_depth, 'xhigh_source_reading');
+  assert.equal(sourcePlan.source_reading_review.quality_target.target, 'exceed_assistant_reference_review');
+  assert.equal(sourcePlan.evidence_scope.source_reading_review_usable, true);
+  assert.equal(sourcePlan.evidence_plan.source_text_policy.full_source_text_persisted, false);
+  assert.equal(sourcePlan.disclosure.source_reading_review_included, true);
+  assert.equal(sourcePlan.provider_instruction_contract.required_behavior.some((item) => /source_reading_review/.test(item)), true);
+  assert.equal(sourcePlan.provider_instruction_contract.output_sections.includes('source_reading_review'), true);
+  assert.equal(sourcePlan.transfer_permissions.required_flags.includes('allow-page-text'), true);
+  assert.doesNotMatch(JSON.stringify(sourcePlan.source_text), /Paid social advertising is framed/u);
+
+  const sourceTextRun = await executeCli([
+    'agentic',
+    'review',
+    'run',
+    '--plan',
+    '.browser-debug/agentic-human-review-plans/agentic-plan-source-text/plan.json',
+    '--plan-hash',
+    sourceTextPlanBody.data.plan_hash,
+    ...sourcePlan.transfer_permissions.required_flags.map((flag) => `--${flag}`),
+    '--execute',
+    '--json'
+  ], {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => {
+      if (prefix === 'agentic-human-review-execution') {
+        return 'agentic-execution-source-text';
+      }
+      if (prefix === 'agentic-human-review-result') {
+        return 'agentic-result-source-text';
+      }
+      return 'unexpected-agentic-source-text-id';
+    }
+  });
+  assert.equal(sourceTextRun.exitCode, 0);
+  const sourceTextResult = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-source-text', 'result.json'), 'utf8'));
+  assert.equal(sourceTextResult.source_reading_review.status, 'completed');
+  assert.equal(sourceTextResult.editorial_synthesis.boundary.derived_from_source_reading_review, true);
+  assert.equal(sourceTextResult.editorial_synthesis.composer.source_reading_used, true);
+  assert.equal(sourceTextResult.editorial_synthesis.source_text.full_source_text_persisted, false);
+  assert.match(sourceTextResult.editorial_synthesis.full_review, /product can be built well and still fail/i);
+  assert.match(sourceTextResult.editorial_synthesis.full_review, /Paid social advertising|Search engine optimization|sharing features/i);
+  assert.match(sourceTextResult.editorial_synthesis.full_review, /budget, available time, existing user base, and measurable learning goal/i);
+  assert.equal(sourceTextResult.editorial_synthesis.source_refs.some((ref) => ref.startsWith('source_reading_review:')), true);
+  assert.doesNotMatch(JSON.stringify(sourceTextResult.source_text), /Paid social advertising is framed/u);
+  const sourceTextReport = await readFile(path.join(cwd, '.browser-debug', 'reports', 'agentic-execution-source-text-agentic-human-review.md'), 'utf8');
+  assert.match(sourceTextReport, /Source Reading/);
+  assert.match(sourceTextReport, /Source-reading depth: xhigh_source_reading/);
+  assert.match(sourceTextReport, /Source Key Points/);
+  assert.match(sourceTextReport, /Source Excerpt Refs/);
+
+  await writeFile(path.join(cwd, 'raw-source-text.json'), JSON.stringify({
+    schema_version: '1.0.0',
+    evidence_kind: 'source_text',
+    source_type: 'transcript',
+    raw_audio_base64: 'AAAA',
+    text: 'This should not be accepted because a raw audio field is present.'
+  }, null, 2), 'utf8');
+  const rawSourceTextPlan = await executeCli([
+    'agentic',
+    'review',
+    'plan',
+    '--review-index',
+    reviewIndexPath,
+    '--intent',
+    'Review with invalid raw source text.',
+    '--source-text',
+    'raw-source-text.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(rawSourceTextPlan.exitCode, 1);
+  assert.equal(JSON.parse(rawSourceTextPlan.stdout).errors[0].code, 'AGENTIC_REVIEW_SOURCE_TEXT_RAW_CONTENT_REJECTED');
 
   const planPath = '.browser-debug/agentic-human-review-plans/agentic-plan-fixed/plan.json';
   const packagePath = '.browser-debug/agentic-human-review-packages/agentic-plan-fixed/package.json';
@@ -7176,8 +7295,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(listResult.exitCode, 0);
   const listBody = JSON.parse(listResult.stdout);
   assert.equal(listBody.command, 'agentic review list');
-  assert.equal(listBody.data.summary.total, 12);
-  assert.equal(listBody.data.summary.completed, 5);
+  assert.equal(listBody.data.summary.total, 13);
+  assert.equal(listBody.data.summary.completed, 6);
   assert.equal(listBody.data.summary.failed, 3);
   assert.equal(listBody.data.summary.blocked, 4);
   assert.equal(listBody.data.summary.api_call_performed, true);

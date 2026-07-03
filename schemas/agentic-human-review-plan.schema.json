@@ -51,6 +51,8 @@
     "evidence_scope": { "type": "object" },
     "video_evidence": { "type": "object" },
     "content_evidence": { "type": "object" },
+    "source_text": { "type": "object" },
+    "source_reading_review": { "type": "object" },
     "intent": { "type": "string" },
     "review_scope": { "type": "object" },
     "human_review_contract": { "type": "object" },

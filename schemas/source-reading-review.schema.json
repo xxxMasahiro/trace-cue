@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/source-reading-review.schema.json",
+  "title": "TraceCue Source Reading Review",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "reading_version",
+    "status",
+    "analyst_role",
+    "boundary",
+    "advisory_only",
+    "gate_effect"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "reading_version": { "type": ["string", "null"] },
+    "status": { "enum": ["completed", "insufficient", "not_supplied"] },
+    "analyst_role": { "type": "string" },
+    "source_text_id": { "type": ["string", "null"] },
+    "source_type": { "enum": ["video", "web_page", "pdf", "meeting_notes", "document", "transcript", "other"] },
+    "review_effort": { "enum": ["quick", "standard", "deep", "xhigh", null] },
+    "reading_depth": { "type": ["string", "null"] },
+    "topic": { "type": ["string", "null"] },
+    "narrative_flow": { "type": "array" },
+    "key_points": { "type": "array" },
+    "concrete_examples": { "type": "array" },
+    "tensions_or_open_questions": { "type": "array" },
+    "reader_value": { "type": ["string", "null"] },
+    "risks_or_cautions": { "type": "array" },
+    "recommended_direction": { "type": ["string", "null"] },
+    "natural_review_seed": { "type": ["string", "null"] },
+    "source_excerpt_refs": { "type": "array" },
+    "quality_target": { "type": ["object", "null"] },
+    "boundary": { "type": "object" },
+    "advisory_only": { "const": true },
+    "gate_effect": { "const": "none" }
+  },
+  "additionalProperties": true
+}

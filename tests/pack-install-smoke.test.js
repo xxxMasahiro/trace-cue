@@ -148,6 +148,8 @@ async function main() {
     await assertFile(packageDir, 'schemas/visual-review-aggregation.schema.json');
     await assertFile(packageDir, 'schemas/review.schema.json');
     await assertFile(packageDir, 'schemas/content-evidence.schema.json');
+    await assertFile(packageDir, 'schemas/source-text.schema.json');
+    await assertFile(packageDir, 'schemas/source-reading-review.schema.json');
     await assertFile(packageDir, 'templates/review-target-manifest.json');
     await assertFile(packageDir, 'templates/status-dashboard-content-ux-target-manifest.json');
     await assertFile(packageDir, '.codex-plugin/plugin.json');
@@ -184,6 +186,8 @@ async function main() {
     const reviewSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('review'));
     const visualEvidenceSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('visual-evidence'));
     const contentEvidenceSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('content-evidence'));
+    const sourceTextSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('source-text'));
+    const sourceReadingReviewSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('source-reading-review'));
     const captureHandoffSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('capture-handoff'));
     const capturePlanSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('capture-plan'));
     const identityAuditSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('identity-audit'));
@@ -246,6 +250,8 @@ async function main() {
     assert.equal(path.normalize(reviewSchemaPath), path.join(packageDir, 'schemas/review.schema.json'));
     assert.equal(path.normalize(visualEvidenceSchemaPath), path.join(packageDir, 'schemas/visual-evidence.schema.json'));
     assert.equal(path.normalize(contentEvidenceSchemaPath), path.join(packageDir, 'schemas/content-evidence.schema.json'));
+    assert.equal(path.normalize(sourceTextSchemaPath), path.join(packageDir, 'schemas/source-text.schema.json'));
+    assert.equal(path.normalize(sourceReadingReviewSchemaPath), path.join(packageDir, 'schemas/source-reading-review.schema.json'));
     assert.equal(path.normalize(captureHandoffSchemaPath), path.join(packageDir, 'schemas/capture-handoff.schema.json'));
     assert.equal(path.normalize(capturePlanSchemaPath), path.join(packageDir, 'schemas/capture-plan.schema.json'));
     assert.equal(path.normalize(identityAuditSchemaPath), path.join(packageDir, 'schemas/identity-audit.schema.json'));

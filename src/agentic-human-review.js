@@ -61,6 +61,8 @@ export const HUMAN_REVIEW_EVIDENCE_PROVENANCE_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EDITORIAL_SYNTHESIS_VERSION = '1.0.0';
 export const HUMAN_REVIEW_VIDEO_EVIDENCE_VERSION = '1.0.0';
 export const HUMAN_REVIEW_CONTENT_EVIDENCE_VERSION = '1.0.0';
+export const HUMAN_REVIEW_SOURCE_TEXT_VERSION = '1.0.0';
+export const HUMAN_REVIEW_SOURCE_READING_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EDITORIAL_COMPOSER_VERSION = '1.0.0';
 export const HUMAN_REVIEW_QUALITY_DIAGNOSTICS_VERSION = '1.0.0';
 
@@ -77,6 +79,10 @@ const MAX_HUMAN_BASELINE_LABELS = 100;
 const MAX_VIDEO_EVIDENCE_ITEMS = 20;
 const MAX_CONTENT_EVIDENCE_ITEMS = 40;
 const MAX_CONTENT_EVIDENCE_TEXT = 1200;
+const MAX_SOURCE_TEXT_CHUNKS = 160;
+const MAX_SOURCE_TEXT_EXCERPTS = 12;
+const MAX_SOURCE_TEXT_EXCERPT = 900;
+const MAX_SOURCE_READING_ITEMS = 12;
 const MAX_PROPOSAL_BRIEF_BYTES = 32 * 1024;
 const AGENTIC_REVIEW_EXECUTION_MODES = new Set(['one-shot', 'staged']);
 const STAGED_EFFORT_EXECUTION_VERSION = '1.0.0';
@@ -115,7 +121,12 @@ const VIDEO_EVIDENCE_SCOPE_VALUES = new Set([
   'insufficient_video_evidence',
   'content_evidence_only',
   'page_and_content_evidence',
-  'insufficient_content_evidence'
+  'insufficient_content_evidence',
+  'source_text_only',
+  'page_and_source_text',
+  'source_text_and_content_evidence',
+  'page_source_text_and_content_evidence',
+  'insufficient_source_text'
 ]);
 const CONTENT_EVIDENCE_SOURCE_TYPES = new Set([
   'video',
@@ -405,6 +416,15 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
   if (!contentEvidenceRead.ok) {
     return errorResult(contentEvidenceRead.error.code, contentEvidenceRead.error.message, contentEvidenceRead.error.details);
   }
+  const sourceTextRead = await readSourceTextForPlan({
+    cwd,
+    options,
+    maxBytes: maxBytes.value,
+    reviewEffort: effort.value
+  });
+  if (!sourceTextRead.ok) {
+    return errorResult(sourceTextRead.error.code, sourceTextRead.error.message, sourceTextRead.error.details);
+  }
   const reviewIndexPreview = await buildProposalReviewIndexPreview({
     cwd,
     options,
@@ -415,7 +435,9 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
     maxBytes: maxBytes.value,
     provider: provider.provider,
     videoEvidence: videoEvidenceRead.evidence,
-    contentEvidence: contentEvidenceRead.evidence
+    contentEvidence: contentEvidenceRead.evidence,
+    sourceText: sourceTextRead.sourceText,
+    sourceReadingReview: sourceTextRead.sourceReadingReview
   });
   if (!reviewIndexPreview.ok) {
     return errorResult(reviewIndexPreview.error.code, reviewIndexPreview.error.message, reviewIndexPreview.error.details);
@@ -461,6 +483,8 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
       video_evidence_hash: videoEvidenceRead.hash,
       content_evidence_path: contentEvidenceRead.relativePath,
       content_evidence_hash: contentEvidenceRead.hash,
+      source_text_path: sourceTextRead.relativePath,
+      source_text_hash: sourceTextRead.hash,
       case_id: stringOrNull(options['case-id']),
       fixture_id: stringOrNull(options['fixture-id'])
     },
@@ -481,6 +505,7 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
       human_baseline_path: ownerBaselineContractRead.relativePath,
       video_evidence_path: videoEvidenceRead.relativePath,
       content_evidence_path: contentEvidenceRead.relativePath,
+      source_text_path: sourceTextRead.relativePath,
       rubric_profile_id: stringOrNull(options['rubric-profile']),
       evidence_plan_mode: stringOrNull(options['evidence-plan-mode']),
       dogfood_metadata: buildDogfoodMetadataFromOptions(options)
@@ -508,6 +533,8 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
     owner_baseline_requirement_preview: ownerBaselineContractRead.contract,
     video_evidence_preview: videoEvidenceRead.evidence,
     content_evidence_preview: contentEvidenceRead.evidence,
+    source_text_preview: sourceTextRead.sourceText,
+    source_reading_review_preview: sourceTextRead.sourceReadingReview,
     provider: provider.provider,
     model,
     surface: surfaceSummary(surface),
@@ -575,7 +602,7 @@ export async function runAgenticHumanReviewPropose(options = {}, context = {}) {
       approval_required: true,
       boundary: proposal.boundary
     },
-    warnings: [...briefRead.warnings, ...reviewIndexPreview.warnings, ...videoEvidenceRead.warnings, ...contentEvidenceRead.warnings, ...ownerBaselineContractRead.warnings],
+    warnings: [...briefRead.warnings, ...reviewIndexPreview.warnings, ...videoEvidenceRead.warnings, ...contentEvidenceRead.warnings, ...sourceTextRead.warnings, ...ownerBaselineContractRead.warnings],
     errors: [],
     artifacts: [
       artifactObject({
@@ -676,6 +703,15 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
   if (!roleEfforts.ok) {
     return errorResult('AGENTIC_REVIEW_INVALID_ROLE_EFFORTS', roleEfforts.message, { role_efforts: planOptions['role-efforts'] });
   }
+  const sourceTextRead = await readSourceTextForPlan({
+    cwd,
+    options: planOptions,
+    maxBytes: maxBytes.value,
+    reviewEffort: effort.value
+  });
+  if (!sourceTextRead.ok) {
+    return errorResult(sourceTextRead.error.code, sourceTextRead.error.message, sourceTextRead.error.details);
+  }
 
   const provider = resolveProviderDescriptor(planOptions.provider, context);
   if (!provider.ok) {
@@ -703,6 +739,8 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
     reviewArtifact,
     videoEvidence: videoEvidenceRead.evidence,
     contentEvidence: contentEvidenceRead.evidence,
+    sourceText: sourceTextRead.sourceText,
+    sourceReadingReview: sourceTextRead.sourceReadingReview,
     intent: intentRead.intent,
     targetAudience: planOptions['target-audience'],
     expectedImpression: planOptions['expected-impression']
@@ -861,6 +899,8 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
     evidence_plan: evidencePlan,
     video_evidence: reviewPackage.video_evidence,
     content_evidence: reviewPackage.content_evidence,
+    source_text: reviewPackage.source_text,
+    source_reading_review: reviewPackage.source_reading_review,
     disclosure: {
       scope: 'agentic_human_review_plan',
       raw_pixels_may_be_transferred_after_flag: transferPermissions.classes.raw_pixels.required_for_execution,
@@ -870,6 +910,7 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
       artifact_references_included: transferPermissions.classes.artifact_refs.included,
       accessibility_summary_included: transferPermissions.classes.accessibility_summary.included,
       content_evidence_summary_included: Number(reviewPackage.content_evidence?.supplemental_evidence_count ?? 0) > 0,
+      source_reading_review_included: reviewPackage.source_reading_review?.status === 'completed',
       external_evidence_transfer_authorized: false,
       provider_execution_authorized: false,
       raw_provider_response_storage_allowed: false
@@ -995,7 +1036,7 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
   await writeJsonArtifact(root, ['agentic-human-review-plans', id, 'plan.json'], plan);
   await writeJsonArtifact(root, ['receipts', `${id}-agentic-plan.json`], planReceipt);
 
-  const warnings = [...reviewArtifact.warnings, ...videoEvidenceRead.warnings, ...contentEvidenceRead.warnings, ...intentRead.warnings, ...ownerBaselineContractRead.warnings];
+  const warnings = [...reviewArtifact.warnings, ...videoEvidenceRead.warnings, ...contentEvidenceRead.warnings, ...sourceTextRead.warnings, ...intentRead.warnings, ...ownerBaselineContractRead.warnings];
   return {
     status: 'ok',
     data: {
@@ -5662,6 +5703,8 @@ function buildReviewPackage({
   reviewArtifact,
   videoEvidence = null,
   contentEvidence = null,
+  sourceText = null,
+  sourceReadingReview = null,
   intent,
   targetAudience,
   expectedImpression
@@ -5703,7 +5746,9 @@ function buildReviewPackage({
       video_evidence_path: videoEvidence?.provenance?.input_path ?? null,
       video_evidence_hash: videoEvidence?.provenance?.input_hash ?? null,
       content_evidence_path: contentEvidence?.provenance?.input_path ?? null,
-      content_evidence_hash: contentEvidence?.provenance?.input_hash ?? null
+      content_evidence_hash: contentEvidence?.provenance?.input_hash ?? null,
+      source_text_path: sourceText?.provenance?.input_path ?? null,
+      source_text_hash: sourceText?.provenance?.input_hash ?? null
     },
     visual_evidence: {
       reference_count: artifactRefs.filter(isVisualReference).length,
@@ -5722,6 +5767,8 @@ function buildReviewPackage({
       contentEvidence,
       videoEvidence
     }),
+    source_text: buildSourceTextPackage(sourceText),
+    source_reading_review: buildSourceReadingReviewPackage(sourceReadingReview),
     page_content_evidence: {
       text_snippet_count: textSnippets.length,
       text_snippets: textSnippets,
@@ -5769,6 +5816,7 @@ function buildReviewPackage({
       local_artifact_references_included: artifactRefs.length > 0,
       video_evidence_summary_included: videoEvidence?.status === 'available',
       content_evidence_summary_included: contentEvidence?.status === 'available',
+      source_reading_review_included: sourceReadingReview?.status === 'completed',
       external_evidence_transfer_authorized: false,
       provider_execution_authorized: false
     },
@@ -6004,6 +6052,699 @@ async function readContentEvidenceForPlan({ cwd, options, maxBytes }) {
     hash: hashText(read.text),
     warnings: normalized.warnings
   };
+}
+
+async function readSourceTextForPlan({ cwd, options, maxBytes, reviewEffort = DEFAULT_REVIEW_EFFORT }) {
+  const inputPath = options['source-text'];
+  if (!inputPath) {
+    return { ok: true, sourceText: null, sourceReadingReview: null, relativePath: null, hash: null, warnings: [] };
+  }
+  const read = await readWorkspaceText({
+    cwd,
+    inputPath,
+    label: 'agentic human review source text',
+    maxBytes
+  });
+  if (!read.ok) {
+    return { ok: false, error: read.error };
+  }
+  const normalized = normalizeSourceTextArtifact({
+    text: read.text,
+    inputPath: read.relativePath,
+    inputHash: hashText(read.text),
+    reviewEffort
+  });
+  if (!normalized.ok) {
+    return { ok: false, error: normalized.error };
+  }
+  return {
+    ok: true,
+    sourceText: normalized.sourceText,
+    sourceReadingReview: normalized.sourceReadingReview,
+    relativePath: read.relativePath,
+    hash: hashText(read.text),
+    warnings: normalized.warnings
+  };
+}
+
+function normalizeSourceTextArtifact({ text, inputPath, inputHash, reviewEffort = DEFAULT_REVIEW_EFFORT }) {
+  const parsed = parseSourceTextInput(text);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  const disallowed = findDisallowedSourceTextContent(parsed.rawInput);
+  if (disallowed.length > 0) {
+    return validationError('AGENTIC_REVIEW_SOURCE_TEXT_RAW_CONTENT_REJECTED', 'Source text must be textual content only and must not include raw media, binary payloads, base64 payloads, or credential-bearing structured fields.', {
+      input: inputPath,
+      rejected_fields: disallowed.slice(0, 20)
+    });
+  }
+  const sourceType = normalizeEnum(parsed.sourceType, [...CONTENT_EVIDENCE_SOURCE_TYPES], inferSourceTextTypeFromPath(inputPath));
+  const normalizedText = normalizeSourceTextBody(parsed.text);
+  if (!normalizedText) {
+    return validationError('AGENTIC_REVIEW_SOURCE_TEXT_EMPTY', 'The source text did not contain readable text after normalization.', {
+      input: inputPath
+    });
+  }
+  const chunks = buildSourceTextChunks(normalizedText, parsed.chunks);
+  const status = chunks.length > 0 ? 'available' : 'insufficient';
+  const metadata = {
+    schema_version: SCHEMA_VERSION,
+    evidence_version: HUMAN_REVIEW_SOURCE_TEXT_VERSION,
+    evidence_kind: 'source_text',
+    id: truncateText(parsed.id ?? `source-text-${inputHash.slice(0, 12)}`, 120),
+    status,
+    source_type: sourceType,
+    source: {
+      kind: truncateText(parsed.source?.kind ?? sourceType, 120),
+      title: secretSafeText(parsed.source?.title ?? parsed.title ?? '', 300),
+      locator_included: false,
+      media_id: truncateText(parsed.source?.media_id ?? parsed.mediaId ?? '', 160),
+      page_count: Number(parsed.source?.page_count ?? parsed.pageCount) || null,
+      duration_seconds: Number(parsed.source?.duration_seconds ?? parsed.durationSeconds) || null
+    },
+    provider: parsed.provider,
+    text_stats: {
+      char_count: normalizedText.length,
+      line_count: normalizedText.split(/\n/u).filter((line) => line.trim()).length,
+      chunk_count: chunks.length,
+      stored_full_text: false,
+      stored_chunk_text: false,
+      source_hash: inputHash
+    },
+    chunk_index: chunks.map((chunk) => ({
+      id: chunk.id,
+      locator: chunk.locator,
+      char_start: chunk.char_start,
+      char_end: chunk.char_end,
+      hash: chunk.hash,
+      text_included: false
+    })),
+    coverage: {
+      source_type: sourceType,
+      content_understanding_level: 'full_text',
+      has_full_text: true,
+      has_original_text: true,
+      has_location_refs: chunks.some((chunk) => Boolean(chunk.locator)),
+      original_text_coverage_score: 1,
+      location_reference_coverage_score: chunks.some((chunk) => Boolean(chunk.locator)) ? 1 : 0.75,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    privacy: {
+      raw_media_embedded_in_json: false,
+      raw_binary_embedded_in_json: false,
+      raw_html_embedded_in_json: false,
+      raw_pdf_embedded_in_json: false,
+      full_transcript_embedded_in_json: false,
+      full_document_embedded_in_json: false,
+      full_source_text_persisted: false,
+      derived_reading_review_only: true
+    },
+    provenance: {
+      input_path: inputPath,
+      input_hash: inputHash,
+      input_type: parsed.inputType,
+      source_tool: stringOrNull(parsed.sourceTool ?? parsed.provider?.id ?? parsed.provider_id)
+    },
+    boundary: sourceTextBoundary(),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  const sourceReadingReview = buildSourceReadingReview({
+    sourceText: metadata,
+    normalizedText,
+    chunks,
+    reviewEffort
+  });
+  return {
+    ok: true,
+    sourceText: redact(metadata),
+    sourceReadingReview: redact(sourceReadingReview),
+    warnings: []
+  };
+}
+
+function parseSourceTextInput(text) {
+  const raw = String(text ?? '');
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const chunks = normalizeSourceTextInputChunks(parsed.chunks ?? parsed.segments ?? parsed.transcript_chunks ?? parsed.sections);
+      const joined = sourceTextCandidateStrings(parsed, chunks).join('\n\n');
+      return {
+        ok: true,
+        rawInput: parsed,
+        text: joined,
+        chunks,
+        sourceType: parsed.source_type ?? parsed.content_type ?? parsed.kind,
+        id: parsed.id ?? parsed.evidence_id ?? parsed.ref_id,
+        title: parsed.title,
+        source: parsed.source && typeof parsed.source === 'object' ? parsed.source : null,
+        provider: normalizeSourceTextProvider(parsed),
+        inputType: stringOrNull(parsed.type ?? parsed.evidence_kind) ?? 'source_text',
+        sourceTool: parsed.source_tool ?? parsed.tool
+      };
+    }
+  } catch {
+    // Plain text is the expected fallback for transcript, article, PDF, and notes exports.
+  }
+  return {
+    ok: true,
+    rawInput: null,
+    text: raw,
+    chunks: [],
+    sourceType: null,
+    id: null,
+    title: null,
+    source: null,
+    provider: null,
+    inputType: 'source_text_plain_text',
+    sourceTool: null
+  };
+}
+
+function normalizeSourceTextProvider(input) {
+  const provider = input.provider && typeof input.provider === 'object' ? input.provider : {};
+  const id = provider.id ?? input.provider_id ?? input.tool_id ?? input.source_tool;
+  if (!id && !provider.kind && !provider.version) {
+    return null;
+  }
+  return {
+    id: truncateText(id ?? 'external-source-text-provider', 160),
+    kind: truncateText(provider.kind ?? input.provider_kind ?? 'source_text_extractor', 120),
+    version: stringOrNull(provider.version ?? input.provider_version ?? input.tool_version),
+    local_execution_declared: provider.local_execution === true || input.local_execution === true,
+    api_call_declared: provider.api_call_performed === true || input.api_call_performed === true
+  };
+}
+
+function normalizeSourceTextInputChunks(value) {
+  const items = Array.isArray(value) ? value : [];
+  return items.slice(0, MAX_SOURCE_TEXT_CHUNKS).map((item, index) => {
+    const record = item && typeof item === 'object' ? item : { text: item };
+    return {
+      id: truncateText(record.id ?? `source-chunk-${index + 1}`, 120),
+      locator: truncateText(record.locator ?? record.location ?? record.time_range ?? record.timestamp ?? record.page ?? record.heading ?? '', 160),
+      text: String(record.text ?? record.content ?? record.transcript ?? record.body ?? record.summary ?? '').trim()
+    };
+  }).filter((item) => item.text);
+}
+
+function sourceTextCandidateStrings(input, chunks) {
+  const direct = [
+    input.source_text,
+    input.text,
+    input.full_text,
+    input.transcript_text,
+    input.transcript,
+    input.document_text,
+    input.body,
+    input.markdown,
+    input.plain_text
+  ].filter((item) => typeof item === 'string' && item.trim());
+  if (direct.length > 0) {
+    return direct;
+  }
+  return chunks.map((chunk) => [chunk.locator, chunk.text].filter(Boolean).join(' '));
+}
+
+function inferSourceTextTypeFromPath(inputPath) {
+  const extension = path.extname(String(inputPath ?? '').toLowerCase());
+  if (['.vtt', '.srt'].includes(extension)) {
+    return 'transcript';
+  }
+  if (extension === '.pdf') {
+    return 'pdf';
+  }
+  if (['.html', '.htm'].includes(extension)) {
+    return 'web_page';
+  }
+  if (['.md', '.markdown'].includes(extension)) {
+    return 'document';
+  }
+  return 'document';
+}
+
+function normalizeSourceTextBody(text) {
+  return String(text ?? '')
+    .replace(/^\uFEFF/u, '')
+    .replace(/\r\n?/gu, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && line !== 'WEBVTT' && !/^\d+$/u.test(line) && !/^\d{1,2}:\d{2}:\d{2}[,.]\d{3}\s+-->/u.test(line))
+    .map((line) => line.replace(/<[^>]+>/gu, '').replace(/\s+/gu, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+function buildSourceTextChunks(text, inputChunks = []) {
+  if (inputChunks.length > 0) {
+    return inputChunks.slice(0, MAX_SOURCE_TEXT_CHUNKS).map((chunk, index) => {
+      const normalized = normalizeSourceTextBody(chunk.text);
+      return {
+        id: truncateText(chunk.id ?? `source-chunk-${index + 1}`, 120),
+        locator: truncateText(chunk.locator ?? '', 160),
+        text: normalized,
+        char_start: null,
+        char_end: null,
+        hash: hashText(normalized)
+      };
+    }).filter((chunk) => chunk.text);
+  }
+  const paragraphs = text.split(/\n{2,}|\n(?=.{80,})/u).map((item) => item.trim()).filter(Boolean);
+  const chunks = [];
+  let offset = 0;
+  for (const paragraph of paragraphs) {
+    const start = text.indexOf(paragraph, offset);
+    const charStart = start >= 0 ? start : offset;
+    const charEnd = charStart + paragraph.length;
+    chunks.push({
+      id: `source-chunk-${chunks.length + 1}`,
+      locator: '',
+      text: paragraph,
+      char_start: charStart,
+      char_end: charEnd,
+      hash: hashText(paragraph)
+    });
+    offset = charEnd;
+    if (chunks.length >= MAX_SOURCE_TEXT_CHUNKS) {
+      break;
+    }
+  }
+  if (chunks.length === 0 && text.trim()) {
+    chunks.push({
+      id: 'source-chunk-1',
+      locator: '',
+      text: text.trim(),
+      char_start: 0,
+      char_end: text.trim().length,
+      hash: hashText(text.trim())
+    });
+  }
+  return chunks;
+}
+
+function findDisallowedSourceTextContent(value, pathParts = []) {
+  if (!value || typeof value !== 'object') {
+    return [];
+  }
+  const rejected = [];
+  for (const [key, item] of Object.entries(value)) {
+    const normalizedKey = key.replace(/[^a-z0-9]+/giu, '_').toLowerCase();
+    const currentPath = [...pathParts, key];
+    const disallowedKey = /(raw_video|raw_audio|raw_pixels|raw_frames|pixel_bytes|binary|base64|cookie|cookies|token|authorization|secret|credential|private_key)/u.test(normalizedKey);
+    if (disallowedKey && valueHasMeaningfulContent(item)) {
+      rejected.push(currentPath.join('.'));
+      continue;
+    }
+    if (typeof item === 'string' && /^(data:|blob:)/iu.test(item.trim())) {
+      rejected.push(currentPath.join('.'));
+      continue;
+    }
+    if (item && typeof item === 'object') {
+      rejected.push(...findDisallowedSourceTextContent(item, currentPath));
+    }
+  }
+  return rejected;
+}
+
+function sourceTextBoundary() {
+  return {
+    local_workspace_file_only: true,
+    full_source_text_read_by_tracecue: true,
+    full_source_text_persisted: false,
+    full_source_text_embedded_in_result_json: false,
+    full_source_text_embedded_in_markdown: false,
+    raw_media_allowed: false,
+    raw_binary_allowed: false,
+    external_evidence_transfer_performed: false,
+    provider_call_performed: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildSourceReadingReview({ sourceText, normalizedText, chunks, reviewEffort = DEFAULT_REVIEW_EFFORT }) {
+  const effort = normalizeObservedReviewEffort(reviewEffort) ?? DEFAULT_REVIEW_EFFORT;
+  const depth = sourceReadingDepthForEffort(effort);
+  const sentences = splitSourceReadingSentences(normalizedText);
+  const sourceExcerpts = selectSourceReadingExcerpts({ chunks, sentences, limit: depth.excerptLimit });
+  const narrativeFlow = buildSourceReadingFlow({ chunks, sentences, limit: depth.flowLimit });
+  const keyPoints = selectSourceReadingSentences(sentences, depth.keyPointLimit);
+  const concreteExamples = selectConcreteSourceExamples(sentences, depth.exampleLimit);
+  const tensions = selectTensionSentences(sentences, depth.tensionLimit);
+  const cautions = buildSourceReadingCautions({ sourceText, chunks, effort, tensions });
+  const recommendedDirection = buildSourceReadingRecommendation({ sourceText, keyPoints, cautions, effort });
+  const naturalReviewSeed = buildSourceReadingNaturalReview({
+    sourceText,
+    effort,
+    narrativeFlow,
+    keyPoints,
+    concreteExamples,
+    tensions,
+    cautions,
+    recommendedDirection
+  });
+  return {
+    schema_version: SCHEMA_VERSION,
+    reading_version: HUMAN_REVIEW_SOURCE_READING_VERSION,
+    status: sourceText.status === 'available' ? 'completed' : 'insufficient',
+    analyst_role: 'source_reading_analyst',
+    source_text_id: sourceText.id,
+    source_type: sourceText.source_type,
+    review_effort: effort,
+    reading_depth: depth.id,
+    source_text_stats: sourceText.text_stats,
+    source_coverage: sourceText.coverage,
+    topic: sourceReadingTopic({ sourceText, sentences }),
+    narrative_flow: narrativeFlow,
+    key_points: keyPoints,
+    concrete_examples: concreteExamples,
+    tensions_or_open_questions: tensions,
+    reader_value: buildSourceReadingReaderValue({ keyPoints, sourceText }),
+    risks_or_cautions: cautions,
+    recommended_direction: recommendedDirection,
+    natural_review_seed: naturalReviewSeed,
+    source_excerpt_refs: sourceExcerpts,
+    quality_target: sourceReadingQualityTarget(effort),
+    boundary: {
+      derived_from_full_source_text: true,
+      full_source_text_persisted: false,
+      full_source_text_transferred: false,
+      provider_call_performed: false,
+      api_call_performed: false,
+      deterministic_findings_mutated: false,
+      proof_contract_satisfied: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function sourceReadingDepthForEffort(effort) {
+  if (effort === 'xhigh') {
+    return { id: 'xhigh_source_reading', flowLimit: 7, keyPointLimit: 10, exampleLimit: 6, tensionLimit: 5, excerptLimit: 10 };
+  }
+  if (effort === 'deep') {
+    return { id: 'deep_source_reading', flowLimit: 5, keyPointLimit: 8, exampleLimit: 4, tensionLimit: 3, excerptLimit: 8 };
+  }
+  if (effort === 'quick') {
+    return { id: 'quick_source_reading', flowLimit: 2, keyPointLimit: 4, exampleLimit: 1, tensionLimit: 1, excerptLimit: 4 };
+  }
+  return { id: 'standard_source_reading', flowLimit: 3, keyPointLimit: 6, exampleLimit: 2, tensionLimit: 2, excerptLimit: 6 };
+}
+
+function splitSourceReadingSentences(text) {
+  return uniqueEditorialTexts(String(text ?? '')
+    .replace(/\n+/gu, ' ')
+    .split(/(?<=[。！？.!?])\s+|(?<=[。！？])/u)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 12))
+    .slice(0, 240);
+}
+
+function selectSourceReadingSentences(sentences, limit) {
+  return editorialSpecificTexts(sentences)
+    .filter((sentence) => !isLowSpecificityEditorialText(sentence))
+    .slice(0, limit);
+}
+
+function selectConcreteSourceExamples(sentences, limit) {
+  return uniqueEditorialTexts(sentences.filter((sentence) => /[0-9０-９]|例えば|たとえば|事例|具体|example|for example|case|because|理由|なぜ|つまり/iu.test(sentence))).slice(0, limit);
+}
+
+function selectTensionSentences(sentences, limit) {
+  return uniqueEditorialTexts(sentences.filter((sentence) => /しかし|ただし|一方|課題|注意|リスク|弱|迷|曖昧|but|however|risk|caution|uncertain|unclear|weak/iu.test(sentence))).slice(0, limit);
+}
+
+function selectSourceReadingExcerpts({ chunks, sentences, limit }) {
+  const candidates = [
+    ...chunks.map((chunk) => ({
+      id: chunk.id,
+      locator: chunk.locator,
+      excerpt: chunk.text
+    })),
+    ...sentences.map((sentence, index) => ({
+      id: `source-sentence-${index + 1}`,
+      locator: '',
+      excerpt: sentence
+    }))
+  ];
+  return candidates
+    .filter((item) => item.excerpt)
+    .slice(0, Math.min(limit, MAX_SOURCE_TEXT_EXCERPTS))
+    .map((item) => ({
+      id: truncateText(item.id, 120),
+      locator: truncateText(item.locator ?? '', 160),
+      excerpt: secretSafeText(item.excerpt, MAX_SOURCE_TEXT_EXCERPT),
+      excerpt_hash: hashText(item.excerpt),
+      full_source_text_included: false
+    }));
+}
+
+function buildSourceReadingFlow({ chunks, sentences, limit }) {
+  const flowSource = chunks.length >= 2
+    ? chunks.map((chunk) => [chunk.locator, chunk.text].filter(Boolean).join(': '))
+    : sentences;
+  return uniqueEditorialTexts(flowSource)
+    .slice(0, limit)
+    .map((text, index) => ({
+      step: index + 1,
+      summary: secretSafeText(text, MAX_SOURCE_TEXT_EXCERPT),
+      source_ref: chunks[index]?.id ?? `source-sentence-${index + 1}`
+    }));
+}
+
+function sourceReadingTopic({ sourceText, sentences }) {
+  return editorialFirstText([
+    sourceText.source?.title,
+    sentences[0],
+    `${sourceText.source_type} source text`
+  ], 'en');
+}
+
+function buildSourceReadingReaderValue({ keyPoints, sourceText }) {
+  const firstPoint = keyPoints[0] ?? sourceReadingTopic({ sourceText, sentences: [] });
+  return secretSafeText(`The source text gives the reviewer enough context to judge the artifact's content promise, audience value, and likely comprehension path. ${firstPoint}`, MAX_SOURCE_TEXT_EXCERPT);
+}
+
+function buildSourceReadingCautions({ sourceText, chunks, effort, tensions }) {
+  const cautions = [
+    ...tensions,
+    `The source text was read locally and reduced into a bounded source-reading review; the full ${sourceText.source_type} text is not persisted in the result or Markdown report.`
+  ];
+  if (effort !== 'xhigh') {
+    cautions.push('This effort does not by itself add dedicated xhigh critique or verification proof.');
+  }
+  if (chunks.length >= MAX_SOURCE_TEXT_CHUNKS) {
+    cautions.push('The source text reached the configured chunk limit, so later material may need a separate reading pass.');
+  }
+  return uniqueEditorialTexts(cautions).slice(0, MAX_SOURCE_READING_ITEMS);
+}
+
+function buildSourceReadingRecommendation({ sourceText, keyPoints, cautions, effort }) {
+  const point = keyPoints[0] ?? sourceReadingTopic({ sourceText, sentences: [] });
+  const caution = cautions[0] ?? 'Keep the final review explicit about source-reading limits.';
+  if (effort === 'xhigh') {
+    return secretSafeText(`Use the full-source reading as the primary content-understanding layer, then challenge it against TraceCue findings, evidence limits, and owner goals. The key content signal is: ${point} The main caution is: ${caution}`, MAX_SOURCE_TEXT_EXCERPT);
+  }
+  if (effort === 'deep') {
+    return secretSafeText(`Use the full-source reading to connect the artifact's flow, examples, and reader value before making recommendations. The key content signal is: ${point}`, MAX_SOURCE_TEXT_EXCERPT);
+  }
+  return secretSafeText(`Use the full-source reading to confirm the main content promise and next useful review action. The key content signal is: ${point}`, MAX_SOURCE_TEXT_EXCERPT);
+}
+
+function buildSourceReadingNaturalReview({ sourceText, effort, narrativeFlow, keyPoints, concreteExamples, tensions, cautions, recommendedDirection }) {
+  const topic = sourceReadingTopic({ sourceText, sentences: keyPoints });
+  const flowText = narrativeFlow.map((item) => item.summary).slice(0, effort === 'xhigh' ? 4 : effort === 'deep' ? 3 : 2);
+  const paragraphs = [];
+  paragraphs.push(composeEditorialParagraph([
+    `The full ${contentEvidenceSourceTypeLabel(sourceText.source_type, 'en')} source text centers on ${topic}`,
+    ...flowText
+  ], { maxItems: effort === 'xhigh' ? 5 : 4, minItems: 1 }));
+  paragraphs.push(composeEditorialParagraph([
+    'The strongest content signals are:',
+    ...keyPoints.slice(0, effort === 'xhigh' ? 4 : effort === 'deep' ? 3 : 2)
+  ], { maxItems: effort === 'xhigh' ? 5 : 4, minItems: 2 }));
+  if (concreteExamples.length > 0) {
+    paragraphs.push(composeEditorialParagraph([
+      'Concrete source details make the review more specific:',
+      ...concreteExamples.slice(0, effort === 'xhigh' ? 3 : 2)
+    ], { maxItems: 4, minItems: 2 }));
+  }
+  if (effort === 'deep' || effort === 'xhigh') {
+    paragraphs.push(composeEditorialParagraph([
+      'The main tension or caution is:',
+      ...tensions.slice(0, effort === 'xhigh' ? 3 : 2),
+      ...cautions.slice(0, 1)
+    ], { maxItems: 4, minItems: 2 }));
+  }
+  if (effort === 'xhigh') {
+    paragraphs.push(composeEditorialParagraph([
+      'For xhigh synthesis, the final review should exceed a standalone natural review by combining this full-source reading with TraceCue findings, source refs, limitations, and critique/verification posture.',
+      recommendedDirection
+    ], { maxItems: 3, minItems: 1 }));
+  } else {
+    paragraphs.push(recommendedDirection);
+  }
+  return uniqueEditorialParagraphs(paragraphs).join('\n\n');
+}
+
+function sourceReadingQualityTarget(effort) {
+  if (effort === 'xhigh') {
+    return {
+      target: 'exceed_assistant_reference_review',
+      description: 'The final synthesis should be more specific, better evidenced, and more actionable than a standalone assistant review over the same full source text.'
+    };
+  }
+  if (effort === 'deep') {
+    return {
+      target: 'slightly_exceed_assistant_reference_review',
+      description: 'The final synthesis should add more structure, examples, cautions, and evidence references than a standalone assistant review.'
+    };
+  }
+  return {
+    target: 'match_assistant_reference_review',
+    description: 'The final synthesis should preserve the same practical content understanding, naturalness, cautions, and recommendations as a standalone assistant review.'
+  };
+}
+
+function buildSourceTextPackage(sourceText) {
+  if (!sourceText) {
+    return {
+      schema_version: SCHEMA_VERSION,
+      evidence_version: HUMAN_REVIEW_SOURCE_TEXT_VERSION,
+      evidence_kind: 'source_text',
+      status: 'not_supplied',
+      source_type: 'other',
+      text_stats: {
+        char_count: 0,
+        line_count: 0,
+        chunk_count: 0,
+        stored_full_text: false,
+        stored_chunk_text: false,
+        source_hash: null
+      },
+      chunk_index: [],
+      coverage: {
+        content_understanding_level: 'none',
+        has_full_text: false,
+        has_original_text: false,
+        original_text_coverage_score: 0,
+        advisory_only: true,
+        gate_effect: 'none'
+      },
+      privacy: {
+        full_source_text_persisted: false,
+        full_transcript_embedded_in_json: false,
+        full_document_embedded_in_json: false,
+        derived_reading_review_only: true
+      },
+      boundary: sourceTextBoundary(),
+      advisory_only: true,
+      gate_effect: 'none'
+    };
+  }
+  const packageValue = {
+    ...sourceText,
+    source: sourceText.source ? {
+      kind: sourceText.source.kind ?? null,
+      title: sourceText.source.title ?? null,
+      media_id: sourceText.source.media_id ?? null,
+      page_count: sourceText.source.page_count ?? null,
+      duration_seconds: sourceText.source.duration_seconds ?? null,
+      locator_included: false
+    } : null,
+    text_stats: {
+      ...(sourceText.text_stats ?? {}),
+      stored_full_text: false,
+      stored_chunk_text: false
+    },
+    chunk_index: normalizeArray(sourceText.chunk_index).slice(0, MAX_SOURCE_TEXT_CHUNKS).map((chunk) => ({
+      id: chunk?.id ?? null,
+      locator: chunk?.locator ?? '',
+      char_start: chunk?.char_start ?? null,
+      char_end: chunk?.char_end ?? null,
+      hash: chunk?.hash ?? null,
+      text_included: false
+    })),
+    privacy: {
+      ...(sourceText.privacy ?? {}),
+      full_source_text_persisted: false,
+      full_transcript_embedded_in_json: false,
+      full_document_embedded_in_json: false,
+      derived_reading_review_only: true
+    },
+    boundary: sourceTextBoundary(),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  return packageValue;
+}
+
+function buildSourceReadingReviewPackage(sourceReadingReview) {
+  if (!sourceReadingReview) {
+    return {
+      schema_version: SCHEMA_VERSION,
+      reading_version: HUMAN_REVIEW_SOURCE_READING_VERSION,
+      status: 'not_supplied',
+      analyst_role: 'source_reading_analyst',
+      reading_depth: 'none',
+      source_excerpt_refs: [],
+      boundary: {
+        derived_from_full_source_text: false,
+        full_source_text_persisted: false,
+        full_source_text_transferred: false,
+        provider_call_performed: false,
+        api_call_performed: false,
+        deterministic_findings_mutated: false,
+        proof_contract_satisfied: false,
+        advisory_only: true,
+        gate_effect: 'none'
+      },
+      advisory_only: true,
+      gate_effect: 'none'
+    };
+  }
+  return {
+    ...sourceReadingReview,
+    source_excerpt_refs: normalizeArray(sourceReadingReview.source_excerpt_refs).slice(0, MAX_SOURCE_TEXT_EXCERPTS).map((ref) => ({
+      id: ref?.id ?? null,
+      locator: ref?.locator ?? '',
+      excerpt: secretSafeText(ref?.excerpt ?? '', MAX_SOURCE_TEXT_EXCERPT),
+      excerpt_hash: ref?.excerpt_hash ?? hashText(ref?.excerpt ?? ''),
+      full_source_text_included: false
+    })),
+    boundary: {
+      ...(sourceReadingReview.boundary ?? {}),
+      full_source_text_persisted: false,
+      full_source_text_transferred: false,
+      provider_call_performed: false,
+      api_call_performed: false,
+      deterministic_findings_mutated: false,
+      proof_contract_satisfied: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function valueHasMeaningfulContent(value) {
+  if (Array.isArray(value)) {
+    return value.some((item) => valueHasMeaningfulContent(item));
+  }
+  if (value && typeof value === 'object') {
+    return Object.values(value).some((item) => valueHasMeaningfulContent(item));
+  }
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+  return value !== null && value !== undefined;
 }
 
 function normalizeContentEvidenceArtifact({ input, inputPath, inputHash }) {
@@ -9176,8 +9917,10 @@ function buildEvidencePlan({ reviewPackage, intent, provider, rubricProfile, mod
   const profilePriority = new Set(rubricProfile?.evidence_priority ?? []);
   const hasVisualReference = Number(reviewPackage.visual_evidence?.reference_count ?? 0) > 0;
   const hasVideoEvidence = reviewPackage.video_evidence?.status === 'available';
+  const hasSourceReadingReview = reviewPackage.source_reading_review?.status === 'completed';
   const hasText = Number(reviewPackage.content_evidence?.text_snippet_count ?? 0) > 0
-    || Number(reviewPackage.content_evidence?.supplemental_evidence_available_count ?? 0) > 0;
+    || Number(reviewPackage.content_evidence?.supplemental_evidence_available_count ?? 0) > 0
+    || hasSourceReadingReview;
   const hasRoute = Boolean(reviewPackage.source?.route);
   const hasArtifacts = Number(reviewPackage.source?.artifact_count ?? 0) > 0;
   const classInputs = {
@@ -9246,6 +9989,10 @@ function buildEvidencePlan({ reviewPackage, intent, provider, rubricProfile, mod
       supplemental_source_types: reviewPackage.content_evidence?.supplemental_source_types ?? [],
       supplemental_content_unit_count: Number(reviewPackage.content_evidence?.supplemental_content_unit_count ?? 0),
       content_understanding_level: reviewPackage.content_evidence?.content_understanding_level ?? 'none',
+      source_text_available: reviewPackage.source_text?.status === 'available',
+      source_reading_review_available: hasSourceReadingReview,
+      source_text_chunk_count: Number(reviewPackage.source_text?.text_stats?.chunk_count ?? 0),
+      source_reading_depth: reviewPackage.source_reading_review?.reading_depth ?? 'none',
       raw_dom_allowed: false,
       raw_report_body_allowed: false
     },
@@ -9272,6 +10019,23 @@ function buildEvidencePlan({ reviewPackage, intent, provider, rubricProfile, mod
       claim_count: Number(reviewPackage.content_evidence?.supplemental_claim_count ?? 0),
       content_understanding_level: reviewPackage.content_evidence?.content_understanding_level ?? 'none',
       raw_content_allowed: false,
+      raw_binary_allowed: false,
+      external_transfer_requires_existing_text_transfer_boundary: true,
+      provider_payload_path_disclosure_allowed: false
+    },
+    source_text_policy: {
+      evidence_version: HUMAN_REVIEW_SOURCE_TEXT_VERSION,
+      reading_version: HUMAN_REVIEW_SOURCE_READING_VERSION,
+      source_type: reviewPackage.source_text?.source_type ?? 'other',
+      source_text_status: reviewPackage.source_text?.status ?? 'not_supplied',
+      source_reading_status: reviewPackage.source_reading_review?.status ?? 'not_supplied',
+      source_reading_depth: reviewPackage.source_reading_review?.reading_depth ?? 'none',
+      source_text_chunk_count: Number(reviewPackage.source_text?.text_stats?.chunk_count ?? 0),
+      derived_reading_review_allowed: hasSourceReadingReview,
+      full_source_text_persisted: false,
+      full_source_text_embedded_in_json: false,
+      full_source_text_embedded_in_markdown: false,
+      raw_media_allowed: false,
       raw_binary_allowed: false,
       external_transfer_requires_existing_text_transfer_boundary: true,
       provider_payload_path_disclosure_allowed: false
@@ -10883,6 +11647,8 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     stagedExecution: input.xhigh_staged_execution ?? null
   });
   const contentEvidence = normalizeContentEvidenceResultPackage(plan.content_evidence);
+  const sourceText = normalizeSourceTextResultPackage(plan.source_text);
+  const sourceReadingReview = normalizeSourceReadingReviewResultPackage(plan.source_reading_review);
   const qualityPreview = buildReportQualityFromParts({
     reviewEffort: plan.review_effort?.mode,
     roleOpinions,
@@ -10929,13 +11695,15 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
   const dissentSummary = buildDissentSummary({ roleOpinions, input });
   const boundedLanguageSettings = boundedAgenticLanguageSettings(languageSettings);
   const videoEvidence = normalizeVideoEvidenceResultPackage(plan.video_evidence);
-  const evidenceScope = normalizeEvidenceScopeRecord(plan.evidence_scope, videoEvidence, contentEvidence);
+  const evidenceScope = normalizeEvidenceScopeRecord(plan.evidence_scope, videoEvidence, contentEvidence, sourceText, sourceReadingReview);
   const editorialSynthesis = buildEditorialSynthesis({
     plan,
     languageSettings: boundedLanguageSettings,
     evidenceScope,
     videoEvidence,
     contentEvidence,
+    sourceText,
+    sourceReadingReview,
     safeInputSummary,
     roleOpinions,
     findings,
@@ -11018,6 +11786,8 @@ function normalizeAgenticAdvisoryResult({ id, now, plan, planPath, input, provid
     evidence_scope: evidenceScope,
     video_evidence: videoEvidence,
     content_evidence: contentEvidence,
+    source_text: sourceText,
+    source_reading_review: sourceReadingReview,
     evidence_plan: plan.evidence_plan ?? null,
     orchestration_contract: plan.orchestration_contract ?? null,
     effort_execution_contract: plan.effort_execution_contract ?? null,
@@ -11569,6 +12339,8 @@ function renderAgenticReviewReport(result) {
     '',
     ...renderEditorialSynthesisReportSection(editorialSynthesis, result),
     '',
+    ...renderSourceReadingReportSection(result.source_reading_review, result),
+    '',
     ...renderContentEvidenceReportSection(result.content_evidence, result),
     '',
     `## ${t('report.ahr.section.mechanical_vs_human', 'Mechanical Review Compared With Human Review')}`,
@@ -11692,6 +12464,40 @@ function renderEditorialSynthesisReportSection(editorialSynthesis, result = null
     `### ${t('report.ahr.section.source_findings', 'Source Findings')}`,
     '',
     ...normalizeStringArray(editorialSynthesis.source_refs).map((item) => `- ${item}`)
+  ];
+}
+
+function renderSourceReadingReportSection(sourceReadingReview, result = null) {
+  if (!sourceReadingReview || sourceReadingReview.status !== 'completed') {
+    return [];
+  }
+  const t = (key, fallback) => resolveAgenticReportText(result ?? {}, key, fallback);
+  return [
+    `## ${t('report.ahr.section.source_reading', 'Source Reading')}`,
+    '',
+    `${t('report.ahr.label.source_type', 'Source type')}: ${sourceReadingReview.source_type ?? 'other'}`,
+    `${t('report.ahr.label.source_reading_depth', 'Source-reading depth')}: ${sourceReadingReview.reading_depth ?? 'unknown'}`,
+    `${t('report.ahr.label.source_reading_quality_target', 'Source-reading quality target')}: ${sourceReadingReview.quality_target?.target ?? 'unknown'}`,
+    '',
+    `### ${t('report.ahr.section.source_reading_summary', 'Source Reading Summary')}`,
+    '',
+    sourceReadingReview.natural_review_seed ?? sourceReadingReview.topic ?? '',
+    '',
+    `### ${t('report.ahr.section.source_reading_key_points', 'Source Key Points')}`,
+    '',
+    ...normalizeStringArray(sourceReadingReview.key_points).map((item) => `- ${item}`),
+    '',
+    `### ${t('report.ahr.section.source_reading_examples', 'Source Examples')}`,
+    '',
+    ...normalizeStringArray(sourceReadingReview.concrete_examples).map((item) => `- ${item}`),
+    '',
+    `### ${t('report.ahr.section.source_reading_cautions', 'Source Cautions')}`,
+    '',
+    ...normalizeStringArray(sourceReadingReview.risks_or_cautions).map((item) => `- ${item}`),
+    '',
+    `### ${t('report.ahr.section.source_excerpt_refs', 'Source Excerpt Refs')}`,
+    '',
+    ...normalizeArray(sourceReadingReview.source_excerpt_refs).map((item) => `- ${item.id ?? 'source-ref'}: ${item.excerpt ?? ''}`)
   ];
 }
 
@@ -11929,12 +12735,14 @@ function buildHumanReviewContract({ intent, targetAudience, expectedImpression }
   };
 }
 
-async function buildProposalReviewIndexPreview({ cwd, options, artifactRootInput, id, now, brief, maxBytes, provider, videoEvidence = null, contentEvidence = null }) {
+async function buildProposalReviewIndexPreview({ cwd, options, artifactRootInput, id, now, brief, maxBytes, provider, videoEvidence = null, contentEvidence = null, sourceText = null, sourceReadingReview = null }) {
   if (!options['review-index']) {
     const emptyPackage = {
       visual_evidence: { reference_count: 0 },
       video_evidence: buildVideoEvidencePackage(videoEvidence),
       content_evidence: buildPackageContentEvidence({ textSnippets: [], contentEvidence, videoEvidence }),
+      source_text: buildSourceTextPackage(sourceText),
+      source_reading_review: buildSourceReadingReviewPackage(sourceReadingReview),
       source: { route: null, artifact_count: 0 }
     };
     return {
@@ -11974,6 +12782,8 @@ async function buildProposalReviewIndexPreview({ cwd, options, artifactRootInput
     reviewArtifact,
     videoEvidence,
     contentEvidence,
+    sourceText,
+    sourceReadingReview,
     intent: brief,
     targetAudience: options['target-audience'],
     expectedImpression: options['expected-impression']
@@ -12086,6 +12896,7 @@ function applyProposalDefaults(options, proposal) {
     'human-baseline': options['human-baseline'] ?? candidate.human_baseline_path,
     'video-evidence': options['video-evidence'] ?? candidate.video_evidence_path,
     'content-evidence': options['content-evidence'] ?? candidate.content_evidence_path,
+    'source-text': options['source-text'] ?? candidate.source_text_path,
     'rubric-profile': options['rubric-profile'] ?? candidate.rubric_profile_id,
     'evidence-plan-mode': options['evidence-plan-mode'] ?? candidate.evidence_plan_mode,
     'case-id': options['case-id'] ?? candidate.dogfood_metadata?.case_id,
@@ -12482,6 +13293,12 @@ function buildSourceEvidenceSummary(reviewPackage) {
     supplemental_content_evidence_source_types: reviewPackage.content_evidence?.supplemental_source_types ?? [],
     supplemental_content_unit_count: Number(reviewPackage.content_evidence?.supplemental_content_unit_count ?? 0),
     content_understanding_level: reviewPackage.content_evidence?.content_understanding_level ?? 'none',
+    source_text_status: reviewPackage.source_text?.status ?? 'not_supplied',
+    source_text_source_type: reviewPackage.source_text?.source_type ?? 'other',
+    source_text_chunk_count: Number(reviewPackage.source_text?.text_stats?.chunk_count ?? 0),
+    source_reading_review_status: reviewPackage.source_reading_review?.status ?? 'not_supplied',
+    source_reading_depth: reviewPackage.source_reading_review?.reading_depth ?? 'none',
+    source_reading_quality_target: reviewPackage.source_reading_review?.quality_target?.target ?? null,
     artifact_reference_count: Number(reviewPackage.source?.artifact_count ?? 0),
     deterministic_finding_count: Number(reviewPackage.existing_review_state?.findings_count ?? 0),
     local_release_gate: reviewPackage.existing_review_state?.local_release_gate ?? null,
@@ -12509,17 +13326,31 @@ function buildEvidenceScopeRecord(reviewPackage) {
   const hasInsufficientVideoEvidence = videoStatus === 'insufficient';
   const hasUsableContentEvidence = Number(reviewPackage.content_evidence?.supplemental_evidence_available_count ?? 0) > 0;
   const hasContentEvidence = Number(reviewPackage.content_evidence?.supplemental_evidence_count ?? 0) > 0;
+  const sourceTextStatus = reviewPackage.source_text?.status ?? 'not_supplied';
+  const sourceReadingStatus = reviewPackage.source_reading_review?.status ?? 'not_supplied';
+  const hasUsableSourceReading = sourceReadingStatus === 'completed';
+  const hasSourceText = sourceTextStatus !== 'not_supplied';
   let scope = 'page_only';
   if (hasUsableVideoEvidence && hasPageEvidence) {
     scope = 'page_and_video_evidence';
   } else if (hasUsableVideoEvidence) {
     scope = 'video_evidence_only';
+  } else if (hasUsableSourceReading && hasUsableContentEvidence && hasPageEvidence) {
+    scope = 'page_source_text_and_content_evidence';
+  } else if (hasUsableSourceReading && hasUsableContentEvidence) {
+    scope = 'source_text_and_content_evidence';
+  } else if (hasUsableSourceReading && hasPageEvidence) {
+    scope = 'page_and_source_text';
+  } else if (hasUsableSourceReading) {
+    scope = 'source_text_only';
   } else if (hasUsableContentEvidence && hasPageEvidence) {
     scope = 'page_and_content_evidence';
   } else if (hasUsableContentEvidence) {
     scope = 'content_evidence_only';
   } else if (hasInsufficientVideoEvidence) {
     scope = 'insufficient_video_evidence';
+  } else if (hasSourceText) {
+    scope = 'insufficient_source_text';
   } else if (hasContentEvidence) {
     scope = 'insufficient_content_evidence';
   }
@@ -12544,6 +13375,15 @@ function buildEvidenceScopeRecord(reviewPackage) {
     content_evidence_unit_count: Number(reviewPackage.content_evidence?.supplemental_content_unit_count ?? 0),
     content_evidence_claim_count: Number(reviewPackage.content_evidence?.supplemental_claim_count ?? 0),
     content_understanding_level: reviewPackage.content_evidence?.content_understanding_level ?? 'none',
+    source_text_present: hasSourceText,
+    source_text_usable: hasUsableSourceReading,
+    source_text_status: sourceTextStatus,
+    source_text_source_type: reviewPackage.source_text?.source_type ?? 'other',
+    source_text_chunk_count: Number(reviewPackage.source_text?.text_stats?.chunk_count ?? 0),
+    source_reading_review_present: sourceReadingStatus !== 'not_supplied',
+    source_reading_review_usable: hasUsableSourceReading,
+    source_reading_review_status: sourceReadingStatus,
+    source_reading_depth: reviewPackage.source_reading_review?.reading_depth ?? 'none',
     raw_media_included: false,
     advisory_only: true,
     gate_effect: 'none'
@@ -12629,6 +13469,7 @@ function buildProviderInstructionContract({
       'when owner_baseline_requirement_contract is present, include its required mentions, required dimensions, and forbidden claims as additional evidence-backed benchmark_requirement_coverage records',
       'when owner_baseline_requirement_contract is present, return structured agentic_human_review_findings for every target-specific must-not-miss criterion, using criterion ids and owner label ids from the contract',
       'return findings or agentic_human_review_findings with local evidence_refs for material owner-label and benchmark matches instead of relying only on advisory text search',
+      'when source_reading_review is present, use it as the primary content-understanding layer while keeping full source text out of output JSON and Markdown',
       'return normalized JSON matching agentic_human_review_advisory'
     ],
     input_summary: buildSourceEvidenceSummary(reviewPackage),
@@ -12642,6 +13483,7 @@ function buildProviderInstructionContract({
       'readability_comprehension',
       'reader_experience_review',
       'mechanical_vs_human_review',
+      'source_reading_review',
       'benchmark_requirement_coverage',
       'role_opinions',
       'consensus_summary',
@@ -13703,6 +14545,8 @@ function buildEditorialSynthesis({
   evidenceScope,
   videoEvidence,
   contentEvidence,
+  sourceText,
+  sourceReadingReview,
   safeInputSummary,
   roleOpinions,
   findings,
@@ -13752,6 +14596,7 @@ function buildEditorialSynthesis({
   addRecords({ sourceField: 'dissent_analysis', sourceId: 'residual_uncertainties', values: dissentAnalysis?.residual_uncertainties });
   addRecords({ sourceField: 'agentic_human_review_action_plan', sourceId: 'suggested_fixes', values: actionPlan?.suggested_fixes });
   addRecords({ sourceField: 'agentic_human_review_action_plan', sourceId: 'next_actions', values: actionPlan?.next_actions });
+  addSourceReadingEditorialRecords({ addRecords, sourceReadingReview });
   addContentEvidenceEditorialRecords({ addRecords, contentEvidence });
   addVideoEvidenceEditorialRecords({ addRecords, videoEvidence });
   addReviewEffortEditorialRecords({ addRecords, reviewEffort: plan.review_effort?.mode, critiqueRecords, xhighCompletion });
@@ -13798,6 +14643,7 @@ function buildEditorialSynthesis({
   const reviewEffort = normalizeObservedReviewEffort(plan.review_effort?.mode) ?? DEFAULT_REVIEW_EFFORT;
   const localizedRecords = localizeEditorialGeneratedRecords(records, language);
   const keyObservations = editorialTextsBySource(localizedRecords, [
+    'source_reading_review',
     'content_evidence',
     'video_evidence',
     'human_report_v3',
@@ -13807,6 +14653,8 @@ function buildEditorialSynthesis({
     'role_opinions'
   ], 6);
   const strengths = editorialTextsById(localizedRecords, [
+    'source_reading_key_points',
+    'source_reading_examples',
     'content_evidence_content_summary',
     'content_evidence_units',
     'video_content_summary',
@@ -13817,6 +14665,7 @@ function buildEditorialSynthesis({
     'trust_assessment'
   ], 5);
   const risksOrCautions = editorialTextsById(localizedRecords, [
+    'source_reading_cautions',
     'content_evidence_limitations',
     'content_evidence_claims_observed',
     'xhigh_quality_stance',
@@ -13828,6 +14677,7 @@ function buildEditorialSynthesis({
     'shared_risks'
   ], 5);
   const keyTensions = editorialTextsBySource(localizedRecords, [
+    'source_reading_tensions',
     'xhigh_quality',
     'dissent_summary',
     'dissent_analysis',
@@ -13857,6 +14707,7 @@ function buildEditorialSynthesis({
     : text('report.ahr.editorial.fallback.no_owner_decision', 'No explicit owner decision was requested by the existing advisory output.');
   const limitations = [
     ...contentEvidenceEditorialLimitations(evidenceScope, contentEvidence, language),
+    ...sourceReadingEditorialLimitations(evidenceScope, sourceReadingReview, language),
     ...videoEvidenceEditorialLimitations(evidenceScope, videoEvidence, language),
     ...(status === 'limited'
       ? [text('report.ahr.editorial.limitation.sparse_input', 'The existing AHR result has too few evidence-backed findings or reported role opinions for a fuller editorial review.')]
@@ -13886,6 +14737,7 @@ function buildEditorialSynthesis({
       limitations,
       evidenceScope,
       contentEvidence,
+      sourceReadingReview,
       languageResolution,
       reviewEffort,
       sourceRecords: localizedRecords
@@ -13893,12 +14745,16 @@ function buildEditorialSynthesis({
     evidence_scope: evidenceScope,
     video_evidence: buildEditorialVideoEvidenceSummary(videoEvidence),
     content_evidence: buildEditorialContentEvidenceSummary(contentEvidence),
+    source_text: buildEditorialSourceTextSummary(sourceText),
+    source_reading_review: buildEditorialSourceReadingSummary(sourceReadingReview),
     composer: {
       schema_version: SCHEMA_VERSION,
       composer_version: HUMAN_REVIEW_EDITORIAL_COMPOSER_VERSION,
       evidence_first: true,
       content_units_used: Number(contentEvidence?.supplemental_content_unit_count ?? 0),
       content_evidence_density: classifyContentEvidenceDensity(contentEvidence).density,
+      source_reading_depth: sourceReadingReview?.reading_depth ?? 'none',
+      source_reading_used: sourceReadingReview?.status === 'completed',
       review_effort: reviewEffort,
       source_record_count: localizedRecords.length,
       provider_call_performed: false,
@@ -13936,11 +14792,80 @@ function buildEditorialSynthesis({
       mcp_execution_exposed: false,
       mechanical_proof_contract_satisfied: false,
       derived_from_video_evidence_summary: evidenceScope?.video_evidence_usable === true,
-      derived_from_content_evidence: evidenceScope?.content_evidence_usable === true
+      derived_from_content_evidence: evidenceScope?.content_evidence_usable === true,
+      derived_from_source_reading_review: evidenceScope?.source_reading_review_usable === true,
+      full_source_text_persisted: false,
+      full_source_text_transferred: false
     },
     advisory_only: true,
     gate_effect: 'none'
   };
+}
+
+function addSourceReadingEditorialRecords({ addRecords, sourceReadingReview }) {
+  if (!sourceReadingReview || sourceReadingReview.status !== 'completed') {
+    return;
+  }
+  addRecords({
+    sourceField: 'source_reading_review',
+    sourceId: 'source_reading_natural_review_seed',
+    sourceKind: 'source_reading_review',
+    values: sourceReadingReview.natural_review_seed
+  });
+  addRecords({
+    sourceField: 'source_reading_review',
+    sourceId: 'source_reading_flow',
+    sourceKind: 'source_reading_review',
+    values: normalizeSourceReadingFlowEditorialText(sourceReadingReview.narrative_flow)
+  });
+  addRecords({
+    sourceField: 'source_reading_review',
+    sourceId: 'source_reading_key_points',
+    sourceKind: 'source_reading_review',
+    values: sourceReadingReview.key_points
+  });
+  addRecords({
+    sourceField: 'source_reading_review',
+    sourceId: 'source_reading_examples',
+    sourceKind: 'source_reading_review',
+    values: sourceReadingReview.concrete_examples
+  });
+  addRecords({
+    sourceField: 'source_reading_tensions',
+    sourceId: 'source_reading_tensions',
+    sourceKind: 'source_reading_review',
+    values: sourceReadingReview.tensions_or_open_questions
+  });
+  addRecords({
+    sourceField: 'source_reading_review',
+    sourceId: 'source_reading_reader_value',
+    sourceKind: 'source_reading_review',
+    values: sourceReadingReview.reader_value
+  });
+  addRecords({
+    sourceField: 'source_reading_review',
+    sourceId: 'source_reading_cautions',
+    sourceKind: 'source_reading_review',
+    values: sourceReadingReview.risks_or_cautions
+  });
+  addRecords({
+    sourceField: 'source_reading_review',
+    sourceId: 'source_reading_recommended_direction',
+    sourceKind: 'source_reading_review',
+    values: sourceReadingReview.recommended_direction
+  });
+}
+
+function normalizeSourceReadingFlowEditorialText(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return values.map((item) => {
+    if (typeof item === 'string') {
+      return item;
+    }
+    return [item?.step ? `Step ${item.step}` : null, item?.summary].filter(Boolean).join(': ');
+  }).filter(Boolean);
 }
 
 function addVideoEvidenceEditorialRecords({ addRecords, videoEvidence }) {
@@ -14159,6 +15084,29 @@ function contentEvidenceEditorialLimitations(evidenceScope, contentEvidence, lan
   return [text('report.ahr.editorial.scope.content_evidence', 'This synthesis can use supplied bounded content evidence, but it does not embed or inspect raw media, raw binaries, raw HTML/PDF bytes, full documents, or full transcripts.')];
 }
 
+function sourceReadingEditorialLimitations(evidenceScope, sourceReadingReview, language = 'en') {
+  const text = (key, fallback) => resolveReportTemplateText(key, language, fallback);
+  if (!sourceReadingReview || evidenceScope?.source_text_present !== true) {
+    return [];
+  }
+  if (sourceReadingReview.status !== 'completed') {
+    return [text('report.ahr.editorial.scope.source_reading_insufficient', 'A source-text artifact was supplied, but it did not produce enough local source-reading material for content review.')];
+  }
+  return [sourceReadingScopePhrase({ evidenceScope, sourceReadingReview, language })];
+}
+
+function sourceReadingScopePhrase({ evidenceScope, sourceReadingReview, language = 'en' }) {
+  const text = (key, fallback) => resolveReportTemplateText(key, language, fallback);
+  if (sourceReadingReview?.status !== 'completed') {
+    return text('report.ahr.editorial.scope.source_reading_insufficient', 'A source-text artifact was supplied, but it did not produce enough local source-reading material for content review.');
+  }
+  const sourceType = contentEvidenceSourceTypeLabel(evidenceScope?.source_text_source_type ?? sourceReadingReview.source_type, language);
+  return text(
+    'report.ahr.editorial.scope.source_reading',
+    `This synthesis can use a locally derived full-source reading review for ${sourceType}, but it does not persist, embed, or transfer the full source text.`
+  );
+}
+
 function buildEditorialVideoEvidenceSummary(videoEvidence) {
   if (!videoEvidence) {
     return {
@@ -14181,6 +15129,68 @@ function buildEditorialVideoEvidenceSummary(videoEvidence) {
     claim_count: Number(videoEvidence.claim_count ?? 0),
     metadata_only: true,
     raw_media_included: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildEditorialSourceTextSummary(sourceText) {
+  if (!sourceText || sourceText.status === 'not_supplied') {
+    return {
+      status: 'not_supplied',
+      source_type: 'other',
+      full_source_text_persisted: false
+    };
+  }
+  return {
+    status: sourceText.status ?? 'not_supplied',
+    id: sourceText.id ?? null,
+    source_type: sourceText.source_type ?? 'other',
+    source: {
+      kind: sourceText.source?.kind ?? null,
+      title: sourceText.source?.title ?? null,
+      media_id: sourceText.source?.media_id ?? null,
+      page_count: sourceText.source?.page_count ?? null,
+      duration_seconds: sourceText.source?.duration_seconds ?? null
+    },
+    text_stats: {
+      char_count: Number(sourceText.text_stats?.char_count ?? 0),
+      line_count: Number(sourceText.text_stats?.line_count ?? 0),
+      chunk_count: Number(sourceText.text_stats?.chunk_count ?? 0),
+      stored_full_text: false,
+      stored_chunk_text: false
+    },
+    full_source_text_persisted: false,
+    full_source_text_transferred: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function buildEditorialSourceReadingSummary(sourceReadingReview) {
+  if (!sourceReadingReview || sourceReadingReview.status === 'not_supplied') {
+    return {
+      status: 'not_supplied',
+      reading_depth: 'none',
+      excerpt_ref_count: 0,
+      advisory_only: true,
+      gate_effect: 'none'
+    };
+  }
+  return {
+    status: sourceReadingReview.status ?? 'not_supplied',
+    analyst_role: sourceReadingReview.analyst_role ?? 'source_reading_analyst',
+    source_text_id: sourceReadingReview.source_text_id ?? null,
+    source_type: sourceReadingReview.source_type ?? 'other',
+    review_effort: sourceReadingReview.review_effort ?? DEFAULT_REVIEW_EFFORT,
+    reading_depth: sourceReadingReview.reading_depth ?? 'none',
+    topic: sourceReadingReview.topic ?? null,
+    key_point_count: normalizeStringArray(sourceReadingReview.key_points).length,
+    concrete_example_count: normalizeStringArray(sourceReadingReview.concrete_examples).length,
+    excerpt_ref_count: normalizeArray(sourceReadingReview.source_excerpt_refs).length,
+    quality_target: sourceReadingReview.quality_target ?? null,
+    full_source_text_persisted: false,
+    full_source_text_transferred: false,
     advisory_only: true,
     gate_effect: 'none'
   };
@@ -14386,7 +15396,7 @@ function averageNumeric(values) {
   return numeric.reduce((sum, value) => sum + value, 0) / numeric.length;
 }
 
-function normalizeEvidenceScopeRecord(value, videoEvidence = null, contentEvidence = null) {
+function normalizeEvidenceScopeRecord(value, videoEvidence = null, contentEvidence = null, sourceText = null, sourceReadingReview = null) {
   const source = value && typeof value === 'object' ? value : {};
   const videoStatus = source.video_evidence_status ?? videoEvidence?.status ?? 'not_supplied';
   const videoSummaryCount = Number(source.video_evidence_summary_count ?? videoEvidence?.summary_count ?? 0);
@@ -14399,6 +15409,10 @@ function normalizeEvidenceScopeRecord(value, videoEvidence = null, contentEviden
   const contentTypes = source.content_evidence_source_types ?? contentEvidence?.supplemental_source_types ?? [];
   const contentUsable = source.content_evidence_usable === true || supplementalAvailable > 0;
   const contentPresent = source.content_evidence_present === true || supplementalTotal > 0;
+  const sourceTextStatus = source.source_text_status ?? sourceText?.status ?? 'not_supplied';
+  const sourceReadingStatus = source.source_reading_review_status ?? sourceReadingReview?.status ?? 'not_supplied';
+  const sourceReadingUsable = source.source_reading_review_usable === true || source.source_text_usable === true || sourceReadingStatus === 'completed';
+  const sourceTextPresent = source.source_text_present === true || sourceTextStatus !== 'not_supplied';
   const videoUsable = source.video_evidence_usable === true || (
     videoStatus === 'available'
     && (videoSummaryCount + timelineItemCount + claimCount) > 0
@@ -14410,15 +15424,25 @@ function normalizeEvidenceScopeRecord(value, videoEvidence = null, contentEviden
       ? 'page_and_video_evidence'
       : videoUsable
         ? 'video_evidence_only'
-        : contentUsable && pagePresent
-          ? 'page_and_content_evidence'
-          : contentUsable
-            ? 'content_evidence_only'
-            : videoStatus === 'insufficient'
-              ? 'insufficient_video_evidence'
-              : contentPresent
-                ? 'insufficient_content_evidence'
-                : 'page_only';
+        : sourceReadingUsable && contentUsable && pagePresent
+          ? 'page_source_text_and_content_evidence'
+          : sourceReadingUsable && contentUsable
+            ? 'source_text_and_content_evidence'
+            : sourceReadingUsable && pagePresent
+              ? 'page_and_source_text'
+              : sourceReadingUsable
+                ? 'source_text_only'
+                : contentUsable && pagePresent
+                  ? 'page_and_content_evidence'
+                  : contentUsable
+                    ? 'content_evidence_only'
+                    : videoStatus === 'insufficient'
+                      ? 'insufficient_video_evidence'
+                      : sourceTextPresent
+                        ? 'insufficient_source_text'
+                        : contentPresent
+                          ? 'insufficient_content_evidence'
+                          : 'page_only';
   }
   return {
     schema_version: SCHEMA_VERSION,
@@ -14438,6 +15462,15 @@ function normalizeEvidenceScopeRecord(value, videoEvidence = null, contentEviden
     content_evidence_unit_count: supplementalCount,
     content_evidence_claim_count: supplementalClaimCount,
     content_understanding_level: source.content_understanding_level ?? contentEvidence?.content_understanding_level ?? 'none',
+    source_text_present: sourceTextPresent,
+    source_text_usable: sourceReadingUsable,
+    source_text_status: sourceTextStatus,
+    source_text_source_type: source.source_text_source_type ?? sourceText?.source_type ?? 'other',
+    source_text_chunk_count: Number(source.source_text_chunk_count ?? sourceText?.text_stats?.chunk_count ?? 0),
+    source_reading_review_present: sourceReadingStatus !== 'not_supplied',
+    source_reading_review_usable: sourceReadingUsable,
+    source_reading_review_status: sourceReadingStatus,
+    source_reading_depth: source.source_reading_depth ?? sourceReadingReview?.reading_depth ?? 'none',
     raw_media_included: false,
     advisory_only: true,
     gate_effect: 'none'
@@ -14493,6 +15526,20 @@ function normalizeContentEvidenceResultPackage(value) {
     advisory_only: true,
     gate_effect: 'none'
   };
+}
+
+function normalizeSourceTextResultPackage(value) {
+  if (!value || typeof value !== 'object') {
+    return buildSourceTextPackage(null);
+  }
+  return buildSourceTextPackage(value);
+}
+
+function normalizeSourceReadingReviewResultPackage(value) {
+  if (!value || typeof value !== 'object') {
+    return buildSourceReadingReviewPackage(null);
+  }
+  return buildSourceReadingReviewPackage(value);
 }
 
 function normalizeSupplementalContentEvidenceResult(value) {
@@ -14866,10 +15913,30 @@ function buildEditorialFullReview({
   limitations,
   evidenceScope,
   contentEvidence,
+  sourceReadingReview,
   languageResolution,
   reviewEffort,
   sourceRecords = []
 }) {
+  const sourceFirstReview = buildSourceReadingFirstEditorialReview({
+    language,
+    status,
+    takeaway,
+    observations,
+    strengths,
+    risksOrCautions,
+    keyTensions,
+    recommendedDirection,
+    ownerDecisionSummary,
+    limitations,
+    evidenceScope,
+    sourceReadingReview,
+    reviewEffort,
+    sourceRecords
+  });
+  if (sourceFirstReview) {
+    return sourceFirstReview;
+  }
   const contentFirstReview = buildContentEvidenceFirstEditorialReview({
     language,
     status,
@@ -14981,6 +16048,67 @@ function buildContentEvidenceFirstEditorialReview({
       contentCautionText,
       sourceTextPolicyText,
       ...buckets.boundaryLimitations.slice(0, status === 'limited' ? 2 : 1)
+    ], { maxItems: 6 })
+  ];
+  const deduped = uniqueEditorialParagraphs(paragraphs);
+  return deduped.length > 0 ? deduped.join('\n\n') : '';
+}
+
+function buildSourceReadingFirstEditorialReview({
+  language,
+  status,
+  takeaway,
+  observations,
+  strengths,
+  risksOrCautions,
+  keyTensions,
+  recommendedDirection,
+  ownerDecisionSummary,
+  limitations,
+  evidenceScope,
+  sourceReadingReview,
+  reviewEffort,
+  sourceRecords = []
+}) {
+  if (sourceReadingReview?.status !== 'completed') {
+    return '';
+  }
+  const text = (key, fallback) => resolveReportTemplateText(key, language, fallback);
+  const sourceSignals = editorialTextsBySource(sourceRecords, ['source_reading_review'], 12);
+  const sourceTensions = editorialTextsBySource(sourceRecords, ['source_reading_tensions'], 4);
+  const examples = editorialTextsById(sourceRecords, ['source_reading_examples'], 4);
+  const cautions = editorialTextsById(sourceRecords, ['source_reading_cautions'], 4);
+  const seed = sourceReadingReview.natural_review_seed;
+  const effortPhrase = reviewEffortEditorialPhrase({ reviewEffort, sourceRecords, language });
+  const qualityTarget = sourceReadingReview.quality_target?.description ?? '';
+  const paragraphs = [
+    composeEditorialParagraph([
+      seed,
+      takeaway
+    ], { maxItems: 2, minItems: 1 }),
+    composeEditorialParagraph([
+      text('report.ahr.editorial.source_reading.flow', 'The full-source reading gives the review a content path rather than only a page-level impression:'),
+      ...sourceSignals.slice(0, reviewEffort === 'xhigh' ? 5 : reviewEffort === 'deep' ? 4 : 3)
+    ], { maxItems: reviewEffort === 'xhigh' ? 6 : 5, minItems: 2 }),
+    composeEditorialParagraph([
+      text('report.ahr.editorial.source_reading.examples', 'The concrete source details that should shape the final review are:'),
+      ...examples,
+      ...strengths.slice(0, 1)
+    ], { maxItems: 5, minItems: 2 }),
+    composeEditorialParagraph([
+      text('report.ahr.editorial.source_reading.tensions', 'The review should not flatten the remaining tension or uncertainty:'),
+      ...sourceTensions,
+      ...keyTensions.slice(0, 1),
+      ...risksOrCautions.slice(0, 1),
+      ...cautions.slice(0, 1)
+    ], { maxItems: 6, minItems: status === 'limited' ? 1 : 2 }),
+    composeEditorialParagraph([
+      recommendedDirection,
+      ownerDecisionSummary,
+      effortPhrase,
+      qualityTarget,
+      sourceReadingScopePhrase({ evidenceScope, sourceReadingReview, language }),
+      ...limitations.slice(0, status === 'limited' ? 2 : 1)
     ], { maxItems: 6 })
   ];
   const deduped = uniqueEditorialParagraphs(paragraphs);

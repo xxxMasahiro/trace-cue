@@ -38,6 +38,8 @@
     "visual_evidence": { "type": "object" },
     "video_evidence": { "type": "object" },
     "content_evidence": { "type": "object" },
+    "source_text": { "type": "object" },
+    "source_reading_review": { "type": "object" },
     "semantic_evidence": { "type": "object" },
     "technical_evidence": { "type": "object" },
     "mechanical_review_summary": { "type": "object" },

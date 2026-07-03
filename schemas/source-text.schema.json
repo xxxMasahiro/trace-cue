@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/source-text.schema.json",
+  "title": "TraceCue Source Text",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "evidence_kind",
+    "status",
+    "source_type",
+    "text_stats",
+    "privacy",
+    "boundary",
+    "advisory_only",
+    "gate_effect"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "evidence_version": { "type": ["string", "null"] },
+    "evidence_kind": { "const": "source_text" },
+    "id": { "type": ["string", "null"] },
+    "status": { "enum": ["available", "insufficient", "not_supplied"] },
+    "source_type": { "enum": ["video", "web_page", "pdf", "meeting_notes", "document", "transcript", "other"] },
+    "source": { "type": ["object", "null"] },
+    "provider": { "type": ["object", "null"] },
+    "text_stats": { "type": "object" },
+    "chunk_index": { "type": "array" },
+    "coverage": { "type": "object" },
+    "privacy": { "type": "object" },
+    "provenance": { "type": ["object", "null"] },
+    "boundary": { "type": "object" },
+    "advisory_only": { "const": true },
+    "gate_effect": { "const": "none" }
+  },
+  "additionalProperties": true
+}
