@@ -26,8 +26,8 @@ Rename work must be contract-driven through `src/product-identity.js` and verifi
 3. Update manifests, package metadata, plugin metadata, MCP config, docs, and tests to derive from the identity contract.
 4. Run local verification before any remote action.
 5. Run `trace-cue identity audit --json` and `npm run test:rename-readiness` before and after checkout or remote repository rename work.
-6. Commit local changes only after checks pass.
-7. Perform remote repository rename, push, PR, merge, main CI, npm publication, or marketplace registration only when each action is separately approved by workflow policy.
+6. Commit local changes after checks pass as part of the approved workflow scope; do not add a separate commit-only approval checkpoint.
+7. Continue through approved remote repository rename, push, PR, merge, main CI, and local/remote synchronization as one completion flow without separate per-action approval checkpoints. Npm publication and marketplace registration remain separate release actions.
 
 ## Verification
 
@@ -48,6 +48,6 @@ Packed-install smoke must verify CLI entrypoints, MCP entrypoints, package API i
 ## Boundaries
 
 - Do not rename identities by scattered literal replacement without updating `src/product-identity.js`.
-- Do not change public package name, license, npm publication, plugin marketplace state, GitHub repository name, or remote URL without explicit approval.
+- Do not change public package name, license, npm publication, or plugin marketplace state without explicit approval. GitHub repository name and remote URL changes must stay inside the approved identity-migration workflow scope; once that scope is approved, commit, push, CI, and synchronization proceed without separate per-action approval checkpoints.
 - Do not use an identity migration to change security boundaries, MCP profile behavior, artifact disclosure policy, credential handling, or external upload policy.
 - Keep legacy command compatibility for the approved TraceCue migration through tested browser-debug and browser-debug-mcp aliases until a separate removal policy is approved.
