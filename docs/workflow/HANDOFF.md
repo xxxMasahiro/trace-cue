@@ -106,6 +106,14 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 
 ## Current Handoff
 
+- Before future implementation work, complete and present the `A.
+  Pre-Implementation Proposal` and `B. Implementation Plan` gate outputs for
+  the current range before any file mutation or state-mutating operation.
+  Non-trivial implementation or workflow-authority changes require multiple
+  `xhigh`-class subagent reviews with consolidated accepted, deferred, and
+  rejected findings. This protocol correction is workflow-only and does not
+  change runtime behavior, product features, MCP exposure, provider execution,
+  security boundaries, release gates, or existing verification commands.
 - Use `agentic review quality source-text --standard <result> --deep <result> --xhigh <result> [--reference-review <workspace-text-or-json>] --json` after standard/deep/xhigh source-text runs to verify bounded source understanding, effort-specific editorial differences, xhigh critique readiness, and no full-source/chunk-text persistence without rerunning providers.
 - Agentic Human Review source-text reading is additive and local. Use `--source-text <workspace-text-or-json>` on `agentic review propose` or `agentic review plan` when the review needs full transcript, article, PDF-extracted text, meeting-note, document, or other textual source understanding.
 - TraceCue reads that source locally and writes only metadata plus bounded `source_reading_review` and `source_understanding_review`; full source text and chunk text are not persisted in JSON, Markdown, or provider payloads.

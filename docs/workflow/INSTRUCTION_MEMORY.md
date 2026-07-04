@@ -18,6 +18,40 @@ model names, or fixed values into reusable product code or automation. Keep
 them configurable and replaceable. Existing functionality must not be traded
 off or regressed.
 
+## Mandatory Pre-Implementation Gates
+
+For every developer-approved implementation range, equivalent continuation
+instruction, or non-trivial implementation task, `A. Pre-Implementation
+Proposal` and `B. Implementation Plan` are mandatory sequencing gates before
+any file mutation, state-mutating command, implementation work, commit, push,
+pull request, merge, or CI action.
+
+These gates are not developer-approval checkpoints. After presenting both
+gates, continue autonomously under the approval rules in this file unless the
+developer interrupts, this file requires approval, or an irregular condition
+occurs.
+
+Skipping, silently merging, deferring, or reconstructing these gates after
+implementation has started is a protocol violation. Repeat A and B for each
+newly approved implementation range before the first edit. Prior proposal or
+plan text may be referenced, but it is insufficient unless refreshed against
+the current repository state and current range.
+
+Multiple `xhigh`-class high-reasoning subagent review is mandatory before any
+non-trivial implementation proposal or implementation plan. A change is
+non-trivial if it affects runtime code, product behavior, contracts, schemas,
+tests, security, external transfer, provider behavior, MCP or tool exposure,
+release, CI, GitHub operations, verification gates, or durable workflow
+authority. For typo-only, formatting-only, or mechanical synchronization
+changes that do not alter behavior or authority, the agent may record a brief
+reason that the multi-subagent gate is not applicable. If classification is
+uncertain, apply the gate.
+
+If required subagent tools are unavailable for a non-trivial change, stop and
+report the blocker or ask for direction. Do not silently continue. If any
+existing-feature tradeoff appears necessary, stop before planning or
+implementation and ask the developer.
+
 ## Start
 
 Use this template when the developer asks the agent to implement a numbered
@@ -46,13 +80,21 @@ Before implementation:
    this repository's `AGENTS.MD`. Parent repositories remain read-only for
    TraceCue work.
 2. Follow the product-development workflow used by this repository.
-3. Use multiple `xhigh`-class high-reasoning subagents where useful to inspect
-   risks, missing requirements, refactoring opportunities, ecosystem fit,
-   reuse, and generality.
+3. Apply the mandatory multi-subagent rule from `Mandatory Pre-Implementation
+   Gates`. Use distinct `xhigh`-class high-reasoning subagents to inspect risks,
+   missing requirements, refactoring opportunities, ecosystem fit, reuse,
+   generality, and no-regression concerns for every non-trivial proposal.
 4. Consolidate the subagent findings into one systematic pre-implementation
-   proposal.
+   proposal with accepted, deferred, and rejected findings.
 5. Keep the proposal focused on the roadmap slice and on preserving existing
    behavior.
+
+The proposal gate must visibly include the roadmap range or task scope,
+repository boundary confirmation, documents read, invariant and safety risks,
+refactorability and reuse opportunities, ecosystem fit, generality, existing
+behavior that must not regress, an explicit no-tradeoff statement,
+approval-bound operations, verification and evidence strategy, and subagent
+findings or the recorded reason the multi-subagent gate is not applicable.
 
 ## B. Implementation Plan
 
@@ -62,17 +104,29 @@ After the proposal:
    as needed.
 2. Produce an implementation plan that maps the roadmap slice to concrete code,
    document, contract, and verification changes.
-3. Use multiple `xhigh`-class high-reasoning subagents where useful to
-   validate the plan.
+3. Apply the mandatory multi-subagent rule from `Mandatory Pre-Implementation
+   Gates`. Use distinct `xhigh`-class high-reasoning subagents to validate every
+   non-trivial plan before implementation starts.
 4. Keep the plan refactorable, reusable, generic, and compatible with the
    repository ecosystem.
 5. Do not introduce trade-offs against existing features.
+
+The implementation-plan gate must visibly include per-roadmap-step mapping to
+code, document, contract, manifest, test, and verification changes; ordered edit
+sequence; reuse and refactor points; compatibility and no-regression checks;
+required local gates from `AGENTS.MD` routing and verification policy; evidence
+artifacts or commands to report; and explicit approval and stop triggers.
 
 ## C. Implementation
 
 During implementation:
 
-1. Start only after proposal and plan context is synchronized.
+The required A/B gate outputs are pre-implementation reports and do not count as
+unnecessary mid-plan reports.
+
+1. Start only after the user-visible `A. Pre-Implementation Proposal` and
+   `B. Implementation Plan` gate outputs have been completed for the current
+   implementation range or task.
 2. Implement each roadmap step in strict numeric order.
 3. Continue autonomously until the implementation plan is complete.
 4. Keep changes scoped to this repository.
@@ -160,4 +214,6 @@ When reporting completed implementation work, include:
 - local `HEAD` SHA and remote tracking branch SHA when synchronization was
   approved and completed
 - working tree status
+- A/B gate evidence: where the pre-implementation proposal and implementation
+  plan were presented, plus any refreshed plan deviations during implementation
 - any irregular condition encountered and how it was resolved
