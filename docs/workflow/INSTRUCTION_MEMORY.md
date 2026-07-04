@@ -26,10 +26,13 @@ Proposal` and `B. Implementation Plan` are mandatory sequencing gates before
 any file mutation, state-mutating command, implementation work, commit, push,
 pull request, merge, or CI action.
 
-These gates are not developer-approval checkpoints. After presenting both
-gates, continue autonomously under the approval rules in this file unless the
-developer interrupts, this file requires approval, or an irregular condition
-occurs.
+These gates are developer-approval checkpoints. Present `A.
+Pre-Implementation Proposal` and stop until the developer approves A. After A
+is approved, prepare and present `B. Implementation Plan`, then stop until the
+developer approves B. Only after B is approved may implementation begin. After
+B approval, implementation proceeds autonomously under the approved plan until
+completion unless this file requires separate approval, the developer
+interrupts, the plan materially changes, or an irregular condition occurs.
 
 Skipping, silently merging, deferring, or reconstructing these gates after
 implementation has started is a protocol violation. Repeat A and B for each
@@ -67,9 +70,10 @@ After [Roadmap: start number] is complete, continue to
 continue to the next integer step. Continue in order until
 [Roadmap: end number] is complete, then report to the developer.
 
-Implementation is autonomous by default, so developer approval is not required
-unless this workflow explicitly requires it or an irregular condition occurs.
-Do not stop the development flow unnecessarily.
+After A and B are approved, implementation is autonomous by default, so
+developer approval is not required unless this workflow explicitly requires it
+or an irregular condition occurs. Do not stop the development flow
+unnecessarily after B approval.
 ```
 
 ## A. Pre-Implementation Proposal
@@ -95,6 +99,8 @@ refactorability and reuse opportunities, ecosystem fit, generality, existing
 behavior that must not regress, an explicit no-tradeoff statement,
 approval-bound operations, verification and evidence strategy, and subagent
 findings or the recorded reason the multi-subagent gate is not applicable.
+After presenting the proposal gate, stop and wait for developer approval before
+preparing the implementation plan.
 
 ## B. Implementation Plan
 
@@ -116,6 +122,8 @@ code, document, contract, manifest, test, and verification changes; ordered edit
 sequence; reuse and refactor points; compatibility and no-regression checks;
 required local gates from `AGENTS.MD` routing and verification policy; evidence
 artifacts or commands to report; and explicit approval and stop triggers.
+After presenting the implementation-plan gate, stop and wait for developer
+approval before starting implementation.
 
 ## C. Implementation
 
@@ -125,8 +133,8 @@ The required A/B gate outputs are pre-implementation reports and do not count as
 unnecessary mid-plan reports.
 
 1. Start only after the user-visible `A. Pre-Implementation Proposal` and
-   `B. Implementation Plan` gate outputs have been completed for the current
-   implementation range or task.
+   `B. Implementation Plan` gate outputs have both been presented and approved
+   by the developer for the current implementation range or task.
 2. Implement each roadmap step in strict numeric order.
 3. Continue autonomously until the implementation plan is complete.
 4. Keep changes scoped to this repository.
@@ -215,5 +223,6 @@ When reporting completed implementation work, include:
   approved and completed
 - working tree status
 - A/B gate evidence: where the pre-implementation proposal and implementation
-  plan were presented, plus any refreshed plan deviations during implementation
+  plan were presented, where each was approved, plus any refreshed plan
+  deviations during implementation
 - any irregular condition encountered and how it was resolved
