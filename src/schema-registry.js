@@ -18,6 +18,99 @@ const artifactProperties = {
   description: { type: 'string' }
 };
 
+const ownerReviewContextSourceTextQualitySchema = {
+  type: 'object',
+  required: ['supplied', 'status', 'artifacts', 'aggregate', 'diagnostics', 'advisory_only', 'gate_effect'],
+  properties: {
+    supplied: { const: true },
+    status: { enum: ['ready_for_owner_review_context', 'needs_attention_context'] },
+    referenced_artifact_count: { type: 'number' },
+    readable_artifact_count: { type: 'number' },
+    valid_artifact_count: { type: 'number' },
+    ready_artifact_count: { type: 'number' },
+    needs_attention_artifact_count: { type: 'number' },
+    invalid_or_unreadable_artifact_count: { type: 'number' },
+    stale_artifact_count: { type: 'number' },
+    artifacts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          artifact_index: { type: 'number' },
+          readable: { type: 'boolean' },
+          valid: { type: 'boolean' },
+          type: { const: 'agentic_human_review_source_text_quality' },
+          status: { enum: ['ready_for_owner_review', 'needs_attention', 'unreadable', 'invalid_contract'] },
+          generated_at: { type: ['string', 'null'] },
+          required_efforts: { type: 'array' },
+          observed_efforts: { type: 'array' },
+          source_types: { type: 'array' },
+          same_source_invariant: { type: 'object' },
+          effort_matrix: { type: 'object' },
+          pass_conditions: {
+            type: 'object',
+            properties: {
+              human_equivalent_claim_allowed: { const: false },
+              human_superior_claim_allowed: { const: false }
+            },
+            additionalProperties: true
+          },
+          output_safety: { type: 'object' },
+          diagnostic_summary: { type: 'object' },
+          diagnostics: { type: 'array' },
+          freshness: { type: 'object' },
+          boundary: {
+            type: 'object',
+            properties: {
+              provider_call_performed: { const: false },
+              api_call_performed: { const: false },
+              external_evidence_transfer: { const: false },
+              deterministic_findings_mutated: { const: false },
+              release_gate_mutated: { const: false },
+              proof_contract_satisfied: { const: false },
+              human_equivalent_claim_allowed: { const: false },
+              human_superior_claim_allowed: { const: false },
+              advisory_only: { const: true },
+              gate_effect: { const: 'none' },
+              result_paths_in_output: { const: false },
+              source_text_quality_context_only: { const: true }
+            },
+            additionalProperties: true
+          },
+          advisory_only: { const: true },
+          gate_effect: { const: 'none' }
+        },
+        additionalProperties: true
+      }
+    },
+    aggregate: {
+      type: 'object',
+      properties: {
+        source_types: { type: 'array' },
+        observed_efforts: { type: 'array' },
+        stale_efforts: { type: 'array' },
+        missing_result_efforts: { type: 'array' },
+        hash_unavailable_efforts: { type: 'array' },
+        result_hash_values_included: { const: false },
+        path_values_included: { const: false }
+      },
+      additionalProperties: true
+    },
+    diagnostics: { type: 'array' },
+    advisory_only: { const: true },
+    gate_effect: { const: 'none' }
+  },
+  additionalProperties: true
+};
+
+const ownerReviewContextSchema = {
+  type: 'object',
+  properties: {
+    source_text_quality: ownerReviewContextSourceTextQualitySchema
+  },
+  additionalProperties: true
+};
+
 const schemas = Object.freeze({
   envelope: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -1285,6 +1378,12 @@ const schemas = Object.freeze({
     },
     additionalProperties: true
   }),
+  agentic_human_review_owner_review_context: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/agentic-human-review-owner-review-context.schema.json',
+    title: 'TraceCue Agentic Human Review Owner Review Context',
+    ...ownerReviewContextSchema
+  }),
   agentic_human_review_benchmark_case: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     $id: 'https://trace-cue.local/schemas/agentic-human-review-benchmark-case.schema.json',
@@ -1417,7 +1516,7 @@ const schemas = Object.freeze({
       results: { type: 'array' },
       calibrations: { type: 'array' },
       comparisons: { type: 'array' },
-      owner_review_context: { type: 'object' },
+      owner_review_context: ownerReviewContextSchema,
       warnings: { type: 'array' },
       boundary: { type: 'object' },
       advisory_only: { const: true },
@@ -1587,7 +1686,7 @@ const schemas = Object.freeze({
       requirements: { type: 'object' },
       missing: { type: 'object' },
       summary: { type: 'object' },
-      owner_review_context: { type: 'object' },
+      owner_review_context: ownerReviewContextSchema,
       warnings: { type: 'array' },
       boundary: { type: 'object' },
       advisory_only: { const: true },
@@ -1711,7 +1810,7 @@ const schemas = Object.freeze({
       status: { type: 'string' },
       longitudinal_stability_score: { type: 'number' },
       claim_policy: { type: 'object' },
-      owner_review_context: { type: 'object' },
+      owner_review_context: ownerReviewContextSchema,
       warnings: { type: 'array' },
       boundary: { type: 'object' },
       advisory_only: { const: true },
@@ -1758,7 +1857,7 @@ const schemas = Object.freeze({
       conditions: { type: 'object' },
       claim_states: { type: 'object' },
       summary: { type: 'object' },
-      owner_review_context: { type: 'object' },
+      owner_review_context: ownerReviewContextSchema,
       rerun_plan: { type: 'object' },
       blockers: { type: 'array' },
       warnings: { type: 'array' },
@@ -1788,7 +1887,7 @@ const schemas = Object.freeze({
       targets: { type: 'array' },
       dependency_plan: { type: 'object' },
       downstream_regeneration: { type: 'object' },
-      owner_review_context: { type: 'object' },
+      owner_review_context: ownerReviewContextSchema,
       execution_boundary: { type: 'object' },
       warnings: { type: 'array' },
       boundary: { type: 'object' },

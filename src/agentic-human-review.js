@@ -2988,6 +2988,48 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+const SOURCE_TEXT_QUALITY_CONTEXT_MAX_ARTIFACTS = 25;
+const SOURCE_TEXT_QUALITY_CONTEXT_MAX_DIAGNOSTICS = 100;
+const SOURCE_TEXT_QUALITY_CONTEXT_SAFE_DIAGNOSTIC_CODES = new Set([
+  'AGENTIC_REVIEW_INPUT_NOT_FOUND',
+  'AGENTIC_REVIEW_INPUT_READ_FAILED',
+  'AGENTIC_REVIEW_INPUT_RESOLUTION_FAILED',
+  'AGENTIC_REVIEW_INPUT_OUTSIDE_WORKSPACE',
+  'AGENTIC_REVIEW_INVALID_JSON',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_API_CALL_FLAG',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_ARTIFACT_INVALID',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_BOUNDARY_MISMATCH',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_DETERMINISTIC_MUTATION_FLAG',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_EFFORT_DUPLICATE',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_EFFORT_MISSING',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_EQUALITY_CLAIM_FLAG',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_HASH_UNAVAILABLE',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_PATH_OUTPUT_FLAG',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_PROOF_FLAG',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_PROVIDER_CALL_FLAG',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_RELEASE_GATE_FLAG',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_RESULT_MISSING',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_STALE',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_SUPERIORITY_CLAIM_FLAG',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_TRANSFER_FLAG',
+  'AHR_SOURCE_TEXT_QUALITY_CONTEXT_UNTRUSTED_FIELDS_DROPPED',
+  'AHR_SOURCE_TEXT_QUALITY_EDITORIAL_SYNTHESIS_MISSING',
+  'AHR_SOURCE_TEXT_QUALITY_EFFORT_MISMATCH',
+  'AHR_SOURCE_TEXT_QUALITY_EFFORT_OUTPUT_NOT_DISTINCT',
+  'AHR_SOURCE_TEXT_QUALITY_INTERNAL_SCAFFOLD_IN_REVIEW',
+  'AHR_SOURCE_TEXT_QUALITY_OUTPUT_LEAK_DETECTED',
+  'AHR_SOURCE_TEXT_QUALITY_READY',
+  'AHR_SOURCE_TEXT_QUALITY_REFERENCE_TARGET_NOT_MET',
+  'AHR_SOURCE_TEXT_QUALITY_SOURCE_IDENTITY_MISMATCH',
+  'AHR_SOURCE_TEXT_QUALITY_SOURCE_IDENTITY_MISSING',
+  'AHR_SOURCE_TEXT_QUALITY_SOURCE_REVIEW_ID_MISMATCH',
+  'AHR_SOURCE_TEXT_QUALITY_SOURCE_TEXT_MISSING',
+  'AHR_SOURCE_TEXT_QUALITY_SOURCE_TEXT_PERSISTED',
+  'AHR_SOURCE_TEXT_QUALITY_SOURCE_TYPE_MISMATCH',
+  'AHR_SOURCE_TEXT_QUALITY_SOURCE_UNDERSTANDING_MISSING',
+  'AHR_SOURCE_TEXT_QUALITY_XHIGH_CRITIQUE_THIN'
+]);
+
 function unwrapEvidenceSetRuntimeResultArtifact(value, dataKeys = []) {
   if (!isPlainObject(value) || !isPlainObject(value.data)) {
     return value;
@@ -3319,7 +3361,12 @@ function sourceTextQualityContextArtifact({ index, quality, results }) {
     advisory_only: true,
     gate_effect: 'none'
   };
-  const boundaryDiagnostics = sourceTextQualityContextBoundaryDiagnostics(artifact.boundary);
+  const boundaryDiagnostics = sourceTextQualityContextBoundaryDiagnostics(artifact.boundary, {
+    boundary: quality.boundary,
+    passConditions: quality.pass_conditions,
+    advisoryOnly: quality.advisory_only,
+    gateEffect: quality.gate_effect
+  });
   const freshnessDiagnostics = sourceTextQualityFreshnessDiagnostics(freshness, index + 1);
   artifact.diagnostics = [...artifact.diagnostics, ...boundaryDiagnostics, ...freshnessDiagnostics];
   artifact.diagnostic_summary = {
@@ -3330,7 +3377,9 @@ function sourceTextQualityContextArtifact({ index, quality, results }) {
 }
 
 function sourceTextQualityContextDiagnostics(diagnostics) {
-  return normalizeArray(diagnostics).map((diagnostic) => sourceTextQualityContextDiagnostic({
+  return normalizeArray(diagnostics)
+    .slice(0, SOURCE_TEXT_QUALITY_CONTEXT_MAX_DIAGNOSTICS)
+    .map((diagnostic) => sourceTextQualityContextDiagnostic({
     code: diagnostic.code,
     severity: diagnostic.severity
   }));
@@ -3347,7 +3396,9 @@ function sourceTextQualityContextDiagnostic({ code, severity, artifactIndex = nu
 
 function sourceTextQualitySafeDiagnosticCode(value) {
   const text = String(value ?? '');
-  return /^[A-Z0-9_:-]{1,180}$/u.test(text) ? text : 'UNTRUSTED_SOURCE_TEXT_QUALITY_DIAGNOSTIC_CODE';
+  return SOURCE_TEXT_QUALITY_CONTEXT_SAFE_DIAGNOSTIC_CODES.has(text)
+    ? text
+    : 'UNTRUSTED_SOURCE_TEXT_QUALITY_DIAGNOSTIC_CODE';
 }
 
 function sourceTextQualitySafeTimestamp(value) {
@@ -3401,11 +3452,13 @@ function sourceTextQualityContextPassConditions(conditions) {
     'same_source_text_for_all_efforts',
     'source_identity_available_for_all_efforts',
     'xhigh_has_critique_limit_and_conclusion_change_signals',
-    'reference_comparison_target_met_when_supplied',
-    'human_equivalent_claim_allowed',
-    'human_superior_claim_allowed'
+    'reference_comparison_target_met_when_supplied'
   ];
-  return Object.fromEntries(keys.map((key) => [key, conditions?.[key] === true]));
+  return {
+    ...Object.fromEntries(keys.map((key) => [key, conditions?.[key] === true])),
+    human_equivalent_claim_allowed: false,
+    human_superior_claim_allowed: false
+  };
 }
 
 function sourceTextQualityContextOutputSafety(outputSafety) {
@@ -3437,23 +3490,25 @@ function sourceTextQualityContextOutputSafety(outputSafety) {
 function sourceTextQualityContextBoundary(boundary, quality) {
   return {
     read_only: boundary?.read_only === true,
-    provider_call_performed: boundary?.provider_call_performed === true,
-    api_call_performed: boundary?.api_call_performed === true,
-    external_evidence_transfer: boundary?.external_evidence_transfer === true,
-    deterministic_findings_mutated: boundary?.deterministic_findings_mutated === true,
-    release_gate_mutated: boundary?.release_gate_mutated === true,
-    proof_contract_satisfied: boundary?.proof_contract_satisfied === true,
-    human_equivalent_claim_allowed: quality?.pass_conditions?.human_equivalent_claim_allowed === true || boundary?.human_equivalent_claim_allowed === true,
-    human_superior_claim_allowed: quality?.pass_conditions?.human_superior_claim_allowed === true || boundary?.human_superior_claim_allowed === true,
-    advisory_only: quality?.advisory_only === true && boundary?.advisory_only !== false,
-    gate_effect: quality?.gate_effect === 'none' && (boundary?.gate_effect ?? 'none') === 'none' ? 'none' : 'non_none',
-    result_paths_in_output: boundary?.result_paths_in_output === true,
+    provider_call_performed: false,
+    api_call_performed: false,
+    external_evidence_transfer: false,
+    deterministic_findings_mutated: false,
+    release_gate_mutated: false,
+    proof_contract_satisfied: false,
+    human_equivalent_claim_allowed: false,
+    human_superior_claim_allowed: false,
+    advisory_only: true,
+    gate_effect: 'none',
+    result_paths_in_output: false,
     source_text_quality_context_only: true
   };
 }
 
-function sourceTextQualityContextBoundaryDiagnostics(boundary) {
+function sourceTextQualityContextBoundaryDiagnostics(boundary, raw = {}) {
   const diagnostics = [];
+  const rawBoundary = isPlainObject(raw.boundary) ? raw.boundary : boundary;
+  const rawPassConditions = isPlainObject(raw.passConditions) ? raw.passConditions : {};
   const unsafe = [
     ['provider_call_performed', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_PROVIDER_CALL_FLAG'],
     ['api_call_performed', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_API_CALL_FLAG'],
@@ -3466,11 +3521,14 @@ function sourceTextQualityContextBoundaryDiagnostics(boundary) {
     ['result_paths_in_output', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_PATH_OUTPUT_FLAG']
   ];
   for (const [field, code] of unsafe) {
-    if (boundary[field] === true) {
+    const attempted = rawBoundary?.[field] === true || rawPassConditions?.[field] === true;
+    if (attempted) {
       diagnostics.push(sourceTextQualityContextDiagnostic({ code, severity: 'medium' }));
     }
   }
-  if (boundary.advisory_only !== true || boundary.gate_effect !== 'none') {
+  const rawAdvisoryOnly = raw.advisoryOnly ?? rawBoundary?.advisory_only;
+  const rawGateEffect = raw.gateEffect ?? rawBoundary?.gate_effect;
+  if (rawAdvisoryOnly === false || (rawGateEffect !== undefined && rawGateEffect !== 'none')) {
     diagnostics.push(sourceTextQualityContextDiagnostic({ code: 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_BOUNDARY_MISMATCH', severity: 'medium' }));
   }
   return diagnostics;
@@ -3549,11 +3607,186 @@ function sourceTextQualityFreshnessDiagnostics(freshness, artifactIndex) {
   return diagnostics;
 }
 
+function normalizeSourceTextQualityOwnerContext(context) {
+  if (!isPlainObject(context) || context.supplied !== true) {
+    return null;
+  }
+  const untrustedFieldDiagnostics = sourceTextQualityContextDroppedFieldDiagnostics(context, [
+    'supplied',
+    'status',
+    'referenced_artifact_count',
+    'readable_artifact_count',
+    'valid_artifact_count',
+    'ready_artifact_count',
+    'needs_attention_artifact_count',
+    'invalid_or_unreadable_artifact_count',
+    'stale_artifact_count',
+    'artifacts',
+    'aggregate',
+    'diagnostics',
+    'advisory_only',
+    'gate_effect'
+  ]);
+  const artifacts = normalizeArray(context.artifacts)
+    .slice(0, SOURCE_TEXT_QUALITY_CONTEXT_MAX_ARTIFACTS)
+    .map((artifact, index) => normalizeSourceTextQualityOwnerArtifact({ artifact, index }))
+    .filter(Boolean);
+  const validArtifacts = artifacts.filter((artifact) => artifact.valid);
+  const staleEfforts = uniqueSorted(validArtifacts.flatMap((artifact) => artifact.freshness?.stale_efforts ?? []));
+  const missingResultEfforts = uniqueSorted(validArtifacts.flatMap((artifact) => artifact.freshness?.missing_result_efforts ?? []));
+  const hashUnavailableEfforts = uniqueSorted(validArtifacts.flatMap((artifact) => artifact.freshness?.hash_unavailable_efforts ?? []));
+  const diagnostics = [
+    ...artifacts.flatMap((artifact) => artifact.diagnostics ?? []),
+    ...untrustedFieldDiagnostics
+  ].slice(0, SOURCE_TEXT_QUALITY_CONTEXT_MAX_DIAGNOSTICS);
+  const status = validArtifacts.length > 0
+    && validArtifacts.every((artifact) => artifact.status === 'ready_for_owner_review')
+    && staleEfforts.length === 0
+    && missingResultEfforts.length === 0
+    && diagnostics.every((diagnostic) => diagnostic.severity === 'info')
+    ? 'ready_for_owner_review_context'
+    : 'needs_attention_context';
+  return {
+    supplied: true,
+    status,
+    referenced_artifact_count: artifacts.length,
+    readable_artifact_count: artifacts.filter((artifact) => artifact.readable).length,
+    valid_artifact_count: validArtifacts.length,
+    ready_artifact_count: validArtifacts.filter((artifact) => artifact.status === 'ready_for_owner_review').length,
+    needs_attention_artifact_count: validArtifacts.filter((artifact) => artifact.status !== 'ready_for_owner_review').length,
+    invalid_or_unreadable_artifact_count: artifacts.filter((artifact) => !artifact.valid).length,
+    stale_artifact_count: validArtifacts.filter((artifact) => (artifact.freshness?.stale_efforts ?? []).length > 0).length,
+    artifacts,
+    aggregate: {
+      source_types: uniqueSorted(validArtifacts.flatMap((artifact) => artifact.source_types ?? [])),
+      observed_efforts: uniqueSorted(validArtifacts.flatMap((artifact) => artifact.observed_efforts ?? [])),
+      stale_efforts: staleEfforts,
+      missing_result_efforts: missingResultEfforts,
+      hash_unavailable_efforts: hashUnavailableEfforts,
+      result_hash_values_included: false,
+      path_values_included: false
+    },
+    diagnostics,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function normalizeSourceTextQualityOwnerArtifact({ artifact, index }) {
+  if (!isPlainObject(artifact)) {
+    return sourceTextQualityContextInvalidArtifact({
+      index,
+      status: 'invalid_contract',
+      code: 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_ARTIFACT_INVALID',
+      severity: 'medium'
+    });
+  }
+  const artifactIndex = index + 1;
+  if (artifact.valid !== true || artifact.type !== 'agentic_human_review_source_text_quality') {
+    return {
+      artifact_index: artifactIndex,
+      readable: artifact.readable === true,
+      valid: false,
+      status: ['unreadable', 'invalid_contract'].includes(artifact.status) ? artifact.status : 'invalid_contract',
+      diagnostics: [
+        ...sourceTextQualityContextDiagnostics(artifact.diagnostics).map((diagnostic) => ({ ...diagnostic, artifact_index: artifactIndex })),
+        ...sourceTextQualityContextDroppedFieldDiagnostics(artifact, ['artifact_index', 'readable', 'valid', 'status', 'diagnostics', 'advisory_only', 'gate_effect'])
+      ].slice(0, SOURCE_TEXT_QUALITY_CONTEXT_MAX_DIAGNOSTICS),
+      advisory_only: true,
+      gate_effect: 'none'
+    };
+  }
+  const freshness = normalizeSourceTextQualityOwnerFreshness(artifact.freshness);
+  const boundary = sourceTextQualityContextBoundary(artifact.boundary, artifact);
+  const diagnostics = [
+    ...sourceTextQualityContextDiagnostics(artifact.diagnostics).map((diagnostic) => ({ ...diagnostic, artifact_index: artifactIndex })),
+    ...sourceTextQualityContextBoundaryDiagnostics(boundary, {
+      boundary: artifact.boundary,
+      passConditions: artifact.pass_conditions,
+      advisoryOnly: artifact.advisory_only,
+      gateEffect: artifact.gate_effect
+    }),
+    ...sourceTextQualityContextDroppedFieldDiagnostics(artifact, [
+      'artifact_index',
+      'readable',
+      'valid',
+      'type',
+      'status',
+      'generated_at',
+      'required_efforts',
+      'observed_efforts',
+      'source_types',
+      'same_source_invariant',
+      'effort_matrix',
+      'pass_conditions',
+      'output_safety',
+      'diagnostic_summary',
+      'diagnostics',
+      'freshness',
+      'boundary',
+      'advisory_only',
+      'gate_effect'
+    ])
+  ].slice(0, SOURCE_TEXT_QUALITY_CONTEXT_MAX_DIAGNOSTICS);
+  return {
+    artifact_index: artifactIndex,
+    readable: artifact.readable !== false,
+    valid: true,
+    type: 'agentic_human_review_source_text_quality',
+    status: ['ready_for_owner_review', 'needs_attention'].includes(artifact.status) ? artifact.status : 'needs_attention',
+    generated_at: sourceTextQualitySafeTimestamp(artifact.generated_at),
+    required_efforts: sourceTextQualitySafeEfforts(artifact.required_efforts),
+    observed_efforts: sourceTextQualitySafeEfforts(artifact.observed_efforts, { includeUnknown: true }),
+    source_types: sourceTextQualitySafeSourceTypes(artifact.source_types),
+    same_source_invariant: sourceTextQualityContextSameSource(artifact.same_source_invariant),
+    effort_matrix: sourceTextQualityContextEffortMatrix(artifact.effort_matrix),
+    pass_conditions: sourceTextQualityContextPassConditions(artifact.pass_conditions),
+    output_safety: sourceTextQualityContextOutputSafety(artifact.output_safety),
+    diagnostic_summary: {
+      count: diagnostics.length,
+      by_severity: groupCount(diagnostics.map((diagnostic) => diagnostic.severity))
+    },
+    diagnostics,
+    freshness,
+    boundary,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function normalizeSourceTextQualityOwnerFreshness(freshness) {
+  return {
+    evaluated: freshness?.evaluated === true,
+    result_hash_values_included: false,
+    compared_by_effort_only: freshness?.compared_by_effort_only !== false,
+    aligned_efforts: sourceTextQualitySafeEfforts(freshness?.aligned_efforts, { includeUnknown: true }),
+    stale_efforts: sourceTextQualitySafeEfforts(freshness?.stale_efforts, { includeUnknown: true }),
+    missing_result_efforts: sourceTextQualitySafeEfforts(freshness?.missing_result_efforts, { includeUnknown: true }),
+    hash_unavailable_efforts: sourceTextQualitySafeEfforts(freshness?.hash_unavailable_efforts, { includeUnknown: true }),
+    missing_quality_efforts: sourceTextQualitySafeEfforts(freshness?.missing_quality_efforts, { includeUnknown: true }),
+    duplicate_quality_efforts: sourceTextQualitySafeEfforts(freshness?.duplicate_quality_efforts, { includeUnknown: true })
+  };
+}
+
+function sourceTextQualityContextDroppedFieldDiagnostics(value, allowedFields) {
+  if (!isPlainObject(value)) {
+    return [];
+  }
+  const allowed = new Set(allowedFields);
+  return Object.keys(value).some((key) => !allowed.has(key))
+    ? [sourceTextQualityContextDiagnostic({
+        code: 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_UNTRUSTED_FIELDS_DROPPED',
+        severity: 'low'
+      })]
+    : [];
+}
+
 function ownerReviewContextFromEvidenceSet(evidenceSet) {
   const normalizedEvidenceSet = normalizeEvidenceSetOutput(evidenceSet);
   const sourceTextQuality = normalizedEvidenceSet?.owner_review_context?.source_text_quality;
-  return isPlainObject(sourceTextQuality) && sourceTextQuality.supplied === true
-    ? { source_text_quality: sourceTextQuality }
+  const normalizedSourceTextQuality = normalizeSourceTextQualityOwnerContext(sourceTextQuality);
+  return normalizedSourceTextQuality
+    ? { source_text_quality: normalizedSourceTextQuality }
     : null;
 }
 
