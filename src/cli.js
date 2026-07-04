@@ -14,6 +14,7 @@ import {
   runAgenticHumanReviewClaimStandardGate,
   runAgenticHumanReviewCompare,
   runAgenticHumanReviewCompareBatch,
+  runAgenticHumanReviewDogfoodEvidencePackSummarize,
   runAgenticHumanReviewDogfoodPlan,
   runAgenticHumanReviewDogfoodReadiness,
   runAgenticHumanReviewEvaluatorPolicy,
@@ -326,6 +327,10 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'agentic review dogfood plan') {
       return runtimeResult(parsed.command, await (context.agenticHumanReviewDogfoodPlanRunner ?? runAgenticHumanReviewDogfoodPlan)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review dogfood evidence-pack summarize') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewDogfoodEvidencePackSummarizeRunner ?? runAgenticHumanReviewDogfoodEvidencePackSummarize)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'agentic review calibrate') {
@@ -929,6 +934,8 @@ function usageText(topic) {
     || topic === 'agentic review dogfood'
     || topic === 'agentic review dogfood readiness'
     || topic === 'agentic review dogfood plan'
+    || topic === 'agentic review dogfood evidence-pack'
+    || topic === 'agentic review dogfood evidence-pack summarize'
     || topic === 'agentic review calibrate'
     || topic === 'agentic review compare'
     || topic === 'agentic review evidence-set'
@@ -949,6 +956,7 @@ function usageText(topic) {
       `       ${CLI_NAME} agentic review benchmark show --case <benchmark-case-id> [--json]`,
       `       ${CLI_NAME} agentic review dogfood readiness [--provider <id>] [--json]`,
       `       ${CLI_NAME} agentic review dogfood plan --case <benchmark-case-id> [--provider <id>] [--json]`,
+      `       ${CLI_NAME} agentic review dogfood evidence-pack summarize --input <workspace-json> [--json]`,
       `       ${CLI_NAME} agentic review calibrate --result <agentic-human-review-result> --case <benchmark-case-id> [--json]`,
       `       ${CLI_NAME} agentic review compare --baseline <agentic-human-review-result-or-reference-review> --candidate <agentic-human-review-result> [--comparison-kind quality-delta|direct-vs-tracecue|provider-dogfood|benchmark-regression|editorial-quality] [--json]`,
       `       ${CLI_NAME} agentic review compare batch --dataset <workspace-json> [--json]`,
@@ -973,7 +981,7 @@ function usageText(topic) {
       `       ${CLI_NAME} agentic review status --execution <agentic-human-review-execution> [--json]`,
       `       ${CLI_NAME} agentic review list [--json]`,
       '',
-      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider and dogfood readiness perform no provider call; running requires matching hash, explicit --execute, and exact flags; report quality, benchmark, dogfood planning, calibration, comparison, evidence-set, evidence-set regeneration planning, human-baseline, xhigh, longitudinal, source-text quality, evaluator, and claim-policy commands are read-only advisory checks. For --comparison-kind editorial-quality, --baseline is a workspace-confined reference review text or JSON artifact and the command emits scores only, not the reference or candidate prose. MCP execution remains excluded.'
+      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider and dogfood readiness perform no provider call; running requires matching hash, explicit --execute, and exact flags; report quality, benchmark, dogfood planning, dogfood evidence-pack summarization, calibration, comparison, evidence-set, evidence-set regeneration planning, human-baseline, xhigh, longitudinal, source-text quality, evaluator, and claim-policy commands are read-only advisory checks. For --comparison-kind editorial-quality, --baseline is a workspace-confined reference review text or JSON artifact and the command emits scores only, not the reference or candidate prose. MCP execution remains excluded.'
     ].join('\n');
   }
 

@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-dogfood-evidence-pack-summary.schema.json",
+  "title": "TraceCue Agentic Human Review Dogfood Evidence Pack Summary",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "type",
+    "dogfood_evidence_pack_summary_version",
+    "generated_at",
+    "status",
+    "input",
+    "evidence_set_digest",
+    "matrix_status",
+    "owner_review_digest",
+    "claim_review_status",
+    "regeneration_handoff",
+    "execution_boundary",
+    "warnings",
+    "boundary",
+    "advisory_only",
+    "gate_effect"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "type": {
+      "const": "agentic_human_review_dogfood_evidence_pack_summary"
+    },
+    "dogfood_evidence_pack_summary_version": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ready_for_owner_claim_review",
+        "matrix_complete_claim_review_blocked",
+        "evidence_pack_incomplete"
+      ]
+    },
+    "input": {
+      "type": "object"
+    },
+    "evidence_set_digest": {
+      "type": "object",
+      "properties": {
+        "result_paths_included": {
+          "const": false
+        },
+        "source_paths_included": {
+          "const": false
+        },
+        "raw_provider_responses_included": {
+          "const": false
+        },
+        "credential_values_included": {
+          "const": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "matrix_status": {
+      "type": "object"
+    },
+    "owner_review_digest": {
+      "type": "object",
+      "properties": {
+        "raw_source_text_included": {
+          "const": false
+        },
+        "source_paths_included": {
+          "const": false
+        },
+        "result_paths_included": {
+          "const": false
+        },
+        "advisory_only": {
+          "const": true
+        },
+        "gate_effect": {
+          "const": "none"
+        }
+      },
+      "additionalProperties": true
+    },
+    "claim_review_status": {
+      "type": "object",
+      "properties": {
+        "human_equivalent_claim_allowed": {
+          "const": false
+        },
+        "human_superior_claim_allowed": {
+          "const": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "regeneration_handoff": {
+      "type": "object",
+      "properties": {
+        "concrete_commands_included": {
+          "const": false
+        },
+        "provider_execution_performed": {
+          "const": false
+        },
+        "artifact_write_performed": {
+          "const": false
+        },
+        "automatic_rerun_performed": {
+          "const": false
+        },
+        "mcp_execution_exposed": {
+          "const": false
+        },
+        "advisory_only": {
+          "const": true
+        },
+        "gate_effect": {
+          "const": "none"
+        }
+      },
+      "additionalProperties": true
+    },
+    "execution_boundary": {
+      "type": "object",
+      "properties": {
+        "provider_execution_performed": {
+          "const": false
+        },
+        "api_call_performed": {
+          "const": false
+        },
+        "external_evidence_transfer": {
+          "const": false
+        },
+        "credential_values_read": {
+          "const": false
+        },
+        "raw_provider_response_stored": {
+          "const": false
+        },
+        "artifact_write_performed": {
+          "const": false
+        },
+        "browser_launched": {
+          "const": false
+        },
+        "automatic_rerun_performed": {
+          "const": false
+        },
+        "mcp_execution_exposed": {
+          "const": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "warnings": {
+      "type": "array"
+    },
+    "boundary": {
+      "type": "object"
+    },
+    "advisory_only": {
+      "const": true
+    },
+    "gate_effect": {
+      "const": "none"
+    }
+  },
+  "additionalProperties": true
+}

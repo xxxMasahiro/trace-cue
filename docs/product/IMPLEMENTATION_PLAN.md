@@ -9,6 +9,16 @@
 
 ## Phase Plan
 
+### Agentic Human Review Dogfood Evidence Pack Summary
+
+Purpose: make longitudinal real-provider dogfood evidence review easier for the owner without replaying provider runs. The slice summarizes a workspace-confined evidence-set manifest, evidence-set output, or dogfood evidence-pack manifest into a compact owner-review digest.
+
+Implemented scope: add `agentic review dogfood evidence-pack summarize`; add CLI/API/schema exports; reuse evidence-set summary, human-baseline claim-readiness, longitudinal-quality, claim-standard-gate, and owner-review-context logic; emit matrix completion, missing case-by-effort cells, blocker categories, owner-review digest, claim-review state, and advisory regeneration handoff; suppress detailed result paths, source paths, raw provider responses, credential values, full source text, chunk text, candidate/reference prose, and concrete rerun commands; keep provider calls, API calls, credential reads, external transfer, artifact writes, browser launch, MCP exposure, automatic reruns, proof claims, release-gate mutation, and human-equivalent or human-superior claim authorization out of scope.
+
+Implementation order: add parser/API/CLI command routing; add read-only dogfood evidence-pack input resolution and summary builder beside existing Agentic Human Review evidence-set code; register the public schema and package discovery; extend no-browser CLI coverage for manifest input, direct evidence-set input, duplicate/missing matrix blockers, unsupported execution/provider options, workspace confinement, forged downstream owner-context sanitization, leak suppression, and schema parity; extend packed-install API/schema coverage; synchronize product, workflow, security, verification, changelog, README, and manifest records; run syntax checks, focused no-browser tests, package smoke, product docs/security/structure checks, product gate, and `git diff --check`; then commit, push, monitor remote CI, and synchronize local/remote branch state.
+
+Recovery: this slice is additive and local. Existing Agentic Human Review proposal, plan, run, readiness, report-quality, source-text quality, evidence-set, human-baseline, comparison, evaluator policy, xhigh, longitudinal quality, claim diagnostics, evidence regeneration planning, Responses adapter, visual review, agent execution, MCP profiles, safe HTTP MCP, deterministic findings, and release gates remain compatible. Rollback is a standard Git revert of the dogfood evidence-pack summary command, schema, docs, and focused tests; no artifact migration, credential cleanup, provider-policy change, MCP-policy change, release-gate change, or claim-standard policy change is involved.
+
 ### Agentic Human Review Source-Text Effort Matrix Quality Verification
 
 Purpose: make the current source-text dogfood loop repeatable after standard, deep, and xhigh runs exist. The slice verifies that `--source-text` actually produced bounded source understanding and effort-specific editorial synthesis without rerunning providers or expanding proof claims.

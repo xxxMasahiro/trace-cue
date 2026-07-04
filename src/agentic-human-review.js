@@ -49,6 +49,7 @@ export const HUMAN_REVIEW_LONGITUDINAL_QUALITY_VERSION = '1.0.0';
 export const HUMAN_REVIEW_CLAIM_POLICY_VERSION = '1.0.0';
 export const HUMAN_REVIEW_CLAIM_STANDARD_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EVIDENCE_REGENERATION_VERSION = '1.0.0';
+export const HUMAN_REVIEW_DOGFOOD_EVIDENCE_PACK_SUMMARY_VERSION = '1.0.0';
 export const HUMAN_REVIEW_HUMAN_BASELINE_VERSION = '1.0.0';
 export const HUMAN_REVIEW_HUMAN_BASELINE_COMPARISON_VERSION = '1.0.0';
 export const HUMAN_REVIEW_HUMAN_BASELINE_OPERATIONS_VERSION = '1.0.0';
@@ -1549,6 +1550,94 @@ export async function runAgenticHumanReviewDogfoodPlan(options = {}, context = {
   };
 }
 
+export async function runAgenticHumanReviewDogfoodEvidencePackSummarize(options = {}, context = {}) {
+  const cwd = context.cwd ?? process.cwd();
+  const now = materializeNow(context.now);
+  const maxBytes = parseMaxBytes(options['max-bytes']);
+  if (!maxBytes.ok) {
+    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+  }
+  const inputRead = await readWorkspaceJson({
+    cwd,
+    inputPath: options.input,
+    label: 'agentic human review dogfood evidence-pack input',
+    maxBytes: maxBytes.value
+  });
+  if (!inputRead.ok) {
+    return errorResult(inputRead.error.code, inputRead.error.message, inputRead.error.details);
+  }
+  const resolved = await resolveDogfoodEvidencePackInput({
+    cwd,
+    input: inputRead.value,
+    inputPath: inputRead.relativePath,
+    inputHash: hashText(inputRead.text),
+    now,
+    maxBytes: maxBytes.value
+  });
+  if (!resolved.ok) {
+    return errorResult(resolved.error.code, resolved.error.message, resolved.error.details);
+  }
+  const policy = normalizeClaimPolicy(resolved.policyRead?.value ?? resolved.inlinePolicy ?? null);
+  const readiness = buildHumanBaselineClaimReadiness({
+    evidenceSet: resolved.evidenceSet,
+    evidenceSetPath: resolved.evidenceSetPath,
+    evidenceSetHash: resolved.evidenceSetHash,
+    policy,
+    policyPath: resolved.policyRead?.relativePath ?? null,
+    policyHash: resolved.policyRead ? hashText(resolved.policyRead.text) : null,
+    now
+  });
+  const longitudinal = buildLongitudinalQualityRollup({
+    evidenceSet: resolved.evidenceSet,
+    evidenceSetPath: resolved.evidenceSetPath,
+    evidenceSetHash: resolved.evidenceSetHash,
+    now
+  });
+  const claimAuditSummary = await buildClaimStandardClaimAuditSummary({
+    cwd,
+    evidenceSet: resolved.evidenceSet,
+    policy,
+    now,
+    maxBytes: maxBytes.value
+  });
+  const claimGate = buildClaimStandardGate({
+    evidenceSet: resolved.evidenceSet,
+    evidenceSetPath: resolved.evidenceSetPath,
+    evidenceSetHash: resolved.evidenceSetHash,
+    policy,
+    policyInput: resolved.policyRead?.value ?? resolved.inlinePolicy ?? null,
+    policyPath: resolved.policyRead?.relativePath ?? null,
+    policyHash: resolved.policyRead ? hashText(resolved.policyRead.text) : null,
+    readiness,
+    longitudinal,
+    claimAuditSummary,
+    now
+  });
+  const packSummary = buildDogfoodEvidencePackSummary({
+    input: inputRead.value,
+    inputPath: inputRead.relativePath,
+    inputHash: hashText(inputRead.text),
+    inputKind: resolved.inputKind,
+    evidenceSet: resolved.evidenceSet,
+    evidenceSetPath: resolved.evidenceSetPath,
+    evidenceSetHash: resolved.evidenceSetHash,
+    readiness,
+    longitudinal,
+    claimGate,
+    now
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_dogfood_evidence_pack_summary: packSummary,
+      boundary: packSummary.boundary
+    },
+    warnings: packSummary.warnings,
+    errors: [],
+    artifacts: []
+  };
+}
+
 export async function runAgenticHumanReviewReportQuality(options = {}, context = {}) {
   const cwd = context.cwd ?? process.cwd();
   const maxBytes = parseMaxBytes(options['max-bytes']);
@@ -2746,6 +2835,405 @@ async function readOptionalPolicyInput({ cwd, inputPath, label, maxBytes }) {
     relativePath: read.relativePath,
     hash: hashText(read.text)
   };
+}
+
+async function resolveDogfoodEvidencePackInput({ cwd, input, inputPath, inputHash, now, maxBytes }) {
+  const policyResolution = await readDogfoodEvidencePackPolicy({ cwd, input, maxBytes });
+  if (!policyResolution.ok) {
+    return policyResolution;
+  }
+  const directEvidenceSet = isEvidenceSetOutput(input);
+  if (directEvidenceSet) {
+    return {
+      ok: true,
+      inputKind: 'direct_evidence_set_output',
+      evidenceSet: normalizeEvidenceSetOutput(input),
+      evidenceSetPath: inputPath,
+      evidenceSetHash: inputHash,
+      policyRead: policyResolution.policyRead,
+      inlinePolicy: policyResolution.inlinePolicy
+    };
+  }
+  if (isEvidenceSetLikeManifest(input)) {
+    return {
+      ok: true,
+      inputKind: 'direct_evidence_set_manifest',
+      evidenceSet: await buildEvidenceSetSummary({
+        cwd,
+        manifest: input,
+        manifestPath: inputPath,
+        manifestHash: inputHash,
+        now,
+        maxBytes,
+        mode: 'dogfood-evidence-pack'
+      }),
+      evidenceSetPath: inputPath,
+      evidenceSetHash: inputHash,
+      policyRead: policyResolution.policyRead,
+      inlinePolicy: policyResolution.inlinePolicy
+    };
+  }
+  const ref = dogfoodEvidencePackEvidenceSetRef(input);
+  if (!ref) {
+    return {
+      ok: false,
+      error: {
+        code: 'AHR_DOGFOOD_EVIDENCE_PACK_EVIDENCE_SET_REQUIRED',
+        message: 'Dogfood evidence-pack summarization requires an evidence_set reference or an evidence-set manifest/output as input.',
+        details: { input: inputPath }
+      }
+    };
+  }
+  if (ref.kind === 'embedded') {
+    const embedded = ref.value;
+    return {
+      ok: true,
+      inputKind: 'embedded_evidence_set',
+      evidenceSet: isEvidenceSetOutput(embedded)
+        ? normalizeEvidenceSetOutput(embedded)
+        : await buildEvidenceSetSummary({
+            cwd,
+            manifest: embedded,
+            manifestPath: inputPath,
+            manifestHash: inputHash,
+            now,
+            maxBytes,
+            mode: 'dogfood-evidence-pack'
+          }),
+      evidenceSetPath: inputPath,
+      evidenceSetHash: inputHash,
+      policyRead: policyResolution.policyRead,
+      inlinePolicy: policyResolution.inlinePolicy
+    };
+  }
+  const evidenceSetRead = await readWorkspaceJson({
+    cwd,
+    inputPath: ref.path,
+    label: 'agentic human review dogfood evidence-pack evidence set',
+    maxBytes
+  });
+  if (!evidenceSetRead.ok) {
+    return {
+      ok: false,
+      error: evidenceSetRead.error
+    };
+  }
+  return {
+    ok: true,
+    inputKind: 'dogfood_evidence_pack_manifest_reference',
+    evidenceSet: isEvidenceSetOutput(evidenceSetRead.value)
+      ? normalizeEvidenceSetOutput(evidenceSetRead.value)
+      : await buildEvidenceSetSummary({
+          cwd,
+          manifest: evidenceSetRead.value,
+          manifestPath: evidenceSetRead.relativePath,
+          manifestHash: hashText(evidenceSetRead.text),
+          now,
+          maxBytes,
+          mode: 'dogfood-evidence-pack'
+        }),
+    evidenceSetPath: evidenceSetRead.relativePath,
+    evidenceSetHash: hashText(evidenceSetRead.text),
+    policyRead: policyResolution.policyRead,
+    inlinePolicy: policyResolution.inlinePolicy
+  };
+}
+
+async function readDogfoodEvidencePackPolicy({ cwd, input, maxBytes }) {
+  const policyRef = dogfoodEvidencePackPathRef(input, ['policy', 'claim_policy', 'claim_policy_path', 'policy_path']);
+  if (!policyRef.path) {
+    return {
+      ok: true,
+      policyRead: null,
+      inlinePolicy: policyRef.inline
+    };
+  }
+  const policyRead = await readOptionalPolicyInput({
+    cwd,
+    inputPath: policyRef.path,
+    label: 'agentic human review dogfood evidence-pack claim policy',
+    maxBytes
+  });
+  if (!policyRead.ok) {
+    return {
+      ok: false,
+      error: policyRead.error
+    };
+  }
+  return { ok: true, policyRead, inlinePolicy: null };
+}
+
+function dogfoodEvidencePackEvidenceSetRef(input) {
+  const ref = input?.evidence_set
+    ?? input?.evidenceSet
+    ?? input?.evidence_set_manifest
+    ?? input?.evidenceSetManifest
+    ?? input?.evidence_set_path
+    ?? input?.evidenceSetPath
+    ?? null;
+  if (!ref) {
+    return null;
+  }
+  if (typeof ref === 'string') {
+    return { kind: 'path', path: ref };
+  }
+  if (isPlainObject(ref)) {
+    const pathRef = dogfoodEvidencePackPathRef(ref, ['path', 'input', 'evidence_set', 'evidence_set_path', 'artifact_path']);
+    if (pathRef.path) {
+      return { kind: 'path', path: pathRef.path };
+    }
+    if (isEvidenceSetOutput(ref) || isEvidenceSetLikeManifest(ref)) {
+      return { kind: 'embedded', value: ref };
+    }
+  }
+  return null;
+}
+
+function dogfoodEvidencePackPathRef(input, keys) {
+  for (const key of keys) {
+    const value = input?.[key];
+    if (typeof value === 'string' && value.trim()) {
+      return { path: value.trim(), inline: null };
+    }
+    if (isPlainObject(value)) {
+      for (const nestedKey of ['path', 'input', 'artifact_path']) {
+        const nested = value[nestedKey];
+        if (typeof nested === 'string' && nested.trim()) {
+          return { path: nested.trim(), inline: null };
+        }
+      }
+      return { path: null, inline: value };
+    }
+  }
+  return { path: null, inline: null };
+}
+
+function isEvidenceSetLikeManifest(value) {
+  return value?.type === 'agentic_human_review_evidence_set_manifest'
+    || Array.isArray(value?.results)
+    || Array.isArray(value?.calibrations)
+    || Array.isArray(value?.comparisons)
+    || Array.isArray(value?.human_baselines)
+    || Array.isArray(value?.artifacts);
+}
+
+function buildDogfoodEvidencePackSummary({
+  input,
+  inputPath,
+  inputHash,
+  inputKind,
+  evidenceSet,
+  evidenceSetPath,
+  evidenceSetHash,
+  readiness,
+  longitudinal,
+  claimGate,
+  now
+}) {
+  const normalizedEvidenceSet = normalizeEvidenceSetOutput(evidenceSet);
+  const summary = normalizedEvidenceSet.summary ?? {};
+  const matrixComplete = summary.real_provider_claim_numerator_matrix_complete === true
+    && summary.mechanical_contract_matrix_complete === true
+    && summary.calibration_pass_matrix_complete === true
+    && summary.comparison_case_matrix?.complete === true
+    && summary.complete_for_owner_labeled_human_baseline_review === true;
+  const ownerReviewContext = ownerReviewContextFromEvidenceSet(normalizedEvidenceSet);
+  const warnings = uniqueDogfoodEvidencePackWarnings([
+    ...(Array.isArray(normalizedEvidenceSet.warnings) ? normalizedEvidenceSet.warnings : []),
+    ...(Array.isArray(readiness.warnings) ? readiness.warnings : []),
+    ...(Array.isArray(longitudinal.warnings) ? longitudinal.warnings : []),
+    ...(Array.isArray(claimGate.warnings) ? claimGate.warnings : [])
+  ]);
+  return redact({
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_dogfood_evidence_pack_summary',
+    dogfood_evidence_pack_summary_version: HUMAN_REVIEW_DOGFOOD_EVIDENCE_PACK_SUMMARY_VERSION,
+    generated_at: now.toISOString(),
+    status: claimGate.passed === true
+      ? 'ready_for_owner_claim_review'
+      : (matrixComplete ? 'matrix_complete_claim_review_blocked' : 'evidence_pack_incomplete'),
+    input: {
+      path: inputPath,
+      hash: inputHash,
+      kind: inputKind,
+      declared_type: stringOrNull(input?.type),
+      raw_evidence_included: false
+    },
+    evidence_set_digest: {
+      path: evidenceSetPath,
+      hash: evidenceSetHash,
+      type: normalizedEvidenceSet.type ?? null,
+      generated_at: normalizedEvidenceSet.generated_at ?? null,
+      result_count: Number(summary.result_count ?? 0),
+      calibration_count: Number(summary.calibration_count ?? 0),
+      comparison_count: Number(summary.comparison_count ?? 0),
+      owner_labeled_baseline_count: Number(summary.owner_labeled_baseline_count ?? 0),
+      result_paths_included: false,
+      source_paths_included: false,
+      raw_provider_responses_included: false,
+      credential_values_included: false
+    },
+    matrix_status: {
+      complete: matrixComplete,
+      required_efforts: summary.required_efforts ?? [...HUMAN_REVIEW_CLAIM_EFFORTS],
+      required_benchmark_case_ids: summary.required_benchmark_case_ids ?? BENCHMARK_CASES.map((item) => item.case_id),
+      required_comparison_kinds: summary.required_comparison_kinds ?? [...HUMAN_REVIEW_REQUIRED_COMPARISON_KINDS],
+      real_provider_claim_numerator_matrix: summary.real_provider_claim_numerator_matrix ?? {},
+      mechanical_contract_matrix: summary.mechanical_contract_matrix ?? {},
+      calibration_pass_matrix: summary.calibration_pass_matrix ?? {},
+      comparison_case_matrix: summary.comparison_case_matrix ?? {},
+      missing: {
+        result_case_efforts: summary.missing_result_case_efforts ?? [],
+        real_provider_claim_numerator_case_efforts: summary.missing_real_provider_claim_numerator_case_efforts ?? [],
+        mechanical_contract_case_efforts: summary.missing_mechanical_contract_case_efforts ?? [],
+        calibration_case_efforts: summary.missing_calibration_case_efforts ?? [],
+        comparison_case_matrix: summary.missing_comparison_case_matrix ?? [],
+        owner_labeled_baseline_case_ids: summary.missing_human_baseline_case_ids ?? [],
+        human_baseline_comparison_case_ids: summary.missing_human_baseline_comparison_case_ids ?? []
+      },
+      blocker_summary: summary.proof_readiness_blockers ?? {}
+    },
+    owner_review_digest: dogfoodOwnerReviewDigest(ownerReviewContext),
+    claim_review_status: {
+      readiness_status: readiness.status,
+      longitudinal_status: longitudinal.status,
+      claim_standard_gate_status: claimGate.status,
+      owner_claim_review_ready: claimGate.passed === true,
+      blocker_count: Array.isArray(claimGate.blockers) ? claimGate.blockers.length : 0,
+      blocker_codes: Array.isArray(claimGate.blockers) ? uniqueSorted(claimGate.blockers.map((blocker) => blocker.code)) : [],
+      human_equivalent_claim_allowed: false,
+      human_superior_claim_allowed: false,
+      claim_states: {
+        owner_claim_review_ready: {
+          allowed: claimGate.passed === true,
+          passed: claimGate.passed === true
+        },
+        human_equivalent_candidate: {
+          allowed: false,
+          passed: false,
+          blocked_by_policy: true
+        },
+        human_superior_candidate: {
+          allowed: false,
+          passed: false,
+          blocked_by_policy: true
+        }
+      }
+    },
+    regeneration_handoff: dogfoodRegenerationHandoff(claimGate),
+    execution_boundary: {
+      provider_execution_performed: false,
+      api_call_performed: false,
+      external_evidence_transfer: false,
+      credential_values_read: false,
+      raw_provider_response_stored: false,
+      artifact_write_performed: false,
+      browser_launched: false,
+      automatic_rerun_performed: false,
+      mcp_execution_exposed: false
+    },
+    warnings,
+    boundary: agenticHumanReviewBoundary({ read_only: true }),
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+}
+
+function dogfoodOwnerReviewDigest(ownerReviewContext) {
+  const sourceTextQuality = ownerReviewContext?.source_text_quality ?? null;
+  if (!sourceTextQuality) {
+    return {
+      supplied: false,
+      source_text_quality: null,
+      raw_source_text_included: false,
+      source_paths_included: false,
+      result_paths_included: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    };
+  }
+  return {
+    supplied: true,
+    source_text_quality: {
+      status: sourceTextQuality.status ?? null,
+      referenced_artifact_count: Number(sourceTextQuality.referenced_artifact_count ?? 0),
+      readable_artifact_count: Number(sourceTextQuality.readable_artifact_count ?? 0),
+      valid_artifact_count: Number(sourceTextQuality.valid_artifact_count ?? 0),
+      ready_artifact_count: Number(sourceTextQuality.ready_artifact_count ?? 0),
+      needs_attention_artifact_count: Number(sourceTextQuality.needs_attention_artifact_count ?? 0),
+      stale_artifact_count: Number(sourceTextQuality.stale_artifact_count ?? 0),
+      observed_efforts: sourceTextQuality.aggregate?.observed_efforts ?? [],
+      source_types: sourceTextQuality.aggregate?.source_types ?? [],
+      stale_efforts: sourceTextQuality.aggregate?.stale_efforts ?? [],
+      missing_result_efforts: sourceTextQuality.aggregate?.missing_result_efforts ?? [],
+      diagnostic_count: Array.isArray(sourceTextQuality.diagnostics) ? sourceTextQuality.diagnostics.length : 0,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    raw_source_text_included: false,
+    source_paths_included: false,
+    result_paths_included: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function dogfoodRegenerationHandoff(claimGate) {
+  const targets = Array.isArray(claimGate?.rerun_plan?.targets) ? claimGate.rerun_plan.targets : [];
+  const commandDescriptors = targets.flatMap((target) => Array.isArray(target.command_templates)
+    ? target.command_templates.map((command) => ({
+        target_id: target.target_id ?? null,
+        target_type: target.target_type ?? null,
+        intent: command.intent ?? null,
+        requires_provider_execution_approval: command.requires_provider_execution_approval === true,
+        unresolved_input_count: Array.isArray(command.unresolved_inputs) ? command.unresolved_inputs.length : 0,
+        executed: false
+      }))
+    : []);
+  return {
+    required: Boolean(claimGate?.rerun_plan?.evidence_set_regeneration_required ?? targets.length > 0),
+    status: targets.length > 0 ? 'regeneration_targets_available' : 'no_regeneration_required',
+    target_count: targets.length,
+    targets: targets.map((target) => ({
+      target_id: target.target_id ?? null,
+      target_type: target.target_type ?? null,
+      reason_code: target.reason_code ?? null,
+      case_id: target.case_id ?? null,
+      effort: target.effort ?? null,
+      comparison_kind: target.comparison_kind ?? null,
+      requires_provider_execution_approval: target.requires_provider_execution_approval === true,
+      command_template_count: Array.isArray(target.command_templates) ? target.command_templates.length : 0,
+      executed: false
+    })),
+    command_templates: commandDescriptors,
+    concrete_commands_included: false,
+    provider_execution_approval_required: targets.some((target) => target.requires_provider_execution_approval === true),
+    provider_execution_performed: false,
+    artifact_write_performed: false,
+    automatic_rerun_performed: false,
+    mcp_execution_exposed: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function uniqueDogfoodEvidencePackWarnings(warnings) {
+  const seen = new Set();
+  const unique = [];
+  for (const warning of warnings) {
+    const code = warning?.code ?? 'AHR_DOGFOOD_EVIDENCE_PACK_WARNING';
+    const message = warning?.message ?? 'Dogfood evidence-pack warning.';
+    const key = `${code}\u0000${message}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push({
+      code,
+      message
+    });
+  }
+  return unique;
 }
 
 async function buildEvidenceSetSummary({ cwd, manifest, manifestPath, manifestHash, now, maxBytes, mode }) {

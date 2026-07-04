@@ -2230,6 +2230,7 @@ test('schema commands expose machine-readable contracts', async () => {
     ['agentic_human_review_claim_standard_gate', '../schemas/agentic-human-review-claim-standard-gate.schema.json'],
     ['agentic_human_review_evidence_regeneration_plan', '../schemas/agentic-human-review-evidence-regeneration-plan.schema.json'],
     ['agentic_human_review_claim_audit', '../schemas/agentic-human-review-claim-audit.schema.json'],
+    ['agentic_human_review_dogfood_evidence_pack_summary', '../schemas/agentic-human-review-dogfood-evidence-pack-summary.schema.json'],
     ['agentic_human_review_dogfood_readiness', '../schemas/agentic-human-review-dogfood-readiness.schema.json'],
     ['agentic_human_review_dogfood_plan', '../schemas/agentic-human-review-dogfood-plan.schema.json'],
     ['agentic_human_review_plan', '../schemas/agentic-human-review-plan.schema.json'],
@@ -3790,6 +3791,19 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(dogfoodPlanBody.data.agentic_human_review_dogfood_plan.human_review_maturity_plan.active_case_matrix[0].plan_commands.some((item) => item.effort === 'deep'), true);
   assert.equal(dogfoodPlanBody.data.agentic_human_review_dogfood_plan.manual_live_provider_policy.provider_call_performed_by_plan, false);
   assert.match(dogfoodPlanBody.data.agentic_human_review_dogfood_plan.workflow.compare, /direct-vs-tracecue/);
+
+  const parsedDogfoodEvidencePack = parseCliArgs([
+    'agentic',
+    'review',
+    'dogfood',
+    'evidence-pack',
+    'summarize',
+    '--input',
+    'dogfood-evidence-pack.json',
+    '--json'
+  ]);
+  assert.equal(parsedDogfoodEvidencePack.ok, true);
+  assert.equal(parsedDogfoodEvidencePack.command, 'agentic review dogfood evidence-pack summarize');
 
   const parsedPlan = parseCliArgs([
     'agentic',
@@ -7467,6 +7481,114 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(duplicateSummary.proof_readiness_blockers.missing_result_case_efforts.some((cell) => cell.case_id === 'landing-trust-clarity' && cell.effort === 'standard'), true);
   assert.equal(duplicateSummary.missing_real_provider_claim_numerator_case_efforts.some((cell) => cell.case_id === 'landing-trust-clarity' && cell.effort === 'standard'), true);
 
+  await writeFile(path.join(cwd, 'dogfood-evidence-pack-manifest.json'), JSON.stringify({
+    type: 'agentic_human_review_dogfood_evidence_pack_manifest',
+    evidence_set: { path: 'agentic-real-provider-matrix-evidence-set.json' }
+  }, null, 2), 'utf8');
+  const dogfoodEvidencePack = await executeCli([
+    'agentic',
+    'review',
+    'dogfood',
+    'evidence-pack',
+    'summarize',
+    '--input',
+    'dogfood-evidence-pack-manifest.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(dogfoodEvidencePack.exitCode, 0);
+  const dogfoodEvidencePackBody = JSON.parse(dogfoodEvidencePack.stdout);
+  const dogfoodEvidencePackData = dogfoodEvidencePackBody.data.agentic_human_review_dogfood_evidence_pack_summary;
+  assert.equal(dogfoodEvidencePackBody.command, 'agentic review dogfood evidence-pack summarize');
+  assert.equal(dogfoodEvidencePackData.type, 'agentic_human_review_dogfood_evidence_pack_summary');
+  assert.equal(dogfoodEvidencePackData.status, 'evidence_pack_incomplete');
+  assert.equal(dogfoodEvidencePackData.evidence_set_digest.result_count, benchmarkCaseIds.length * requiredEfforts.length);
+  assert.equal(dogfoodEvidencePackData.evidence_set_digest.result_paths_included, false);
+  assert.equal(dogfoodEvidencePackData.evidence_set_digest.source_paths_included, false);
+  assert.equal(dogfoodEvidencePackData.evidence_set_digest.raw_provider_responses_included, false);
+  assert.equal(dogfoodEvidencePackData.evidence_set_digest.credential_values_included, false);
+  assert.equal(dogfoodEvidencePackData.matrix_status.real_provider_claim_numerator_matrix.complete, true);
+  assert.equal(dogfoodEvidencePackData.matrix_status.calibration_pass_matrix.complete, false);
+  assert.equal(dogfoodEvidencePackData.matrix_status.missing.calibration_case_efforts.length, benchmarkCaseIds.length * requiredEfforts.length);
+  assert.equal(dogfoodEvidencePackData.owner_review_digest.raw_source_text_included, false);
+  assert.equal(dogfoodEvidencePackData.owner_review_digest.result_paths_included, false);
+  assert.equal(dogfoodEvidencePackData.claim_review_status.human_equivalent_claim_allowed, false);
+  assert.equal(dogfoodEvidencePackData.claim_review_status.human_superior_claim_allowed, false);
+  assert.equal(dogfoodEvidencePackData.claim_review_status.claim_states.human_equivalent_candidate.allowed, false);
+  assert.equal(dogfoodEvidencePackData.regeneration_handoff.concrete_commands_included, false);
+  assert.equal(dogfoodEvidencePackData.regeneration_handoff.provider_execution_performed, false);
+  assert.equal(dogfoodEvidencePackData.regeneration_handoff.artifact_write_performed, false);
+  assert.equal(dogfoodEvidencePackData.regeneration_handoff.automatic_rerun_performed, false);
+  assert.equal(dogfoodEvidencePackData.execution_boundary.api_call_performed, false);
+  assert.equal(dogfoodEvidencePackData.execution_boundary.external_evidence_transfer, false);
+  assert.equal(dogfoodEvidencePackData.execution_boundary.credential_values_read, false);
+  assert.equal(dogfoodEvidencePackData.execution_boundary.mcp_execution_exposed, false);
+  assert.equal(dogfoodEvidencePackData.boundary.read_only, true);
+  assert.equal(dogfoodEvidencePackData.boundary.provider_call_performed, false);
+  assert.equal(dogfoodEvidencePackData.boundary.external_evidence_transfer, false);
+  assert.equal(dogfoodEvidencePackData.warnings.every((warning) => !Object.hasOwn(warning, 'details')), true);
+  assert.doesNotMatch(dogfoodEvidencePack.stdout, /api-secret-value|provider\.example|matrix-blog-content-value-standard\.json/u);
+
+  await writeFile(path.join(cwd, 'duplicate-dogfood-evidence-pack-manifest.json'), JSON.stringify({
+    type: 'agentic_human_review_dogfood_evidence_pack_manifest',
+    evidence_set: 'agentic-duplicate-real-provider-evidence-set.json'
+  }, null, 2), 'utf8');
+  const duplicateDogfoodEvidencePack = await executeCli([
+    'agentic',
+    'review',
+    'dogfood',
+    'evidence-pack',
+    'summarize',
+    '--input',
+    'duplicate-dogfood-evidence-pack-manifest.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(duplicateDogfoodEvidencePack.exitCode, 0);
+  const duplicateDogfoodEvidencePackData = JSON.parse(duplicateDogfoodEvidencePack.stdout).data.agentic_human_review_dogfood_evidence_pack_summary;
+  assert.equal(duplicateDogfoodEvidencePackData.matrix_status.real_provider_claim_numerator_matrix.complete, false);
+  assert.equal(duplicateDogfoodEvidencePackData.matrix_status.missing.real_provider_claim_numerator_case_efforts.some((cell) => cell.case_id === 'landing-trust-clarity' && cell.effort === 'standard'), true);
+
+  const dogfoodEvidencePackExecuteRejected = await executeCli([
+    'agentic',
+    'review',
+    'dogfood',
+    'evidence-pack',
+    'summarize',
+    '--input',
+    'dogfood-evidence-pack-manifest.json',
+    '--execute',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(dogfoodEvidencePackExecuteRejected.exitCode, 2);
+  assert.equal(JSON.parse(dogfoodEvidencePackExecuteRejected.stdout).errors[0].code, 'CONFLICTING_OPTIONS');
+
+  const dogfoodEvidencePackProviderRejected = await executeCli([
+    'agentic',
+    'review',
+    'dogfood',
+    'evidence-pack',
+    'summarize',
+    '--input',
+    'dogfood-evidence-pack-manifest.json',
+    '--provider',
+    'generic-api-provider',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(dogfoodEvidencePackProviderRejected.exitCode, 2);
+  assert.equal(JSON.parse(dogfoodEvidencePackProviderRejected.stdout).errors[0].code, 'UNSUPPORTED_AGENTIC_REVIEW_DOGFOOD_EVIDENCE_PACK_OPTION');
+
+  const dogfoodEvidencePackOutside = await executeCli([
+    'agentic',
+    'review',
+    'dogfood',
+    'evidence-pack',
+    'summarize',
+    '--input',
+    '../outside.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(dogfoodEvidencePackOutside.exitCode, 1);
+  assert.equal(JSON.parse(dogfoodEvidencePackOutside.stdout).errors[0].code, 'AGENTIC_REVIEW_INPUT_OUTSIDE_WORKSPACE');
+
   const incompleteMatrixResult = JSON.parse(await readFile(path.join(cwd, matrixResultEntries[0].path), 'utf8'));
   incompleteMatrixResult.id = 'matrix-mechanical-incomplete-blog-standard';
   incompleteMatrixResult.benchmark_requirement_coverage = {
@@ -8396,6 +8518,9 @@ test('agentic human review downstream outputs re-sanitize forged owner review co
   const runGate = async (input) => executeCli([
     'agentic', 'review', 'claim', 'standard-gate', '--evidence-set', input, '--json'
   ], { cwd, now: fixedNow });
+  const runEvidencePack = async (input) => executeCli([
+    'agentic', 'review', 'dogfood', 'evidence-pack', 'summarize', '--input', input, '--json'
+  ], { cwd, now: fixedNow });
 
   const baseReadiness = dataFrom(await runReadiness('base-output.json'), 'agentic_human_review_human_baseline_claim_readiness');
   const forgedReadiness = dataFrom(await runReadiness('forged-output.json'), 'agentic_human_review_human_baseline_claim_readiness');
@@ -8441,7 +8566,16 @@ test('agentic human review downstream outputs re-sanitize forged owner review co
   assert.equal(regenerationPlan.owner_review_context.source_text_quality.regeneration_invalidation.provider_execution_performed, false);
   assert.equal(regenerationPlan.owner_review_context.source_text_quality.regeneration_invalidation.artifact_write_performed, false);
 
-  for (const output of [forgedReadiness, forgedLongitudinal, forgedGate, regenerationPlan]) {
+  const forgedEvidencePack = dataFrom(await runEvidencePack('forged-output.json'), 'agentic_human_review_dogfood_evidence_pack_summary');
+  assert.equal(forgedEvidencePack.owner_review_digest.source_text_quality.status, 'needs_attention_context');
+  assert.equal(forgedEvidencePack.owner_review_digest.source_text_quality.advisory_only, true);
+  assert.equal(forgedEvidencePack.claim_review_status.human_equivalent_claim_allowed, false);
+  assert.equal(forgedEvidencePack.claim_review_status.human_superior_claim_allowed, false);
+  assert.equal(forgedEvidencePack.regeneration_handoff.provider_execution_performed, false);
+  assert.equal(forgedEvidencePack.regeneration_handoff.artifact_write_performed, false);
+  assert.equal(forgedEvidencePack.execution_boundary.mcp_execution_exposed, false);
+
+  for (const output of [forgedReadiness, forgedLongitudinal, forgedGate, regenerationPlan, forgedEvidencePack]) {
     assert.doesNotMatch(JSON.stringify(output), /FORGED_|sk-forged-owner-context-secret|\/tmp\/FORGED/u);
   }
 

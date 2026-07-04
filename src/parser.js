@@ -1456,10 +1456,34 @@ function parseAgentic(args, globals) {
       }
       return parsed;
     }
+    if (dogfoodAction === 'evidence-pack') {
+      const evidencePackAction = args[3];
+      if (evidencePackAction === 'summarize') {
+        const command = 'agentic review dogfood evidence-pack summarize';
+        const parsed = parseRequiredOptions(command, args.slice(4), globals, ['input']);
+        if (!parsed.ok) {
+          return parsed;
+        }
+        const unsupported = Object.keys(parsed.options).find((option) => !['input', 'max-bytes'].includes(option));
+        if (unsupported) {
+          return parseError(command, globals.json, {
+            code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_DOGFOOD_EVIDENCE_PACK_OPTION',
+            message: `${command} does not accept --${unsupported} because it is read-only and performs no provider call.`,
+            details: { option: unsupported }
+          });
+        }
+        return parsed;
+      }
+      return parseError('agentic review dogfood evidence-pack', globals.json, {
+        code: evidencePackAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+        message: evidencePackAction ? `Unknown agentic review dogfood evidence-pack subcommand: ${evidencePackAction}` : 'agentic review dogfood evidence-pack requires summarize.',
+        details: { subcommands: ['summarize'] }
+      });
+    }
     return parseError('agentic review dogfood', globals.json, {
       code: dogfoodAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
-      message: dogfoodAction ? `Unknown agentic review dogfood subcommand: ${dogfoodAction}` : 'agentic review dogfood requires readiness or plan.',
-      details: { subcommands: ['readiness', 'plan'] }
+      message: dogfoodAction ? `Unknown agentic review dogfood subcommand: ${dogfoodAction}` : 'agentic review dogfood requires readiness, plan, or evidence-pack.',
+      details: { subcommands: ['readiness', 'plan', 'evidence-pack'] }
     });
   }
   if (action === 'calibrate') {
@@ -2499,6 +2523,7 @@ function plannedCommands() {
     'agentic review benchmark show',
     'agentic review dogfood readiness',
     'agentic review dogfood plan',
+    'agentic review dogfood evidence-pack summarize',
     'agentic review calibrate',
     'agentic review compare',
     'agentic review compare batch',

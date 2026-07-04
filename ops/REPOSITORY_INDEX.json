@@ -311,6 +311,10 @@
     {
       "path": "schemas/agentic-human-review-report-quality.schema.json",
       "role": "manifest"
+    },
+    {
+      "path": "schemas/agentic-human-review-dogfood-evidence-pack-summary.schema.json",
+      "role": "manifest"
     }
   ],
   "agentic_human_review_slice_34_42": {
