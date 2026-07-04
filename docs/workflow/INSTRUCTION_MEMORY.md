@@ -70,9 +70,10 @@ After [Roadmap: start number] is complete, continue to
 continue to the next integer step. Continue in order until
 [Roadmap: end number] is complete, then report to the developer.
 
-After A and B are approved, implementation is autonomous by default, so
-developer approval is not required unless this workflow explicitly requires it
-or an irregular condition occurs. Do not stop the development flow
+After A and B are approved, implementation through C and D is autonomous by
+default, so developer approval is not required unless this workflow explicitly
+requires it or an irregular condition occurs. E and F are separate
+post-completion approval checkpoints. Do not stop the development flow
 unnecessarily after B approval.
 ```
 
@@ -186,12 +187,12 @@ finished:
 1. Present a pre-implementation proposal for what should be done next.
 2. Keep the proposal grounded in the product goal, current repository state,
    completed work, remaining risks, and user-facing value.
-3. Continue directly to the next roadmap slice proposal unless an irregular
-   condition requires developer input.
+3. After presenting the next proposal, stop and wait for developer approval
+   before preparing or presenting `F. Roadmap`.
 
 ## F. Roadmap
 
-After the next proposal is presented:
+After the next proposal is approved by the developer:
 
 1. Slice the next implementation roadmap into numbered integer steps starting
    at `1` unless the developer requests a different range.
@@ -200,13 +201,15 @@ After the next proposal is presented:
 3. Include code, contract, document, test, verification, and release/sync work
    as separate slices when that makes progress easier to audit.
 4. Report the completed implementation range and the next roadmap to the
-   developer. Start the next implementation range only after the developer
-   approves that new range or gives an equivalent continuation instruction.
+   developer. After presenting the roadmap, stop and wait for developer
+   approval of the next implementation range or an equivalent continuation
+   instruction before returning to `Start`.
 
 ## End And Loop
 
-After F is complete and the developer approves the next implementation range,
-return to `Start` and continue autonomous development with the same workflow.
+After the F roadmap checkpoint is approved as the next implementation range or
+an equivalent continuation instruction, return to `Start` and continue with
+the same workflow.
 
 Developer approval is not required outside the approval points defined here
 unless an irregular condition, policy issue, unsafe operation, unclear
@@ -225,4 +228,7 @@ When reporting completed implementation work, include:
 - A/B gate evidence: where the pre-implementation proposal and implementation
   plan were presented, where each was approved, plus any refreshed plan
   deviations during implementation
+- E/F gate evidence: where the next proposal and roadmap were presented, where
+  each was approved, plus the approved next implementation range or equivalent
+  continuation instruction
 - any irregular condition encountered and how it was resolved
