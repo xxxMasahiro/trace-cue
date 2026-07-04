@@ -15,7 +15,15 @@
     "requirements": { "type": "object" },
     "missing": { "type": "object" },
     "summary": { "type": "object" },
-    "owner_review_context": { "type": "object" },
+    "owner_review_context": {
+      "type": "object",
+      "properties": {
+        "source_text_quality": {
+          "$ref": "agentic-human-review-owner-review-context.schema.json#/properties/source_text_quality"
+        }
+      },
+      "additionalProperties": true
+    },
     "warnings": { "type": "array" },
     "boundary": { "type": "object" },
     "advisory_only": { "const": true },

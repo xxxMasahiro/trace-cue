@@ -2207,6 +2207,7 @@ test('schema commands expose machine-readable contracts', async () => {
     ['agentic_human_review_provider_readiness', '../schemas/agentic-human-review-provider-readiness.schema.json'],
     ['agentic_human_review_report_quality', '../schemas/agentic-human-review-report-quality.schema.json'],
     ['agentic_human_review_source_text_quality', '../schemas/agentic-human-review-source-text-quality.schema.json'],
+    ['agentic_human_review_owner_review_context', '../schemas/agentic-human-review-owner-review-context.schema.json'],
     ['agentic_human_review_benchmark_cases', '../schemas/agentic-human-review-benchmark-cases.schema.json'],
     ['agentic_human_review_benchmark_case', '../schemas/agentic-human-review-benchmark-case.schema.json'],
     ['agentic_human_review_calibration_result', '../schemas/agentic-human-review-calibration-result.schema.json'],
@@ -2253,6 +2254,24 @@ test('schema commands expose machine-readable contracts', async () => {
     assert.equal(schemaBody.data.schema.$id, schemaFile.$id);
     assert.equal(schemaBody.data.schema.title, schemaFile.title);
     assert.deepEqual((schemaBody.data.schema.required ?? []).sort(), (schemaFile.required ?? []).sort());
+  }
+  const ownerContextSchema = await executeCli(['schema', 'get', '--name', 'agentic_human_review_owner_review_context', '--json'], { now: fixedNow });
+  const ownerContext = JSON.parse(ownerContextSchema.stdout).data.schema.properties.source_text_quality;
+  assert.ok((ownerContext.required ?? []).includes('artifacts'));
+  assert.equal(ownerContext.properties.artifacts.items.properties.pass_conditions.properties.human_equivalent_claim_allowed.const, false);
+  assert.equal(ownerContext.properties.artifacts.items.properties.boundary.properties.provider_call_performed.const, false);
+  assert.equal(ownerContext.properties.artifacts.items.properties.boundary.properties.proof_contract_satisfied.const, false);
+  for (const name of [
+    'agentic_human_review_evidence_set',
+    'agentic_human_review_human_baseline_claim_readiness',
+    'agentic_human_review_longitudinal_quality',
+    'agentic_human_review_claim_standard_gate',
+    'agentic_human_review_evidence_regeneration_plan'
+  ]) {
+    const schema = await executeCli(['schema', 'get', '--name', name, '--json'], { now: fixedNow });
+    const sourceTextQuality = JSON.parse(schema.stdout).data.schema.properties.owner_review_context.properties.source_text_quality;
+    assert.equal(sourceTextQuality.properties.artifacts.items.properties.boundary.properties.provider_call_performed.const, false);
+    assert.equal(sourceTextQuality.properties.artifacts.items.properties.pass_conditions.properties.human_superior_claim_allowed.const, false);
   }
 });
 
@@ -7970,6 +7989,32 @@ test('agentic human review evidence-set carries source-text quality as non-gatin
     errors: [],
     artifacts: []
   });
+  const hostileSourceTextQuality = JSON.parse(JSON.stringify(sourceTextQuality));
+  hostileSourceTextQuality.pass_conditions.human_equivalent_claim_allowed = true;
+  hostileSourceTextQuality.pass_conditions.human_superior_claim_allowed = true;
+  hostileSourceTextQuality.boundary.provider_call_performed = true;
+  hostileSourceTextQuality.boundary.api_call_performed = true;
+  hostileSourceTextQuality.boundary.external_evidence_transfer = true;
+  hostileSourceTextQuality.boundary.proof_contract_satisfied = true;
+  hostileSourceTextQuality.boundary.release_gate_mutated = true;
+  hostileSourceTextQuality.boundary.result_paths_in_output = true;
+  hostileSourceTextQuality.boundary.gate_effect = 'release_gate';
+  hostileSourceTextQuality.advisory_only = false;
+  hostileSourceTextQuality.gate_effect = 'release_gate';
+  hostileSourceTextQuality.diagnostics = [
+    ...hostileSourceTextQuality.diagnostics,
+    { code: 'PRIVATE_CONTEXT_DIAGNOSTIC_SENTINEL', severity: 'high' }
+  ];
+  await writeJson('hostile-source-text-quality-wrapper.json', {
+    status: 'ok',
+    data: {
+      agentic_human_review_source_text_quality: hostileSourceTextQuality,
+      boundary: hostileSourceTextQuality.boundary
+    },
+    warnings: [],
+    errors: [],
+    artifacts: []
+  });
   const baseManifest = {
     type: 'agentic_human_review_evidence_set_manifest',
     results: efforts.map((effort) => ({
@@ -7986,6 +8031,12 @@ test('agentic human review evidence-set carries source-text quality as non-gatin
     ...baseManifest,
     source_text_quality: [
       { path: 'source-text-quality-wrapper.json' }
+    ]
+  });
+  await writeJson('hostile-context-evidence-set.json', {
+    ...baseManifest,
+    source_text_quality: [
+      { path: 'hostile-source-text-quality-wrapper.json' }
     ]
   });
   const runEvidenceSet = async (input) => executeCli([
@@ -8015,6 +8066,30 @@ test('agentic human review evidence-set carries source-text quality as non-gatin
     assert.doesNotMatch(contextJson, new RegExp(sentinel, 'u'));
   }
   assert.doesNotMatch(contextJson, /context-(standard|deep|xhigh)\.json/u);
+
+  const hostileContextEvidenceSet = await runEvidenceSet('hostile-context-evidence-set.json');
+  assert.equal(hostileContextEvidenceSet.exitCode, 0);
+  const hostileContextEvidence = JSON.parse(hostileContextEvidenceSet.stdout).data.agentic_human_review_evidence_set;
+  assert.deepEqual(hostileContextEvidence.summary, baseEvidence.summary);
+  assert.deepEqual(hostileContextEvidence.warnings, baseEvidence.warnings);
+  const hostileContext = hostileContextEvidence.owner_review_context.source_text_quality;
+  assert.equal(hostileContext.artifacts[0].pass_conditions.human_equivalent_claim_allowed, false);
+  assert.equal(hostileContext.artifacts[0].pass_conditions.human_superior_claim_allowed, false);
+  assert.equal(hostileContext.artifacts[0].boundary.provider_call_performed, false);
+  assert.equal(hostileContext.artifacts[0].boundary.api_call_performed, false);
+  assert.equal(hostileContext.artifacts[0].boundary.external_evidence_transfer, false);
+  assert.equal(hostileContext.artifacts[0].boundary.proof_contract_satisfied, false);
+  assert.equal(hostileContext.artifacts[0].boundary.release_gate_mutated, false);
+  assert.equal(hostileContext.artifacts[0].boundary.result_paths_in_output, false);
+  assert.equal(hostileContext.artifacts[0].boundary.gate_effect, 'none');
+  assert.equal(hostileContext.artifacts[0].advisory_only, true);
+  assert.equal(hostileContext.artifacts[0].gate_effect, 'none');
+  const hostileContextCodes = hostileContext.artifacts[0].diagnostics.map((diagnostic) => diagnostic.code);
+  assert.equal(hostileContextCodes.includes('AHR_SOURCE_TEXT_QUALITY_CONTEXT_PROVIDER_CALL_FLAG'), true);
+  assert.equal(hostileContextCodes.includes('AHR_SOURCE_TEXT_QUALITY_CONTEXT_PROOF_FLAG'), true);
+  assert.equal(hostileContextCodes.includes('AHR_SOURCE_TEXT_QUALITY_CONTEXT_EQUALITY_CLAIM_FLAG'), true);
+  assert.equal(hostileContextCodes.includes('UNTRUSTED_SOURCE_TEXT_QUALITY_DIAGNOSTIC_CODE'), true);
+  assert.doesNotMatch(JSON.stringify(hostileContextEvidence.owner_review_context), /PRIVATE_CONTEXT_DIAGNOSTIC_SENTINEL/u);
 
   const runReadiness = async (input) => executeCli([
     'agentic',
@@ -8126,6 +8201,261 @@ test('agentic human review evidence-set carries source-text quality as non-gatin
   const staleContext = JSON.parse(staleEvidenceSet.stdout).data.agentic_human_review_evidence_set.owner_review_context.source_text_quality;
   assert.equal(staleContext.aggregate.stale_efforts.includes('deep'), true);
   assert.doesNotMatch(JSON.stringify(staleContext), /PRIVATE_SOURCE_HASH_CONTEXT|PRIVATE_INPUT_HASH_CONTEXT|PRIVATE_CHUNK_HASH_CONTEXT/u);
+});
+
+test('agentic human review downstream outputs re-sanitize forged owner review context', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-forged-owner-context-'));
+  const writeJson = async (relativePath, value) => {
+    await writeFile(path.join(cwd, relativePath), `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  };
+  const requiredCaseIds = ['blog-content-value'];
+  const baseEvidenceSet = {
+    schema_version: '0.1.0',
+    type: 'agentic_human_review_evidence_set',
+    evidence_set_version: '1.0.0',
+    generated_at: fixedNow,
+    summary: {
+      result_count: 0,
+      calibration_count: 0,
+      comparison_count: 0,
+      owner_labeled_baseline_count: 0,
+      observed_efforts: [],
+      missing_efforts: ['standard', 'deep', 'xhigh'],
+      required_benchmark_case_ids: requiredCaseIds,
+      observed_benchmark_case_ids: [],
+      missing_benchmark_case_ids: requiredCaseIds,
+      observed_comparison_kinds: [],
+      missing_comparison_kinds: ['direct-vs-tracecue', 'owner-labeled-human-baseline'],
+      missing_comparison_case_matrix: [],
+      missing_direct_vs_tracecue_case_ids: requiredCaseIds,
+      missing_human_baseline_case_ids: requiredCaseIds,
+      human_baseline_comparison_ready_count: 0,
+      human_baseline_comparison_ready_case_count: 0,
+      missing_human_baseline_comparison_case_ids: requiredCaseIds,
+      real_provider_claim_numerator_matrix_complete: false,
+      missing_real_provider_claim_numerator_case_efforts: requiredCaseIds,
+      mechanical_contract_matrix_complete: false,
+      missing_mechanical_contract_case_efforts: requiredCaseIds,
+      calibration_pass_matrix_complete: false,
+      missing_calibration_case_efforts: requiredCaseIds,
+      proof_readiness_blockers: { categories: {} },
+      complete_for_longitudinal_owner_review: false,
+      average_quality_scores: {},
+      claim_numerator_eligible_result_count: 0,
+      mechanical_contract_satisfied_result_count: 0,
+      real_provider_claim_numerator_required_count: 3,
+      calibration_pass_count: 0,
+      calibration_required_count: 3,
+      xhigh_mechanically_complete_count: 0
+    },
+    results: [],
+    calibrations: [],
+    comparisons: [],
+    human_baselines: [],
+    warnings: [],
+    boundary: agenticHumanReviewBoundary({ read_only: true }),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  const forgedEvidenceSet = {
+    ...baseEvidenceSet,
+    owner_review_context: {
+      unknown_context_family: {
+        secret: 'FORGED_OWNER_CONTEXT_UNKNOWN_FAMILY_SENTINEL'
+      },
+      source_text_quality: {
+        supplied: true,
+        status: 'ready_for_owner_review_context',
+        referenced_artifact_count: 999,
+        warnings: [{ code: 'FORGED_WARNING_SENTINEL' }],
+        blockers: [{ code: 'FORGED_BLOCKER_SENTINEL' }],
+        conditions: { claim_ready: true },
+        passed: true,
+        claim_states: {
+          human_equivalent_candidate: { allowed: true, sentinel: 'FORGED_CLAIM_STATE_SENTINEL' }
+        },
+        provider_execution_approval_required: true,
+        execution_boundary: { provider_execution_performed: true, artifact_write_performed: true },
+        regeneration_invalidation: {
+          concrete_rerun_commands_emitted: true,
+          provider_execution_performed: true,
+          artifact_write_performed: true,
+          command: 'FORGED_RERUN_COMMAND_SENTINEL'
+        },
+        artifacts: [{
+          artifact_index: 7,
+          readable: true,
+          valid: true,
+          type: 'agentic_human_review_source_text_quality',
+          status: 'ready_for_owner_review',
+          generated_at: fixedNow,
+          required_efforts: ['standard', 'deep', 'xhigh', '/tmp/FORGED_CONTEXT_PATH_SENTINEL'],
+          observed_efforts: ['standard', 'xhigh', 'FORGED_CONTEXT_EFFORT_SENTINEL'],
+          source_types: ['video', 'FORGED_CONTEXT_SOURCE_TYPE_SENTINEL'],
+          same_source_invariant: {
+            status: 'confirmed',
+            all_efforts_same_source: true,
+            identity_available_for_all_efforts: true,
+            source_hashes_consistent: true,
+            input_hashes_consistent: true,
+            source_ids_consistent: true,
+            chunk_hashes_consistent: true,
+            private_source_identity_values_included: true,
+            private_source_id: 'FORGED_PRIVATE_SOURCE_ID_SENTINEL'
+          },
+          effort_matrix: {
+            distinct_editorial_synthesis_count: 3,
+            all_editorial_syntheses_distinct: true,
+            all_source_understanding_completed: true,
+            all_full_source_text_unpersisted: true,
+            source_type_consistent: true,
+            same_source_text_for_all_efforts: true,
+            source_identity_available_for_all_efforts: true,
+            xhigh_critique_ready: true
+          },
+          pass_conditions: {
+            no_full_source_text_persisted: true,
+            no_chunk_text_persisted: true,
+            source_understanding_available_for_all_efforts: true,
+            effort_outputs_are_distinct: true,
+            same_source_text_for_all_efforts: true,
+            source_identity_available_for_all_efforts: true,
+            xhigh_has_critique_limit_and_conclusion_change_signals: true,
+            reference_comparison_target_met_when_supplied: true,
+            human_equivalent_claim_allowed: true,
+            human_superior_claim_allowed: true
+          },
+          output_safety: {
+            detected_forbidden_output_categories: ['source_identity_values', 'FORGED_OUTPUT_CATEGORY_SENTINEL'],
+            advisory_only: false,
+            gate_effect: 'release_gate'
+          },
+          diagnostics: [{
+            code: 'FORGED_PRIVATE_DIAGNOSTIC_SENTINEL',
+            severity: 'high',
+            message: 'sk-forged-owner-context-secret'
+          }],
+          freshness: {
+            evaluated: true,
+            result_hash_values_included: true,
+            compared_by_effort_only: true,
+            aligned_efforts: ['standard'],
+            stale_efforts: ['xhigh'],
+            missing_result_efforts: [],
+            hash_unavailable_efforts: [],
+            missing_quality_efforts: [],
+            duplicate_quality_efforts: [],
+            private_hash: 'FORGED_PRIVATE_HASH_SENTINEL'
+          },
+          boundary: {
+            read_only: true,
+            provider_call_performed: true,
+            api_call_performed: true,
+            external_evidence_transfer: true,
+            deterministic_findings_mutated: true,
+            release_gate_mutated: true,
+            proof_contract_satisfied: true,
+            human_equivalent_claim_allowed: true,
+            human_superior_claim_allowed: true,
+            result_paths_in_output: true,
+            advisory_only: false,
+            gate_effect: 'release_gate'
+          },
+          advisory_only: false,
+          gate_effect: 'release_gate',
+          raw_secret: 'FORGED_CONTEXT_RAW_SECRET_SENTINEL'
+        }],
+        aggregate: {
+          source_types: ['video', 'FORGED_AGGREGATE_SENTINEL'],
+          observed_efforts: ['standard', 'xhigh'],
+          stale_efforts: [],
+          missing_result_efforts: [],
+          hash_unavailable_efforts: [],
+          result_hash_values_included: true,
+          path_values_included: true
+        },
+        diagnostics: [{
+          code: 'FORGED_TOP_LEVEL_DIAGNOSTIC_SENTINEL',
+          severity: 'high'
+        }],
+        advisory_only: false,
+        gate_effect: 'release_gate'
+      }
+    }
+  };
+  await writeJson('base-output.json', baseEvidenceSet);
+  await writeJson('forged-output.json', forgedEvidenceSet);
+
+  const dataFrom = (result, key) => JSON.parse(result.stdout).data[key];
+  const runReadiness = async (input) => executeCli([
+    'agentic', 'review', 'human-baseline', 'claim-readiness', '--evidence-set', input, '--json'
+  ], { cwd, now: fixedNow });
+  const runLongitudinal = async (input) => executeCli([
+    'agentic', 'review', 'quality', 'longitudinal', '--evidence-set', input, '--json'
+  ], { cwd, now: fixedNow });
+  const runGate = async (input) => executeCli([
+    'agentic', 'review', 'claim', 'standard-gate', '--evidence-set', input, '--json'
+  ], { cwd, now: fixedNow });
+
+  const baseReadiness = dataFrom(await runReadiness('base-output.json'), 'agentic_human_review_human_baseline_claim_readiness');
+  const forgedReadiness = dataFrom(await runReadiness('forged-output.json'), 'agentic_human_review_human_baseline_claim_readiness');
+  assert.equal(forgedReadiness.status, baseReadiness.status);
+  assert.deepEqual(forgedReadiness.conditions, baseReadiness.conditions);
+  assert.deepEqual(forgedReadiness.warnings, baseReadiness.warnings);
+  assert.equal(forgedReadiness.owner_review_context.source_text_quality.artifacts[0].boundary.provider_call_performed, false);
+  assert.equal(forgedReadiness.owner_review_context.source_text_quality.artifacts[0].boundary.proof_contract_satisfied, false);
+  assert.equal(forgedReadiness.owner_review_context.source_text_quality.artifacts[0].pass_conditions.human_equivalent_claim_allowed, false);
+  assert.equal(forgedReadiness.owner_review_context.source_text_quality.artifacts[0].pass_conditions.human_superior_claim_allowed, false);
+  assert.equal(Object.hasOwn(forgedReadiness.owner_review_context.source_text_quality, 'warnings'), false);
+  assert.equal(Object.hasOwn(forgedReadiness.owner_review_context.source_text_quality, 'claim_states'), false);
+
+  const baseLongitudinal = dataFrom(await runLongitudinal('base-output.json'), 'agentic_human_review_longitudinal_quality');
+  const forgedLongitudinal = dataFrom(await runLongitudinal('forged-output.json'), 'agentic_human_review_longitudinal_quality');
+  assert.equal(forgedLongitudinal.status, baseLongitudinal.status);
+  assert.deepEqual(forgedLongitudinal.warnings, baseLongitudinal.warnings);
+  assert.deepEqual(forgedLongitudinal.claim_policy, baseLongitudinal.claim_policy);
+
+  const baseGateResult = await runGate('base-output.json');
+  const forgedGateResult = await runGate('forged-output.json');
+  const baseGate = dataFrom(baseGateResult, 'agentic_human_review_claim_standard_gate');
+  const forgedGate = dataFrom(forgedGateResult, 'agentic_human_review_claim_standard_gate');
+  assert.equal(forgedGate.passed, baseGate.passed);
+  assert.deepEqual(forgedGate.conditions, baseGate.conditions);
+  assert.deepEqual(forgedGate.blockers.map((blocker) => blocker.code), baseGate.blockers.map((blocker) => blocker.code));
+  assert.equal(forgedGate.claim_states.human_equivalent_candidate.allowed, false);
+  assert.equal(forgedGate.claim_states.human_superior_candidate.allowed, false);
+  await writeFile(path.join(cwd, 'forged-gate.json'), forgedGateResult.stdout, 'utf8');
+
+  const regeneration = await executeCli([
+    'agentic', 'review', 'evidence-set', 'regenerate', 'plan',
+    '--evidence-set', 'forged-output.json',
+    '--claim-gate', 'forged-gate.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(regeneration.exitCode, 0);
+  const regenerationPlan = dataFrom(regeneration, 'agentic_human_review_evidence_regeneration_plan');
+  assert.equal(regenerationPlan.provider_execution_approval_required, false);
+  assert.equal(regenerationPlan.execution_boundary.provider_execution_performed, false);
+  assert.equal(regenerationPlan.execution_boundary.artifact_write_performed, false);
+  assert.equal(regenerationPlan.owner_review_context.source_text_quality.regeneration_invalidation.concrete_rerun_commands_emitted, false);
+  assert.equal(regenerationPlan.owner_review_context.source_text_quality.regeneration_invalidation.provider_execution_performed, false);
+  assert.equal(regenerationPlan.owner_review_context.source_text_quality.regeneration_invalidation.artifact_write_performed, false);
+
+  for (const output of [forgedReadiness, forgedLongitudinal, forgedGate, regenerationPlan]) {
+    assert.doesNotMatch(JSON.stringify(output), /FORGED_|sk-forged-owner-context-secret|\/tmp\/FORGED/u);
+  }
+
+  const malformedEvidenceSet = {
+    ...baseEvidenceSet,
+    owner_review_context: {
+      source_text_quality: ['MALFORMED_OWNER_CONTEXT_SENTINEL'],
+      unknown_context_family: { secret: 'MALFORMED_UNKNOWN_FAMILY_SENTINEL' }
+    }
+  };
+  await writeJson('malformed-output.json', malformedEvidenceSet);
+  const malformedReadiness = dataFrom(await runReadiness('malformed-output.json'), 'agentic_human_review_human_baseline_claim_readiness');
+  assert.equal(Object.hasOwn(malformedReadiness, 'owner_review_context'), false);
+  assert.doesNotMatch(JSON.stringify(malformedReadiness), /MALFORMED_OWNER_CONTEXT_SENTINEL|MALFORMED_UNKNOWN_FAMILY_SENTINEL/u);
 });
 
 test('agentic human review content evidence source-type matrix remains bounded and generic', async () => {
