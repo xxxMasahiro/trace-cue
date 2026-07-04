@@ -9,6 +9,16 @@
 
 ## Phase Plan
 
+### Agentic Human Review Source-Text Effort Matrix Quality Verification
+
+Purpose: make the current source-text dogfood loop repeatable after standard, deep, and xhigh runs exist. The slice verifies that `--source-text` actually produced bounded source understanding and effort-specific editorial synthesis without rerunning providers or expanding proof claims.
+
+Implemented scope: add `agentic review quality source-text`; require workspace-confined `--standard`, `--deep`, and `--xhigh` Agentic Human Review result artifacts; optionally accept a workspace-confined `--reference-review`; validate each advisory result; summarize source-text metadata, source-reading/source-understanding completion, editorial synthesis hashes, quality scores, pairwise effort deltas, xhigh critique/evidence-limit/conclusion-change readiness, optional reference-review comparison summaries, diagnostics, schema/API/package coverage, parser/help coverage, and product docs; keep full source text, chunk text, candidate full reviews, reference prose, result paths, source locators, raw provider responses, credentials, provider execution, MCP exposure, proof-contract satisfaction, release-gate mutation, and human-equivalent or human-superior claim authorization out of scope.
+
+Implementation order: synchronize product/workflow/security/verification docs; add parser/API/CLI command routing; add read-only source-text quality builder and schema; extend no-browser CLI coverage with standard/deep/xhigh source-text results plus optional reference review; extend packed-install schema/API coverage; run syntax checks, no-browser tests, product docs/security/structure checks, package checks, product gate, and `git diff --check`; then commit, push, monitor remote CI, and synchronize local/remote branch state.
+
+Recovery: this slice is additive and local. Existing source-text proposal/plan/run/report-quality behavior, editorial-quality comparison, longitudinal quality, evidence-set, human-baseline, xhigh, claim diagnostics, Responses adapter, visual review, agent execution, MCP profiles, safe HTTP MCP, deterministic findings, and release gates remain compatible. Rollback is a standard Git revert of the source-text quality command, schema, docs, and focused tests; no artifact migration, publication, credential storage, raw response persistence, provider-call authorization expansion, or MCP permission expansion is involved.
+
 ### Agentic Human Review Source-Text Reading And Editorial Synthesis
 
 Purpose: let TraceCue review videos, web pages, PDFs, meeting notes, documents, transcripts, and other textual artifacts from full source text instead of repeatedly summarizing bounded summaries. The slice stays generic by accepting a workspace-confined `--source-text` input and by keeping FrameCue or any other extractor as an external producer of text, not as a TraceCue dependency.
