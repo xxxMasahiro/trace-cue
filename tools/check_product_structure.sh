@@ -40,6 +40,7 @@ for rel in \
   schemas/agentic-human-review-provider-readiness.schema.json \
   schemas/agentic-human-review-receipt.schema.json \
   schemas/agentic-human-review-report-quality.schema.json \
+  schemas/agentic-human-review-source-text-quality.schema.json \
 	  schemas/capture-handoff.schema.json \
 	  schemas/capture-plan.schema.json \
 	  schemas/envelope.schema.json \

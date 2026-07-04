@@ -92,6 +92,7 @@ async function main() {
     await assertFile(packageDir, 'schemas/agentic-human-review-advisory.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-receipt.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-report-quality.schema.json');
+    await assertFile(packageDir, 'schemas/agentic-human-review-source-text-quality.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-benchmark-cases.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-benchmark-case.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-calibration-result.schema.json');
@@ -223,6 +224,7 @@ async function main() {
     const agenticHumanReviewAdvisorySchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-advisory'));
     const agenticHumanReviewReceiptSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-receipt'));
     const agenticHumanReviewReportQualitySchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-report-quality'));
+    const agenticHumanReviewSourceTextQualitySchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-source-text-quality'));
     const agenticHumanReviewBenchmarkCasesSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-benchmark-cases'));
     const agenticHumanReviewBenchmarkCaseSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-benchmark-case'));
     const agenticHumanReviewCalibrationResultSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-calibration-result'));
@@ -288,6 +290,7 @@ async function main() {
     assert.equal(path.normalize(agenticHumanReviewAdvisorySchemaPath), path.join(packageDir, 'schemas/agentic-human-review-advisory.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewReceiptSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-receipt.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewReportQualitySchemaPath), path.join(packageDir, 'schemas/agentic-human-review-report-quality.schema.json'));
+    assert.equal(path.normalize(agenticHumanReviewSourceTextQualitySchemaPath), path.join(packageDir, 'schemas/agentic-human-review-source-text-quality.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewBenchmarkCasesSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-benchmark-cases.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewBenchmarkCaseSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-benchmark-case.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewCalibrationResultSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-calibration-result.schema.json'));
@@ -389,6 +392,7 @@ async function main() {
     assert.equal(api.HUMAN_REVIEW_ORCHESTRATION_VERSION, '2.0.0');
     assert.equal(api.HUMAN_REVIEW_CALIBRATION_VERSION, '1.0.0');
     assert.equal(api.HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION, '3.0.0');
+    assert.equal(api.HUMAN_REVIEW_SOURCE_TEXT_QUALITY_VERSION, '1.0.0');
     assert.equal(api.HUMAN_REVIEW_HUMAN_BASELINE_OPERATIONS_VERSION, '1.0.0');
     assert.equal(api.HUMAN_REPORT_VERSION, '3.0.0');
     assert.equal(typeof api.runAgenticHumanReviewPropose, 'function');
@@ -397,6 +401,7 @@ async function main() {
     assert.equal(typeof api.runAgenticHumanReviewDogfoodReadiness, 'function');
     assert.equal(typeof api.runAgenticHumanReviewDogfoodPlan, 'function');
     assert.equal(typeof api.runAgenticHumanReviewReportQuality, 'function');
+    assert.equal(typeof api.runAgenticHumanReviewSourceTextQuality, 'function');
     assert.equal(typeof api.runAgenticHumanReviewBenchmarkList, 'function');
     assert.equal(typeof api.runAgenticHumanReviewBenchmarkShow, 'function');
     assert.equal(typeof api.runAgenticHumanReviewCalibrate, 'function');
@@ -733,6 +738,7 @@ async function main() {
     assert.ok(schemaNames.includes('agentic_human_review_advisory'));
     assert.ok(schemaNames.includes('agentic_human_review_receipt'));
     assert.ok(schemaNames.includes('agentic_human_review_report_quality'));
+    assert.ok(schemaNames.includes('agentic_human_review_source_text_quality'));
     assert.ok(schemaNames.includes('agentic_human_review_evidence_set'));
     assert.ok(schemaNames.includes('agentic_human_review_human_baseline'));
     assert.ok(schemaNames.includes('agentic_human_review_human_baseline_comparison'));

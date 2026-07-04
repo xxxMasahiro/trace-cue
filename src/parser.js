@@ -22,6 +22,7 @@ const VALUE_OPTIONS = new Set([
   'daemon',
   'dataset',
   'decision',
+  'deep',
   'default-subagent-effort',
   'draft',
   'endpoint',
@@ -68,6 +69,7 @@ const VALUE_OPTIONS = new Set([
   'proposal',
   'provider',
   'region',
+  'reference-review',
   'registry',
   'resource-guard',
   'review-index',
@@ -80,6 +82,7 @@ const VALUE_OPTIONS = new Set([
   'scope',
   'source',
   'source-text',
+  'standard',
   'session',
   'surface',
   'storage-state',
@@ -98,7 +101,8 @@ const VALUE_OPTIONS = new Set([
   'video-evidence',
   'content-evidence',
   'viewport',
-  'workflow'
+  'workflow',
+  'xhigh'
 ]);
 
 const BOOLEAN_OPTIONS = new Set([
@@ -1761,10 +1765,25 @@ function parseAgentic(args, globals) {
       }
       return parsed;
     }
+    if (qualityAction === 'source-text') {
+      const parsed = parseRequiredOptions('agentic review quality source-text', args.slice(3), globals, ['standard', 'deep', 'xhigh']);
+      if (!parsed.ok) {
+        return parsed;
+      }
+      const unsupported = Object.keys(parsed.options).find((option) => !['standard', 'deep', 'xhigh', 'reference-review', 'max-bytes'].includes(option));
+      if (unsupported) {
+        return parseError('agentic review quality source-text', globals.json, {
+          code: unsupported === 'execute' ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_AGENTIC_REVIEW_QUALITY_SOURCE_TEXT_OPTION',
+          message: `agentic review quality source-text does not accept --${unsupported} because it is read-only.`,
+          details: { option: unsupported }
+        });
+      }
+      return parsed;
+    }
     return parseError('agentic review quality', globals.json, {
       code: qualityAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
-      message: qualityAction ? `Unknown agentic review quality subcommand: ${qualityAction}` : 'agentic review quality requires longitudinal.',
-      details: { subcommands: ['longitudinal'] }
+      message: qualityAction ? `Unknown agentic review quality subcommand: ${qualityAction}` : 'agentic review quality requires longitudinal or source-text.',
+      details: { subcommands: ['longitudinal', 'source-text'] }
     });
   }
   if (action === 'claim') {
@@ -2496,6 +2515,7 @@ function plannedCommands() {
     'agentic review xhigh plan',
     'agentic review xhigh simulate',
     'agentic review quality longitudinal',
+    'agentic review quality source-text',
     'agentic review claim policy',
     'agentic review claim standard-gate',
     'agentic review claim audit',

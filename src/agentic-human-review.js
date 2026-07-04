@@ -69,6 +69,7 @@ export const HUMAN_REVIEW_EDITORIAL_INTEGRATOR_VERSION = '1.0.0';
 export const HUMAN_REVIEW_ASSISTANT_REFERENCE_QUALITY_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EDITORIAL_QUALITY_COMPARISON_VERSION = '1.0.0';
 export const HUMAN_REVIEW_QUALITY_DIAGNOSTICS_VERSION = '1.0.0';
+export const HUMAN_REVIEW_SOURCE_TEXT_QUALITY_VERSION = '1.0.0';
 
 const DEFAULT_PROVIDER_ID = 'fake-agent';
 const DEFAULT_MODEL_ID = 'fake-model';
@@ -2473,6 +2474,71 @@ export async function runAgenticHumanReviewLongitudinalQuality(options = {}, con
       boundary: longitudinal.boundary
     },
     warnings: longitudinal.warnings,
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewSourceTextQuality(options = {}, context = {}) {
+  const cwd = context.cwd ?? process.cwd();
+  const now = materializeNow(context.now);
+  const maxBytes = parseMaxBytes(options['max-bytes']);
+  if (!maxBytes.ok) {
+    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+  }
+  const entries = [];
+  for (const effort of HUMAN_REVIEW_CLAIM_EFFORTS) {
+    if (!options[effort]) {
+      return errorResult('AGENTIC_REVIEW_SOURCE_TEXT_QUALITY_RESULT_MISSING', 'Source-text quality requires standard, deep, and xhigh result artifacts.', {
+        missing_effort: effort,
+        required_options: HUMAN_REVIEW_CLAIM_EFFORTS
+      });
+    }
+    const read = await readWorkspaceJson({
+      cwd,
+      inputPath: options[effort],
+      label: `${effort} agentic human review result`,
+      maxBytes: maxBytes.value
+    });
+    if (!read.ok) {
+      return errorResult(read.error.code, read.error.message, { ...read.error.details, effort });
+    }
+    const validation = validateAdvisoryResultArtifact({
+      result: read.value,
+      resultPath: read.relativePath
+    });
+    if (!validation.ok) {
+      return errorResult(validation.error.code, validation.error.message, { ...validation.error.details, effort });
+    }
+    entries.push({
+      expectedEffort: effort,
+      result: read.value,
+      resultHash: hashText(read.text)
+    });
+  }
+  const referenceRead = options['reference-review']
+    ? await readReferenceReviewForPlan({
+        cwd,
+        options: { 'reference-review': options['reference-review'] },
+        maxBytes: maxBytes.value
+      })
+    : { ok: true, referenceReview: null, hash: null, relativePath: null, warnings: [] };
+  if (!referenceRead.ok) {
+    return errorResult(referenceRead.error.code, referenceRead.error.message, referenceRead.error.details);
+  }
+  const quality = buildSourceTextQualityVerification({
+    entries,
+    referenceReview: referenceRead.referenceReview,
+    referenceHash: referenceRead.hash,
+    now
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_source_text_quality: quality,
+      boundary: quality.boundary
+    },
+    warnings: quality.warnings,
     errors: [],
     artifacts: []
   };
@@ -9869,6 +9935,434 @@ function buildEditorialQualityComparison({ referenceReview, referencePath, refer
     })
   };
   return redact(comparison);
+}
+
+function buildSourceTextQualityVerification({ entries, referenceReview, referenceHash, now }) {
+  const effortEntries = entries.map((entry) => sourceTextQualityEffortEntry(entry));
+  const byEffort = Object.fromEntries(effortEntries.map((entry) => [entry.expected_effort, entry]));
+  const pairwise = sourceTextQualityPairwiseDeltas(byEffort);
+  const referenceComparisons = referenceReview
+    ? entries.map((entry) => sourceTextReferenceComparisonSummary({
+        expectedEffort: entry.expectedEffort,
+        comparison: buildEditorialQualityComparison({
+          referenceReview,
+          referencePath: null,
+          referenceHash,
+          candidate: entry.result,
+          candidatePath: null,
+          now
+        })
+      }))
+    : [];
+  const diagnostics = sourceTextQualityDiagnostics({ effortEntries, pairwise, referenceComparisons });
+  const warningDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity !== 'info');
+  const status = warningDiagnostics.length === 0 ? 'ready_for_owner_review' : 'needs_attention';
+  const sourceTypes = uniqueSorted(effortEntries.map((entry) => entry.source_type).filter(Boolean));
+  const editorialHashes = uniqueSorted(effortEntries.map((entry) => entry.editorial_synthesis.hash).filter(Boolean));
+  const xhigh = byEffort.xhigh;
+  return redact({
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_source_text_quality',
+    source_text_quality_version: HUMAN_REVIEW_SOURCE_TEXT_QUALITY_VERSION,
+    generated_at: now.toISOString(),
+    status,
+    required_efforts: [...HUMAN_REVIEW_CLAIM_EFFORTS],
+    observed_efforts: effortEntries.map((entry) => entry.observed_effort),
+    source_types: sourceTypes,
+    effort_results: effortEntries,
+    effort_matrix: {
+      standard: byEffort.standard ?? null,
+      deep: byEffort.deep ?? null,
+      xhigh: byEffort.xhigh ?? null,
+      pairwise,
+      distinct_editorial_synthesis_count: editorialHashes.length,
+      all_editorial_syntheses_distinct: editorialHashes.length === effortEntries.length,
+      all_source_understanding_completed: effortEntries.every((entry) => entry.source_understanding.status === 'completed'),
+      all_full_source_text_unpersisted: effortEntries.every((entry) => entry.source_text.full_source_text_persisted === false && entry.source_text.chunk_text_persisted === false),
+      source_type_consistent: sourceTypes.length <= 1,
+      xhigh_critique_ready: xhigh?.xhigh_requirements.counterpoints_present === true
+        && xhigh?.xhigh_requirements.evidence_limits_present === true
+        && xhigh?.xhigh_requirements.conclusion_change_conditions_present === true
+    },
+    reference_review: {
+      supplied: Boolean(referenceReview),
+      reference_kind: referenceReview?.reference_kind ?? null,
+      input_hash: referenceHash ?? null,
+      text_included: false,
+      raw_text_included: false,
+      path_included: false
+    },
+    reference_comparisons: referenceComparisons,
+    pass_conditions: {
+      no_full_source_text_persisted: effortEntries.every((entry) => entry.source_text.full_source_text_persisted === false),
+      no_chunk_text_persisted: effortEntries.every((entry) => entry.source_text.chunk_text_persisted === false),
+      source_understanding_available_for_all_efforts: effortEntries.every((entry) => entry.source_understanding.status === 'completed'),
+      effort_outputs_are_distinct: editorialHashes.length === effortEntries.length,
+      xhigh_has_critique_limit_and_conclusion_change_signals: xhigh?.xhigh_requirements.counterpoints_present === true
+        && xhigh?.xhigh_requirements.evidence_limits_present === true
+        && xhigh?.xhigh_requirements.conclusion_change_conditions_present === true,
+      reference_comparison_target_met_when_supplied: !referenceReview
+        || referenceComparisons.every((comparison) => comparison.candidate_meets_effort_target === true),
+      human_equivalent_claim_allowed: false,
+      human_superior_claim_allowed: false
+    },
+    diagnostics,
+    warnings: warningDiagnostics,
+    boundary: sourceTextQualityBoundary(),
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+}
+
+function sourceTextQualityEffortEntry({ expectedEffort, result, resultHash }) {
+  const observedEffort = normalizeObservedReviewEffort(
+    result?.agentic_human_review_advisory?.review_effort
+      ?? result?.review_effort
+      ?? result?.report_quality?.quality_expectations?.review_effort
+  ) ?? 'unknown';
+  const sourceText = result?.source_text ?? null;
+  const sourceUnderstanding = result?.source_understanding_review ?? null;
+  const editorialText = normalizeReferenceReviewBody(result?.editorial_synthesis?.full_review ?? '');
+  const targetSignals = editorialQualityTargetSignals(result);
+  const qualityScores = editorialText
+    ? editorialQualityScores({ text: editorialText, targetSignals, result })
+    : emptyEditorialQualityScores();
+  const sourceUnderstandingScore = clampScore(
+    sourceUnderstanding?.coverage?.source_understanding_score
+      ?? result?.report_quality?.source_understanding_score
+      ?? 0
+  );
+  const usefulRecommendationScore = clampScore(result?.report_quality?.useful_recommendation_score ?? 0);
+  const fullSourcePersisted = sourceTextFullTextPersisted({ sourceText, result });
+  const chunkTextPersisted = sourceTextChunkTextPersisted({ sourceText });
+  const xhighRequirements = sourceTextXhighRequirements({ editorialText, sourceUnderstanding });
+  const diagnostics = sourceTextQualityEntryDiagnostics({
+    expectedEffort,
+    observedEffort,
+    sourceText,
+    sourceUnderstanding,
+    editorialText,
+    fullSourcePersisted,
+    chunkTextPersisted,
+    xhighRequirements
+  });
+  return {
+    expected_effort: expectedEffort,
+    observed_effort: observedEffort,
+    effort_matches_expected: observedEffort === expectedEffort,
+    result_id: result?.id ?? null,
+    result_hash: resultHash,
+    result_path_included: false,
+    source_type: sourceText?.source_type ?? sourceUnderstanding?.source_type ?? 'other',
+    source_text: {
+      status: sourceText?.status ?? 'not_supplied',
+      source_type: sourceText?.source_type ?? sourceUnderstanding?.source_type ?? 'other',
+      chunk_count: Number(sourceText?.text_stats?.chunk_count ?? 0),
+      source_hash_present: Boolean(sourceText?.text_stats?.source_hash),
+      full_source_text_persisted: fullSourcePersisted,
+      chunk_text_persisted: chunkTextPersisted,
+      text_included: false,
+      chunk_text_included: false,
+      source_locator_included: false
+    },
+    source_reading: {
+      status: result?.source_reading_review?.status ?? 'not_supplied',
+      reading_depth: result?.source_reading_review?.reading_depth ?? 'none',
+      key_point_count: normalizeStringArray(result?.source_reading_review?.key_points).length,
+      concrete_example_count: normalizeStringArray(result?.source_reading_review?.concrete_examples).length,
+      excerpt_ref_count: normalizeArray(result?.source_reading_review?.source_excerpt_refs).length,
+      excerpt_text_included: false
+    },
+    source_understanding: {
+      status: sourceUnderstanding?.status ?? 'not_supplied',
+      understanding_depth: sourceUnderstanding?.understanding_depth ?? 'none',
+      source_understanding_score: sourceUnderstandingScore,
+      narrative_arc_step_count: normalizeArray(sourceUnderstanding?.narrative_arc).length,
+      must_not_miss_count: normalizeArray(sourceUnderstanding?.must_not_miss_points).length,
+      evidence_claim_count: normalizeArray(sourceUnderstanding?.evidence_claims).length,
+      reviewer_implication_count: normalizeStringArray(sourceUnderstanding?.reviewer_implications).length,
+      source_limitation_count: normalizeStringArray(sourceUnderstanding?.source_limitations).length,
+      excerpt_ref_count: normalizeArray(sourceUnderstanding?.source_excerpt_refs).length,
+      excerpt_text_included: false
+    },
+    editorial_synthesis: {
+      present: Boolean(editorialText),
+      hash: editorialText ? hashText(editorialText) : null,
+      char_count: editorialText.length,
+      paragraph_count: editorialText ? editorialText.split(/\n\n+/u).filter(Boolean).length : 0,
+      source_ref_count: normalizeStringArray(result?.editorial_synthesis?.source_refs).length,
+      text_included: false,
+      internal_scaffold_signal_present: sourceTextInternalScaffoldSignalPresent(editorialText)
+    },
+    quality_scores: {
+      editorial_quality_score: qualityScores.overall_score,
+      source_understanding_score: sourceUnderstandingScore,
+      specificity_score: qualityScores.specificity_score,
+      evidence_grounding_score: qualityScores.evidence_grounding_score,
+      nuance_score: qualityScores.nuance_score,
+      actionability_score: qualityScores.actionability_score,
+      useful_recommendation_score: usefulRecommendationScore,
+      composite_source_text_review_score: clampScore(
+        (qualityScores.overall_score * 0.35)
+        + (sourceUnderstandingScore * 0.35)
+        + (usefulRecommendationScore * 0.15)
+        + (qualityScores.nuance_score * 0.15)
+      )
+    },
+    xhigh_requirements: xhighRequirements,
+    diagnostics,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function sourceTextFullTextPersisted({ sourceText, result }) {
+  const stats = sourceText?.text_stats ?? {};
+  const privacy = sourceText?.privacy ?? {};
+  const editorialSourceText = result?.editorial_synthesis?.source_text ?? {};
+  return stats.stored_full_text === true
+    || privacy.full_source_text_persisted === true
+    || privacy.full_transcript_embedded_in_json === true
+    || privacy.full_document_embedded_in_json === true
+    || editorialSourceText.full_source_text_persisted === true
+    || editorialSourceText.full_source_text_embedded_in_markdown === true;
+}
+
+function sourceTextChunkTextPersisted({ sourceText }) {
+  const stats = sourceText?.text_stats ?? {};
+  const chunkIndex = Array.isArray(sourceText?.chunk_index) ? sourceText.chunk_index : [];
+  return stats.stored_chunk_text === true || chunkIndex.some((chunk) => chunk?.text_included === true || typeof chunk?.text === 'string');
+}
+
+function sourceTextXhighRequirements({ editorialText, sourceUnderstanding }) {
+  const text = String(editorialText ?? '');
+  const counterpointCount = normalizeStringArray(sourceUnderstanding?.tensions_or_counterpoints).length;
+  const limitationCount = normalizeStringArray(sourceUnderstanding?.source_limitations).length;
+  return {
+    required_for_effort: true,
+    counterpoints_present: counterpointCount > 0 || /\b(counterpoint|counterpoints|tension|uncertainty|uncertain|反論|緊張|不確実|揺れ)\b/iu.test(text),
+    evidence_limits_present: limitationCount > 0 || /\b(evidence limits?|limitation|limitations|source limits?|verification gap|検証不足|限界|根拠の限界)\b/iu.test(text),
+    conclusion_change_conditions_present: /\b(what would change the conclusion|change the conclusion|would change|conclusion-change|結論(?:が|を)?.*変わ|結論変更|条件)\b/iu.test(text),
+    text_included: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function sourceTextInternalScaffoldSignalPresent(editorialText) {
+  return /\b(?:deterministic fake|approved package metadata|source-text artifact|full-source understanding layer|provider call|advisory-only|gate effect|dedicated critique|verification proof|review quality target|assistant-reference target|Step \d+|role=)\b/iu.test(String(editorialText ?? ''));
+}
+
+function sourceTextQualityEntryDiagnostics({
+  expectedEffort,
+  observedEffort,
+  sourceText,
+  sourceUnderstanding,
+  editorialText,
+  fullSourcePersisted,
+  chunkTextPersisted,
+  xhighRequirements
+}) {
+  const diagnostics = [];
+  if (observedEffort !== expectedEffort) {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_EFFORT_MISMATCH',
+      message: 'The result effort does not match the expected effort slot.',
+      severity: 'medium',
+      effort: expectedEffort,
+      details: { observed_effort: observedEffort }
+    }));
+  }
+  if (sourceText?.status !== 'available') {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_SOURCE_TEXT_MISSING',
+      message: 'The result does not contain available source-text metadata.',
+      severity: 'medium',
+      effort: expectedEffort
+    }));
+  }
+  if (sourceUnderstanding?.status !== 'completed') {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_SOURCE_UNDERSTANDING_MISSING',
+      message: 'The result does not contain completed source-understanding review data.',
+      severity: 'medium',
+      effort: expectedEffort
+    }));
+  }
+  if (!editorialText) {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_EDITORIAL_SYNTHESIS_MISSING',
+      message: 'The result does not contain editorial_synthesis.full_review.',
+      severity: 'medium',
+      effort: expectedEffort
+    }));
+  }
+  if (fullSourcePersisted || chunkTextPersisted) {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_SOURCE_TEXT_PERSISTED',
+      message: 'The result appears to persist full source text or chunk text.',
+      severity: 'high',
+      effort: expectedEffort,
+      details: { full_source_text_persisted: fullSourcePersisted, chunk_text_persisted: chunkTextPersisted }
+    }));
+  }
+  if (sourceTextInternalScaffoldSignalPresent(editorialText)) {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_INTERNAL_SCAFFOLD_IN_REVIEW',
+      message: 'The editorial review appears to include internal scaffold or boundary boilerplate.',
+      severity: 'medium',
+      effort: expectedEffort
+    }));
+  }
+  if (
+    expectedEffort === 'xhigh'
+    && (
+      xhighRequirements.counterpoints_present !== true
+      || xhighRequirements.evidence_limits_present !== true
+      || xhighRequirements.conclusion_change_conditions_present !== true
+    )
+  ) {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_XHIGH_CRITIQUE_THIN',
+      message: 'The xhigh result does not show counterpoints, evidence limits, and conclusion-change conditions together.',
+      severity: 'medium',
+      effort: expectedEffort,
+      details: {
+        counterpoints_present: xhighRequirements.counterpoints_present,
+        evidence_limits_present: xhighRequirements.evidence_limits_present,
+        conclusion_change_conditions_present: xhighRequirements.conclusion_change_conditions_present
+      }
+    }));
+  }
+  return diagnostics;
+}
+
+function sourceTextQualityPairwiseDeltas(byEffort) {
+  return [
+    sourceTextQualityPairwiseDelta('standard', 'deep', byEffort.standard, byEffort.deep),
+    sourceTextQualityPairwiseDelta('deep', 'xhigh', byEffort.deep, byEffort.xhigh),
+    sourceTextQualityPairwiseDelta('standard', 'xhigh', byEffort.standard, byEffort.xhigh)
+  ].filter(Boolean);
+}
+
+function sourceTextQualityPairwiseDelta(fromEffort, toEffort, fromEntry, toEntry) {
+  if (!fromEntry || !toEntry) {
+    return null;
+  }
+  return {
+    from_effort: fromEffort,
+    to_effort: toEffort,
+    editorial_hash_changed: fromEntry.editorial_synthesis.hash !== toEntry.editorial_synthesis.hash,
+    editorial_char_delta: Number(toEntry.editorial_synthesis.char_count - fromEntry.editorial_synthesis.char_count),
+    source_understanding_score_delta: clampDelta(toEntry.quality_scores.source_understanding_score - fromEntry.quality_scores.source_understanding_score),
+    editorial_quality_score_delta: clampDelta(toEntry.quality_scores.editorial_quality_score - fromEntry.quality_scores.editorial_quality_score),
+    composite_source_text_review_score_delta: clampDelta(toEntry.quality_scores.composite_source_text_review_score - fromEntry.quality_scores.composite_source_text_review_score),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function sourceTextReferenceComparisonSummary({ expectedEffort, comparison }) {
+  return {
+    effort: expectedEffort,
+    status: comparison.summary.status,
+    comparable: comparison.summary.comparable,
+    candidate_meets_effort_target: comparison.summary.candidate_meets_effort_target,
+    assistant_reference_target: comparison.summary.assistant_reference_target,
+    overall_candidate_score: comparison.summary.overall_candidate_score,
+    overall_reference_score: comparison.summary.overall_reference_score,
+    overall_delta: comparison.summary.overall_delta,
+    scores: comparison.editorial_quality_comparison.scores,
+    strengths_against_reference: comparison.editorial_quality_comparison.strengths_against_reference,
+    gaps_against_reference: comparison.editorial_quality_comparison.gaps_against_reference,
+    reference_text_included: false,
+    candidate_text_included: false,
+    boundary: comparison.editorial_quality_comparison.boundary,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function sourceTextQualityDiagnostics({ effortEntries, pairwise, referenceComparisons }) {
+  const diagnostics = effortEntries.flatMap((entry) => entry.diagnostics);
+  const sourceTypes = uniqueSorted(effortEntries.map((entry) => entry.source_type).filter(Boolean));
+  if (sourceTypes.length > 1) {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_SOURCE_TYPE_MISMATCH',
+      message: 'Source-text result efforts do not share the same source type.',
+      severity: 'medium',
+      details: { source_types: sourceTypes }
+    }));
+  }
+  if (pairwise.some((pair) => pair.editorial_hash_changed !== true)) {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_EFFORT_OUTPUT_NOT_DISTINCT',
+      message: 'At least one effort pair produced the same editorial synthesis hash.',
+      severity: 'medium',
+      details: { unchanged_pairs: pairwise.filter((pair) => pair.editorial_hash_changed !== true).map((pair) => `${pair.from_effort}->${pair.to_effort}`) }
+    }));
+  }
+  for (const comparison of referenceComparisons) {
+    if (comparison.candidate_meets_effort_target !== true) {
+      diagnostics.push(sourceTextQualityDiagnostic({
+        code: 'AHR_SOURCE_TEXT_QUALITY_REFERENCE_TARGET_NOT_MET',
+        message: 'A source-text effort did not meet its configured assistant-reference quality target.',
+        severity: 'medium',
+        effort: comparison.effort,
+        details: {
+          status: comparison.status,
+          overall_delta: comparison.overall_delta,
+          assistant_reference_target: comparison.assistant_reference_target
+        }
+      }));
+    }
+  }
+  if (diagnostics.length === 0) {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_READY',
+      message: 'Source-text effort matrix is ready for owner review under advisory-only policy.',
+      severity: 'info'
+    }));
+  }
+  return diagnostics;
+}
+
+function sourceTextQualityDiagnostic({ code, message, severity, effort = null, details = null }) {
+  return {
+    code,
+    message,
+    severity,
+    effort,
+    details,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function sourceTextQualityBoundary() {
+  return {
+    ...agenticHumanReviewBoundary({
+      read_only: true,
+      report_quality_gate_effect: 'none'
+    }),
+    source_text_quality_review_performed: true,
+    provider_call_performed: false,
+    api_call_performed: false,
+    external_evidence_transfer: false,
+    reference_review_text_transferred_to_provider: false,
+    full_source_text_in_output: false,
+    chunk_text_in_output: false,
+    candidate_full_review_in_output: false,
+    reference_review_text_in_output: false,
+    result_paths_in_output: false,
+    deterministic_findings_mutated: false,
+    release_gate_mutated: false,
+    proof_contract_satisfied: false,
+    human_equivalent_claim_allowed: false,
+    human_superior_claim_allowed: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
 }
 
 function editorialQualityTargetSignals(result) {

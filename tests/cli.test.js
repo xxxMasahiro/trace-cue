@@ -131,7 +131,8 @@ import {
   runAgenticHumanReviewPropose,
   runAgenticHumanReviewProviderReadiness,
   runAgenticHumanReviewReportQuality,
-  runAgenticHumanReviewRun
+  runAgenticHumanReviewRun,
+  runAgenticHumanReviewSourceTextQuality
 } from '../src/agentic-human-review.js';
 import {
   AGENTIC_REVIEW_API_CREDENTIAL_ENV,
@@ -2205,6 +2206,7 @@ test('schema commands expose machine-readable contracts', async () => {
     ['agentic_human_review_proposal', '../schemas/agentic-human-review-proposal.schema.json'],
     ['agentic_human_review_provider_readiness', '../schemas/agentic-human-review-provider-readiness.schema.json'],
     ['agentic_human_review_report_quality', '../schemas/agentic-human-review-report-quality.schema.json'],
+    ['agentic_human_review_source_text_quality', '../schemas/agentic-human-review-source-text-quality.schema.json'],
     ['agentic_human_review_benchmark_cases', '../schemas/agentic-human-review-benchmark-cases.schema.json'],
     ['agentic_human_review_benchmark_case', '../schemas/agentic-human-review-benchmark-case.schema.json'],
     ['agentic_human_review_calibration_result', '../schemas/agentic-human-review-calibration-result.schema.json'],
@@ -4221,6 +4223,76 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.match(sourceTextReport, /Source Key Points/);
   assert.match(sourceTextReport, /Source Excerpt Refs/);
 
+  const runSourceTextEffort = async ({ effort, planId, executionId, resultId }) => {
+    const plan = await executeCli([
+      'agentic',
+      'review',
+      'plan',
+      '--review-index',
+      reviewIndexPath,
+      '--intent',
+      `Review the artifact using source text with ${effort} effort.`,
+      '--effort',
+      effort,
+      '--source-text',
+      sourceTextPath,
+      '--surface',
+      'local-subscription-agent',
+      '--provider',
+      'fake-agent',
+      '--model',
+      'fake-model',
+      '--json'
+    ], {
+      cwd,
+      now: fixedNow,
+      createId: () => planId
+    });
+    assert.equal(plan.exitCode, 0);
+    const planJson = JSON.parse(plan.stdout);
+    const effortFlags = planJson.data.agentic_human_review_plan.transfer_permissions.required_flags;
+    const run = await executeCli([
+      'agentic',
+      'review',
+      'run',
+      '--plan',
+      `.browser-debug/agentic-human-review-plans/${planId}/plan.json`,
+      '--plan-hash',
+      planJson.data.plan_hash,
+      ...effortFlags.map((flag) => `--${flag}`),
+      '--execute',
+      '--json'
+    ], {
+      cwd,
+      now: fixedNow,
+      createId: (prefix) => {
+        if (prefix === 'agentic-human-review-execution') {
+          return executionId;
+        }
+        if (prefix === 'agentic-human-review-result') {
+          return resultId;
+        }
+        return `unexpected-${effort}-source-text-id`;
+      }
+    });
+    assert.equal(run.exitCode, 0);
+    return `.browser-debug/agentic-human-review-results/${executionId}/result.json`;
+  };
+
+  const standardSourceTextResultPath = await runSourceTextEffort({
+    effort: 'standard',
+    planId: 'agentic-plan-source-text-standard',
+    executionId: 'agentic-execution-source-text-standard',
+    resultId: 'agentic-result-source-text-standard'
+  });
+  const deepSourceTextResultPath = await runSourceTextEffort({
+    effort: 'deep',
+    planId: 'agentic-plan-source-text-deep',
+    executionId: 'agentic-execution-source-text-deep',
+    resultId: 'agentic-result-source-text-deep'
+  });
+  const xhighSourceTextResultPath = '.browser-debug/agentic-human-review-results/agentic-execution-source-text/result.json';
+
   const referenceReviewPath = 'assistant-reference-review.md';
   await writeFile(path.join(cwd, referenceReviewPath), [
     'This lightweight reference intentionally omits the source-understanding details.',
@@ -4265,6 +4337,89 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(Array.isArray(editorialQualityData.metric_diagnostics), true);
   assert.doesNotMatch(editorialQualityComparison.stdout, /Reference leak sentinel/u);
   assert.doesNotMatch(editorialQualityComparison.stdout, /product can be built well and still fail/u);
+
+  const parsedSourceTextQuality = parseCliArgs([
+    'agentic',
+    'review',
+    'quality',
+    'source-text',
+    '--standard',
+    standardSourceTextResultPath,
+    '--deep',
+    deepSourceTextResultPath,
+    '--xhigh',
+    xhighSourceTextResultPath,
+    '--reference-review',
+    referenceReviewPath,
+    '--json'
+  ]);
+  assert.equal(parsedSourceTextQuality.ok, true);
+  assert.equal(parsedSourceTextQuality.command, 'agentic review quality source-text');
+
+  const sourceTextQualityResult = await executeCli([
+    'agentic',
+    'review',
+    'quality',
+    'source-text',
+    '--standard',
+    standardSourceTextResultPath,
+    '--deep',
+    deepSourceTextResultPath,
+    '--xhigh',
+    xhighSourceTextResultPath,
+    '--reference-review',
+    referenceReviewPath,
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(sourceTextQualityResult.exitCode, 0);
+  const sourceTextQuality = JSON.parse(sourceTextQualityResult.stdout).data.agentic_human_review_source_text_quality;
+  assert.equal(sourceTextQuality.type, 'agentic_human_review_source_text_quality');
+  assert.deepEqual(sourceTextQuality.required_efforts, ['standard', 'deep', 'xhigh']);
+  assert.equal(sourceTextQuality.effort_results.length, 3);
+  assert.equal(sourceTextQuality.effort_results.every((entry) => entry.source_text.full_source_text_persisted === false), true);
+  assert.equal(sourceTextQuality.effort_results.every((entry) => entry.source_text.chunk_text_persisted === false), true);
+  assert.equal(sourceTextQuality.effort_results.every((entry) => entry.editorial_synthesis.text_included === false), true);
+  assert.equal(sourceTextQuality.effort_matrix.all_source_understanding_completed, true);
+  assert.equal(sourceTextQuality.effort_matrix.all_full_source_text_unpersisted, true);
+  assert.equal(sourceTextQuality.effort_matrix.all_editorial_syntheses_distinct, true);
+  assert.equal(sourceTextQuality.effort_matrix.xhigh_critique_ready, true);
+  assert.equal(sourceTextQuality.reference_review.text_included, false);
+  assert.equal(sourceTextQuality.reference_review.path_included, false);
+  assert.equal(sourceTextQuality.reference_comparisons.length, 3);
+  assert.equal(sourceTextQuality.reference_comparisons.every((comparison) => comparison.reference_text_included === false && comparison.candidate_text_included === false), true);
+  assert.equal(sourceTextQuality.pass_conditions.human_equivalent_claim_allowed, false);
+  assert.equal(sourceTextQuality.pass_conditions.human_superior_claim_allowed, false);
+  assert.equal(sourceTextQuality.boundary.full_source_text_in_output, false);
+  assert.equal(sourceTextQuality.boundary.candidate_full_review_in_output, false);
+  assert.equal(sourceTextQuality.boundary.reference_review_text_in_output, false);
+  assert.equal(sourceTextQuality.boundary.provider_call_performed, false);
+  assert.doesNotMatch(sourceTextQualityResult.stdout, /Paid social advertising|Reference leak sentinel|product can be built well and still fail/u);
+
+  const directSourceTextQuality = await runAgenticHumanReviewSourceTextQuality({
+    standard: standardSourceTextResultPath,
+    deep: deepSourceTextResultPath,
+    xhigh: xhighSourceTextResultPath,
+    'reference-review': referenceReviewPath
+  }, { cwd, now: fixedNow });
+  assert.equal(directSourceTextQuality.status, 'ok');
+  assert.equal(directSourceTextQuality.data.agentic_human_review_source_text_quality.boundary.release_gate_mutated, false);
+
+  const unsupportedSourceTextQuality = parseCliArgs([
+    'agentic',
+    'review',
+    'quality',
+    'source-text',
+    '--standard',
+    standardSourceTextResultPath,
+    '--deep',
+    deepSourceTextResultPath,
+    '--xhigh',
+    xhighSourceTextResultPath,
+    '--execute',
+    '--json'
+  ]);
+  assert.equal(unsupportedSourceTextQuality.ok, false);
+  assert.equal(unsupportedSourceTextQuality.error.code, 'CONFLICTING_OPTIONS');
 
   await writeFile(path.join(cwd, 'unsafe-reference-review.json'), JSON.stringify({
     review_text: 'Readable review text is not enough when secret-bearing fields are present.',
@@ -7464,8 +7619,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(listResult.exitCode, 0);
   const listBody = JSON.parse(listResult.stdout);
   assert.equal(listBody.command, 'agentic review list');
-  assert.equal(listBody.data.summary.total, 14);
-  assert.equal(listBody.data.summary.completed, 7);
+  assert.equal(listBody.data.summary.total, 16);
+  assert.equal(listBody.data.summary.completed, 9);
   assert.equal(listBody.data.summary.failed, 3);
   assert.equal(listBody.data.summary.blocked, 4);
   assert.equal(listBody.data.summary.api_call_performed, true);

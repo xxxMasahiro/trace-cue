@@ -16,6 +16,7 @@ export {
   HUMAN_REVIEW_LIVE_DOGFOOD_GATE_VERSION,
   HUMAN_REVIEW_ORCHESTRATION_VERSION,
   HUMAN_REVIEW_QUALITY_EVALUATOR_VERSION,
+  HUMAN_REVIEW_SOURCE_TEXT_QUALITY_VERSION,
   HUMAN_REVIEW_TEXT_PROVENANCE_VERSION,
   HUMAN_REVIEW_XHIGH_COMPLETION_VERSION,
   HUMAN_REVIEW_CLAIM_STANDARD_VERSION,
@@ -53,6 +54,7 @@ export {
   runAgenticHumanReviewProviderReadiness,
   runAgenticHumanReviewReportQuality,
   runAgenticHumanReviewRun,
+  runAgenticHumanReviewSourceTextQuality,
   runAgenticHumanReviewStatus,
   runAgenticHumanReviewXhighPlan,
   runAgenticHumanReviewXhighSimulate

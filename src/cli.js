@@ -34,6 +34,7 @@ import {
   runAgenticHumanReviewProviderReadiness,
   runAgenticHumanReviewReportQuality,
   runAgenticHumanReviewRun,
+  runAgenticHumanReviewSourceTextQuality,
   runAgenticHumanReviewStatus,
   runAgenticHumanReviewXhighPlan,
   runAgenticHumanReviewXhighSimulate
@@ -393,6 +394,10 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'agentic review quality longitudinal') {
       return runtimeResult(parsed.command, await (context.agenticHumanReviewLongitudinalQualityRunner ?? runAgenticHumanReviewLongitudinalQuality)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'agentic review quality source-text') {
+      return runtimeResult(parsed.command, await (context.agenticHumanReviewSourceTextQualityRunner ?? runAgenticHumanReviewSourceTextQuality)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'agentic review claim policy') {
@@ -931,6 +936,7 @@ function usageText(topic) {
     || topic === 'agentic review evaluator'
     || topic === 'agentic review xhigh'
     || topic === 'agentic review quality'
+    || topic === 'agentic review quality source-text'
     || topic === 'agentic review claim'
   ) {
     return [
@@ -960,13 +966,14 @@ function usageText(topic) {
       `       ${CLI_NAME} agentic review xhigh plan --plan <agentic-human-review-plan> [--json]`,
       `       ${CLI_NAME} agentic review xhigh simulate --plan <agentic-human-review-plan> --round-input <workspace-json> [--json]`,
       `       ${CLI_NAME} agentic review quality longitudinal --evidence-set <workspace-json> [--json]`,
+      `       ${CLI_NAME} agentic review quality source-text --standard <result> --deep <result> --xhigh <result> [--reference-review <workspace-text-or-json>] [--json]`,
       `       ${CLI_NAME} agentic review claim policy [--input <workspace-json>] [--json]`,
       `       ${CLI_NAME} agentic review claim standard-gate --evidence-set <workspace-json> [--policy <workspace-json>] [--json]`,
       `       ${CLI_NAME} agentic review claim audit --result <agentic-human-review-result> [--policy <workspace-json>] [--json]`,
       `       ${CLI_NAME} agentic review status --execution <agentic-human-review-execution> [--json]`,
       `       ${CLI_NAME} agentic review list [--json]`,
       '',
-      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider and dogfood readiness perform no provider call; running requires matching hash, explicit --execute, and exact flags; report quality, benchmark, dogfood planning, calibration, comparison, evidence-set, evidence-set regeneration planning, human-baseline, xhigh, longitudinal, evaluator, and claim-policy commands are read-only advisory checks. For --comparison-kind editorial-quality, --baseline is a workspace-confined reference review text or JSON artifact and the command emits scores only, not the reference or candidate prose. MCP execution remains excluded.'
+      'Plans and runs CLI-only agentic human review. Proposals turn conversational requests into non-executing review intent; planning creates the fresh approval hash and exact transfer flags; provider and dogfood readiness perform no provider call; running requires matching hash, explicit --execute, and exact flags; report quality, benchmark, dogfood planning, calibration, comparison, evidence-set, evidence-set regeneration planning, human-baseline, xhigh, longitudinal, source-text quality, evaluator, and claim-policy commands are read-only advisory checks. For --comparison-kind editorial-quality, --baseline is a workspace-confined reference review text or JSON artifact and the command emits scores only, not the reference or candidate prose. MCP execution remains excluded.'
     ].join('\n');
   }
 
