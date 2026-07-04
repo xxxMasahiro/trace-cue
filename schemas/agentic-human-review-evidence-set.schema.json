@@ -15,6 +15,7 @@
     "results": { "type": "array" },
     "calibrations": { "type": "array" },
     "comparisons": { "type": "array" },
+    "owner_review_context": { "type": "object" },
     "warnings": { "type": "array" },
     "boundary": { "type": "object" },
     "advisory_only": { "const": true },
