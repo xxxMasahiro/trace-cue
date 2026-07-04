@@ -9939,6 +9939,8 @@ function buildEditorialQualityComparison({ referenceReview, referencePath, refer
 
 function buildSourceTextQualityVerification({ entries, referenceReview, referenceHash, now }) {
   const effortEntries = entries.map((entry) => sourceTextQualityEffortEntry(entry));
+  const sourceIdentities = entries.map((entry) => sourceTextQualityPrivateSourceIdentity(entry));
+  const sameSourceInvariant = sourceTextQualitySameSourceInvariant(sourceIdentities);
   const byEffort = Object.fromEntries(effortEntries.map((entry) => [entry.expected_effort, entry]));
   const pairwise = sourceTextQualityPairwiseDeltas(byEffort);
   const referenceComparisons = referenceReview
@@ -9954,21 +9956,20 @@ function buildSourceTextQualityVerification({ entries, referenceReview, referenc
         })
       }))
     : [];
-  const diagnostics = sourceTextQualityDiagnostics({ effortEntries, pairwise, referenceComparisons });
-  const warningDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity !== 'info');
-  const status = warningDiagnostics.length === 0 ? 'ready_for_owner_review' : 'needs_attention';
+  const diagnostics = sourceTextQualityDiagnostics({ effortEntries, pairwise, referenceComparisons, sameSourceInvariant });
   const sourceTypes = uniqueSorted(effortEntries.map((entry) => entry.source_type).filter(Boolean));
   const editorialHashes = uniqueSorted(effortEntries.map((entry) => entry.editorial_synthesis.hash).filter(Boolean));
   const xhigh = byEffort.xhigh;
-  return redact({
+  const quality = {
     schema_version: SCHEMA_VERSION,
     type: 'agentic_human_review_source_text_quality',
     source_text_quality_version: HUMAN_REVIEW_SOURCE_TEXT_QUALITY_VERSION,
     generated_at: now.toISOString(),
-    status,
+    status: 'needs_attention',
     required_efforts: [...HUMAN_REVIEW_CLAIM_EFFORTS],
     observed_efforts: effortEntries.map((entry) => entry.observed_effort),
     source_types: sourceTypes,
+    same_source_invariant: sameSourceInvariant,
     effort_results: effortEntries,
     effort_matrix: {
       standard: byEffort.standard ?? null,
@@ -9980,6 +9981,8 @@ function buildSourceTextQualityVerification({ entries, referenceReview, referenc
       all_source_understanding_completed: effortEntries.every((entry) => entry.source_understanding.status === 'completed'),
       all_full_source_text_unpersisted: effortEntries.every((entry) => entry.source_text.full_source_text_persisted === false && entry.source_text.chunk_text_persisted === false),
       source_type_consistent: sourceTypes.length <= 1,
+      same_source_text_for_all_efforts: sameSourceInvariant.all_efforts_same_source,
+      source_identity_available_for_all_efforts: sameSourceInvariant.identity_available_for_all_efforts,
       xhigh_critique_ready: xhigh?.xhigh_requirements.counterpoints_present === true
         && xhigh?.xhigh_requirements.evidence_limits_present === true
         && xhigh?.xhigh_requirements.conclusion_change_conditions_present === true
@@ -9998,6 +10001,8 @@ function buildSourceTextQualityVerification({ entries, referenceReview, referenc
       no_chunk_text_persisted: effortEntries.every((entry) => entry.source_text.chunk_text_persisted === false),
       source_understanding_available_for_all_efforts: effortEntries.every((entry) => entry.source_understanding.status === 'completed'),
       effort_outputs_are_distinct: editorialHashes.length === effortEntries.length,
+      same_source_text_for_all_efforts: sameSourceInvariant.all_efforts_same_source,
+      source_identity_available_for_all_efforts: sameSourceInvariant.identity_available_for_all_efforts,
       xhigh_has_critique_limit_and_conclusion_change_signals: xhigh?.xhigh_requirements.counterpoints_present === true
         && xhigh?.xhigh_requirements.evidence_limits_present === true
         && xhigh?.xhigh_requirements.conclusion_change_conditions_present === true,
@@ -10006,12 +10011,35 @@ function buildSourceTextQualityVerification({ entries, referenceReview, referenc
       human_equivalent_claim_allowed: false,
       human_superior_claim_allowed: false
     },
-    diagnostics,
-    warnings: warningDiagnostics,
+    output_safety: sourceTextQualityDefaultOutputSafety(),
+    diagnostics: [],
+    warnings: [],
     boundary: sourceTextQualityBoundary(),
     advisory_only: true,
     gate_effect: 'none'
-  });
+  };
+  quality.output_safety = sourceTextQualityOutputSafety({ quality, entries, sourceIdentities, referenceReview });
+  if (quality.output_safety.detected_forbidden_output_categories.length > 0) {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_OUTPUT_LEAK_DETECTED',
+      message: 'The source-text quality report output appears to include forbidden raw source, locator, private source identity, or prose values.',
+      severity: 'high',
+      details: { categories: quality.output_safety.detected_forbidden_output_categories }
+    }));
+  }
+  let warningDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity !== 'info');
+  if (warningDiagnostics.length === 0) {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_READY',
+      message: 'Source-text effort matrix is ready for owner review under advisory-only policy.',
+      severity: 'info'
+    }));
+  }
+  warningDiagnostics = diagnostics.filter((diagnostic) => diagnostic.severity !== 'info');
+  quality.status = warningDiagnostics.length === 0 ? 'ready_for_owner_review' : 'needs_attention';
+  quality.diagnostics = diagnostics;
+  quality.warnings = warningDiagnostics;
+  return redact(quality);
 }
 
 function sourceTextQualityEffortEntry({ expectedEffort, result, resultHash }) {
@@ -10021,6 +10049,7 @@ function sourceTextQualityEffortEntry({ expectedEffort, result, resultHash }) {
       ?? result?.report_quality?.quality_expectations?.review_effort
   ) ?? 'unknown';
   const sourceText = result?.source_text ?? null;
+  const sourceReading = result?.source_reading_review ?? null;
   const sourceUnderstanding = result?.source_understanding_review ?? null;
   const editorialText = normalizeReferenceReviewBody(result?.editorial_synthesis?.full_review ?? '');
   const targetSignals = editorialQualityTargetSignals(result);
@@ -10036,10 +10065,12 @@ function sourceTextQualityEffortEntry({ expectedEffort, result, resultHash }) {
   const fullSourcePersisted = sourceTextFullTextPersisted({ sourceText, result });
   const chunkTextPersisted = sourceTextChunkTextPersisted({ sourceText });
   const xhighRequirements = sourceTextXhighRequirements({ editorialText, sourceUnderstanding });
+  const sourceIdentity = sourceTextQualityPublicSourceIdentity({ sourceText, sourceReading, sourceUnderstanding });
   const diagnostics = sourceTextQualityEntryDiagnostics({
     expectedEffort,
     observedEffort,
     sourceText,
+    sourceIdentity,
     sourceUnderstanding,
     editorialText,
     fullSourcePersisted,
@@ -10065,12 +10096,13 @@ function sourceTextQualityEffortEntry({ expectedEffort, result, resultHash }) {
       chunk_text_included: false,
       source_locator_included: false
     },
+    source_identity: sourceIdentity,
     source_reading: {
-      status: result?.source_reading_review?.status ?? 'not_supplied',
-      reading_depth: result?.source_reading_review?.reading_depth ?? 'none',
-      key_point_count: normalizeStringArray(result?.source_reading_review?.key_points).length,
-      concrete_example_count: normalizeStringArray(result?.source_reading_review?.concrete_examples).length,
-      excerpt_ref_count: normalizeArray(result?.source_reading_review?.source_excerpt_refs).length,
+      status: sourceReading?.status ?? 'not_supplied',
+      reading_depth: sourceReading?.reading_depth ?? 'none',
+      key_point_count: normalizeStringArray(sourceReading?.key_points).length,
+      concrete_example_count: normalizeStringArray(sourceReading?.concrete_examples).length,
+      excerpt_ref_count: normalizeArray(sourceReading?.source_excerpt_refs).length,
       excerpt_text_included: false
     },
     source_understanding: {
@@ -10121,6 +10153,7 @@ function sourceTextFullTextPersisted({ sourceText, result }) {
   const privacy = sourceText?.privacy ?? {};
   const editorialSourceText = result?.editorial_synthesis?.source_text ?? {};
   return stats.stored_full_text === true
+    || sourceTextDirectRawTextPersisted(sourceText)
     || privacy.full_source_text_persisted === true
     || privacy.full_transcript_embedded_in_json === true
     || privacy.full_document_embedded_in_json === true
@@ -10131,7 +10164,61 @@ function sourceTextFullTextPersisted({ sourceText, result }) {
 function sourceTextChunkTextPersisted({ sourceText }) {
   const stats = sourceText?.text_stats ?? {};
   const chunkIndex = Array.isArray(sourceText?.chunk_index) ? sourceText.chunk_index : [];
-  return stats.stored_chunk_text === true || chunkIndex.some((chunk) => chunk?.text_included === true || typeof chunk?.text === 'string');
+  return stats.stored_chunk_text === true || chunkIndex.some((chunk) => chunk?.text_included === true || sourceTextChunkRawTextPersisted(chunk));
+}
+
+const SOURCE_TEXT_DIRECT_RAW_KEYS = Object.freeze([
+  'text',
+  'raw_text',
+  'source_text',
+  'full_text',
+  'full_source_text',
+  'transcript',
+  'transcript_text',
+  'full_transcript',
+  'document',
+  'document_text',
+  'full_document',
+  'body',
+  'content',
+  'summary'
+]);
+
+const SOURCE_TEXT_CHUNK_RAW_KEYS = Object.freeze([
+  'text',
+  'raw_text',
+  'chunk_text',
+  'content',
+  'transcript',
+  'body',
+  'summary'
+]);
+
+function sourceTextDirectRawTextPersisted(sourceText) {
+  if (!sourceText || typeof sourceText !== 'object') {
+    return false;
+  }
+  return SOURCE_TEXT_DIRECT_RAW_KEYS.some((key) => sourceTextQualityHasMeaningfulRawText(sourceText[key]));
+}
+
+function sourceTextChunkRawTextPersisted(chunk) {
+  if (!chunk || typeof chunk !== 'object') {
+    return false;
+  }
+  return SOURCE_TEXT_CHUNK_RAW_KEYS.some((key) => sourceTextQualityHasMeaningfulRawText(chunk[key]));
+}
+
+function sourceTextQualityHasMeaningfulRawText(value) {
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => sourceTextQualityHasMeaningfulRawText(item));
+  }
+  if (value && typeof value === 'object') {
+    return Object.values(value).some((item) => sourceTextQualityHasMeaningfulRawText(item));
+  }
+  return false;
 }
 
 function sourceTextXhighRequirements({ editorialText, sourceUnderstanding }) {
@@ -10157,6 +10244,7 @@ function sourceTextQualityEntryDiagnostics({
   expectedEffort,
   observedEffort,
   sourceText,
+  sourceIdentity,
   sourceUnderstanding,
   editorialText,
   fullSourcePersisted,
@@ -10206,6 +10294,18 @@ function sourceTextQualityEntryDiagnostics({
       details: { full_source_text_persisted: fullSourcePersisted, chunk_text_persisted: chunkTextPersisted }
     }));
   }
+  if (sourceIdentity.source_review_ids_consistent === false) {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_SOURCE_REVIEW_ID_MISMATCH',
+      message: 'The result source-reading or source-understanding review does not point to the same source-text id as the source-text metadata.',
+      severity: 'medium',
+      effort: expectedEffort,
+      details: {
+        source_reading_source_text_id_matches: sourceIdentity.source_reading_source_text_id_matches,
+        source_understanding_source_text_id_matches: sourceIdentity.source_understanding_source_text_id_matches
+      }
+    }));
+  }
   if (sourceTextInternalScaffoldSignalPresent(editorialText)) {
     diagnostics.push(sourceTextQualityDiagnostic({
       code: 'AHR_SOURCE_TEXT_QUALITY_INTERNAL_SCAFFOLD_IN_REVIEW',
@@ -10243,6 +10343,156 @@ function sourceTextQualityPairwiseDeltas(byEffort) {
     sourceTextQualityPairwiseDelta('deep', 'xhigh', byEffort.deep, byEffort.xhigh),
     sourceTextQualityPairwiseDelta('standard', 'xhigh', byEffort.standard, byEffort.xhigh)
   ].filter(Boolean);
+}
+
+function sourceTextQualityPrivateSourceIdentity({ expectedEffort, result }) {
+  const sourceText = result?.source_text ?? {};
+  const sourceReading = result?.source_reading_review ?? {};
+  const sourceUnderstanding = result?.source_understanding_review ?? {};
+  const chunkHashes = normalizeArray(sourceText.chunk_index)
+    .map((chunk) => stringOrNull(chunk?.hash))
+    .filter(Boolean);
+  return {
+    effort: expectedEffort,
+    source_id: stringOrNull(sourceText.id),
+    source_hash: stringOrNull(sourceText.text_stats?.source_hash),
+    input_hash: stringOrNull(sourceText.provenance?.input_hash),
+    chunk_hashes: chunkHashes,
+    chunk_hash_signature: chunkHashes.length > 0 ? chunkHashes.join('|') : null,
+    chunk_hash_count: chunkHashes.length,
+    source_reading_source_text_id: stringOrNull(sourceReading.source_text_id),
+    source_understanding_source_text_id: stringOrNull(sourceUnderstanding.source_text_id)
+  };
+}
+
+function sourceTextQualityPublicSourceIdentity({ sourceText, sourceReading, sourceUnderstanding }) {
+  const sourceTextId = stringOrNull(sourceText?.id);
+  const sourceReadingId = stringOrNull(sourceReading?.source_text_id);
+  const sourceUnderstandingId = stringOrNull(sourceUnderstanding?.source_text_id);
+  const sourceReadingMatches = sourceTextId && sourceReadingId ? sourceReadingId === sourceTextId : null;
+  const sourceUnderstandingMatches = sourceTextId && sourceUnderstandingId ? sourceUnderstandingId === sourceTextId : null;
+  const chunkHashCount = normalizeArray(sourceText?.chunk_index)
+    .map((chunk) => stringOrNull(chunk?.hash))
+    .filter(Boolean)
+    .length;
+  return {
+    source_text_id_present: Boolean(sourceTextId),
+    source_hash_present: Boolean(sourceText?.text_stats?.source_hash),
+    input_hash_present: Boolean(sourceText?.provenance?.input_hash),
+    chunk_hash_count: chunkHashCount,
+    chunk_hashes_present: chunkHashCount > 0,
+    available_identity_kinds: sourceTextQualityAvailableIdentityKinds({
+      source_id: sourceTextId,
+      source_hash: stringOrNull(sourceText?.text_stats?.source_hash),
+      input_hash: stringOrNull(sourceText?.provenance?.input_hash),
+      chunk_hash_signature: chunkHashCount > 0 ? 'present' : null
+    }),
+    source_reading_source_text_id_present: Boolean(sourceReadingId),
+    source_understanding_source_text_id_present: Boolean(sourceUnderstandingId),
+    source_reading_source_text_id_matches: sourceReadingMatches,
+    source_understanding_source_text_id_matches: sourceUnderstandingMatches,
+    source_review_ids_consistent: sourceReadingMatches !== false && sourceUnderstandingMatches !== false,
+    source_id_value_included: false,
+    source_hash_value_included: false,
+    input_hash_value_included: false,
+    chunk_hash_values_included: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function sourceTextQualityAvailableIdentityKinds(identity) {
+  return [
+    identity.chunk_hash_signature ? 'chunk_hash_sequence' : null,
+    identity.source_hash ? 'source_hash' : null,
+    identity.input_hash ? 'input_hash' : null,
+    identity.source_id ? 'source_text_id' : null
+  ].filter(Boolean);
+}
+
+function sourceTextQualitySameSourceInvariant(sourceIdentities) {
+  const identityKinds = [
+    ['chunk_hash_sequence', 'chunk_hash_signature'],
+    ['source_hash', 'source_hash'],
+    ['input_hash', 'input_hash'],
+    ['source_text_id', 'source_id']
+  ];
+  const identityKindAvailability = identityKinds.map(([kind, key]) => ({
+    identity_kind: kind,
+    present_count: sourceIdentities.filter((identity) => Boolean(identity[key])).length,
+    present_for_all_efforts: sourceIdentities.every((identity) => Boolean(identity[key])),
+    values_included: false
+  }));
+  const selected = identityKinds.find(([, key]) => sourceIdentities.every((identity) => Boolean(identity[key])));
+  const missingIdentityEfforts = sourceIdentities
+    .filter((identity) => sourceTextQualityAvailableIdentityKinds({
+      source_id: identity.source_id,
+      source_hash: identity.source_hash,
+      input_hash: identity.input_hash,
+      chunk_hash_signature: identity.chunk_hash_signature
+    }).length === 0)
+    .map((identity) => identity.effort);
+  const missingCommonIdentityEfforts = selected
+    ? sourceIdentities.filter((identity) => !identity[selected[1]]).map((identity) => identity.effort)
+    : sourceIdentities.map((identity) => identity.effort);
+  const mismatchedEffortPairs = selected
+    ? sourceTextQualityMismatchedPairs(sourceIdentities, selected[1])
+    : [];
+  const sourceReviewIdsConsistent = sourceIdentities.every((identity) => {
+    const sourceId = identity.source_id;
+    if (!sourceId) {
+      return true;
+    }
+    return [identity.source_reading_source_text_id, identity.source_understanding_source_text_id]
+      .filter(Boolean)
+      .every((reviewSourceId) => reviewSourceId === sourceId);
+  });
+  const identityAvailableForAll = Boolean(selected);
+  const allEffortsSameSource = identityAvailableForAll && mismatchedEffortPairs.length === 0 && sourceReviewIdsConsistent;
+  return {
+    status: allEffortsSameSource ? 'confirmed' : (identityAvailableForAll ? 'mismatch' : 'identity_unavailable'),
+    primary_identity_kind: selected?.[0] ?? 'none',
+    all_efforts_same_source: allEffortsSameSource,
+    identity_available_for_all_efforts: identityAvailableForAll,
+    identity_kind_availability: identityKindAvailability,
+    missing_identity_efforts: missingIdentityEfforts,
+    missing_common_identity_efforts: missingCommonIdentityEfforts,
+    mismatched_effort_pairs: mismatchedEffortPairs,
+    source_hashes_present_for_all_efforts: sourceIdentities.every((identity) => Boolean(identity.source_hash)),
+    source_hashes_consistent: sourceTextQualityOptionalConsistency(sourceIdentities, 'source_hash'),
+    input_hashes_present_for_all_efforts: sourceIdentities.every((identity) => Boolean(identity.input_hash)),
+    input_hashes_consistent: sourceTextQualityOptionalConsistency(sourceIdentities, 'input_hash'),
+    source_ids_present_for_all_efforts: sourceIdentities.every((identity) => Boolean(identity.source_id)),
+    source_ids_consistent: sourceTextQualityOptionalConsistency(sourceIdentities, 'source_id'),
+    source_review_ids_consistent: sourceReviewIdsConsistent,
+    chunk_hashes_present_for_all_efforts: sourceIdentities.every((identity) => Boolean(identity.chunk_hash_signature)),
+    chunk_hashes_consistent: sourceTextQualityOptionalConsistency(sourceIdentities, 'chunk_hash_signature'),
+    source_hash_values_included: false,
+    input_hash_values_included: false,
+    source_id_values_included: false,
+    chunk_hash_values_included: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function sourceTextQualityOptionalConsistency(sourceIdentities, key) {
+  if (!sourceIdentities.every((identity) => Boolean(identity[key]))) {
+    return null;
+  }
+  return uniqueSorted(sourceIdentities.map((identity) => identity[key])).length <= 1;
+}
+
+function sourceTextQualityMismatchedPairs(sourceIdentities, key) {
+  const pairs = [];
+  for (let index = 0; index < sourceIdentities.length; index += 1) {
+    for (let nextIndex = index + 1; nextIndex < sourceIdentities.length; nextIndex += 1) {
+      if (sourceIdentities[index][key] !== sourceIdentities[nextIndex][key]) {
+        pairs.push(`${sourceIdentities[index].effort}->${sourceIdentities[nextIndex].effort}`);
+      }
+    }
+  }
+  return pairs;
 }
 
 function sourceTextQualityPairwiseDelta(fromEffort, toEffort, fromEntry, toEntry) {
@@ -10283,7 +10533,7 @@ function sourceTextReferenceComparisonSummary({ expectedEffort, comparison }) {
   };
 }
 
-function sourceTextQualityDiagnostics({ effortEntries, pairwise, referenceComparisons }) {
+function sourceTextQualityDiagnostics({ effortEntries, pairwise, referenceComparisons, sameSourceInvariant }) {
   const diagnostics = effortEntries.flatMap((entry) => entry.diagnostics);
   const sourceTypes = uniqueSorted(effortEntries.map((entry) => entry.source_type).filter(Boolean));
   if (sourceTypes.length > 1) {
@@ -10292,6 +10542,39 @@ function sourceTextQualityDiagnostics({ effortEntries, pairwise, referenceCompar
       message: 'Source-text result efforts do not share the same source type.',
       severity: 'medium',
       details: { source_types: sourceTypes }
+    }));
+  }
+  if (sameSourceInvariant.status === 'identity_unavailable') {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_SOURCE_IDENTITY_MISSING',
+      message: 'Source-text result efforts do not expose enough bounded identity metadata to confirm they share the same source text.',
+      severity: 'medium',
+      details: {
+        missing_identity_efforts: sameSourceInvariant.missing_identity_efforts,
+        missing_common_identity_efforts: sameSourceInvariant.missing_common_identity_efforts,
+        identity_kind_availability: sameSourceInvariant.identity_kind_availability,
+        source_hash_values_included: false,
+        source_id_values_included: false,
+        chunk_hash_values_included: false
+      }
+    }));
+  } else if (sameSourceInvariant.status === 'mismatch') {
+    diagnostics.push(sourceTextQualityDiagnostic({
+      code: 'AHR_SOURCE_TEXT_QUALITY_SOURCE_IDENTITY_MISMATCH',
+      message: 'Source-text result efforts do not appear to share the same source-text identity.',
+      severity: 'high',
+      details: {
+        primary_identity_kind: sameSourceInvariant.primary_identity_kind,
+        mismatched_effort_pairs: sameSourceInvariant.mismatched_effort_pairs,
+        source_review_ids_consistent: sameSourceInvariant.source_review_ids_consistent,
+        source_hashes_consistent: sameSourceInvariant.source_hashes_consistent,
+        input_hashes_consistent: sameSourceInvariant.input_hashes_consistent,
+        source_ids_consistent: sameSourceInvariant.source_ids_consistent,
+        chunk_hashes_consistent: sameSourceInvariant.chunk_hashes_consistent,
+        source_hash_values_included: false,
+        source_id_values_included: false,
+        chunk_hash_values_included: false
+      }
     }));
   }
   if (pairwise.some((pair) => pair.editorial_hash_changed !== true)) {
@@ -10316,13 +10599,6 @@ function sourceTextQualityDiagnostics({ effortEntries, pairwise, referenceCompar
         }
       }));
     }
-  }
-  if (diagnostics.length === 0) {
-    diagnostics.push(sourceTextQualityDiagnostic({
-      code: 'AHR_SOURCE_TEXT_QUALITY_READY',
-      message: 'Source-text effort matrix is ready for owner review under advisory-only policy.',
-      severity: 'info'
-    }));
   }
   return diagnostics;
 }
@@ -10363,6 +10639,115 @@ function sourceTextQualityBoundary() {
     advisory_only: true,
     gate_effect: 'none'
   };
+}
+
+function sourceTextQualityDefaultOutputSafety() {
+  return {
+    full_source_text_included: false,
+    chunk_text_included: false,
+    source_locator_included: false,
+    source_title_included: false,
+    source_identity_values_included: false,
+    candidate_full_review_included: false,
+    reference_review_text_included: false,
+    detected_forbidden_output_categories: [],
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function sourceTextQualityOutputSafety({ quality, entries, sourceIdentities, referenceReview }) {
+  const output = JSON.stringify(quality);
+  const checks = [
+    ['full_source_text_included', 'full_source_text', entries.flatMap((entry) => sourceTextQualityForbiddenValuesByCategory(entry.result, 'full_source_text'))],
+    ['chunk_text_included', 'chunk_text', entries.flatMap((entry) => sourceTextQualityForbiddenValuesByCategory(entry.result, 'chunk_text'))],
+    ['source_locator_included', 'source_locator', entries.flatMap((entry) => sourceTextQualityForbiddenValuesByCategory(entry.result, 'source_locator'))],
+    ['source_title_included', 'source_title', entries.flatMap((entry) => sourceTextQualityForbiddenValuesByCategory(entry.result, 'source_title'))],
+    ['source_identity_values_included', 'source_identity_values', sourceTextQualityForbiddenSourceIdentityValues(sourceIdentities)],
+    ['candidate_full_review_included', 'candidate_full_review', entries.map((entry) => entry.result?.editorial_synthesis?.full_review)],
+    ['reference_review_text_included', 'reference_review_text', [referenceReview?.review_text]]
+  ];
+  const safety = sourceTextQualityDefaultOutputSafety();
+  for (const [field, category, values] of checks) {
+    const leaked = sourceTextQualityForbiddenValuesIncluded({ output, values });
+    safety[field] = leaked;
+    if (leaked) {
+      safety.detected_forbidden_output_categories.push(category);
+    }
+  }
+  safety.detected_forbidden_output_categories = uniqueSorted(safety.detected_forbidden_output_categories);
+  return safety;
+}
+
+function sourceTextQualityForbiddenValuesIncluded({ output, values }) {
+  return sourceTextQualityStringLeaves(values)
+    .map((value) => value.trim())
+    .filter((value) => value.length >= 8)
+    .some((value) => output.includes(value));
+}
+
+function sourceTextQualityForbiddenValuesByCategory(result, category) {
+  const sourceText = result?.source_text ?? {};
+  if (category === 'full_source_text') {
+    return sourceTextQualityRawAliasStringValues(sourceText, SOURCE_TEXT_DIRECT_RAW_KEYS);
+  }
+  if (category === 'chunk_text') {
+    return normalizeArray(sourceText.chunk_index)
+      .flatMap((chunk) => sourceTextQualityRawAliasStringValues(chunk, SOURCE_TEXT_CHUNK_RAW_KEYS));
+  }
+  if (category === 'source_locator') {
+    return [
+      sourceText.provenance?.input_path,
+      sourceText.source?.locator,
+      ...normalizeArray(sourceText.chunk_index).map((chunk) => chunk?.locator),
+      ...normalizeArray(result?.source_reading_review?.source_excerpt_refs).map((ref) => ref?.locator),
+      ...normalizeArray(result?.source_understanding_review?.source_excerpt_refs).map((ref) => ref?.locator)
+    ];
+  }
+  if (category === 'source_title') {
+    return [sourceText.source?.title];
+  }
+  return [];
+}
+
+function sourceTextQualityRawAliasStringValues(value, keys) {
+  if (!value || typeof value !== 'object') {
+    return [];
+  }
+  return keys.flatMap((key) => sourceTextQualityStringLeaves(value[key]));
+}
+
+function sourceTextQualityForbiddenSourceIdentityValues(sourceIdentities) {
+  return sourceIdentities.flatMap((identity) => [
+    identity.source_id,
+    identity.source_hash,
+    identity.input_hash,
+    identity.chunk_hash_signature,
+    ...identity.chunk_hashes
+  ]);
+}
+
+function sourceTextQualityStringLeaves(value) {
+  const leaves = [];
+  const visit = (item) => {
+    if (typeof item === 'string') {
+      leaves.push(item);
+      return;
+    }
+    if (Array.isArray(item)) {
+      for (const child of item) {
+        visit(child);
+      }
+      return;
+    }
+    if (item && typeof item === 'object') {
+      for (const child of Object.values(item)) {
+        visit(child);
+      }
+    }
+  };
+  visit(value);
+  return leaves;
 }
 
 function editorialQualityTargetSignals(result) {

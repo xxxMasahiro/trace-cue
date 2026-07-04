@@ -7628,6 +7628,229 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(listBody.data.boundary.mcp_execution_exposed, false);
 });
 
+test('agentic human review source-text quality enforces same-source identity and leak safety', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-source-text-quality-invariants-'));
+  const efforts = ['standard', 'deep', 'xhigh'];
+  const sourceIdentity = {
+    id: 'private-source-shared-identity-12345',
+    sourceHash: 'private-source-hash-shared-1234567890',
+    inputHash: 'private-input-hash-shared-1234567890',
+    chunkHashes: [
+      'private-chunk-hash-shared-000000001',
+      'private-chunk-hash-shared-000000002'
+    ],
+    locator: 'private-source-locator-should-not-leak',
+    title: 'Private Source Title Should Not Leak'
+  };
+  const resultForEffort = (effort) => ({
+    result_type: 'agentic_human_review_advisory',
+    id: `result-${effort}-source-text-quality`,
+    agentic_human_review_advisory: {
+      review_effort: effort,
+      gate_effect: 'none'
+    },
+    boundary: {
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    source_text: {
+      status: 'available',
+      id: sourceIdentity.id,
+      source_type: 'video',
+      source: {
+        kind: 'source_text_export',
+        title: sourceIdentity.title,
+        locator: sourceIdentity.locator
+      },
+      text_stats: {
+        chunk_count: 2,
+        source_hash: sourceIdentity.sourceHash,
+        stored_full_text: false,
+        stored_chunk_text: false
+      },
+      provenance: {
+        input_hash: sourceIdentity.inputHash,
+        input_path: 'private-source-input-path-should-not-leak.txt'
+      },
+      chunk_index: [
+        { id: 'chunk-1', hash: sourceIdentity.chunkHashes[0], locator: 'private-chunk-locator-1-should-not-leak', text_included: false },
+        { id: 'chunk-2', hash: sourceIdentity.chunkHashes[1], locator: 'private-chunk-locator-2-should-not-leak', text_included: false }
+      ],
+      privacy: {
+        full_source_text_persisted: false,
+        full_transcript_embedded_in_json: false,
+        full_document_embedded_in_json: false
+      }
+    },
+    source_reading_review: {
+      status: 'completed',
+      source_text_id: sourceIdentity.id,
+      source_type: 'video',
+      reading_depth: `${effort}_source_reading`,
+      key_points: [`${effort} identifies the artifact promise without storing private prose.`],
+      concrete_examples: [`${effort} concrete example stays counted, not emitted.`],
+      source_excerpt_refs: [{ id: 'reading-ref-1', locator: 'private-reading-locator-should-not-leak' }]
+    },
+    source_understanding_review: {
+      status: 'completed',
+      source_text_id: sourceIdentity.id,
+      source_type: 'video',
+      understanding_depth: `${effort}_source_understanding`,
+      thesis: `${effort} thesis is counted but not output by source-text quality.`,
+      audience_promise: `${effort} audience promise`,
+      narrative_arc: ['setup', 'tension', 'resolution'],
+      must_not_miss_points: [{ id: 'point-1', point: `${effort} must not miss point`, reason: 'quality invariant' }],
+      evidence_claims: [{ id: 'claim-1', claim: `${effort} evidence claim`, limitation: 'bounded local evidence only' }],
+      reviewer_implications: [`${effort} implication`],
+      source_limitations: ['evidence limits remain visible as counts'],
+      tensions_or_counterpoints: ['counterpoints are present'],
+      source_excerpt_refs: [{ id: 'understanding-ref-1', locator: 'private-understanding-locator-should-not-leak' }],
+      coverage: {
+        source_understanding_score: effort === 'standard' ? 0.62 : effort === 'deep' ? 0.74 : 0.86
+      }
+    },
+    editorial_synthesis: {
+      full_review: [
+        `Candidate private prose ${effort} should never appear in source-text quality output.`,
+        `This ${effort} review explains the source understanding with specific evidence and useful next steps.`,
+        effort === 'xhigh'
+          ? 'The xhigh review includes counterpoints, evidence limits, and what would change the conclusion.'
+          : 'The review stays practical without claiming proof or provider authority.'
+      ].join(' '),
+      source_refs: ['source_understanding_review:point-1'],
+      source_text: {
+        full_source_text_persisted: false,
+        full_source_text_embedded_in_markdown: false
+      }
+    },
+    report_quality: {
+      quality_expectations: { review_effort: effort },
+      source_understanding_score: effort === 'standard' ? 0.62 : effort === 'deep' ? 0.74 : 0.86,
+      useful_recommendation_score: effort === 'standard' ? 0.61 : effort === 'deep' ? 0.73 : 0.85
+    }
+  });
+  const writeInputs = async (prefix, mutate = () => {}) => {
+    const paths = {};
+    for (const effort of efforts) {
+      const result = resultForEffort(effort);
+      mutate(result, effort);
+      const relativePath = `${prefix}-${effort}.json`;
+      await writeFile(path.join(cwd, relativePath), `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+      paths[effort] = relativePath;
+    }
+    return paths;
+  };
+  const runQuality = async (prefix, mutate = () => {}, options = {}) => {
+    const inputs = await writeInputs(prefix, mutate);
+    return runAgenticHumanReviewSourceTextQuality({
+      standard: inputs.standard,
+      deep: inputs.deep,
+      xhigh: inputs.xhigh,
+      ...options
+    }, { cwd, now: fixedNow });
+  };
+  const diagnosticCodes = (quality) => quality.diagnostics.map((diagnostic) => diagnostic.code);
+
+  const cleanResult = await runQuality('clean-quality');
+  assert.equal(cleanResult.status, 'ok');
+  const cleanQuality = cleanResult.data.agentic_human_review_source_text_quality;
+  assert.equal(cleanQuality.status, 'ready_for_owner_review');
+  assert.equal(cleanQuality.same_source_invariant.status, 'confirmed');
+  assert.equal(cleanQuality.same_source_invariant.all_efforts_same_source, true);
+  assert.equal(cleanQuality.pass_conditions.same_source_text_for_all_efforts, true);
+  assert.equal(cleanQuality.pass_conditions.source_identity_available_for_all_efforts, true);
+  assert.equal(cleanQuality.output_safety.detected_forbidden_output_categories.length, 0);
+  assert.equal(cleanQuality.output_safety.source_identity_values_included, false);
+  assert.equal(cleanQuality.output_safety.candidate_full_review_included, false);
+  assert.equal(cleanQuality.effort_results.every((entry) => entry.source_identity.source_review_ids_consistent === true), true);
+  assert.equal(cleanQuality.effort_results.every((entry) => entry.source_identity.source_hash_value_included === false), true);
+  const cleanJson = JSON.stringify(cleanQuality);
+  assert.doesNotMatch(cleanJson, /private-source-shared-identity-12345|private-source-hash-shared|private-input-hash-shared|private-chunk-hash-shared|private-source-locator|Private Source Title|Candidate private prose/u);
+
+  await writeFile(path.join(cwd, 'reference-review.md'), [
+    'Reference prose sentinel should never appear in source-text quality output.',
+    'The review asks whether the candidate gives enough evidence and useful next steps.'
+  ].join('\n\n'), 'utf8');
+  const referenceResult = await runQuality('reference-quality', () => {}, { 'reference-review': 'reference-review.md' });
+  assert.equal(referenceResult.status, 'ok');
+  const referenceQuality = referenceResult.data.agentic_human_review_source_text_quality;
+  assert.equal(referenceQuality.output_safety.reference_review_text_included, false);
+  assert.equal(referenceQuality.output_safety.detected_forbidden_output_categories.includes('reference_review_text'), false);
+  assert.equal(diagnosticCodes(referenceQuality).includes('AHR_SOURCE_TEXT_QUALITY_OUTPUT_LEAK_DETECTED'), false);
+  assert.doesNotMatch(JSON.stringify(referenceQuality), /Reference prose sentinel/u);
+
+  const mismatchedResult = await runQuality('mismatch-quality', (result, effort) => {
+    if (effort === 'deep') {
+      result.source_text.chunk_index[1].hash = 'private-chunk-hash-mismatched-999999999';
+    }
+  });
+  const mismatchedQuality = mismatchedResult.data.agentic_human_review_source_text_quality;
+  assert.equal(mismatchedQuality.status, 'needs_attention');
+  assert.equal(mismatchedQuality.same_source_invariant.status, 'mismatch');
+  assert.equal(diagnosticCodes(mismatchedQuality).includes('AHR_SOURCE_TEXT_QUALITY_SOURCE_IDENTITY_MISMATCH'), true);
+  assert.doesNotMatch(JSON.stringify(mismatchedQuality), /private-chunk-hash-mismatched/u);
+
+  const missingIdentityResult = await runQuality('missing-identity-quality', (result) => {
+    delete result.source_text.id;
+    delete result.source_text.text_stats.source_hash;
+    delete result.source_text.provenance.input_hash;
+    for (const chunk of result.source_text.chunk_index) {
+      delete chunk.hash;
+    }
+    delete result.source_reading_review.source_text_id;
+    delete result.source_understanding_review.source_text_id;
+  });
+  const missingIdentityQuality = missingIdentityResult.data.agentic_human_review_source_text_quality;
+  assert.equal(missingIdentityQuality.status, 'needs_attention');
+  assert.equal(missingIdentityQuality.same_source_invariant.status, 'identity_unavailable');
+  assert.equal(diagnosticCodes(missingIdentityQuality).includes('AHR_SOURCE_TEXT_QUALITY_SOURCE_IDENTITY_MISSING'), true);
+
+  const reviewIdMismatchResult = await runQuality('review-id-mismatch-quality', (result, effort) => {
+    if (effort === 'xhigh') {
+      result.source_understanding_review.source_text_id = 'private-other-source-id-should-not-leak';
+    }
+  });
+  const reviewIdMismatchQuality = reviewIdMismatchResult.data.agentic_human_review_source_text_quality;
+  assert.equal(reviewIdMismatchQuality.status, 'needs_attention');
+  assert.equal(diagnosticCodes(reviewIdMismatchQuality).includes('AHR_SOURCE_TEXT_QUALITY_SOURCE_REVIEW_ID_MISMATCH'), true);
+  assert.equal(diagnosticCodes(reviewIdMismatchQuality).includes('AHR_SOURCE_TEXT_QUALITY_SOURCE_IDENTITY_MISMATCH'), true);
+  assert.doesNotMatch(JSON.stringify(reviewIdMismatchQuality), /private-other-source-id/u);
+
+  const rawAliasResult = await runQuality('raw-alias-quality', (result, effort) => {
+    if (effort === 'standard') {
+      result.source_text.raw_text = 'RAW SOURCE PRIVATE SENTINEL should never appear in source-text quality output.';
+      result.source_text.full_text = false;
+    }
+    if (effort === 'deep') {
+      result.source_text.chunk_index[0].content = 'RAW CHUNK PRIVATE SENTINEL should never appear in source-text quality output.';
+      result.source_text.chunk_index[1].summary = false;
+    }
+  });
+  const rawAliasQuality = rawAliasResult.data.agentic_human_review_source_text_quality;
+  assert.equal(rawAliasQuality.status, 'needs_attention');
+  assert.equal(diagnosticCodes(rawAliasQuality).includes('AHR_SOURCE_TEXT_QUALITY_SOURCE_TEXT_PERSISTED'), true);
+  assert.equal(rawAliasQuality.output_safety.full_source_text_included, false);
+  assert.equal(rawAliasQuality.output_safety.chunk_text_included, false);
+  assert.doesNotMatch(JSON.stringify(rawAliasQuality), /RAW SOURCE PRIVATE SENTINEL|RAW CHUNK PRIVATE SENTINEL/u);
+
+  const unsupportedSourceTextQuality = parseCliArgs([
+    'agentic',
+    'review',
+    'quality',
+    'source-text',
+    '--standard',
+    'standard.json',
+    '--deep',
+    'deep.json',
+    '--xhigh',
+    'xhigh.json',
+    '--execute',
+    '--json'
+  ]);
+  assert.equal(unsupportedSourceTextQuality.ok, false);
+  assert.equal(unsupportedSourceTextQuality.error.code, 'CONFLICTING_OPTIONS');
+});
+
 test('agentic human review content evidence source-type matrix remains bounded and generic', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-content-matrix-'));
   const png = minimalPngBuffer(120, 80);
