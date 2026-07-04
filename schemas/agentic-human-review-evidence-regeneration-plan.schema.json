@@ -36,6 +36,7 @@
     "targets": { "type": "array" },
     "dependency_plan": { "type": "object" },
     "downstream_regeneration": { "type": "object" },
+    "owner_review_context": { "type": "object" },
     "execution_boundary": { "type": "object" },
     "warnings": { "type": "array" },
     "boundary": { "type": "object" },

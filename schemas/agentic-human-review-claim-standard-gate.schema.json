@@ -19,6 +19,7 @@
     "conditions": { "type": "object" },
     "claim_states": { "type": "object" },
     "summary": { "type": "object" },
+    "owner_review_context": { "type": "object" },
     "rerun_plan": { "type": "object" },
     "blockers": { "type": "array" },
     "warnings": { "type": "array" },

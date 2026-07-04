@@ -116,6 +116,9 @@ const EVIDENCE_SET_ARTIFACT_DATA_KEYS = Object.freeze({
   humanBaseline: Object.freeze([
     'agentic_human_review_human_baseline',
     'agentic_human_review_human_baseline_approval_packet'
+  ]),
+  sourceTextQuality: Object.freeze([
+    'agentic_human_review_source_text_quality'
   ])
 });
 const SUBAGENT_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
@@ -2452,15 +2455,17 @@ export async function runAgenticHumanReviewLongitudinalQuality(options = {}, con
   if (!manifestRead.ok) {
     return errorResult(manifestRead.error.code, manifestRead.error.message, manifestRead.error.details);
   }
-  const evidenceSet = await buildEvidenceSetSummary({
-    cwd,
-    manifest: manifestRead.value,
-    manifestPath: manifestRead.relativePath,
-    manifestHash: hashText(manifestRead.text),
-    now,
-    maxBytes: maxBytes.value,
-    mode: 'longitudinal'
-  });
+  const evidenceSet = isEvidenceSetOutput(manifestRead.value)
+    ? normalizeEvidenceSetOutput(manifestRead.value)
+    : await buildEvidenceSetSummary({
+        cwd,
+        manifest: manifestRead.value,
+        manifestPath: manifestRead.relativePath,
+        manifestHash: hashText(manifestRead.text),
+        now,
+        maxBytes: maxBytes.value,
+        mode: 'longitudinal'
+      });
   const longitudinal = buildLongitudinalQualityRollup({
     evidenceSet,
     evidenceSetPath: manifestRead.relativePath,
@@ -2749,6 +2754,7 @@ async function buildEvidenceSetSummary({ cwd, manifest, manifestPath, manifestHa
   const calibrationEntries = evidenceSetEntries(manifest, 'calibrations', ['calibration_path', 'path', 'artifact_path']);
   const comparisonEntries = evidenceSetEntries(manifest, 'comparisons', ['comparison_path', 'path', 'artifact_path']);
   const humanBaselineEntries = evidenceSetEntries(manifest, 'human_baselines', ['baseline_path', 'human_baseline_path', 'owner_label_set_path', 'path', 'artifact_path']);
+  const sourceTextQualityEntries = evidenceSetEntries(manifest, 'source_text_quality', ['source_text_quality_path', 'quality_path', 'path', 'artifact_path']);
   const results = [];
   for (const entry of resultEntries) {
     const resultRead = await readEvidenceSetArtifact({ cwd, entry, label: 'agentic human review evidence-set result', maxBytes });
@@ -2847,8 +2853,17 @@ async function buildEvidenceSetSummary({ cwd, manifest, manifestPath, manifestHa
       });
     }
   }
+  const sourceTextQualityContext = await buildSourceTextQualityOwnerReviewContext({
+    cwd,
+    entries: sourceTextQualityEntries,
+    results,
+    maxBytes
+  });
   const summary = evidenceSetCoverageSummary({ results, calibrations, comparisons, humanBaselines });
   warnings.push(...evidenceSetCoverageWarnings(summary));
+  const ownerReviewContext = sourceTextQualityContext.supplied
+    ? { source_text_quality: sourceTextQualityContext }
+    : null;
   return redact({
     schema_version: SCHEMA_VERSION,
     type: 'agentic_human_review_evidence_set',
@@ -2867,6 +2882,7 @@ async function buildEvidenceSetSummary({ cwd, manifest, manifestPath, manifestHa
     calibrations,
     comparisons,
     human_baselines: humanBaselines,
+    ...(ownerReviewContext ? { owner_review_context: ownerReviewContext } : {}),
     validation: {
       valid_json: true,
       referenced_result_count: resultEntries.length,
@@ -2877,6 +2893,13 @@ async function buildEvidenceSetSummary({ cwd, manifest, manifestPath, manifestHa
       readable_comparison_count: comparisons.length,
       referenced_human_baseline_count: humanBaselineEntries.length,
       readable_human_baseline_count: humanBaselines.length,
+      ...(sourceTextQualityContext.supplied
+        ? {
+            referenced_source_text_quality_count: sourceTextQualityContext.referenced_artifact_count,
+            readable_source_text_quality_count: sourceTextQualityContext.readable_artifact_count,
+            valid_source_text_quality_count: sourceTextQualityContext.valid_artifact_count
+          }
+        : {}),
       complete_for_human_equivalence_claim: false,
       reason: 'Evidence sets organize owner-review evidence, but do not authorize human-equivalent or human-superior claims.'
     },
@@ -2894,6 +2917,11 @@ function evidenceSetEntries(manifest, key, pathKeys) {
         ...(Array.isArray(manifest?.baselines) ? manifest.baselines : []),
         ...(Array.isArray(manifest?.owner_label_sets) ? manifest.owner_label_sets : [])
       ]
+    : key === 'source_text_quality'
+      ? [
+          ...(Array.isArray(manifest?.source_text_quality_artifacts) ? manifest.source_text_quality_artifacts : []),
+          ...(Array.isArray(manifest?.source_text_quality_reports) ? manifest.source_text_quality_reports : [])
+        ]
     : [];
   const artifacts = Array.isArray(manifest?.artifacts)
     ? manifest.artifacts.filter((artifact) => {
@@ -2904,6 +2932,8 @@ function evidenceSetEntries(manifest, key, pathKeys) {
             ? /calibration/.test(kind)
             : key === 'human_baselines'
               ? /human.*baseline|owner.*label|baseline/.test(kind)
+              : key === 'source_text_quality'
+                ? evidenceSetSourceTextQualityArtifactKind(kind)
               : /comparison/.test(kind);
       })
     : [];
@@ -2920,6 +2950,15 @@ function firstPresentPath(entry, keys) {
     }
   }
   return null;
+}
+
+function evidenceSetSourceTextQualityArtifactKind(kind) {
+  return [
+    'agentic_human_review_source_text_quality',
+    'source_text_quality',
+    'source_text_quality_artifact',
+    'source_text_quality_report'
+  ].includes(kind);
 }
 
 async function readEvidenceSetArtifact({ cwd, entry, label, maxBytes, artifactDataKeys = [] }) {
@@ -3167,6 +3206,382 @@ function evidenceSetHumanBaselineRecord({ entry, baseline }) {
     warning_count: baseline.warnings.length,
     advisory_only: true,
     gate_effect: 'none'
+  };
+}
+
+async function buildSourceTextQualityOwnerReviewContext({ cwd, entries, results, maxBytes }) {
+  if (entries.length === 0) {
+    return { supplied: false };
+  }
+  const artifacts = [];
+  for (const [index, entry] of entries.entries()) {
+    const read = await readEvidenceSetArtifact({
+      cwd,
+      entry,
+      label: 'agentic human review evidence-set source-text quality',
+      maxBytes,
+      artifactDataKeys: EVIDENCE_SET_ARTIFACT_DATA_KEYS.sourceTextQuality
+    });
+    if (!read.ok) {
+      artifacts.push(sourceTextQualityContextInvalidArtifact({
+        index,
+        status: 'unreadable',
+        code: read.warning.code,
+        severity: 'medium'
+      }));
+      continue;
+    }
+    if (read.value?.type !== 'agentic_human_review_source_text_quality') {
+      artifacts.push(sourceTextQualityContextInvalidArtifact({
+        index,
+        status: 'invalid_contract',
+        code: 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_ARTIFACT_INVALID',
+        severity: 'medium'
+      }));
+      continue;
+    }
+    artifacts.push(sourceTextQualityContextArtifact({ index, quality: read.value, results }));
+  }
+  const validArtifacts = artifacts.filter((artifact) => artifact.valid);
+  const allDiagnostics = artifacts.flatMap((artifact) => artifact.diagnostics ?? []);
+  const staleEfforts = uniqueSorted(validArtifacts.flatMap((artifact) => artifact.freshness?.stale_efforts ?? []));
+  const missingResultEfforts = uniqueSorted(validArtifacts.flatMap((artifact) => artifact.freshness?.missing_result_efforts ?? []));
+  const hashUnavailableEfforts = uniqueSorted(validArtifacts.flatMap((artifact) => artifact.freshness?.hash_unavailable_efforts ?? []));
+  const status = validArtifacts.length > 0
+    && validArtifacts.every((artifact) => artifact.status === 'ready_for_owner_review')
+    && staleEfforts.length === 0
+    && missingResultEfforts.length === 0
+    && allDiagnostics.every((diagnostic) => diagnostic.severity === 'info')
+    ? 'ready_for_owner_review_context'
+    : 'needs_attention_context';
+  return {
+    supplied: true,
+    status,
+    referenced_artifact_count: entries.length,
+    readable_artifact_count: artifacts.filter((artifact) => artifact.readable).length,
+    valid_artifact_count: validArtifacts.length,
+    ready_artifact_count: validArtifacts.filter((artifact) => artifact.status === 'ready_for_owner_review').length,
+    needs_attention_artifact_count: validArtifacts.filter((artifact) => artifact.status !== 'ready_for_owner_review').length,
+    invalid_or_unreadable_artifact_count: artifacts.filter((artifact) => !artifact.valid).length,
+    stale_artifact_count: validArtifacts.filter((artifact) => (artifact.freshness?.stale_efforts ?? []).length > 0).length,
+    artifacts,
+    aggregate: {
+      source_types: uniqueSorted(validArtifacts.flatMap((artifact) => artifact.source_types ?? [])),
+      observed_efforts: uniqueSorted(validArtifacts.flatMap((artifact) => artifact.observed_efforts ?? [])),
+      stale_efforts: staleEfforts,
+      missing_result_efforts: missingResultEfforts,
+      hash_unavailable_efforts: hashUnavailableEfforts,
+      result_hash_values_included: false,
+      path_values_included: false
+    },
+    diagnostics: allDiagnostics,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function sourceTextQualityContextInvalidArtifact({ index, status, code, severity }) {
+  return {
+    artifact_index: index + 1,
+    readable: status !== 'unreadable',
+    valid: false,
+    status,
+    diagnostics: [sourceTextQualityContextDiagnostic({ code, severity, artifactIndex: index + 1 })],
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function sourceTextQualityContextArtifact({ index, quality, results }) {
+  const diagnostics = sourceTextQualityContextDiagnostics(quality.diagnostics);
+  const freshness = sourceTextQualityFreshness({ quality, results });
+  const artifact = {
+    artifact_index: index + 1,
+    readable: true,
+    valid: true,
+    type: 'agentic_human_review_source_text_quality',
+    status: ['ready_for_owner_review', 'needs_attention'].includes(quality.status) ? quality.status : 'needs_attention',
+    generated_at: sourceTextQualitySafeTimestamp(quality.generated_at),
+    required_efforts: sourceTextQualitySafeEfforts(quality.required_efforts),
+    observed_efforts: sourceTextQualitySafeEfforts(quality.observed_efforts, { includeUnknown: true }),
+    source_types: sourceTextQualitySafeSourceTypes(quality.source_types),
+    same_source_invariant: sourceTextQualityContextSameSource(quality.same_source_invariant),
+    effort_matrix: sourceTextQualityContextEffortMatrix(quality.effort_matrix),
+    pass_conditions: sourceTextQualityContextPassConditions(quality.pass_conditions),
+    output_safety: sourceTextQualityContextOutputSafety(quality.output_safety),
+    diagnostic_summary: {
+      count: diagnostics.length,
+      by_severity: groupCount(diagnostics.map((diagnostic) => diagnostic.severity))
+    },
+    diagnostics,
+    freshness,
+    boundary: sourceTextQualityContextBoundary(quality.boundary, quality),
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+  const boundaryDiagnostics = sourceTextQualityContextBoundaryDiagnostics(artifact.boundary);
+  const freshnessDiagnostics = sourceTextQualityFreshnessDiagnostics(freshness, index + 1);
+  artifact.diagnostics = [...artifact.diagnostics, ...boundaryDiagnostics, ...freshnessDiagnostics];
+  artifact.diagnostic_summary = {
+    count: artifact.diagnostics.length,
+    by_severity: groupCount(artifact.diagnostics.map((diagnostic) => diagnostic.severity))
+  };
+  return artifact;
+}
+
+function sourceTextQualityContextDiagnostics(diagnostics) {
+  return normalizeArray(diagnostics).map((diagnostic) => sourceTextQualityContextDiagnostic({
+    code: diagnostic.code,
+    severity: diagnostic.severity
+  }));
+}
+
+function sourceTextQualityContextDiagnostic({ code, severity, artifactIndex = null, efforts = null }) {
+  return {
+    code: sourceTextQualitySafeDiagnosticCode(code),
+    severity: SEVERITIES.has(severity) ? severity : 'info',
+    ...(artifactIndex ? { artifact_index: artifactIndex } : {}),
+    ...(Array.isArray(efforts) && efforts.length > 0 ? { efforts: sourceTextQualitySafeEfforts(efforts, { includeUnknown: true }) } : {})
+  };
+}
+
+function sourceTextQualitySafeDiagnosticCode(value) {
+  const text = String(value ?? '');
+  return /^[A-Z0-9_:-]{1,180}$/u.test(text) ? text : 'UNTRUSTED_SOURCE_TEXT_QUALITY_DIAGNOSTIC_CODE';
+}
+
+function sourceTextQualitySafeTimestamp(value) {
+  const text = String(value ?? '');
+  return /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/u.test(text) ? text : null;
+}
+
+function sourceTextQualitySafeEfforts(values, options = {}) {
+  return uniqueSorted(normalizeArray(values).map((value) => {
+    const effort = normalizeObservedReviewEffort(value);
+    return effort ?? (options.includeUnknown ? 'unknown' : null);
+  }));
+}
+
+function sourceTextQualitySafeSourceTypes(values) {
+  return uniqueSorted(normalizeArray(values).map((value) => CONTENT_EVIDENCE_SOURCE_TYPES.has(value) ? value : 'other'));
+}
+
+function sourceTextQualityContextSameSource(invariant) {
+  return {
+    status: ['confirmed', 'mismatch', 'identity_unavailable'].includes(invariant?.status) ? invariant.status : 'unknown',
+    all_efforts_same_source: invariant?.all_efforts_same_source === true,
+    identity_available_for_all_efforts: invariant?.identity_available_for_all_efforts === true,
+    source_hashes_consistent: invariant?.source_hashes_consistent === true,
+    input_hashes_consistent: invariant?.input_hashes_consistent === true,
+    source_ids_consistent: invariant?.source_ids_consistent === true,
+    chunk_hashes_consistent: invariant?.chunk_hashes_consistent === true,
+    private_source_identity_values_included: false
+  };
+}
+
+function sourceTextQualityContextEffortMatrix(matrix) {
+  return {
+    distinct_editorial_synthesis_count: Number(matrix?.distinct_editorial_synthesis_count ?? 0),
+    all_editorial_syntheses_distinct: matrix?.all_editorial_syntheses_distinct === true,
+    all_source_understanding_completed: matrix?.all_source_understanding_completed === true,
+    all_full_source_text_unpersisted: matrix?.all_full_source_text_unpersisted === true,
+    source_type_consistent: matrix?.source_type_consistent === true,
+    same_source_text_for_all_efforts: matrix?.same_source_text_for_all_efforts === true,
+    source_identity_available_for_all_efforts: matrix?.source_identity_available_for_all_efforts === true,
+    xhigh_critique_ready: matrix?.xhigh_critique_ready === true
+  };
+}
+
+function sourceTextQualityContextPassConditions(conditions) {
+  const keys = [
+    'no_full_source_text_persisted',
+    'no_chunk_text_persisted',
+    'source_understanding_available_for_all_efforts',
+    'effort_outputs_are_distinct',
+    'same_source_text_for_all_efforts',
+    'source_identity_available_for_all_efforts',
+    'xhigh_has_critique_limit_and_conclusion_change_signals',
+    'reference_comparison_target_met_when_supplied',
+    'human_equivalent_claim_allowed',
+    'human_superior_claim_allowed'
+  ];
+  return Object.fromEntries(keys.map((key) => [key, conditions?.[key] === true]));
+}
+
+function sourceTextQualityContextOutputSafety(outputSafety) {
+  const allowedCategories = new Set([
+    'full_source_text',
+    'chunk_text',
+    'source_locator',
+    'source_title',
+    'source_identity_values',
+    'candidate_full_review',
+    'reference_review_text'
+  ]);
+  return {
+    full_source_text_included: outputSafety?.full_source_text_included === true,
+    chunk_text_included: outputSafety?.chunk_text_included === true,
+    source_locator_included: outputSafety?.source_locator_included === true,
+    source_title_included: outputSafety?.source_title_included === true,
+    source_identity_values_included: outputSafety?.source_identity_values_included === true,
+    candidate_full_review_included: outputSafety?.candidate_full_review_included === true,
+    reference_review_text_included: outputSafety?.reference_review_text_included === true,
+    detected_forbidden_output_categories: uniqueSorted(normalizeArray(outputSafety?.detected_forbidden_output_categories)
+      .map((category) => allowedCategories.has(category) ? category : null)
+      .filter(Boolean)),
+    advisory_only: outputSafety?.advisory_only !== false,
+    gate_effect: outputSafety?.gate_effect === 'none' ? 'none' : 'unknown'
+  };
+}
+
+function sourceTextQualityContextBoundary(boundary, quality) {
+  return {
+    read_only: boundary?.read_only === true,
+    provider_call_performed: boundary?.provider_call_performed === true,
+    api_call_performed: boundary?.api_call_performed === true,
+    external_evidence_transfer: boundary?.external_evidence_transfer === true,
+    deterministic_findings_mutated: boundary?.deterministic_findings_mutated === true,
+    release_gate_mutated: boundary?.release_gate_mutated === true,
+    proof_contract_satisfied: boundary?.proof_contract_satisfied === true,
+    human_equivalent_claim_allowed: quality?.pass_conditions?.human_equivalent_claim_allowed === true || boundary?.human_equivalent_claim_allowed === true,
+    human_superior_claim_allowed: quality?.pass_conditions?.human_superior_claim_allowed === true || boundary?.human_superior_claim_allowed === true,
+    advisory_only: quality?.advisory_only === true && boundary?.advisory_only !== false,
+    gate_effect: quality?.gate_effect === 'none' && (boundary?.gate_effect ?? 'none') === 'none' ? 'none' : 'non_none',
+    result_paths_in_output: boundary?.result_paths_in_output === true,
+    source_text_quality_context_only: true
+  };
+}
+
+function sourceTextQualityContextBoundaryDiagnostics(boundary) {
+  const diagnostics = [];
+  const unsafe = [
+    ['provider_call_performed', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_PROVIDER_CALL_FLAG'],
+    ['api_call_performed', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_API_CALL_FLAG'],
+    ['external_evidence_transfer', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_TRANSFER_FLAG'],
+    ['deterministic_findings_mutated', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_DETERMINISTIC_MUTATION_FLAG'],
+    ['release_gate_mutated', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_RELEASE_GATE_FLAG'],
+    ['proof_contract_satisfied', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_PROOF_FLAG'],
+    ['human_equivalent_claim_allowed', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_EQUALITY_CLAIM_FLAG'],
+    ['human_superior_claim_allowed', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_SUPERIORITY_CLAIM_FLAG'],
+    ['result_paths_in_output', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_PATH_OUTPUT_FLAG']
+  ];
+  for (const [field, code] of unsafe) {
+    if (boundary[field] === true) {
+      diagnostics.push(sourceTextQualityContextDiagnostic({ code, severity: 'medium' }));
+    }
+  }
+  if (boundary.advisory_only !== true || boundary.gate_effect !== 'none') {
+    diagnostics.push(sourceTextQualityContextDiagnostic({ code: 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_BOUNDARY_MISMATCH', severity: 'medium' }));
+  }
+  return diagnostics;
+}
+
+function sourceTextQualityFreshness({ quality, results }) {
+  const resultHashesByEffort = new Map();
+  for (const result of results) {
+    if (!result.effort || !result.hash) {
+      continue;
+    }
+    const hashes = resultHashesByEffort.get(result.effort) ?? new Set();
+    hashes.add(result.hash);
+    resultHashesByEffort.set(result.effort, hashes);
+  }
+  const effortEntries = normalizeArray(quality.effort_results);
+  const alignedEfforts = [];
+  const staleEfforts = [];
+  const missingResultEfforts = [];
+  const hashUnavailableEfforts = [];
+  const duplicateQualityEfforts = [];
+  const seen = new Set();
+  for (const entry of effortEntries) {
+    const effort = normalizeObservedReviewEffort(entry.expected_effort ?? entry.observed_effort);
+    if (!effort || !HUMAN_REVIEW_CLAIM_EFFORTS.includes(effort)) {
+      continue;
+    }
+    if (seen.has(effort)) {
+      duplicateQualityEfforts.push(effort);
+    }
+    seen.add(effort);
+    const qualityHash = typeof entry.result_hash === 'string' ? entry.result_hash : null;
+    const resultHashes = resultHashesByEffort.get(effort);
+    if (!resultHashes || resultHashes.size === 0) {
+      missingResultEfforts.push(effort);
+    } else if (!qualityHash) {
+      hashUnavailableEfforts.push(effort);
+    } else if (resultHashes.has(qualityHash)) {
+      alignedEfforts.push(effort);
+    } else {
+      staleEfforts.push(effort);
+    }
+  }
+  const missingQualityEfforts = HUMAN_REVIEW_CLAIM_EFFORTS.filter((effort) => !seen.has(effort));
+  return {
+    evaluated: true,
+    result_hash_values_included: false,
+    compared_by_effort_only: true,
+    aligned_efforts: uniqueSorted(alignedEfforts),
+    stale_efforts: uniqueSorted(staleEfforts),
+    missing_result_efforts: uniqueSorted(missingResultEfforts),
+    hash_unavailable_efforts: uniqueSorted(hashUnavailableEfforts),
+    missing_quality_efforts: uniqueSorted(missingQualityEfforts),
+    duplicate_quality_efforts: uniqueSorted(duplicateQualityEfforts)
+  };
+}
+
+function sourceTextQualityFreshnessDiagnostics(freshness, artifactIndex) {
+  const diagnostics = [];
+  for (const [field, code] of [
+    ['stale_efforts', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_STALE'],
+    ['missing_result_efforts', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_RESULT_MISSING'],
+    ['hash_unavailable_efforts', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_HASH_UNAVAILABLE'],
+    ['missing_quality_efforts', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_EFFORT_MISSING'],
+    ['duplicate_quality_efforts', 'AHR_SOURCE_TEXT_QUALITY_CONTEXT_EFFORT_DUPLICATE']
+  ]) {
+    if ((freshness[field] ?? []).length > 0) {
+      diagnostics.push(sourceTextQualityContextDiagnostic({
+        code,
+        severity: field === 'stale_efforts' ? 'medium' : 'low',
+        artifactIndex,
+        efforts: freshness[field]
+      }));
+    }
+  }
+  return diagnostics;
+}
+
+function ownerReviewContextFromEvidenceSet(evidenceSet) {
+  const normalizedEvidenceSet = normalizeEvidenceSetOutput(evidenceSet);
+  const sourceTextQuality = normalizedEvidenceSet?.owner_review_context?.source_text_quality;
+  return isPlainObject(sourceTextQuality) && sourceTextQuality.supplied === true
+    ? { source_text_quality: sourceTextQuality }
+    : null;
+}
+
+function ownerReviewContextForRegeneration({ evidenceSet, targets }) {
+  const ownerReviewContext = ownerReviewContextFromEvidenceSet(evidenceSet);
+  if (!ownerReviewContext?.source_text_quality) {
+    return null;
+  }
+  const invalidatingTargets = targets.filter((target) => ['result', 'claim_audit'].includes(target.target_type));
+  const invalidatedEfforts = uniqueSorted(invalidatingTargets
+    .map((target) => normalizeObservedReviewEffort(target.effort))
+    .filter((effort) => HUMAN_REVIEW_CLAIM_EFFORTS.includes(effort)));
+  return {
+    source_text_quality: {
+      ...ownerReviewContext.source_text_quality,
+      regeneration_invalidation: {
+        evaluated: true,
+        context_may_be_stale_after_regeneration: invalidatingTargets.length > 0,
+        invalidating_target_count: invalidatingTargets.length,
+        invalidating_target_types: uniqueSorted(invalidatingTargets.map((target) => target.target_type)),
+        invalidated_efforts: invalidatedEfforts,
+        concrete_rerun_commands_emitted: false,
+        provider_execution_performed: false,
+        artifact_write_performed: false,
+        advisory_only: true,
+        gate_effect: 'none'
+      }
+    }
   };
 }
 
@@ -3734,6 +4149,7 @@ function buildXhighSimulationReport({ plan, planPath, roundInput, roundInputPath
 
 function buildLongitudinalQualityRollup({ evidenceSet, evidenceSetPath, evidenceSetHash, now }) {
   const summary = evidenceSet.summary;
+  const ownerReviewContext = ownerReviewContextFromEvidenceSet(evidenceSet);
   const resultsByCase = groupCount(evidenceSet.results.map((result) => result.case_id).filter(Boolean));
   const resultsByEffort = groupCount(evidenceSet.results.map((result) => result.effort).filter(Boolean));
   const repeatedCaseCount = Object.values(resultsByCase).filter((count) => count > 1).length;
@@ -3780,6 +4196,7 @@ function buildLongitudinalQualityRollup({ evidenceSet, evidenceSetPath, evidence
       owner_labeled_evidence_required: true,
       reason: 'Longitudinal quality rollups support owner review, but claims remain disallowed until a separately approved claim standard is met.'
     },
+    ...(ownerReviewContext ? { owner_review_context: ownerReviewContext } : {}),
     warnings,
     boundary: agenticHumanReviewBoundary({ read_only: true }),
     advisory_only: true,
@@ -3799,6 +4216,7 @@ function normalizeEvidenceSetOutput(value) {
 function buildHumanBaselineClaimReadiness({ evidenceSet, evidenceSetPath, evidenceSetHash, policy, policyPath, policyHash, now }) {
   const normalizedEvidenceSet = normalizeEvidenceSetOutput(evidenceSet);
   const summary = normalizedEvidenceSet.summary ?? {};
+  const ownerReviewContext = ownerReviewContextFromEvidenceSet(normalizedEvidenceSet);
   const requiredCaseIds = Array.isArray(summary.required_benchmark_case_ids)
     ? summary.required_benchmark_case_ids
     : BENCHMARK_CASES.map((item) => item.case_id);
@@ -3908,6 +4326,7 @@ function buildHumanBaselineClaimReadiness({ evidenceSet, evidenceSetPath, eviden
       reason: 'This readiness report can identify evidence prerequisites, but equality or superiority claims remain disabled until a separately approved claim standard is met.'
     },
     policy,
+    ...(ownerReviewContext ? { owner_review_context: ownerReviewContext } : {}),
     warnings,
     boundary: agenticHumanReviewBoundary({ read_only: true }),
     advisory_only: true,
@@ -4018,6 +4437,7 @@ function buildClaimStandardGate({
 }) {
   const normalizedEvidenceSet = normalizeEvidenceSetOutput(evidenceSet);
   const summary = normalizedEvidenceSet.summary ?? {};
+  const ownerReviewContext = ownerReviewContextFromEvidenceSet(normalizedEvidenceSet);
   const results = Array.isArray(normalizedEvidenceSet.results) ? normalizedEvidenceSet.results : [];
   const comparisons = Array.isArray(normalizedEvidenceSet.comparisons) ? normalizedEvidenceSet.comparisons : [];
   const humanBaselines = Array.isArray(normalizedEvidenceSet.human_baselines) ? normalizedEvidenceSet.human_baselines : [];
@@ -4162,6 +4582,7 @@ function buildClaimStandardGate({
       human_equivalent_claim_allowed: false,
       human_superior_claim_allowed: false
     },
+    ...(ownerReviewContext ? { owner_review_context: ownerReviewContext } : {}),
     rerun_plan: rerunPlan,
     blockers,
     warnings: [
@@ -4237,6 +4658,7 @@ async function buildEvidenceRegenerationPlan({
     targetRegistryPath,
     providerExecutionApprovalRequired
   });
+  const ownerReviewContext = ownerReviewContextForRegeneration({ evidenceSet: normalizedEvidenceSet, targets });
   return redact({
     schema_version: SCHEMA_VERSION,
     type: 'agentic_human_review_evidence_regeneration_plan',
@@ -4278,6 +4700,7 @@ async function buildEvidenceRegenerationPlan({
       targetRegistryPath,
       required: targets.length > 0
     }),
+    ...(ownerReviewContext ? { owner_review_context: ownerReviewContext } : {}),
     execution_boundary: {
       provider_execution_performed: false,
       artifact_write_performed: false,

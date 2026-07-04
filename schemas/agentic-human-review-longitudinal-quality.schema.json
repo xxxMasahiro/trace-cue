@@ -13,6 +13,7 @@
     "status": { "type": "string" },
     "longitudinal_stability_score": { "type": "number" },
     "claim_policy": { "type": "object" },
+    "owner_review_context": { "type": "object" },
     "warnings": { "type": "array" },
     "boundary": { "type": "object" },
     "advisory_only": { "const": true },

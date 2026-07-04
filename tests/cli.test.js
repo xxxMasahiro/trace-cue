@@ -7851,6 +7851,283 @@ test('agentic human review source-text quality enforces same-source identity and
   assert.equal(unsupportedSourceTextQuality.error.code, 'CONFLICTING_OPTIONS');
 });
 
+test('agentic human review evidence-set carries source-text quality as non-gating owner context', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-source-text-quality-context-'));
+  const efforts = ['standard', 'deep', 'xhigh'];
+  const privateSentinels = [
+    'PRIVATE_SOURCE_ID_CONTEXT',
+    'PRIVATE_SOURCE_HASH_CONTEXT',
+    'PRIVATE_INPUT_HASH_CONTEXT',
+    'PRIVATE_CHUNK_HASH_CONTEXT',
+    'PRIVATE_SOURCE_LOCATOR_CONTEXT',
+    'Private Source Title Context',
+    'CONTEXT_CANDIDATE_PROSE'
+  ];
+  const resultForEffort = (effort, suffix = '') => ({
+    result_type: 'agentic_human_review_advisory',
+    id: `context-result-${effort}`,
+    agentic_human_review_advisory: {
+      review_effort: effort,
+      gate_effect: 'none'
+    },
+    boundary: {
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    source_text: {
+      status: 'available',
+      id: 'PRIVATE_SOURCE_ID_CONTEXT',
+      source_type: 'video',
+      source: {
+        kind: 'source_text_export',
+        title: 'Private Source Title Context',
+        locator: 'PRIVATE_SOURCE_LOCATOR_CONTEXT'
+      },
+      text_stats: {
+        chunk_count: 2,
+        source_hash: 'PRIVATE_SOURCE_HASH_CONTEXT',
+        stored_full_text: false,
+        stored_chunk_text: false
+      },
+      provenance: {
+        input_hash: 'PRIVATE_INPUT_HASH_CONTEXT',
+        input_path: 'private-source-context-input.txt'
+      },
+      chunk_index: [
+        { id: 'chunk-1', hash: 'PRIVATE_CHUNK_HASH_CONTEXT_1', text_included: false },
+        { id: 'chunk-2', hash: 'PRIVATE_CHUNK_HASH_CONTEXT_2', text_included: false }
+      ],
+      privacy: {
+        full_source_text_persisted: false
+      }
+    },
+    source_reading_review: {
+      status: 'completed',
+      source_text_id: 'PRIVATE_SOURCE_ID_CONTEXT',
+      source_type: 'video',
+      reading_depth: `${effort}_reading`,
+      key_points: [`${effort} key point stays bounded`],
+      concrete_examples: [`${effort} example stays bounded`],
+      source_excerpt_refs: [{ id: 'reading-ref-1' }]
+    },
+    source_understanding_review: {
+      status: 'completed',
+      source_text_id: 'PRIVATE_SOURCE_ID_CONTEXT',
+      source_type: 'video',
+      understanding_depth: `${effort}_understanding`,
+      thesis: `${effort} thesis`,
+      audience_promise: `${effort} promise`,
+      narrative_arc: ['setup', 'turn', 'resolution'],
+      must_not_miss_points: [{ id: 'point-1', point: `${effort} point`, reason: 'context test' }],
+      evidence_claims: [{ id: 'claim-1', claim: `${effort} claim`, limitation: 'bounded only' }],
+      reviewer_implications: [`${effort} implication`],
+      source_limitations: ['bounded evidence only'],
+      tensions_or_counterpoints: ['counterpoint'],
+      source_excerpt_refs: [{ id: 'understanding-ref-1' }],
+      coverage: {
+        source_understanding_score: effort === 'standard' ? 0.62 : effort === 'deep' ? 0.74 : 0.86
+      }
+    },
+    editorial_synthesis: {
+      full_review: [
+        `CONTEXT_CANDIDATE_PROSE ${effort} should not leak into owner context.`,
+        `The ${effort} review contains bounded source understanding and next steps.`,
+        effort === 'xhigh' ? 'It includes counterpoints, evidence limits, and conclusion-change conditions.' : 'It stays advisory only.',
+        suffix
+      ].filter(Boolean).join(' '),
+      source_refs: ['source_understanding_review:point-1'],
+      source_text: {
+        full_source_text_persisted: false,
+        full_source_text_embedded_in_markdown: false
+      }
+    },
+    report_quality: {
+      quality_expectations: { review_effort: effort },
+      source_understanding_score: effort === 'standard' ? 0.62 : effort === 'deep' ? 0.74 : 0.86,
+      useful_recommendation_score: effort === 'standard' ? 0.61 : effort === 'deep' ? 0.73 : 0.85
+    }
+  });
+  const writeJson = async (relativePath, value) => {
+    await writeFile(path.join(cwd, relativePath), `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  };
+  for (const effort of efforts) {
+    await writeJson(`context-${effort}.json`, resultForEffort(effort));
+  }
+  const sourceTextQualityResult = await runAgenticHumanReviewSourceTextQuality({
+    standard: 'context-standard.json',
+    deep: 'context-deep.json',
+    xhigh: 'context-xhigh.json'
+  }, { cwd, now: fixedNow });
+  assert.equal(sourceTextQualityResult.status, 'ok');
+  const sourceTextQuality = sourceTextQualityResult.data.agentic_human_review_source_text_quality;
+  await writeJson('source-text-quality-wrapper.json', {
+    status: 'ok',
+    data: {
+      agentic_human_review_source_text_quality: sourceTextQuality,
+      boundary: sourceTextQuality.boundary
+    },
+    warnings: [],
+    errors: [],
+    artifacts: []
+  });
+  const baseManifest = {
+    type: 'agentic_human_review_evidence_set_manifest',
+    results: efforts.map((effort) => ({
+      path: `context-${effort}.json`,
+      effort,
+      case_id: 'blog-content-value'
+    })),
+    calibrations: [],
+    comparisons: [],
+    human_baselines: []
+  };
+  await writeJson('base-evidence-set.json', baseManifest);
+  await writeJson('context-evidence-set.json', {
+    ...baseManifest,
+    source_text_quality: [
+      { path: 'source-text-quality-wrapper.json' }
+    ]
+  });
+  const runEvidenceSet = async (input) => executeCli([
+    'agentic',
+    'review',
+    'evidence-set',
+    'summarize',
+    '--input',
+    input,
+    '--json'
+  ], { cwd, now: fixedNow });
+  const baseEvidenceSet = await runEvidenceSet('base-evidence-set.json');
+  const contextEvidenceSet = await runEvidenceSet('context-evidence-set.json');
+  assert.equal(baseEvidenceSet.exitCode, 0);
+  assert.equal(contextEvidenceSet.exitCode, 0);
+  const baseEvidence = JSON.parse(baseEvidenceSet.stdout).data.agentic_human_review_evidence_set;
+  const contextEvidence = JSON.parse(contextEvidenceSet.stdout).data.agentic_human_review_evidence_set;
+  assert.deepEqual(contextEvidence.summary, baseEvidence.summary);
+  assert.deepEqual(contextEvidence.warnings, baseEvidence.warnings);
+  const context = contextEvidence.owner_review_context.source_text_quality;
+  assert.equal(context.supplied, true);
+  assert.equal(context.valid_artifact_count, 1);
+  assert.equal(context.artifacts[0].status, 'ready_for_owner_review');
+  assert.deepEqual(context.artifacts[0].freshness.aligned_efforts, ['deep', 'standard', 'xhigh']);
+  const contextJson = JSON.stringify(contextEvidence.owner_review_context);
+  for (const sentinel of privateSentinels) {
+    assert.doesNotMatch(contextJson, new RegExp(sentinel, 'u'));
+  }
+  assert.doesNotMatch(contextJson, /context-(standard|deep|xhigh)\.json/u);
+
+  const runReadiness = async (input) => executeCli([
+    'agentic',
+    'review',
+    'human-baseline',
+    'claim-readiness',
+    '--evidence-set',
+    input,
+    '--json'
+  ], { cwd, now: fixedNow });
+  const baseReadiness = await runReadiness('base-evidence-set.json');
+  const contextReadiness = await runReadiness('context-evidence-set.json');
+  assert.equal(baseReadiness.exitCode, 0);
+  assert.equal(contextReadiness.exitCode, 0);
+  const baseReadinessData = JSON.parse(baseReadiness.stdout).data.agentic_human_review_human_baseline_claim_readiness;
+  const contextReadinessData = JSON.parse(contextReadiness.stdout).data.agentic_human_review_human_baseline_claim_readiness;
+  assert.equal(contextReadinessData.status, baseReadinessData.status);
+  assert.deepEqual(contextReadinessData.conditions, baseReadinessData.conditions);
+  assert.deepEqual(contextReadinessData.warnings, baseReadinessData.warnings);
+  assert.equal(contextReadinessData.owner_review_context.source_text_quality.supplied, true);
+
+  await writeFile(path.join(cwd, 'context-evidence-set-output.json'), contextEvidenceSet.stdout, 'utf8');
+  const contextLongitudinal = await executeCli([
+    'agentic',
+    'review',
+    'quality',
+    'longitudinal',
+    '--evidence-set',
+    'context-evidence-set-output.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(contextLongitudinal.exitCode, 0);
+  const contextLongitudinalData = JSON.parse(contextLongitudinal.stdout).data.agentic_human_review_longitudinal_quality;
+  assert.equal(contextLongitudinalData.owner_review_context.source_text_quality.supplied, true);
+  assert.deepEqual(contextLongitudinalData.owner_review_context.source_text_quality.aggregate.stale_efforts, []);
+
+  const runGate = async (input) => executeCli([
+    'agentic',
+    'review',
+    'claim',
+    'standard-gate',
+    '--evidence-set',
+    input,
+    '--json'
+  ], { cwd, now: fixedNow });
+  const baseGate = await runGate('base-evidence-set.json');
+  const contextGate = await runGate('context-evidence-set.json');
+  assert.equal(contextGate.exitCode, baseGate.exitCode);
+  const baseGateData = JSON.parse(baseGate.stdout).data.agentic_human_review_claim_standard_gate;
+  const contextGateData = JSON.parse(contextGate.stdout).data.agentic_human_review_claim_standard_gate;
+  assert.equal(contextGateData.passed, baseGateData.passed);
+  assert.deepEqual(contextGateData.conditions, baseGateData.conditions);
+  assert.deepEqual(contextGateData.blockers.map((blocker) => blocker.code), baseGateData.blockers.map((blocker) => blocker.code));
+  assert.equal(contextGateData.claim_states.human_equivalent_candidate.allowed, false);
+  assert.equal(contextGateData.claim_states.human_superior_candidate.allowed, false);
+  assert.equal(contextGateData.owner_review_context.source_text_quality.supplied, true);
+
+  await writeFile(path.join(cwd, 'context-claim-gate.json'), contextGate.stdout, 'utf8');
+  const regenerationPlan = await executeCli([
+    'agentic',
+    'review',
+    'evidence-set',
+    'regenerate',
+    'plan',
+    '--evidence-set',
+    'context-evidence-set.json',
+    '--claim-gate',
+    'context-claim-gate.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(regenerationPlan.exitCode, 0);
+  const regenerationPlanData = JSON.parse(regenerationPlan.stdout).data.agentic_human_review_evidence_regeneration_plan;
+  assert.equal(regenerationPlanData.owner_review_context.source_text_quality.regeneration_invalidation.evaluated, true);
+  assert.equal(regenerationPlanData.owner_review_context.source_text_quality.regeneration_invalidation.concrete_rerun_commands_emitted, false);
+  assert.equal(regenerationPlanData.execution_boundary.provider_execution_performed, false);
+  assert.equal(regenerationPlanData.execution_boundary.artifact_write_performed, false);
+
+  await writeJson('unreadable-quality-evidence-set.json', {
+    ...baseManifest,
+    source_text_quality: [
+      { path: 'missing-source-text-quality.json' }
+    ]
+  });
+  const unreadableEvidenceSet = await runEvidenceSet('unreadable-quality-evidence-set.json');
+  assert.equal(unreadableEvidenceSet.exitCode, 0);
+  const unreadableEvidence = JSON.parse(unreadableEvidenceSet.stdout).data.agentic_human_review_evidence_set;
+  assert.deepEqual(unreadableEvidence.warnings, baseEvidence.warnings);
+  assert.equal(unreadableEvidence.owner_review_context.source_text_quality.invalid_or_unreadable_artifact_count, 1);
+  assert.equal(unreadableEvidence.owner_review_context.source_text_quality.artifacts[0].status, 'unreadable');
+
+  await writeJson('misplaced-quality-evidence-set.json', {
+    type: 'agentic_human_review_evidence_set_manifest',
+    results: [
+      { path: 'source-text-quality-wrapper.json' }
+    ],
+    calibrations: [],
+    comparisons: [],
+    human_baselines: []
+  });
+  const misplacedEvidenceSet = await runEvidenceSet('misplaced-quality-evidence-set.json');
+  assert.equal(misplacedEvidenceSet.exitCode, 0);
+  const misplacedEvidence = JSON.parse(misplacedEvidenceSet.stdout).data.agentic_human_review_evidence_set;
+  assert.equal(misplacedEvidence.summary.result_count, 0);
+  assert.equal(misplacedEvidence.warnings.some((warning) => warning.code === 'AGENTIC_REVIEW_RESULT_CONTRACT_MISMATCH'), true);
+
+  await writeJson('context-deep.json', resultForEffort('deep', 'MUTATED_AFTER_SOURCE_TEXT_QUALITY'));
+  const staleEvidenceSet = await runEvidenceSet('context-evidence-set.json');
+  assert.equal(staleEvidenceSet.exitCode, 0);
+  const staleContext = JSON.parse(staleEvidenceSet.stdout).data.agentic_human_review_evidence_set.owner_review_context.source_text_quality;
+  assert.equal(staleContext.aggregate.stale_efforts.includes('deep'), true);
+  assert.doesNotMatch(JSON.stringify(staleContext), /PRIVATE_SOURCE_HASH_CONTEXT|PRIVATE_INPUT_HASH_CONTEXT|PRIVATE_CHUNK_HASH_CONTEXT/u);
+});
+
 test('agentic human review content evidence source-type matrix remains bounded and generic', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-content-matrix-'));
   const png = minimalPngBuffer(120, 80);
