@@ -117,6 +117,7 @@ async function main() {
     await assertFile(packageDir, 'schemas/agentic-human-review-evidence-regeneration-plan.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-claim-audit.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-dogfood-evidence-pack-summary.schema.json');
+    await assertFile(packageDir, 'schemas/agentic-human-review-dogfood-review-pack.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-dogfood-readiness.schema.json');
     await assertFile(packageDir, 'schemas/agentic-human-review-dogfood-plan.schema.json');
     await assertFile(packageDir, 'schemas/source-understanding-review.schema.json');
@@ -251,6 +252,7 @@ async function main() {
     const agenticHumanReviewEvidenceRegenerationPlanSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-evidence-regeneration-plan'));
     const agenticHumanReviewClaimAuditSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-claim-audit'));
     const agenticHumanReviewDogfoodEvidencePackSummarySchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-dogfood-evidence-pack-summary'));
+    const agenticHumanReviewDogfoodReviewPackSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-dogfood-review-pack'));
     const agenticHumanReviewDogfoodReadinessSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-dogfood-readiness'));
     const agenticHumanReviewDogfoodPlanSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-dogfood-plan'));
     const sourceUnderstandingReviewSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('source-understanding-review'));
@@ -319,6 +321,7 @@ async function main() {
     assert.equal(path.normalize(agenticHumanReviewEvidenceRegenerationPlanSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-evidence-regeneration-plan.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewClaimAuditSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-claim-audit.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewDogfoodEvidencePackSummarySchemaPath), path.join(packageDir, 'schemas/agentic-human-review-dogfood-evidence-pack-summary.schema.json'));
+    assert.equal(path.normalize(agenticHumanReviewDogfoodReviewPackSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-dogfood-review-pack.schema.json'));
     assert.equal(path.normalize(sourceUnderstandingReviewSchemaPath), path.join(packageDir, 'schemas/source-understanding-review.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewDogfoodReadinessSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-dogfood-readiness.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewDogfoodPlanSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-dogfood-plan.schema.json'));
@@ -408,6 +411,7 @@ async function main() {
     assert.equal(typeof api.runAgenticHumanReviewDogfoodReadiness, 'function');
     assert.equal(typeof api.runAgenticHumanReviewDogfoodPlan, 'function');
     assert.equal(typeof api.runAgenticHumanReviewDogfoodEvidencePackSummarize, 'function');
+    assert.equal(typeof api.runAgenticHumanReviewDogfoodEvidencePackReviewPack, 'function');
     assert.equal(typeof api.runAgenticHumanReviewReportQuality, 'function');
     assert.equal(typeof api.runAgenticHumanReviewSourceTextQuality, 'function');
     assert.equal(typeof api.runAgenticHumanReviewBenchmarkList, 'function');

@@ -50,6 +50,7 @@ export const HUMAN_REVIEW_CLAIM_POLICY_VERSION = '1.0.0';
 export const HUMAN_REVIEW_CLAIM_STANDARD_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EVIDENCE_REGENERATION_VERSION = '1.0.0';
 export const HUMAN_REVIEW_DOGFOOD_EVIDENCE_PACK_SUMMARY_VERSION = '1.0.0';
+export const HUMAN_REVIEW_DOGFOOD_REVIEW_PACK_VERSION = '1.0.0';
 export const HUMAN_REVIEW_HUMAN_BASELINE_VERSION = '1.0.0';
 export const HUMAN_REVIEW_HUMAN_BASELINE_COMPARISON_VERSION = '1.0.0';
 export const HUMAN_REVIEW_HUMAN_BASELINE_OPERATIONS_VERSION = '1.0.0';
@@ -1551,11 +1552,57 @@ export async function runAgenticHumanReviewDogfoodPlan(options = {}, context = {
 }
 
 export async function runAgenticHumanReviewDogfoodEvidencePackSummarize(options = {}, context = {}) {
+  const prepared = await prepareDogfoodEvidencePackProjection(options, context);
+  if (!prepared.ok) {
+    return prepared.result;
+  }
+  const { packSummary } = prepared;
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_dogfood_evidence_pack_summary: packSummary,
+      boundary: packSummary.boundary
+    },
+    warnings: packSummary.warnings,
+    errors: [],
+    artifacts: []
+  };
+}
+
+export async function runAgenticHumanReviewDogfoodEvidencePackReviewPack(options = {}, context = {}) {
+  const prepared = await prepareDogfoodEvidencePackProjection(options, context);
+  if (!prepared.ok) {
+    return prepared.result;
+  }
+  const reviewPack = buildDogfoodEvidencePackReviewPack({
+    evidenceSet: prepared.resolved.evidenceSet,
+    readiness: prepared.readiness,
+    longitudinal: prepared.longitudinal,
+    claimGate: prepared.claimGate,
+    packSummary: prepared.packSummary,
+    now: prepared.now
+  });
+  return {
+    status: 'ok',
+    data: {
+      agentic_human_review_dogfood_review_pack: reviewPack,
+      boundary: reviewPack.boundary
+    },
+    warnings: reviewPack.warnings,
+    errors: [],
+    artifacts: []
+  };
+}
+
+async function prepareDogfoodEvidencePackProjection(options = {}, context = {}) {
   const cwd = context.cwd ?? process.cwd();
   const now = materializeNow(context.now);
   const maxBytes = parseMaxBytes(options['max-bytes']);
   if (!maxBytes.ok) {
-    return errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] });
+    return {
+      ok: false,
+      result: errorResult('AGENTIC_REVIEW_INVALID_MAX_BYTES', maxBytes.message, { max_bytes: options['max-bytes'] })
+    };
   }
   const inputRead = await readWorkspaceJson({
     cwd,
@@ -1564,7 +1611,10 @@ export async function runAgenticHumanReviewDogfoodEvidencePackSummarize(options 
     maxBytes: maxBytes.value
   });
   if (!inputRead.ok) {
-    return errorResult(inputRead.error.code, inputRead.error.message, inputRead.error.details);
+    return {
+      ok: false,
+      result: errorResult(inputRead.error.code, inputRead.error.message, inputRead.error.details)
+    };
   }
   const resolved = await resolveDogfoodEvidencePackInput({
     cwd,
@@ -1575,7 +1625,10 @@ export async function runAgenticHumanReviewDogfoodEvidencePackSummarize(options 
     maxBytes: maxBytes.value
   });
   if (!resolved.ok) {
-    return errorResult(resolved.error.code, resolved.error.message, resolved.error.details);
+    return {
+      ok: false,
+      result: errorResult(resolved.error.code, resolved.error.message, resolved.error.details)
+    };
   }
   const policy = normalizeClaimPolicy(resolved.policyRead?.value ?? resolved.inlinePolicy ?? null);
   const readiness = buildHumanBaselineClaimReadiness({
@@ -1627,14 +1680,14 @@ export async function runAgenticHumanReviewDogfoodEvidencePackSummarize(options 
     now
   });
   return {
-    status: 'ok',
-    data: {
-      agentic_human_review_dogfood_evidence_pack_summary: packSummary,
-      boundary: packSummary.boundary
-    },
-    warnings: packSummary.warnings,
-    errors: [],
-    artifacts: []
+    ok: true,
+    now,
+    inputRead,
+    resolved,
+    readiness,
+    longitudinal,
+    claimGate,
+    packSummary
   };
 }
 
@@ -3137,6 +3190,383 @@ function buildDogfoodEvidencePackSummary({
     advisory_only: true,
     gate_effect: 'none'
   });
+}
+
+function buildDogfoodEvidencePackReviewPack({
+  evidenceSet,
+  readiness,
+  longitudinal,
+  claimGate,
+  packSummary,
+  now
+}) {
+  const normalizedEvidenceSet = normalizeEvidenceSetOutput(evidenceSet);
+  const summary = normalizedEvidenceSet.summary ?? {};
+  const status = dogfoodReviewPackStatus(packSummary.status);
+  const blockers = dogfoodReviewPackBlockers({
+    matrixStatus: packSummary.matrix_status,
+    ownerReviewDigest: packSummary.owner_review_digest,
+    claimGate
+  });
+  const topOwnerActions = dogfoodReviewPackTopOwnerActions({ status, blockers });
+  return redact({
+    schema_version: SCHEMA_VERSION,
+    type: 'agentic_human_review_dogfood_review_pack',
+    dogfood_review_pack_version: HUMAN_REVIEW_DOGFOOD_REVIEW_PACK_VERSION,
+    generated_at: now.toISOString(),
+    status,
+    status_label: dogfoodReviewPackStatusLabel(status),
+    overview: {
+      owner_review_can_proceed: status === 'ready_for_owner_review',
+      matrix_complete: packSummary.matrix_status?.complete === true,
+      claim_review_ready: packSummary.claim_review_status?.owner_claim_review_ready === true,
+      primary_next_action: topOwnerActions[0]?.action ?? dogfoodReviewPackDefaultAction(status),
+      result_count: Number(summary.result_count ?? packSummary.evidence_set_digest?.result_count ?? 0),
+      calibration_count: Number(summary.calibration_count ?? packSummary.evidence_set_digest?.calibration_count ?? 0),
+      comparison_count: Number(summary.comparison_count ?? packSummary.evidence_set_digest?.comparison_count ?? 0),
+      owner_labeled_baseline_count: Number(summary.owner_labeled_baseline_count ?? packSummary.evidence_set_digest?.owner_labeled_baseline_count ?? 0),
+      blocked_group_count: blockers.groups.length,
+      warning_count: packSummary.warnings.length,
+      human_equivalent_claim_allowed: false,
+      human_superior_claim_allowed: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    matrix: dogfoodReviewPackMatrix(packSummary.matrix_status),
+    blockers,
+    top_owner_actions: topOwnerActions,
+    trust_safety: {
+      read_only: true,
+      provider_execution_performed: false,
+      api_call_performed: false,
+      external_evidence_transfer: false,
+      artifact_write_performed: false,
+      browser_launched: false,
+      automatic_rerun_performed: false,
+      mcp_execution_exposed: false,
+      raw_provider_response_included: false,
+      credential_values_included: false,
+      detailed_paths_included: false,
+      source_paths_included: false,
+      result_paths_included: false,
+      raw_source_text_included: false,
+      candidate_or_reference_prose_included: false,
+      concrete_commands_included: false,
+      source_text_quality_context_only: true,
+      release_gate_mutated: false,
+      proof_contract_satisfied: false,
+      human_equivalent_claim_allowed: false,
+      human_superior_claim_allowed: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    advanced_references: {
+      input_kind: packSummary.input?.kind ?? null,
+      input_declared_type: packSummary.input?.declared_type ?? null,
+      evidence_set_type: packSummary.evidence_set_digest?.type ?? null,
+      readiness_status: readiness.status,
+      longitudinal_status: longitudinal.status,
+      claim_standard_gate_status: claimGate.status,
+      claim_blocker_count: Array.isArray(claimGate.blockers) ? claimGate.blockers.length : 0,
+      warning_count: packSummary.warnings.length,
+      schema_names: [
+        'agentic_human_review_dogfood_evidence_pack_summary',
+        'agentic_human_review_dogfood_review_pack'
+      ],
+      path_values_included: false,
+      hash_values_included: false,
+      raw_evidence_included: false,
+      concrete_commands_included: false,
+      advisory_only: true,
+      gate_effect: 'none'
+    },
+    execution_boundary: {
+      provider_execution_performed: false,
+      api_call_performed: false,
+      external_evidence_transfer: false,
+      credential_values_read: false,
+      raw_provider_response_stored: false,
+      artifact_write_performed: false,
+      browser_launched: false,
+      automatic_rerun_performed: false,
+      mcp_execution_exposed: false
+    },
+    warnings: packSummary.warnings,
+    boundary: agenticHumanReviewBoundary({ read_only: true }),
+    advisory_only: true,
+    gate_effect: 'none'
+  });
+}
+
+function dogfoodReviewPackStatus(summaryStatus) {
+  if (summaryStatus === 'ready_for_owner_claim_review') {
+    return 'ready_for_owner_review';
+  }
+  if (summaryStatus === 'matrix_complete_claim_review_blocked') {
+    return 'blocked';
+  }
+  if (summaryStatus === 'evidence_pack_incomplete') {
+    return 'incomplete';
+  }
+  return 'needs_attention';
+}
+
+function dogfoodReviewPackStatusLabel(status) {
+  return {
+    ready_for_owner_review: 'Ready for owner review',
+    blocked: 'Blocked before owner review',
+    incomplete: 'Evidence pack incomplete',
+    needs_attention: 'Needs attention'
+  }[status] ?? 'Needs attention';
+}
+
+function dogfoodReviewPackDefaultAction(status) {
+  return {
+    ready_for_owner_review: 'Perform owner claim review using the sanitized review pack.',
+    blocked: 'Resolve the listed blocker groups before treating the pack as claim-ready.',
+    incomplete: 'Complete the missing evidence matrix before owner claim review.',
+    needs_attention: 'Inspect the listed owner-review blockers before proceeding.'
+  }[status] ?? 'Inspect the listed owner-review blockers before proceeding.';
+}
+
+function dogfoodReviewPackMatrix(matrixStatus = {}) {
+  const requiredCaseIds = Array.isArray(matrixStatus.required_benchmark_case_ids)
+    ? matrixStatus.required_benchmark_case_ids
+    : BENCHMARK_CASES.map((item) => item.case_id);
+  const requiredEfforts = Array.isArray(matrixStatus.required_efforts)
+    ? matrixStatus.required_efforts
+    : [...HUMAN_REVIEW_CLAIM_EFFORTS];
+  const missing = matrixStatus.missing ?? {};
+  const rows = requiredCaseIds.map((caseId) => {
+    const cells = Object.fromEntries(requiredEfforts.map((effort) => {
+      const resultMissing = dogfoodReviewPackHasCaseEffort(missing.result_case_efforts, caseId, effort);
+      const claimNumeratorMissing = dogfoodReviewPackHasCaseEffort(missing.real_provider_claim_numerator_case_efforts, caseId, effort);
+      const mechanicalMissing = dogfoodReviewPackHasCaseEffort(missing.mechanical_contract_case_efforts, caseId, effort);
+      const calibrationMissing = dogfoodReviewPackHasCaseEffort(missing.calibration_case_efforts, caseId, effort);
+      const status = resultMissing
+        ? 'missing'
+        : (claimNumeratorMissing || mechanicalMissing || calibrationMissing ? 'blocked' : 'ready');
+      return [effort, {
+        status,
+        result: resultMissing ? 'missing' : 'present',
+        real_provider_claim_numerator: resultMissing ? 'missing' : (claimNumeratorMissing ? 'blocked' : 'ready'),
+        mechanical_contract: resultMissing ? 'missing' : (mechanicalMissing ? 'blocked' : 'ready'),
+        calibration: resultMissing ? 'missing' : (calibrationMissing ? 'blocked' : 'ready')
+      }];
+    }));
+    const caseCells = Object.values(cells);
+    const missingComparisonKinds = dogfoodReviewPackMissingComparisonKinds(missing.comparison_case_matrix, caseId);
+    const ownerBaselineMissing = dogfoodReviewPackCaseIdIncluded(missing.owner_labeled_baseline_case_ids, caseId);
+    const ownerBaselineComparisonMissing = dogfoodReviewPackCaseIdIncluded(missing.human_baseline_comparison_case_ids, caseId);
+    return {
+      case_id: caseId,
+      status: caseCells.some((cell) => cell.status === 'missing')
+        ? 'missing'
+        : (caseCells.some((cell) => cell.status === 'blocked') || missingComparisonKinds.length > 0 || ownerBaselineMissing || ownerBaselineComparisonMissing ? 'blocked' : 'ready'),
+      cells,
+      comparison: {
+        status: missingComparisonKinds.length > 0 ? 'blocked' : 'ready',
+        missing_kinds: missingComparisonKinds
+      },
+      owner_baseline: {
+        status: ownerBaselineMissing || ownerBaselineComparisonMissing ? 'blocked' : 'ready',
+        owner_labeled_baseline_missing: ownerBaselineMissing,
+        owner_labeled_comparison_missing: ownerBaselineComparisonMissing
+      }
+    };
+  });
+  const flatCells = rows.flatMap((row) => Object.values(row.cells));
+  return {
+    complete: matrixStatus.complete === true,
+    required_efforts: requiredEfforts,
+    required_benchmark_case_count: requiredCaseIds.length,
+    rows,
+    summary: {
+      ready_cell_count: flatCells.filter((cell) => cell.status === 'ready').length,
+      blocked_cell_count: flatCells.filter((cell) => cell.status === 'blocked').length,
+      missing_cell_count: flatCells.filter((cell) => cell.status === 'missing').length,
+      ready_case_count: rows.filter((row) => row.status === 'ready').length,
+      blocked_case_count: rows.filter((row) => row.status === 'blocked').length,
+      missing_case_count: rows.filter((row) => row.status === 'missing').length
+    },
+    path_values_included: false,
+    raw_evidence_included: false
+  };
+}
+
+function dogfoodReviewPackBlockers({ matrixStatus = {}, ownerReviewDigest = {}, claimGate = {} }) {
+  const missing = matrixStatus.missing ?? {};
+  const groups = [
+    dogfoodReviewPackBlockerGroup({
+      code: 'missing_evidence',
+      title: 'Missing evidence cells',
+      owner_action: 'Complete the listed standard/deep/xhigh evidence cells.',
+      items: missing.result_case_efforts ?? [],
+      exampleMapper: dogfoodReviewPackCaseEffortExample
+    }),
+    dogfoodReviewPackBlockerGroup({
+      code: 'provider_claim_numerator',
+      title: 'Provider claim-numerator gaps',
+      owner_action: 'Confirm real-provider eligible evidence before claim review.',
+      items: missing.real_provider_claim_numerator_case_efforts ?? [],
+      exampleMapper: dogfoodReviewPackCaseEffortExample
+    }),
+    dogfoodReviewPackBlockerGroup({
+      code: 'mechanical_contract',
+      title: 'Mechanical contract gaps',
+      owner_action: 'Resolve TraceCue mechanical contract gaps for affected efforts.',
+      items: missing.mechanical_contract_case_efforts ?? [],
+      exampleMapper: dogfoodReviewPackCaseEffortExample
+    }),
+    dogfoodReviewPackBlockerGroup({
+      code: 'calibration',
+      title: 'Calibration gaps',
+      owner_action: 'Complete or repair calibration for affected evidence cells.',
+      items: missing.calibration_case_efforts ?? [],
+      exampleMapper: dogfoodReviewPackCaseEffortExample
+    }),
+    dogfoodReviewPackBlockerGroup({
+      code: 'comparison',
+      title: 'Comparison gaps',
+      owner_action: 'Complete the missing case-level comparisons.',
+      items: missing.comparison_case_matrix ?? [],
+      exampleMapper: (item) => ({
+        case_id: item.case_id ?? null,
+        comparison_kind: item.comparison_kind ?? null
+      })
+    }),
+    dogfoodReviewPackBlockerGroup({
+      code: 'owner_baseline',
+      title: 'Owner-baseline gaps',
+      owner_action: 'Complete owner-labeled baselines and owner-baseline comparisons.',
+      items: dogfoodReviewPackOwnerBaselineItems(missing),
+      exampleMapper: (item) => ({
+        case_id: item.case_id ?? null,
+        gap: item.gap ?? null
+      })
+    }),
+    dogfoodReviewPackBlockerGroup({
+      code: 'claim_policy_safety',
+      title: 'Claim policy and safety blockers',
+      owner_action: 'Resolve claim-standard blockers before treating the pack as claim-ready.',
+      items: Array.isArray(claimGate.blockers) ? claimGate.blockers : [],
+      exampleMapper: (item) => ({ code: item.code ?? null })
+    }),
+    dogfoodReviewPackSourceTextGroup(ownerReviewDigest)
+  ];
+  const blockedGroups = groups.filter((group) => group.count > 0);
+  return {
+    status: blockedGroups.length > 0 ? 'blocked' : 'clear',
+    total_blocker_count: blockedGroups.reduce((sum, group) => sum + group.count, 0),
+    groups: blockedGroups,
+    clear_group_codes: groups.filter((group) => group.count === 0).map((group) => group.code),
+    path_values_included: false,
+    raw_evidence_included: false,
+    advisory_only: true,
+    gate_effect: 'none'
+  };
+}
+
+function dogfoodReviewPackBlockerGroup({ code, title, owner_action, items, exampleMapper }) {
+  const safeItems = Array.isArray(items) ? items : [];
+  return {
+    code,
+    title,
+    owner_action,
+    count: safeItems.length,
+    examples: safeItems.slice(0, 3).map(exampleMapper),
+    path_values_included: false,
+    raw_evidence_included: false
+  };
+}
+
+function dogfoodReviewPackSourceTextGroup(ownerReviewDigest = {}) {
+  const sourceTextQuality = ownerReviewDigest.source_text_quality;
+  if (!ownerReviewDigest.supplied || !sourceTextQuality || sourceTextQuality.status === 'ready_for_owner_review_context') {
+    return dogfoodReviewPackBlockerGroup({
+      code: 'source_text_quality_context',
+      title: 'Source-text quality context',
+      owner_action: 'No source-text owner context action is required.',
+      items: [],
+      exampleMapper: (item) => item
+    });
+  }
+  const missingEfforts = Array.isArray(sourceTextQuality.missing_result_efforts) ? sourceTextQuality.missing_result_efforts : [];
+  const staleEfforts = Array.isArray(sourceTextQuality.stale_efforts) ? sourceTextQuality.stale_efforts : [];
+  const items = [
+    ...missingEfforts.map((effort) => ({ effort, gap: 'missing_result_effort' })),
+    ...staleEfforts.map((effort) => ({ effort, gap: 'stale_effort' }))
+  ];
+  if (items.length === 0) {
+    items.push({ gap: sourceTextQuality.status ?? 'needs_attention_context' });
+  }
+  return dogfoodReviewPackBlockerGroup({
+    code: 'source_text_quality_context',
+    title: 'Source-text quality context',
+    owner_action: 'Review source-text context before relying on effort-level quality comparisons.',
+    items,
+    exampleMapper: (item) => ({
+      effort: item.effort ?? null,
+      gap: item.gap ?? null
+    })
+  });
+}
+
+function dogfoodReviewPackTopOwnerActions({ status, blockers }) {
+  if (status === 'ready_for_owner_review') {
+    return [{
+      priority: 1,
+      code: 'owner_claim_review',
+      action: 'Perform owner claim review using the sanitized review pack.',
+      why: 'The evidence matrix and claim-standard gate are ready for owner review.'
+    }];
+  }
+  const actions = blockers.groups.map((group, index) => ({
+    priority: index + 1,
+    code: group.code,
+    action: group.owner_action,
+    why: `${group.count} item(s) need attention in ${group.title.toLowerCase()}.`
+  }));
+  if (actions.length === 0) {
+    actions.push({
+      priority: 1,
+      code: status,
+      action: dogfoodReviewPackDefaultAction(status),
+      why: 'The review pack needs owner attention before proceeding.'
+    });
+  }
+  return actions.slice(0, 3);
+}
+
+function dogfoodReviewPackOwnerBaselineItems(missing = {}) {
+  return [
+    ...(Array.isArray(missing.owner_labeled_baseline_case_ids) ? missing.owner_labeled_baseline_case_ids : [])
+      .map((caseId) => ({ case_id: caseId, gap: 'owner_labeled_baseline' })),
+    ...(Array.isArray(missing.human_baseline_comparison_case_ids) ? missing.human_baseline_comparison_case_ids : [])
+      .map((caseId) => ({ case_id: caseId, gap: 'owner_labeled_comparison' }))
+  ];
+}
+
+function dogfoodReviewPackHasCaseEffort(items, caseId, effort) {
+  return Array.isArray(items) && items.some((item) => item?.case_id === caseId && item?.effort === effort);
+}
+
+function dogfoodReviewPackCaseIdIncluded(items, caseId) {
+  return Array.isArray(items) && items.includes(caseId);
+}
+
+function dogfoodReviewPackMissingComparisonKinds(items, caseId) {
+  return uniqueSorted((Array.isArray(items) ? items : [])
+    .filter((item) => item?.case_id === caseId)
+    .map((item) => item.comparison_kind)
+    .filter(Boolean));
+}
+
+function dogfoodReviewPackCaseEffortExample(item) {
+  return {
+    case_id: item.case_id ?? null,
+    effort: item.effort ?? null
+  };
 }
 
 function dogfoodOwnerReviewDigest(ownerReviewContext) {

@@ -1458,8 +1458,8 @@ function parseAgentic(args, globals) {
     }
     if (dogfoodAction === 'evidence-pack') {
       const evidencePackAction = args[3];
-      if (evidencePackAction === 'summarize') {
-        const command = 'agentic review dogfood evidence-pack summarize';
+      if (evidencePackAction === 'summarize' || evidencePackAction === 'review-pack') {
+        const command = `agentic review dogfood evidence-pack ${evidencePackAction}`;
         const parsed = parseRequiredOptions(command, args.slice(4), globals, ['input']);
         if (!parsed.ok) {
           return parsed;
@@ -1476,8 +1476,8 @@ function parseAgentic(args, globals) {
       }
       return parseError('agentic review dogfood evidence-pack', globals.json, {
         code: evidencePackAction ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
-        message: evidencePackAction ? `Unknown agentic review dogfood evidence-pack subcommand: ${evidencePackAction}` : 'agentic review dogfood evidence-pack requires summarize.',
-        details: { subcommands: ['summarize'] }
+        message: evidencePackAction ? `Unknown agentic review dogfood evidence-pack subcommand: ${evidencePackAction}` : 'agentic review dogfood evidence-pack requires summarize or review-pack.',
+        details: { subcommands: ['summarize', 'review-pack'] }
       });
     }
     return parseError('agentic review dogfood', globals.json, {
@@ -2524,6 +2524,7 @@ function plannedCommands() {
     'agentic review dogfood readiness',
     'agentic review dogfood plan',
     'agentic review dogfood evidence-pack summarize',
+    'agentic review dogfood evidence-pack review-pack',
     'agentic review calibrate',
     'agentic review compare',
     'agentic review compare batch',

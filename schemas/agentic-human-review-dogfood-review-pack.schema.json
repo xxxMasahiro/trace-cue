@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/agentic-human-review-dogfood-review-pack.schema.json",
+  "title": "TraceCue Agentic Human Review Dogfood Review Pack",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "type",
+    "dogfood_review_pack_version",
+    "generated_at",
+    "status",
+    "status_label",
+    "overview",
+    "matrix",
+    "blockers",
+    "top_owner_actions",
+    "trust_safety",
+    "advanced_references",
+    "execution_boundary",
+    "warnings",
+    "boundary",
+    "advisory_only",
+    "gate_effect"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "type": {
+      "const": "agentic_human_review_dogfood_review_pack"
+    },
+    "dogfood_review_pack_version": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ready_for_owner_review",
+        "blocked",
+        "incomplete",
+        "needs_attention"
+      ]
+    },
+    "status_label": {
+      "type": "string"
+    },
+    "overview": {
+      "type": "object",
+      "properties": {
+        "owner_review_can_proceed": {
+          "type": "boolean"
+        },
+        "human_equivalent_claim_allowed": {
+          "const": false
+        },
+        "human_superior_claim_allowed": {
+          "const": false
+        },
+        "advisory_only": {
+          "const": true
+        },
+        "gate_effect": {
+          "const": "none"
+        }
+      },
+      "additionalProperties": true
+    },
+    "matrix": {
+      "type": "object",
+      "properties": {
+        "path_values_included": {
+          "const": false
+        },
+        "raw_evidence_included": {
+          "const": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "blockers": {
+      "type": "object",
+      "properties": {
+        "path_values_included": {
+          "const": false
+        },
+        "raw_evidence_included": {
+          "const": false
+        },
+        "advisory_only": {
+          "const": true
+        },
+        "gate_effect": {
+          "const": "none"
+        }
+      },
+      "additionalProperties": true
+    },
+    "top_owner_actions": {
+      "type": "array"
+    },
+    "trust_safety": {
+      "type": "object",
+      "properties": {
+        "read_only": {
+          "const": true
+        },
+        "provider_execution_performed": {
+          "const": false
+        },
+        "api_call_performed": {
+          "const": false
+        },
+        "external_evidence_transfer": {
+          "const": false
+        },
+        "artifact_write_performed": {
+          "const": false
+        },
+        "automatic_rerun_performed": {
+          "const": false
+        },
+        "mcp_execution_exposed": {
+          "const": false
+        },
+        "raw_provider_response_included": {
+          "const": false
+        },
+        "credential_values_included": {
+          "const": false
+        },
+        "detailed_paths_included": {
+          "const": false
+        },
+        "source_paths_included": {
+          "const": false
+        },
+        "result_paths_included": {
+          "const": false
+        },
+        "raw_source_text_included": {
+          "const": false
+        },
+        "candidate_or_reference_prose_included": {
+          "const": false
+        },
+        "concrete_commands_included": {
+          "const": false
+        },
+        "release_gate_mutated": {
+          "const": false
+        },
+        "proof_contract_satisfied": {
+          "const": false
+        },
+        "human_equivalent_claim_allowed": {
+          "const": false
+        },
+        "human_superior_claim_allowed": {
+          "const": false
+        },
+        "advisory_only": {
+          "const": true
+        },
+        "gate_effect": {
+          "const": "none"
+        }
+      },
+      "additionalProperties": true
+    },
+    "advanced_references": {
+      "type": "object",
+      "properties": {
+        "path_values_included": {
+          "const": false
+        },
+        "hash_values_included": {
+          "const": false
+        },
+        "raw_evidence_included": {
+          "const": false
+        },
+        "concrete_commands_included": {
+          "const": false
+        },
+        "advisory_only": {
+          "const": true
+        },
+        "gate_effect": {
+          "const": "none"
+        }
+      },
+      "additionalProperties": true
+    },
+    "execution_boundary": {
+      "type": "object",
+      "properties": {
+        "provider_execution_performed": {
+          "const": false
+        },
+        "api_call_performed": {
+          "const": false
+        },
+        "external_evidence_transfer": {
+          "const": false
+        },
+        "credential_values_read": {
+          "const": false
+        },
+        "raw_provider_response_stored": {
+          "const": false
+        },
+        "artifact_write_performed": {
+          "const": false
+        },
+        "browser_launched": {
+          "const": false
+        },
+        "automatic_rerun_performed": {
+          "const": false
+        },
+        "mcp_execution_exposed": {
+          "const": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "warnings": {
+      "type": "array"
+    },
+    "boundary": {
+      "type": "object"
+    },
+    "advisory_only": {
+      "const": true
+    },
+    "gate_effect": {
+      "const": "none"
+    }
+  },
+  "additionalProperties": true
+}
