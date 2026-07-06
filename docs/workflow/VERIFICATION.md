@@ -450,6 +450,14 @@ Optional acceptance checks against local application servers may run only when t
 
 `CHANGELOG.md`, `.github/workflows/ci.yml`, `ops/CI_MANIFEST.tsv`, and `docs/workflow/RELEASE.md` are release-readiness files. They do not authorize publish actions. npm credentials, license changes, and `npm publish` remain approval-bound.
 
+## Control Center Checks
+
+- No-browser tests cover `control-center status --json`, parser rejection for execution-style options, read-only boundary flags, schema registry export, source-status projection, and design-system-backed React/Vite build readiness.
+- Server tests cover loopback-only startup, GET-only API behavior, `Cache-Control: no-store`, `/api/health`, `/api/dashboard`, non-loopback Origin rejection, non-loopback Host rejection, and missing-build asset handling.
+- Architecture tests verify `src/control-center-read-model.js` stays free of HTTP listeners, Playwright, child-process APIs, provider fetches, writes, artifact-root creation, raw-pixel reads, and gate mutation, while `src/control-center-server.js` is the only new listener module.
+- Product security checks allowlist only `src/control-center-server.js` for the new listener pattern and continue to fail any unrelated `createServer`, `.listen`, WebSocket, or EventSource runtime addition.
+- Vite build checks verify the React browser surface under `control-center/` can compile against `docs/design-system/tokens.json` and `docs/design-system/components.json`.
+
 ## Phase 2a Design Checks
 
 - Product documents describe the same CLI binary, package baseline, JSON contract, artifact root, and safety defaults.

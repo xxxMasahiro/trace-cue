@@ -10,4 +10,6 @@ TraceCue is primarily a command-line tool. The product may later generate HTML o
 
 ## Current Status
 
-Phase 0 includes no report UI implementation.
+TraceCue now includes a React + Vite local review center surface under `control-center/`. The surface imports `docs/design-system/tokens.json` and `docs/design-system/components.json` so colors, spacing, radius, fonts, and component contracts remain product-local design-system inputs instead of hard-coded one-off UI policy.
+
+The first browser surface keeps a compact operational layout: status, next action, evidence matrix, findings, and advanced diagnostics. It should stay dense, readable, and evidence-focused. It must not add decorative backgrounds, nested cards, marketing layout, raw JSON-first pages, command launchers, provider selectors, or execution controls.

@@ -139,6 +139,8 @@ The local runtime launches Playwright Chromium only for developer-provided `http
 
 Current redaction is a defensive baseline for common secret-like strings and sensitive URL parameters; page content and artifacts remain untrusted data and should not be treated as sanitized proof of secrecy. Trace zip files can contain raw page content and must remain local under ignored `.browser-debug/` paths.
 
+The control-center browser surface is a local review status UI, not a control or execution plane. `control-center status` builds a read-only, body-free read model from existing TraceCue APIs. `control-center serve` is loopback-only, GET-only, Host/Origin validated, cache-disabled with `Cache-Control: no-store`, and isolated in `src/control-center-server.js`. It exposes only `/api/health`, `/api/dashboard`, and built React/Vite assets. It must not expose POST/PUT/PATCH/DELETE actions, MCP JSON-RPC, provider/model selection, credential inputs, cleanup execution, shell execution, browser launch, artifact writes, raw artifact serving, raw pixel display, raw provider responses, external upload, or release-gate mutation. The React/Vite app reads product-local design-system tokens from `docs/design-system/`; changing the design system changes presentation only and does not grant runtime authority.
+
 ## Review Platform Security Boundaries
 
 The review platform preserves the current local-first security model while expanding evidence collection. Review findings, screenshots, layout snapshots, mock metrics, console data, network summaries, source snippets, model suggestions, and generated reports remain untrusted data.

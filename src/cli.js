@@ -113,6 +113,8 @@ import {
 } from './visual-review-execution.js';
 import { runVisualReviewDashboard } from './visual-review-dashboard.js';
 import { runVisualReviewAggregation } from './visual-review-aggregation.js';
+import { runControlCenterServe } from './control-center-server.js';
+import { runControlCenterStatus } from './control-center-read-model.js';
 import { buildMcpClientConfig } from './mcp-client-config.js';
 import { mcpProfileMetadata } from './mcp-profiles.js';
 import { mcpServerInfo } from './mcp.js';
@@ -240,6 +242,14 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'resource artifacts cleanup') {
       return runtimeResult(parsed.command, await (context.resourceArtifactsCleanupRunner ?? runResourceArtifactsCleanup)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'control-center status') {
+      return runtimeResult(parsed.command, await (context.controlCenterStatusRunner ?? runControlCenterStatus)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'control-center serve') {
+      return runtimeResult(parsed.command, await (context.controlCenterServeRunner ?? runControlCenterServe)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'agent surfaces list') {
@@ -863,6 +873,15 @@ function usageText(topic) {
       '  --plan-hash <sha256>     Optional cleanup plan hash to revalidate before execution.',
       '  --dry-run                Show cleanup candidates without deleting files.',
       '  --execute                Delete selected regular files under the artifact root and write a receipt.'
+    ].join('\n');
+  }
+
+  if (topic === 'control-center' || topic === 'control-center status' || topic === 'control-center serve') {
+    return [
+      `Usage: ${CLI_NAME} control-center status [--artifact-root <path>] [--limit <n>] [--max-bytes <bytes>] [--evidence-set <workspace-json>] [--json]`,
+      `       ${CLI_NAME} control-center serve [--host 127.0.0.1] [--port <port>] [--artifact-root <path>] [--limit <n>] [--max-bytes <bytes>] [--evidence-set <workspace-json>] [--json]`,
+      '',
+      'Reports and serves read-only local review status. The server is loopback-only and GET-only, exposes no action API, performs no provider call, writes no artifacts, launches no browser, and mutates no gates.'
     ].join('\n');
   }
 

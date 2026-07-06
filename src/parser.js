@@ -157,6 +157,8 @@ export function parseCliArgs(argv) {
       return parseDaemon(args, globals);
     case 'resource':
       return parseResource(args, globals);
+    case 'control-center':
+      return parseControlCenter(args, globals);
     case 'agent':
       return parseAgent(args, globals);
     case 'agentic':
@@ -504,6 +506,45 @@ function parseResourceArtifacts(args, globals) {
     });
   }
   return { ok: true, command: `resource artifacts ${subcommand}`, json: globals.json, options: parsed.options };
+}
+
+function parseControlCenter(args, globals) {
+  if (globals.help) {
+    return { ok: true, command: 'help', json: globals.json, options: { topic: args[0] ? `control-center ${args[0]}` : 'control-center' } };
+  }
+  const subcommand = args[0];
+  if (subcommand !== 'status' && subcommand !== 'serve') {
+    return parseError('control-center', globals.json, {
+      code: subcommand ? 'UNKNOWN_CONTROL_CENTER_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: subcommand ? `Unknown control-center subcommand: ${subcommand}` : 'control-center requires a subcommand.',
+      details: { subcommands: ['status', 'serve'] }
+    });
+  }
+  const command = `control-center ${subcommand}`;
+  const parsed = parseOptions(command, args.slice(1), globals.json);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (parsed.positionals.length > 0) {
+    return parseError(command, globals.json, {
+      code: 'UNEXPECTED_ARGUMENT',
+      message: `${command} does not accept positional arguments.`,
+      details: { argument: parsed.positionals[0] }
+    });
+  }
+  const allowed = new Set(subcommand === 'serve'
+    ? ['artifact-root', 'limit', 'max-bytes', 'evidence-set', 'input', 'host', 'port']
+    : ['artifact-root', 'limit', 'max-bytes', 'evidence-set', 'input']);
+  for (const option of Object.keys(parsed.options)) {
+    if (!allowed.has(option)) {
+      return parseError(command, globals.json, {
+        code: 'UNSUPPORTED_CONTROL_CENTER_OPTION',
+        message: `${command} does not accept --${option} because it is read-only status UI.`,
+        details: { option }
+      });
+    }
+  }
+  return { ok: true, command, json: globals.json, options: parsed.options };
 }
 
 function parseCapture(args, globals) {
@@ -2501,6 +2542,8 @@ function plannedCommands() {
     'resource status',
     'resource artifacts plan',
     'resource artifacts cleanup',
+    'control-center status',
+    'control-center serve',
     'agent surfaces list',
     'agent requests list',
     'agent requests show',

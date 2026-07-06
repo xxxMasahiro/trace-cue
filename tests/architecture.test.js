@@ -809,6 +809,34 @@ test('HTTP MCP listener stays isolated to the approved transport module', async 
   assert.doesNotMatch(core, /from '\.\/mcp-http-transport\.js'/);
 });
 
+test('control-center browser surface stays read-only and listener-isolated', async () => {
+  const readModel = await readText('src/control-center-read-model.js');
+  const server = await readText('src/control-center-server.js');
+  const api = await readText('src/api.js');
+  const cli = await readText('src/cli.js');
+  const parser = await readText('src/parser.js');
+
+  assert.match(readModel, /read_only:\s*true/);
+  assert.match(readModel, /writes_artifacts:\s*false/);
+  assert.match(readModel, /provider_call_performed:\s*false/);
+  assert.match(readModel, /raw_pixels_read:\s*false/);
+  assert.match(readModel, /mcp_write_execute_exposed:\s*false/);
+  assert.match(readModel, /gate_effect:\s*'none'/);
+  assert.doesNotMatch(readModel, /from 'node:http'|createServer|\.listen\(|writeFile|writeJsonArtifact|ensureArtifactRoot/);
+  assert.doesNotMatch(readModel, /from 'playwright'|import\('playwright'\)|node:child_process|child_process|execFile|spawn\(/);
+  assert.doesNotMatch(readModel, /\bfetch\s*\(|XMLHttpRequest|curl|wget|process\.env/);
+
+  assert.match(server, /from 'node:http'/);
+  assert.match(server, /createServer/);
+  assert.match(server, /\.listen\(/);
+  assert.match(server, /request\.method !== 'GET'/);
+  assert.match(server, /isAllowedMcpHttpHost/);
+  assert.match(server, /isAllowedMcpHttpOrigin/);
+  assert.match(server, /Cache-Control/);
+  assert.doesNotMatch(server, /WebSocket|EventSource|node:child_process|execFile|spawn\(|provider_execute|cleanup_execute|agent_execution_run/);
+  assert.doesNotMatch(`${api}\n${cli}\n${parser}`, /from 'node:http'|createServer|\.listen\(/);
+});
+
 test('product identity keeps rename-sensitive surfaces aligned', async () => {
   const pkg = JSON.parse(await readText('package.json'));
   const plugin = JSON.parse(await readText('.codex-plugin/plugin.json'));

@@ -130,6 +130,41 @@ const schemas = Object.freeze({
     properties: artifactProperties,
     additionalProperties: true
   }),
+  control_center_read_model: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/control-center-read-model.schema.json',
+    title: 'TraceCue Control Center Read Model',
+    type: 'object',
+    required: ['schema_version', 'control_center_read_model_version', 'generated_at', 'status', 'review', 'evidence', 'findings', 'setup_safety', 'advanced', 'boundary', 'gate_effect'],
+    properties: {
+      schema_version: { type: 'string' },
+      control_center_read_model_version: { type: 'string' },
+      generated_at: { type: 'string' },
+      status: { enum: ['empty', 'ready', 'needs_attention', 'blocked', 'error'] },
+      status_label: { type: 'string' },
+      review: { type: 'object' },
+      evidence: { type: 'object' },
+      findings: { type: 'object' },
+      setup_safety: { type: 'object' },
+      advanced: { type: 'object' },
+      boundary: {
+        type: 'object',
+        properties: {
+          local_only: { const: true },
+          read_only: { const: true },
+          browser_launched: { const: false },
+          writes_artifacts: { const: false },
+          provider_call_performed: { const: false },
+          raw_pixels_read: { const: false },
+          mcp_write_execute_exposed: { const: false },
+          gate_effect: { const: 'none' }
+        },
+        additionalProperties: true
+      },
+      gate_effect: { enum: ['none'] }
+    },
+    additionalProperties: true
+  }),
   session_action: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     $id: 'https://trace-cue.local/schemas/session-action.schema.json',

@@ -19,18 +19,21 @@
   },
   "scripts": {
     "ahr:responses-adapter": "node ./bin/trace-cue-ahr-responses-adapter.js",
+    "control-center:build": "vite build --config control-center/vite.config.mjs",
+    "control-center:dev": "vite --config control-center/vite.config.mjs --host 127.0.0.1",
     "doctor": "node ./bin/trace-cue.js doctor --json",
-    "test": "node --test tests/architecture.test.js tests/cli.test.js",
+    "test": "node --test tests/architecture.test.js tests/cli.test.js tests/control-center.test.js",
     "test:browser": "TRACE_CUE_BROWSER_SMOKE=1 node --test tests/browser-smoke.test.js",
     "test:rename-readiness": "node ./tools/check_rename_readiness.mjs",
     "test:pack": "node ./tools/pack-dry-run.mjs",
     "test:pack-install": "node ./tools/pack-install-smoke.mjs",
-    "release:check": "npm test && npm run test:rename-readiness && npm run test:pack && npm run test:pack-install"
+    "release:check": "npm test && npm run control-center:build && npm run test:rename-readiness && npm run test:pack && npm run test:pack-install"
   },
   "files": [
     ".codex-plugin/",
     ".mcp.json",
     "bin/",
+    "control-center/",
     "src/",
     "schemas/",
     "templates/",
@@ -39,6 +42,7 @@
     "skills/trace-cue-review/SKILL.md",
     "README.md",
     "CHANGELOG.md",
+    "docs/design-system/",
     "docs/workflow/CONSUMER_USAGE.md",
     "docs/workflow/IDENTITY_MIGRATION.md",
     "docs/workflow/SECURITY.md",
@@ -57,5 +61,10 @@
   "license": "UNLICENSED",
   "dependencies": {
     "playwright": "^1.61.0"
+  },
+  "devDependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "vite": "^8.1.3"
   }
 }

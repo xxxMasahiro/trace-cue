@@ -352,6 +352,7 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 - [x] Phase 38: add local-checkout MCP config metadata for unpublished checkout use without expanding MCP permissions, starting listeners, writing config files, reading credentials, emitting token values, publishing, or renaming identities.
 - [x] Phase 39: add consumer runtime-readiness guidance for frontend-only dev servers, missing API/backend services, API base configuration, and `needs_attention` interpretation without expanding runtime behavior or adding consumer-specific branches.
 - [x] AHR-41-44: add real-provider dogfood opt-in enforcement, visible-text provenance, benchmark-completion readiness, transfer-flag masking for plan/package AHR payloads, and mechanical `xhigh` completion assessment without changing deterministic release gates, MCP exposure, credential storage, or raw provider response storage.
+- [x] Control Center read-only browser surface: add `control-center status`, loopback `control-center serve`, React + Vite UI, design-system token wiring, schema/API/parser/test coverage, and listener security isolation without adding provider execution, command execution, artifact writes, MCP browser execution, or gate mutation.
 
 ## Future Approval-Bound Work
 

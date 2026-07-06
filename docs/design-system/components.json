@@ -11,6 +11,11 @@
       "id": "artifact-list",
       "tokens": ["foreground", "accent"],
       "contract": ["List local artifacts with clear type and path."]
+    },
+    {
+      "id": "control-center-shell",
+      "tokens": ["background", "surface", "panel", "line", "foreground", "muted", "accent", "success", "warning", "danger"],
+      "contract": ["Keep the local review center dense, readable, evidence-focused, and free of decorative or execution controls."]
     }
   ]
 }

@@ -214,6 +214,17 @@ export {
   visualReviewAggregationBoundary
 } from './visual-review-aggregation.js';
 export {
+  buildControlCenterReadModel,
+  controlCenterBoundary,
+  runControlCenterStatus
+} from './control-center-read-model.js';
+export {
+  createControlCenterServer,
+  resolveControlCenterServerConfig,
+  runControlCenterServe,
+  startControlCenterServer
+} from './control-center-server.js';
+export {
   DASHBOARD_SETTINGS_PATH,
   IMPLEMENTED_TRANSLATION_MODES,
   OUTPUT_LANGUAGE_MODES,

@@ -1,2 +1,3 @@
 # design_id	required_mode	contexts	source_path	generated_path	check_command	description
 product-design-system	required	all	docs/design-system/DESIGN_SYSTEM.md	none	tools/check_product_design_system.sh	Product-local design-system source and check.
+control-center-design-system	required	all	docs/design-system/tokens.json	control-center/src/designSystem.js	tools/check_product_design_system.sh	React/Vite control-center presentation consumes product-local design-system tokens and component metadata.

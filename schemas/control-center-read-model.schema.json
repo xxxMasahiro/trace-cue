@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/control-center-read-model.schema.json",
+  "title": "TraceCue Control Center Read Model",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "control_center_read_model_version",
+    "generated_at",
+    "status",
+    "status_label",
+    "review",
+    "evidence",
+    "findings",
+    "setup_safety",
+    "advanced",
+    "boundary",
+    "gate_effect"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "control_center_read_model_version": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "status": { "enum": ["empty", "ready", "needs_attention", "blocked", "error"] },
+    "status_label": { "type": "string" },
+    "read_model_freshness": { "type": "object" },
+    "review": { "type": "object" },
+    "evidence": { "type": "object" },
+    "findings": { "type": "object" },
+    "setup_safety": { "type": "object" },
+    "advanced": { "type": "object" },
+    "query": { "type": "object" },
+    "warnings": { "type": "array" },
+    "errors": { "type": "array" },
+    "boundary": {
+      "type": "object",
+      "properties": {
+        "local_only": { "const": true },
+        "read_only": { "const": true },
+        "browser_launched": { "const": false },
+        "writes_artifacts": { "const": false },
+        "deletes_files": { "const": false },
+        "provider_call_performed": { "const": false },
+        "api_call_performed": { "const": false },
+        "automatic_upload": { "const": false },
+        "external_evidence_transfer": { "const": false },
+        "raw_pixels_read": { "const": false },
+        "raw_artifact_content_included": { "const": false },
+        "raw_provider_response_stored": { "const": false },
+        "credential_values_recorded": { "const": false },
+        "mcp_execution_exposed": { "const": false },
+        "mcp_write_execute_exposed": { "const": false },
+        "shell_used": { "const": false },
+        "gate_effect": { "const": "none" }
+      },
+      "additionalProperties": true
+    },
+    "gate_effect": { "enum": ["none"] }
+  },
+  "additionalProperties": true
+}
