@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -32,9 +32,15 @@ test('control-center status builds a read-only local read model', async () => {
   const body = JSON.parse(result.stdout);
   assert.equal(body.command, 'control-center status');
   assert.equal(body.data.control_center.schema_version, '0.1.0');
+  assert.equal(body.data.control_center.control_center_read_model_version, '1.1.0');
   assert.equal(body.data.control_center.generated_at, fixedNow);
   assert.equal(body.data.control_center.status, 'empty');
   assert.equal(body.data.control_center.review.visual_review.status, 'empty');
+  assert.equal(body.data.control_center.source_intake.status, 'available');
+  assert.equal(body.data.control_center.source_intake.supported_efforts.includes('xhigh'), true);
+  assert.equal(body.data.control_center.source_intake.safety.provider_execution, false);
+  assert.equal(body.data.control_center.settings.display_language.supported_locales.length, 14);
+  assert.equal(body.data.control_center.settings.display_language.translation_execution_enabled, false);
   assert.equal(body.data.control_center.review.trust_safety.read_only, true);
   assert.equal(body.data.control_center.boundary.read_only, true);
   assert.equal(body.data.control_center.boundary.writes_artifacts, false);
@@ -59,6 +65,8 @@ test('control-center schema is exported through the local schema registry', () =
   assert.equal(schema.title, 'TraceCue Control Center Read Model');
   assert.equal(schema.properties.boundary.properties.read_only.const, true);
   assert.equal(schema.properties.boundary.properties.provider_call_performed.const, false);
+  assert.equal(schema.required.includes('source_intake'), true);
+  assert.equal(schema.required.includes('settings'), true);
 });
 
 test('control-center appearance is controlled by the product design-system files', async () => {
@@ -71,7 +79,17 @@ test('control-center appearance is controlled by the product design-system files
 
   assert.match(designSystem, /docs\/design-system\/tokens\.json/);
   assert.match(designSystem, /docs\/design-system\/components\.json/);
-  assert.ok(componentData.components.some((component) => component.id === 'control-center-shell'));
+  for (const id of [
+    'control-center-shell',
+    'source-intake-form',
+    'source-validation-message',
+    'source-safety-strip',
+    'artifact-generation-result',
+    'settings-language-form',
+    'settings-persistence-status'
+  ]) {
+    assert.ok(componentData.components.some((component) => component.id === id), `${id} should be present`);
+  }
 
   for (const tokenName of Object.keys(tokenData.tokens.color)) {
     assert.match(designSystem, new RegExp(`--tc-color-${tokenName}`));
@@ -84,13 +102,19 @@ test('control-center appearance is controlled by the product design-system files
   assert.doesNotMatch(styles, /#[0-9a-fA-F]{3,8}\b/);
 });
 
-test('control-center server is loopback GET-only and no-store', async () => {
+test('control-center server keeps dashboard GET-only while exposing bounded local actions', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-server-'));
+  await mkdir(path.join(cwd, 'fixtures'), { recursive: true });
+  await writeFile(path.join(cwd, 'fixtures', 'transcript.txt'), 'Unique source phrase for the GUI intake test.\nSecond line for chunk stats.\n', 'utf8');
   const started = await startControlCenterServer({ port: 0 }, { cwd, now: fixedNow });
   try {
     assert.match(started.url, /^http:\/\/127\.0\.0\.1:\d+\/$/);
     assert.equal(started.metadata.local_only, true);
-    assert.equal(started.metadata.action_api_exposed, false);
+    assert.equal(started.metadata.read_only_dashboard, true);
+    assert.equal(started.metadata.dashboard_get_only, true);
+    assert.equal(started.metadata.bounded_local_action_endpoints, true);
+    assert.equal(started.metadata.action_api_exposed, true);
+    assert.deepEqual(started.metadata.action_endpoints, ['/api/source-intake/proposal', '/api/settings/display-language']);
 
     const health = await fetch(new URL('/api/health', started.url));
     assert.equal(health.status, 200);
@@ -104,9 +128,104 @@ test('control-center server is loopback GET-only and no-store', async () => {
     const dashboardBody = await dashboard.json();
     assert.equal(dashboardBody.command, 'control-center status');
     assert.equal(dashboardBody.data.control_center.boundary.read_only, true);
+    assert.equal(dashboardBody.data.control_center.source_intake.confirm, 'create-source-intake-proposal');
+    assert.equal(dashboardBody.data.control_center.settings.display_language.write_confirm, 'set-control-center-display-language');
 
     const post = await fetch(new URL('/api/dashboard', started.url), { method: 'POST' });
     assert.equal(post.status, 405);
+
+    const settings = await postJson(started, '/api/settings/display-language', {
+      locale: 'ja',
+      confirm: 'set-control-center-display-language'
+    });
+    assert.equal(settings.statusCode, 200);
+    const settingsBody = JSON.parse(settings.body);
+    assert.equal(settingsBody.command, 'control-center settings display-language');
+    assert.equal(settingsBody.data.display_language.locale, 'ja');
+    assert.equal(settingsBody.data.display_language.translation_execution_enabled, false);
+
+    const refreshed = await fetch(new URL('/api/dashboard', started.url));
+    const refreshedBody = await refreshed.json();
+    assert.equal(refreshedBody.data.control_center.settings.display_language.current_locale, 'ja');
+    assert.equal(refreshedBody.data.control_center.settings.display_language.text_direction, 'ltr');
+
+    const unsupportedLocale = await postJson(started, '/api/settings/display-language', {
+      locale: 'zz',
+      confirm: 'set-control-center-display-language'
+    });
+    assert.equal(unsupportedLocale.statusCode, 400);
+    assert.match(unsupportedLocale.body, /CONTROL_CENTER_DISPLAY_LANGUAGE_UNSUPPORTED/);
+
+    const missingConfirm = await postJson(started, '/api/settings/display-language', {
+      locale: 'en'
+    });
+    assert.equal(missingConfirm.statusCode, 400);
+    assert.match(missingConfirm.body, /CONTROL_CENTER_DISPLAY_LANGUAGE_CONFIRM_REQUIRED/);
+
+    const intake = await postJson(started, '/api/source-intake/proposal', {
+      source_text_file: 'fixtures/transcript.txt',
+      source_type: 'transcript',
+      review_brief: 'Explain the transcript for a non-engineer owner review.',
+      review_effort: 'xhigh',
+      target_audience: 'non-engineer owner',
+      expected_impression: 'clear next-step proposal',
+      confirm: 'create-source-intake-proposal'
+    });
+    assert.equal(intake.statusCode, 200);
+    const intakeBody = JSON.parse(intake.body);
+    assert.equal(intakeBody.command, 'control-center source-intake proposal');
+    assert.equal(intakeBody.data.source_intake.status, 'proposal_ready');
+    assert.equal(intakeBody.data.source_intake.review_effort, 'xhigh');
+    assert.equal(intakeBody.data.source_intake.resolved_source_type, 'transcript');
+    assert.equal(intakeBody.data.source_intake.source_text.full_text_stored, false);
+    assert.equal(intakeBody.data.source_intake.safety.provider_call_performed, false);
+    assert.equal(intakeBody.data.source_intake.safety.shell_used, false);
+    assert.equal(intakeBody.data.source_intake.safety.mcp_execution_exposed, false);
+    assert.equal(intakeBody.data.source_intake.safety.external_evidence_transfer, false);
+    assert.equal(intakeBody.artifacts.length, 2);
+    assert.equal(intake.body.includes('Unique source phrase for the GUI intake test'), false);
+    const proposalDirs = await readdir(path.join(cwd, '.browser-debug', 'agentic-human-review-proposals'));
+    assert.equal(proposalDirs.length, 1);
+
+    const intakeGet = await fetch(new URL('/api/source-intake/proposal', started.url));
+    assert.equal(intakeGet.status, 405);
+
+    const wrongType = await httpRequest({
+      hostname: '127.0.0.1',
+      port: started.config.port,
+      path: '/api/source-intake/proposal',
+      method: 'POST',
+      headers: { Host: `127.0.0.1:${started.config.port}`, 'Content-Type': 'text/plain' }
+    }, 'not-json');
+    assert.equal(wrongType.statusCode, 415);
+
+    const tooLarge = await httpRequest({
+      hostname: '127.0.0.1',
+      port: started.config.port,
+      path: '/api/source-intake/proposal',
+      method: 'POST',
+      headers: { Host: `127.0.0.1:${started.config.port}`, 'Content-Type': 'application/json' }
+    }, JSON.stringify({ review_brief: 'x'.repeat(70_000) }));
+    assert.equal(tooLarge.statusCode, 413);
+
+    const invalidJson = await httpRequest({
+      hostname: '127.0.0.1',
+      port: started.config.port,
+      path: '/api/source-intake/proposal',
+      method: 'POST',
+      headers: { Host: `127.0.0.1:${started.config.port}`, 'Content-Type': 'application/json' }
+    }, '{bad');
+    assert.equal(invalidJson.statusCode, 400);
+
+    const outsidePath = await postJson(started, '/api/source-intake/proposal', {
+      source_text_file: '../outside.txt',
+      source_type: 'transcript',
+      review_brief: 'Reject traversal',
+      review_effort: 'standard',
+      confirm: 'create-source-intake-proposal'
+    });
+    assert.equal(outsidePath.statusCode, 400);
+    assert.match(outsidePath.body, /CONTROL_CENTER_SOURCE_PATH_REJECTED/);
 
     const invalidOrigin = await fetch(new URL('/api/health', started.url), {
       headers: { Origin: 'https://example.invalid' }
@@ -157,7 +276,20 @@ function closeServer(server) {
   });
 }
 
-function httpRequest(options) {
+function postJson(started, requestPath, payload) {
+  return httpRequest({
+    hostname: '127.0.0.1',
+    port: started.config.port,
+    path: requestPath,
+    method: 'POST',
+    headers: {
+      Host: `127.0.0.1:${started.config.port}`,
+      'Content-Type': 'application/json'
+    }
+  }, JSON.stringify(payload));
+}
+
+function httpRequest(options, body = '') {
   return new Promise((resolve, reject) => {
     const req = request(options, (res) => {
       let body = '';
@@ -170,6 +302,9 @@ function httpRequest(options) {
       });
     });
     req.on('error', reject);
+    if (body) {
+      req.write(body);
+    }
     req.end();
   });
 }

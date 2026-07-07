@@ -2,4 +2,4 @@
 overview	required	all	product.overview	overview	overview	TraceCue overview.
 workflow	required	all	product.workflow	workflow	workflow	Phase plan and workflow state.
 security	required	all	product.security	security	security	Local security and artifact policy.
-control-center	required	all	product.control_center	control_center	workflow	Read-only React/Vite browser surface over local review status and design-system tokens.
+control-center	required	all	product.control_center	control_center	workflow	React/Vite browser surface over local review status, bounded source intake, display-language settings, and design-system tokens.

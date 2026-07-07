@@ -135,7 +135,7 @@ const schemas = Object.freeze({
     $id: 'https://trace-cue.local/schemas/control-center-read-model.schema.json',
     title: 'TraceCue Control Center Read Model',
     type: 'object',
-    required: ['schema_version', 'control_center_read_model_version', 'generated_at', 'status', 'review', 'evidence', 'findings', 'setup_safety', 'advanced', 'boundary', 'gate_effect'],
+    required: ['schema_version', 'control_center_read_model_version', 'generated_at', 'status', 'review', 'evidence', 'findings', 'source_intake', 'settings', 'setup_safety', 'advanced', 'boundary', 'gate_effect'],
     properties: {
       schema_version: { type: 'string' },
       control_center_read_model_version: { type: 'string' },
@@ -145,6 +145,8 @@ const schemas = Object.freeze({
       review: { type: 'object' },
       evidence: { type: 'object' },
       findings: { type: 'object' },
+      source_intake: { type: 'object' },
+      settings: { type: 'object' },
       setup_safety: { type: 'object' },
       advanced: { type: 'object' },
       boundary: {

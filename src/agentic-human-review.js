@@ -7772,7 +7772,8 @@ async function readSourceTextForPlan({ cwd, options, maxBytes, reviewEffort = DE
     text: read.text,
     inputPath: read.relativePath,
     inputHash: hashText(read.text),
-    reviewEffort
+    reviewEffort,
+    sourceTypeOverride: options['source-type'] ?? options.sourceType
   });
   if (!normalized.ok) {
     return { ok: false, error: normalized.error };
@@ -8062,7 +8063,7 @@ function referenceReviewBoundary() {
   };
 }
 
-function normalizeSourceTextArtifact({ text, inputPath, inputHash, reviewEffort = DEFAULT_REVIEW_EFFORT }) {
+function normalizeSourceTextArtifact({ text, inputPath, inputHash, reviewEffort = DEFAULT_REVIEW_EFFORT, sourceTypeOverride = null }) {
   const parsed = parseSourceTextInput(text);
   if (!parsed.ok) {
     return parsed;
@@ -8074,7 +8075,7 @@ function normalizeSourceTextArtifact({ text, inputPath, inputHash, reviewEffort 
       rejected_fields: disallowed.slice(0, 20)
     });
   }
-  const sourceType = normalizeEnum(parsed.sourceType, [...CONTENT_EVIDENCE_SOURCE_TYPES], inferSourceTextTypeFromPath(inputPath));
+  const sourceType = normalizeEnum(parsed.sourceType ?? sourceTypeOverride, [...CONTENT_EVIDENCE_SOURCE_TYPES], inferSourceTextTypeFromPath(inputPath));
   const normalizedText = normalizeSourceTextBody(parsed.text);
   if (!normalizedText) {
     return validationError('AGENTIC_REVIEW_SOURCE_TEXT_EMPTY', 'The source text did not contain readable text after normalization.', {

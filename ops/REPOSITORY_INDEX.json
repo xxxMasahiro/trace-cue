@@ -73,6 +73,34 @@
       "role": "manifest"
     },
     {
+      "path": "src/control-center-read-model.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/control-center-actions.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/control-center-server.js",
+      "role": "manifest"
+    },
+    {
+      "path": "control-center/src/App.jsx",
+      "role": "manifest"
+    },
+    {
+      "path": "control-center/src/i18n.js",
+      "role": "manifest"
+    },
+    {
+      "path": "control-center/src/localePolicy.js",
+      "role": "manifest"
+    },
+    {
+      "path": "control-center/src/pageDefinitions.js",
+      "role": "manifest"
+    },
+    {
       "path": "src/daemon.js",
       "role": "manifest"
     },

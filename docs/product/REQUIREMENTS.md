@@ -407,11 +407,14 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Provider output JSON recovery must remain local, bounded, and fail-closed. The adapter may extract exactly one advisory JSON object from a direct JSON body, a JSON string, a single JSON Markdown fence, or prose wrapped around one balanced JSON object, then must continue through the same unwrap, evidence-reference, benchmark, owner-baseline, staged-effort, claim-filtering, and advisory-only normalization contracts. Multiple JSON candidates, non-JSON fences, malformed JSON, arrays, primitives, or non-advisory objects must not become accepted proof.
 - This recovery layer must stay target-agnostic. It must not add branches for a specific page, benchmark case, repository name, product name, URL, local path, provider model, or one-off dogfood artifact.
 
-## Control Center Read-Only Browser Surface Criteria
+## Control Center Browser Surface Criteria
 
-- TraceCue must provide a local browser surface for non-engineer review triage without turning the UI into an execution surface.
+- TraceCue must provide a local browser surface for non-engineer review triage without turning the UI into a provider, shell, cleanup, browser-automation, MCP write/execute, or gate-affecting execution surface.
 - The surface must answer only the practical owner questions: whether review can proceed, what is missing, what to inspect next, what evidence supports the status, and what actions remain prohibited.
 - The browser surface must be implemented with React + Vite under `control-center/`, and its visual styling must be driven by `docs/design-system/tokens.json` and `docs/design-system/components.json`.
 - The read model must reuse existing TraceCue APIs such as visual review dashboard, agent request/workflow/execution status, resource status, artifact-root status, language settings, and optional owner-review evidence-pack projection instead of reading raw artifacts directly.
-- The server must be loopback-only, GET-only, cache-disabled with `Cache-Control: no-store`, and must expose no action API, command runner, MCP JSON-RPC bridge, provider/model selector, credential input, cleanup execution, shell execution, browser launch, artifact write, or gate mutation.
-- The default UI must stay minimal: review status, next action, top owner actions, evidence matrix, visual review findings, setup/safety summary, and advanced diagnostics only.
+- The server must be loopback-only, Host/Origin validated, cache-disabled with `Cache-Control: no-store`, and keep `/api/dashboard` GET-only.
+- The server may expose only approved bounded local POST actions for Control Center workflows. The current approved actions are source-text proposal creation and display-language settings persistence, both requiring fixed confirmation tokens and workspace/fixed-path confinement.
+- Source intake must create only local non-executing proposal artifacts from workspace-confined source text; it must not run providers, call APIs, use shell commands, expose MCP execution, transfer evidence externally, store full source text, store chunk text, mutate review gates, or execute plans.
+- Display-language settings must write only the Control Center display locale to the fixed TraceCue settings path and must not translate source evidence, provider output, generated review text, or artifact output language.
+- The UI must stay minimal: source intake, review status, next action, top owner actions, evidence matrix, visual review findings, display-language settings, setup/safety summary, and advanced diagnostics only.

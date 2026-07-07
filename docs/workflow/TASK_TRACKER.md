@@ -2,6 +2,8 @@
 
 ## Current Status
 
+TraceCue Control Center source intake and display-language settings are implemented as bounded local browser actions on top of the read-only dashboard model. `/api/dashboard` remains GET-only and body-free. `/api/source-intake/proposal` requires an explicit confirmation token, accepts only workspace-relative source text and optional evidence/index paths, reuses the Agentic Human Review proposal path, writes local non-executing proposal artifacts, and suppresses full source text and chunk text from normal UI output. `/api/settings/display-language` requires an explicit confirmation token and writes only the Control Center display locale to the fixed `ops/DASHBOARD_SETTINGS.json` path. The React/Vite app now has Intake and Settings views, uses the product-local design system and locale policy, and still exposes no provider execution, shell execution, MCP JSON-RPC, browser automation, cleanup execution, external upload, or gate mutation.
+
 The durable autonomous workflow protocol now treats `A. Pre-Implementation
 Proposal` and `B. Implementation Plan` as mandatory pre-implementation
 sequencing and evidence gates. Non-trivial implementation or workflow-authority
@@ -117,6 +119,7 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 
 ## Completed Work
 
+- [x] Added bounded TraceCue Control Center source intake and display-language settings with React/Vite Intake and Settings views, confirmed local source-text proposal generation, fixed-path display-locale persistence, design-system component metadata, no-browser action/server tests, and preserved no-provider/no-shell/no-MCP/no-browser/no-external-transfer/no-gate-mutation boundaries.
 - [x] Added Agentic Human Review source-text quality owner-review context for downstream evidence-set, human-baseline claim-readiness, longitudinal-quality, claim-standard-gate, and evidence-regeneration diagnostics, including source-text quality artifact family handling, supported CLI/API wrapper intake, downstream re-sanitization, unsafe authority-flag neutralization, context diagnostics, stale-effort invalidation without raw hash output, no-leak coverage, owner-context schema parity, and preserved no-warning/no-condition/no-blocker/no-pass-state/no-claim-state/no-proof/no-rerun-execution/no-gate-mutation boundaries.
 - [x] Strengthened durable autonomous workflow instructions so A/B
   pre-implementation gates are mandatory before edits, non-trivial proposals and

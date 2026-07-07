@@ -809,8 +809,9 @@ test('HTTP MCP listener stays isolated to the approved transport module', async 
   assert.doesNotMatch(core, /from '\.\/mcp-http-transport\.js'/);
 });
 
-test('control-center browser surface stays read-only and listener-isolated', async () => {
+test('control-center browser surface keeps read dashboard and bounded local action isolation', async () => {
   const readModel = await readText('src/control-center-read-model.js');
+  const actions = await readText('src/control-center-actions.js');
   const server = await readText('src/control-center-server.js');
   const api = await readText('src/api.js');
   const cli = await readText('src/cli.js');
@@ -829,11 +830,26 @@ test('control-center browser surface stays read-only and listener-isolated', asy
   assert.match(server, /from 'node:http'/);
   assert.match(server, /createServer/);
   assert.match(server, /\.listen\(/);
-  assert.match(server, /request\.method !== 'GET'/);
+  assert.match(server, /CONTROL_CENTER_DASHBOARD_GET_ONLY/);
+  assert.match(server, /\/api\/source-intake\/proposal/);
+  assert.match(server, /\/api\/settings\/display-language/);
   assert.match(server, /isAllowedMcpHttpHost/);
   assert.match(server, /isAllowedMcpHttpOrigin/);
   assert.match(server, /Cache-Control/);
   assert.doesNotMatch(server, /WebSocket|EventSource|node:child_process|execFile|spawn\(|provider_execute|cleanup_execute|agent_execution_run/);
+
+  assert.match(actions, /DASHBOARD_SETTINGS_PATH/);
+  assert.match(actions, /runAgenticHumanReviewPropose/);
+  assert.match(actions, /writeFile/);
+  assert.match(actions, /CONTROL_CENTER_SOURCE_INTAKE_CONFIRM/);
+  assert.match(actions, /CONTROL_CENTER_SETTINGS_CONFIRM/);
+  assert.match(actions, /provider_call_performed:\s*false/);
+  assert.match(actions, /shell_used:\s*false/);
+  assert.match(actions, /external_evidence_transfer:\s*false/);
+  assert.doesNotMatch(actions, /from 'node:http'|createServer|\.listen\(|WebSocket|EventSource/);
+  assert.doesNotMatch(actions, /node:child_process|child_process|execFile|spawn\(|from 'playwright'|import\('playwright'\)/);
+  assert.doesNotMatch(actions, /\bfetch\s*\(|XMLHttpRequest|curl|wget|process\.env/);
+
   assert.doesNotMatch(`${api}\n${cli}\n${parser}`, /from 'node:http'|createServer|\.listen\(/);
 });
 

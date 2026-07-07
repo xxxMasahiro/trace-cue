@@ -15,7 +15,37 @@
     {
       "id": "control-center-shell",
       "tokens": ["background", "surface", "panel", "line", "foreground", "muted", "accent", "success", "warning", "danger"],
-      "contract": ["Keep the local review center dense, readable, evidence-focused, and free of decorative or execution controls."]
+      "contract": ["Keep the local review center dense, readable, evidence-focused, and free of decorative controls."]
+    },
+    {
+      "id": "source-intake-form",
+      "tokens": ["background", "surface", "line", "foreground", "muted", "accent"],
+      "contract": ["Collect only the source text path, source type, review goal, review depth, optional context, and explicit local-write confirmation."]
+    },
+    {
+      "id": "source-validation-message",
+      "tokens": ["surface", "line", "foreground", "danger", "warning"],
+      "contract": ["Show local validation failures without exposing full source text or command strings."]
+    },
+    {
+      "id": "source-safety-strip",
+      "tokens": ["surface", "line", "muted", "success"],
+      "contract": ["Make local-only, no-provider, no-upload, no-shell, and gate-neutral boundaries visible near source intake."]
+    },
+    {
+      "id": "artifact-generation-result",
+      "tokens": ["surface", "line", "foreground", "accent", "success"],
+      "contract": ["Summarize generated local proposal artifacts by count and type while hiding paths in the normal UI."]
+    },
+    {
+      "id": "settings-language-form",
+      "tokens": ["surface", "line", "foreground", "muted", "accent"],
+      "contract": ["Change Control Center display language only; never translate source evidence, provider text, or generated reviews."]
+    },
+    {
+      "id": "settings-persistence-status",
+      "tokens": ["surface", "line", "foreground", "muted"],
+      "contract": ["Show the fixed repository settings location and current locale state without accepting caller-controlled paths."]
     }
   ]
 }

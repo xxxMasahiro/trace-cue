@@ -6,12 +6,13 @@ import {
 import { runAgentExecutionList } from './agent-execution.js';
 import { runAgenticHumanReviewDogfoodEvidencePackReviewPack } from './agentic-human-review.js';
 import { runArtifactRootStatus } from './artifact-root-policy.js';
+import { controlCenterActionCapabilities } from './control-center-actions.js';
 import { runLanguageSettings } from './language-settings.js';
 import { buildMcpCapabilityReport } from './mcp-capabilities.js';
 import { runResourceStatus } from './resource-status.js';
 import { runVisualReviewDashboard } from './visual-review-dashboard.js';
 
-const CONTROL_CENTER_READ_MODEL_VERSION = '1.0.0';
+const CONTROL_CENTER_READ_MODEL_VERSION = '1.1.0';
 const DEFAULT_RESULT_LIMIT = 5;
 
 export function controlCenterBoundary() {
@@ -96,6 +97,8 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
   const errors = collectMessages(sources, 'errors');
   const visualSummary = summarizeVisualReview(visual);
   const ownerSummary = summarizeOwnerReview(ownerReview);
+  const languageSummary = summarizeLanguage(language);
+  const actionCapabilities = controlCenterActionCapabilities();
   const status = overallStatus({ visual: visualSummary, ownerReview: ownerSummary, errors });
   const nextActions = buildNextActions({ status, visual: visualSummary, ownerReview: ownerSummary, resources });
 
@@ -126,10 +129,15 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
       owner_decision_requests: visualSummary.owner_decision_requests,
       blockers: ownerSummary.blockers
     },
+    source_intake: summarizeSourceIntake(actionCapabilities),
+    settings: {
+      display_language: summarizeDisplayLanguage(languageSummary, actionCapabilities),
+      boundary: controlCenterBoundary()
+    },
     setup_safety: {
       artifact_root: summarizeArtifactRoot(artifactRootStatus),
       resource_status: summarizeResourceStatus(resources),
-      language_settings: summarizeLanguage(language),
+      language_settings: languageSummary,
       mcp: summarizeMcpCapabilities(),
       boundary: controlCenterBoundary()
     },
@@ -140,6 +148,7 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
         settings_language: `${CLI_NAME} settings language --json`
       },
       source_statuses: sourceStatuses(sources),
+      action_capabilities: actionCapabilities,
       warnings,
       errors,
       boundary: controlCenterBoundary()
@@ -296,10 +305,59 @@ function summarizeLanguage(source) {
   const settings = source.data?.language_settings ?? {};
   return {
     ui_locale: settings.dashboard_ui?.locale ?? null,
+    intl_locale: settings.dashboard_ui?.intl_locale ?? null,
+    text_direction: settings.dashboard_ui?.text_direction ?? 'ltr',
+    settings_path: settings.settings_path ?? null,
+    storage_status: settings.storage?.status ?? null,
     artifact_output_language: settings.artifact_output?.language ?? null,
     artifact_output_language_mode: settings.artifact_output?.language_mode ?? null,
     translation_execution_enabled: settings.artifact_output?.translation_execution_enabled === true,
+    diagnostics: Array.isArray(settings.diagnostics) ? settings.diagnostics : [],
     boundary: settings.boundary ?? null
+  };
+}
+
+function summarizeDisplayLanguage(language, actionCapabilities) {
+  const display = actionCapabilities.display_language;
+  return {
+    status: language.ui_locale ? 'configured' : 'defaults',
+    current_locale: language.ui_locale ?? 'en',
+    intl_locale: language.intl_locale ?? 'en-US',
+    text_direction: language.text_direction ?? 'ltr',
+    settings_path: language.settings_path ?? display.settings_path,
+    storage_status: language.storage_status ?? 'defaults',
+    supported_locales: display.supported_locales,
+    supported_locale_codes: display.supported_locale_codes,
+    write_endpoint: display.endpoint,
+    write_confirm: display.confirm,
+    translation_execution_enabled: false,
+    artifact_output_language_changed_by_display_locale: false,
+    diagnostics: language.diagnostics,
+    boundary: controlCenterBoundary()
+  };
+}
+
+function summarizeSourceIntake(actionCapabilities) {
+  const intake = actionCapabilities.source_intake;
+  return {
+    status: 'available',
+    status_label: 'Ready to create a local proposal',
+    endpoint: intake.endpoint,
+    confirm: intake.confirm,
+    supported_efforts: intake.supported_efforts,
+    supported_source_types: intake.supported_source_types,
+    required_fields: ['source_text_file', 'source_type', 'review_brief', 'review_effort', 'local_write_confirmed'],
+    optional_fields: ['content_evidence_file', 'review_index_file', 'target_audience', 'expected_impression'],
+    next_safe_action: 'Choose a workspace source text file and create a proposal before planning or running review.',
+    safety: {
+      local_artifact_write: true,
+      provider_execution: false,
+      shell_execution: false,
+      mcp_execution: false,
+      external_transfer: false,
+      raw_source_text_persisted: false
+    },
+    boundary: controlCenterBoundary()
   };
 }
 

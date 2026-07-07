@@ -452,9 +452,9 @@ Optional acceptance checks against local application servers may run only when t
 
 ## Control Center Checks
 
-- No-browser tests cover `control-center status --json`, parser rejection for execution-style options, read-only boundary flags, schema registry export, source-status projection, and design-system-backed React/Vite build readiness.
-- Server tests cover loopback-only startup, GET-only API behavior, `Cache-Control: no-store`, `/api/health`, `/api/dashboard`, non-loopback Origin rejection, non-loopback Host rejection, and missing-build asset handling.
-- Architecture tests verify `src/control-center-read-model.js` stays free of HTTP listeners, Playwright, child-process APIs, provider fetches, writes, artifact-root creation, raw-pixel reads, and gate mutation, while `src/control-center-server.js` is the only new listener module.
+- No-browser tests cover `control-center status --json`, parser rejection for execution-style options, read-only dashboard boundary flags, source-intake capability metadata, display-language metadata, schema registry export, source-status projection, design-system component metadata, and design-system-backed React/Vite build readiness.
+- Server tests cover loopback-only startup, dashboard GET-only behavior, bounded local POST actions, `Cache-Control: no-store`, `/api/health`, `/api/dashboard`, `/api/source-intake/proposal`, `/api/settings/display-language`, JSON content-type enforcement, request-size limits, explicit confirmation tokens, workspace-confined source paths, fixed settings-path persistence, non-loopback Origin rejection, non-loopback Host rejection, and missing-build asset handling.
+- Architecture tests verify `src/control-center-read-model.js` stays free of HTTP listeners, Playwright, child-process APIs, provider fetches, writes, artifact-root creation, raw-pixel reads, and gate mutation; `src/control-center-actions.js` is limited to confirmed local proposal/settings writes without provider, shell, MCP, browser, or network authority; and `src/control-center-server.js` is the only listener module.
 - Product security checks allowlist only `src/control-center-server.js` for the new listener pattern and continue to fail any unrelated `createServer`, `.listen`, WebSocket, or EventSource runtime addition.
 - Vite build checks verify the React browser surface under `control-center/` can compile against `docs/design-system/tokens.json` and `docs/design-system/components.json`.
 

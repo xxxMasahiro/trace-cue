@@ -1,26 +1,38 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchDashboard } from './apiClient.js';
+import { createSourceIntakeProposal, fetchDashboard, setDisplayLanguage } from './apiClient.js';
 import { designSystemMetadata, designSystemStyle } from './designSystem.js';
+import { createTranslator } from './i18n.js';
+import { PAGES } from './pageDefinitions.js';
 
-const PAGES = [
-  { id: 'review', label: 'Review' },
-  { id: 'evidence', label: 'Evidence' },
-  { id: 'findings', label: 'Findings' },
-  { id: 'advanced', label: 'Advanced' }
-];
+const DEFAULT_INTAKE_FORM = {
+  source_text_file: '',
+  source_type: 'transcript',
+  review_brief: '',
+  review_effort: 'standard',
+  target_audience: '',
+  expected_impression: '',
+  content_evidence_file: '',
+  review_index_file: '',
+  local_write_confirmed: false
+};
 
 export default function App() {
   const [dashboard, setDashboard] = useState(null);
-  const [activePage, setActivePage] = useState('review');
+  const [activePage, setActivePage] = useState('intake');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [locale, setLocale] = useState('en');
   const style = useMemo(() => designSystemStyle(), []);
+  const translator = useMemo(() => createTranslator(locale), [locale]);
+  const { t } = translator;
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      setDashboard(await fetchDashboard());
+      const nextDashboard = await fetchDashboard();
+      setDashboard(nextDashboard);
+      setLocale(nextDashboard.settings?.display_language?.current_locale ?? 'en');
     } catch (loadError) {
       setError(loadError.message);
     } finally {
@@ -32,12 +44,20 @@ export default function App() {
     load();
   }, []);
 
+  useEffect(() => {
+    const language = dashboard?.settings?.display_language;
+    const direction = language?.text_direction ?? (locale === 'ar' ? 'rtl' : 'ltr');
+    document.documentElement.lang = locale;
+    document.documentElement.dir = direction;
+    document.documentElement.dataset.locale = locale;
+  }, [dashboard, locale]);
+
   return (
-    <main className="app-shell" style={style}>
+    <main className="app-shell" style={style} data-locale={locale}>
       <aside className="side-nav" aria-label="Primary">
         <div>
-          <p className="eyebrow">TraceCue</p>
-          <h1>Review center</h1>
+          <p className="eyebrow">{t('app.eyebrow', 'TraceCue')}</p>
+          <h1>{t('app.title', 'Review center')}</h1>
         </div>
         <nav className="nav-list">
           {PAGES.map((page) => (
@@ -47,34 +67,244 @@ export default function App() {
               className={activePage === page.id ? 'nav-item active' : 'nav-item'}
               onClick={() => setActivePage(page.id)}
             >
-              {page.label}
+              {t(page.labelKey, page.fallback)}
             </button>
           ))}
         </nav>
-        <TrustSafety dashboard={dashboard} />
+        <TrustSafety dashboard={dashboard} t={t} />
       </aside>
       <section className="workspace">
         <header className="workspace-header">
           <div>
-            <p className="eyebrow">Read-only local status</p>
-            <h2>{dashboard?.status_label ?? (loading ? 'Loading local evidence' : 'Local evidence unavailable')}</h2>
+            <p className="eyebrow">{t('app.statusEyebrow', 'Local status')}</p>
+            <h2>{dashboard?.status_label ?? (loading ? t('app.loadingTitle', 'Loading local evidence') : t('app.unavailableTitle', 'Local evidence unavailable'))}</h2>
           </div>
           <button className="refresh-button" type="button" onClick={load} disabled={loading}>
-            Refresh
+            {t('app.refresh', 'Refresh')}
           </button>
         </header>
         {loading ? <StatePanel title="Loading" text="Reading local TraceCue status." /> : null}
         {error ? <StatePanel title="Cannot load status" text={error} tone="danger" /> : null}
         {!loading && !error && dashboard ? (
           <>
+            {activePage === 'intake' ? <IntakePage dashboard={dashboard} t={t} /> : null}
             {activePage === 'review' ? <ReviewPage dashboard={dashboard} /> : null}
             {activePage === 'evidence' ? <EvidencePage dashboard={dashboard} /> : null}
             {activePage === 'findings' ? <FindingsPage dashboard={dashboard} /> : null}
+            {activePage === 'settings' ? <SettingsPage dashboard={dashboard} locale={locale} setLocale={setLocale} reload={load} t={t} /> : null}
             {activePage === 'advanced' ? <AdvancedPage dashboard={dashboard} /> : null}
           </>
         ) : null}
       </section>
     </main>
+  );
+}
+
+function IntakePage({ dashboard, t }) {
+  const intake = dashboard.source_intake ?? {};
+  const [form, setForm] = useState(DEFAULT_INTAKE_FORM);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const efforts = intake.supported_efforts ?? ['standard', 'deep', 'xhigh'];
+  const sourceTypes = intake.supported_source_types ?? ['video', 'web_page', 'pdf', 'meeting_notes', 'document', 'transcript', 'other'];
+
+  async function submit(event) {
+    event.preventDefault();
+    setError(null);
+    setResult(null);
+    if (!form.local_write_confirmed) {
+      setError('Confirm local proposal artifact creation before continuing.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const created = await createSourceIntakeProposal({
+        source_text_file: form.source_text_file,
+        source_type: form.source_type,
+        review_brief: form.review_brief,
+        review_effort: form.review_effort,
+        target_audience: form.target_audience,
+        expected_impression: form.expected_impression,
+        content_evidence_file: form.content_evidence_file,
+        review_index_file: form.review_index_file,
+        confirm: intake.confirm
+      });
+      setResult(created);
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function update(key, value) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  return (
+    <div className="page-grid">
+      <section className="panel">
+        <div className="panel-header-inline">
+          <div>
+            <p className="eyebrow">Source Intake</p>
+            <h3>{t('intake.title', 'Create proposal')}</h3>
+          </div>
+          <StatusBadge status={intake.status ?? 'available'} />
+        </div>
+        <p className="muted">{t('intake.caption', 'Start from a workspace source text file and create a local proposal. Planning and provider runs stay separate.')}</p>
+        <form className="control-form" onSubmit={submit}>
+          <label>
+            {t('intake.sourceText', 'Source text file')}
+            <input value={form.source_text_file} onChange={(event) => update('source_text_file', event.target.value)} placeholder="docs/source/transcript.txt" />
+          </label>
+          <div className="form-grid">
+            <label>
+              {t('intake.sourceType', 'Source type')}
+              <select value={form.source_type} onChange={(event) => update('source_type', event.target.value)}>
+                {sourceTypes.map((sourceType) => <option key={sourceType} value={sourceType}>{sourceType.replaceAll('_', ' ')}</option>)}
+              </select>
+            </label>
+            <label>
+              {t('intake.reviewEffort', 'Review depth')}
+              <select value={form.review_effort} onChange={(event) => update('review_effort', event.target.value)}>
+                {efforts.map((effort) => <option key={effort} value={effort}>{effort}</option>)}
+              </select>
+            </label>
+          </div>
+          <label>
+            {t('intake.reviewBrief', 'Review goal')}
+            <textarea value={form.review_brief} onChange={(event) => update('review_brief', event.target.value)} rows={4} />
+          </label>
+          <div className="form-grid">
+            <label>
+              {t('intake.targetAudience', 'Audience')} <span>{t('common.optional', 'optional')}</span>
+              <input value={form.target_audience} onChange={(event) => update('target_audience', event.target.value)} />
+            </label>
+            <label>
+              {t('intake.expectedImpression', 'Expected impression')} <span>{t('common.optional', 'optional')}</span>
+              <input value={form.expected_impression} onChange={(event) => update('expected_impression', event.target.value)} />
+            </label>
+          </div>
+          <div className="form-grid">
+            <label>
+              {t('intake.contentEvidence', 'Content evidence file')} <span>{t('common.optional', 'optional')}</span>
+              <input value={form.content_evidence_file} onChange={(event) => update('content_evidence_file', event.target.value)} />
+            </label>
+            <label>
+              {t('intake.reviewIndex', 'Review index file')} <span>{t('common.optional', 'optional')}</span>
+              <input value={form.review_index_file} onChange={(event) => update('review_index_file', event.target.value)} />
+            </label>
+          </div>
+          <label className="check-row">
+            <input type="checkbox" checked={form.local_write_confirmed} onChange={(event) => update('local_write_confirmed', event.target.checked)} />
+            {t('intake.localWrite', 'Create a local proposal artifact')}
+          </label>
+          <button className="primary-action" type="submit" disabled={submitting}>
+            {submitting ? 'Creating...' : t('intake.submit', 'Create proposal')}
+          </button>
+        </form>
+        {error ? <StatePanel title="Cannot create proposal" text={error} tone="danger" /> : null}
+      </section>
+      {result ? <SourceIntakeResult result={result} t={t} /> : null}
+    </div>
+  );
+}
+
+function SourceIntakeResult({ result, t }) {
+  return (
+    <section className="panel primary-panel">
+      <p className="eyebrow">Result</p>
+      <h3>{t('intake.ready', 'Proposal ready')}</h3>
+      <div className="metric-row">
+        <Metric label="Characters" value={result.source_text?.char_count ?? 0} />
+        <Metric label="Chunks" value={result.source_text?.chunk_count ?? 0} />
+        <Metric label="Artifacts" value={result.artifact_summary?.artifact_count ?? 0} />
+      </div>
+      <dl className="definition-list">
+        <div><dt>Source</dt><dd>{result.resolved_source_type ?? result.requested_source_type}</dd></div>
+        <div><dt>Depth</dt><dd>{result.review_effort}</dd></div>
+        <div><dt>{t('intake.next', 'Next safe step')}</dt><dd>{result.next_safe_action}</dd></div>
+      </dl>
+    </section>
+  );
+}
+
+function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
+  const language = dashboard.settings?.display_language ?? {};
+  const locales = language.supported_locales ?? [];
+  const [selectedLocale, setSelectedLocale] = useState(locale);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setSelectedLocale(locale);
+  }, [locale]);
+
+  async function submit(event) {
+    event.preventDefault();
+    setError(null);
+    setStatus(null);
+    setSaving(true);
+    try {
+      const saved = await setDisplayLanguage({
+        locale: selectedLocale,
+        confirm: language.write_confirm
+      });
+      setLocale(saved.locale);
+      setStatus(t('settings.applied', 'Language saved'));
+      await reload();
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="page-grid">
+      <section className="panel">
+        <div className="panel-header-inline">
+          <div>
+            <p className="eyebrow">{t('settings.title', 'Settings')}</p>
+            <h3>{t('settings.languageTitle', 'Display language')}</h3>
+          </div>
+          <StatusBadge status={language.status ?? 'configured'} />
+        </div>
+        <p className="muted">{t('settings.languageCaption', 'This changes Control Center chrome only. It does not translate source evidence or generated review text.')}</p>
+        <form className="control-form compact" onSubmit={submit}>
+          <label>
+            {t('settings.language', 'Control Center language')}
+            <select value={selectedLocale} onChange={(event) => {
+              setSelectedLocale(event.target.value);
+              setLocale(event.target.value);
+            }}>
+              {locales.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.native_name} / {item.english_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary-action" type="submit" disabled={saving}>
+            {saving ? 'Saving...' : t('settings.save', 'Save language')}
+          </button>
+        </form>
+        {status ? <StatePanel title={status} text={selectedLocale} /> : null}
+        {error ? <StatePanel title="Cannot save language" text={error} tone="danger" /> : null}
+      </section>
+      <section className="panel" data-testid="tc-cc-settings-persistence-status">
+        <h3>Language state</h3>
+        <dl className="definition-list">
+          <div><dt>{t('settings.current', 'Current locale')}</dt><dd>{language.current_locale ?? locale}</dd></div>
+          <div><dt>Intl</dt><dd>{language.intl_locale ?? 'en-US'}</dd></div>
+          <div><dt>{t('settings.direction', 'Text direction')}</dt><dd>{language.text_direction ?? 'ltr'}</dd></div>
+          <div><dt>{t('settings.storage', 'Settings storage')}</dt><dd>{language.settings_path ?? 'ops/DASHBOARD_SETTINGS.json'}</dd></div>
+          <div><dt>Translation</dt><dd>{language.translation_execution_enabled ? 'enabled' : 'disabled'}</dd></div>
+        </dl>
+      </section>
+    </div>
   );
 }
 
@@ -247,13 +477,14 @@ function BlockerList({ blockers }) {
   );
 }
 
-function TrustSafety({ dashboard }) {
+function TrustSafety({ dashboard, t }) {
   const safety = dashboard?.review?.trust_safety;
   return (
     <div className="safety-strip">
-      <span>Read-only</span>
+      <span>{t('safety.localWrite', 'Local artifact write')}</span>
       <span>{safety?.local_only === false ? 'External' : 'Local'}</span>
-      <span>{safety?.external_evidence_transfer ? 'Transfer on' : 'No upload'}</span>
+      <span>{t('safety.noProvider', 'No provider')}</span>
+      <span>{t('safety.noUpload', 'No upload')}</span>
       <span>{safety?.gate_effect ?? 'none'}</span>
     </div>
   );
@@ -291,7 +522,7 @@ function cellStatus(row, effort) {
 }
 
 function toneForStatus(status) {
-  if (['ready', 'ok', 'ready_for_owner_review'].includes(status)) return 'ready';
+  if (['ready', 'ok', 'available', 'configured', 'proposal_ready', 'ready_for_owner_review'].includes(status)) return 'ready';
   if (['blocked', 'error', 'failed'].includes(status)) return 'blocked';
   if (['needs_attention', 'incomplete', 'prepared', 'owner_review_recommended'].includes(status)) return 'attention';
   return 'missing';

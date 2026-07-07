@@ -12,7 +12,8 @@ product.mcp_bin	optional	all	all	bin/trace-cue-mcp.js	source	file_nonempty	workf
 product.source	required	all	all	src/cli.js	source	file_nonempty	workflow	CLI runtime entrypoint.
 product.public_api	optional	all	all	src/api.js	source	file_nonempty	workflow	Public local package API exports for reusable core functions.
 product.control_center_read_model	optional	all	all	src/control-center-read-model.js	source	file_nonempty	workflow	Read-only body-free browser status read model over existing TraceCue APIs.
-product.control_center_server	optional	all	all	src/control-center-server.js	source	file_nonempty	workflow	Loopback-only GET server for built React/Vite browser assets and read-only dashboard API.
+product.control_center_actions	optional	all	all	src/control-center-actions.js	source	file_nonempty	workflow	Confirmed local Control Center source-intake proposal and display-language settings actions without provider, shell, MCP, browser, or external-transfer authority.
+product.control_center_server	optional	all	all	src/control-center-server.js	source	file_nonempty	workflow	Loopback-only server for built React/Vite browser assets, GET-only dashboard API, and bounded local action endpoints.
 product.agent_advisory	optional	all	all	src/agent.js	source	file_nonempty	workflow	Local agent advisory package, ingest, report, and surface registry runtime.
 product.agentic_human_review	optional	all	all	src/agentic-human-review.js	source	file_nonempty	workflow	CLI-only Agentic Human Review planning, execution, status, advisory normalization, proof-claim integrity, comparison diagnostics, and claim-standard-gate minimal rerun planning runtime with plan-hash and transfer-flag enforcement.
 product.agentic_human_review_providers	optional	all	all	src/agentic-human-review-providers.js	source	file_nonempty	workflow	Isolated Agentic Human Review provider catalog, readiness, and generic API adapter with env-only credentials and no raw response storage.
@@ -39,7 +40,9 @@ product.locale_policy	optional	all	all	src/locale-policy.js	source	file_nonempty
 product.language_settings	optional	all	all	src/language-settings.js	source	file_nonempty	workflow	Local read-only language settings normalization for dashboard display locale and artifact output language metadata.
 product.localization_resources	optional	all	all	src/localization-resources.js	source	file_nonempty	workflow	Provider-free UI locale resources, report template resources, translation readiness, and dry-run contracts that preserve raw evidence.
 product.schema_registry	optional	all	all	src/schema-registry.js	source	file_nonempty	workflow	Machine-readable schema registry for CLI and adapter contracts.
-product.control_center_app	optional	all	all	control-center/src/App.jsx	source	file_nonempty	workflow	React/Vite browser surface for read-only local review status using product design-system tokens.
+product.control_center_app	optional	all	all	control-center/src/App.jsx	source	file_nonempty	workflow	React/Vite browser surface for local review status, source intake, display-language settings, and product design-system tokens.
+product.control_center_i18n	optional	all	all	control-center/src/i18n.js	source	file_nonempty	workflow	Control Center UI chrome locale resources backed by TraceCue locale policy.
+product.control_center_pages	optional	all	all	control-center/src/pageDefinitions.js	source	file_nonempty	workflow	Control Center page registry for minimal Intake, Review, Evidence, Findings, Settings, and Advanced views.
 product.sessions	optional	all	all	src/sessions.js	source	file_nonempty	workflow	Local session, action, report, and spec runtime.
 product.supervisor	optional	all	all	src/supervisor.js	source	file_nonempty	workflow	Process-scoped supervised ephemeral browser runtime.
 product.target	optional	all	all	src/target.js	source	file_nonempty	workflow	Reusable target manifest generation and validation runtime.

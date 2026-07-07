@@ -4,6 +4,11 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createEnvelope } from './envelope.js';
 import { runControlCenterStatus, controlCenterBoundary } from './control-center-read-model.js';
+import {
+  CONTROL_CENTER_JSON_BODY_LIMIT_BYTES,
+  runControlCenterSetDisplayLanguage,
+  runControlCenterSourceIntakeProposal
+} from './control-center-actions.js';
 import { isAllowedMcpHttpHost, isAllowedMcpHttpOrigin, isLoopbackHost } from './mcp-transport-policy.js';
 
 const DEFAULT_CONTROL_CENTER_HOST = '127.0.0.1';
@@ -48,7 +53,8 @@ export async function runControlCenterServe(options = {}, context = {}) {
     event: 'trace_cue_control_center_listening',
     url: started.url,
     local_only: true,
-    read_only: true,
+    read_only_dashboard: true,
+    bounded_local_action_endpoints: true,
     host: started.config.host,
     port: started.config.port
   })}\n`);
@@ -126,13 +132,17 @@ export function resolveControlCenterServerConfig(options = {}, context = {}) {
 }
 
 async function handleControlCenterRequest(request, response, config, context) {
-  const validation = validateRequest(request);
+  const validation = validateCommonRequest(request);
   if (!validation.ok) {
     sendJson(response, validation.status, { error: { code: validation.code, message: validation.message } });
     return;
   }
   const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
   if (url.pathname === '/api/health') {
+    if (request.method !== 'GET') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_HEALTH_GET_ONLY', 'control-center health only accepts GET requests.');
+      return;
+    }
     sendJson(response, 200, {
       status: 'ok',
       local_only: true,
@@ -142,6 +152,10 @@ async function handleControlCenterRequest(request, response, config, context) {
     return;
   }
   if (url.pathname === '/api/dashboard') {
+    if (request.method !== 'GET') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_DASHBOARD_GET_ONLY', 'control-center dashboard only accepts GET requests.');
+      return;
+    }
     const result = await runControlCenterStatus(config.readModelOptions, { ...context, cwd: config.cwd });
     const envelope = createEnvelope({
       command: 'control-center status',
@@ -155,18 +169,60 @@ async function handleControlCenterRequest(request, response, config, context) {
     sendJson(response, result.status === 'ok' ? 200 : 500, envelope);
     return;
   }
+  if (url.pathname === '/api/source-intake/proposal') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_SOURCE_INTAKE_POST_ONLY', 'control-center source intake only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const result = await runControlCenterSourceIntakeProposal(body.value, { ...context, cwd: config.cwd });
+    const envelope = createEnvelope({
+      command: 'control-center source-intake proposal',
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+    return;
+  }
+  if (url.pathname === '/api/settings/display-language') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_DISPLAY_LANGUAGE_POST_ONLY', 'control-center display language settings only accept POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const result = await runControlCenterSetDisplayLanguage(body.value, { ...context, cwd: config.cwd });
+    const envelope = createEnvelope({
+      command: 'control-center settings display-language',
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+    return;
+  }
+  if (request.method !== 'GET') {
+    sendMethodNotAllowed(response, 'CONTROL_CENTER_ASSET_GET_ONLY', 'control-center assets only accept GET requests.');
+    return;
+  }
   await serveBuiltAsset(request, response, config);
 }
 
-function validateRequest(request) {
-  if (request.method !== 'GET') {
-    return {
-      ok: false,
-      status: 405,
-      code: 'CONTROL_CENTER_GET_ONLY',
-      message: 'control-center serve only accepts GET requests.'
-    };
-  }
+function validateCommonRequest(request) {
   if (!isAllowedMcpHttpHost(request.headers.host)) {
     return {
       ok: false,
@@ -184,6 +240,51 @@ function validateRequest(request) {
     };
   }
   return { ok: true };
+}
+
+async function readJsonRequestBody(request) {
+  const contentType = String(request.headers['content-type'] ?? '').toLowerCase();
+  if (!contentType.includes('application/json')) {
+    return {
+      ok: false,
+      status: 415,
+      code: 'CONTROL_CENTER_JSON_REQUIRED',
+      message: 'control-center action requests require application/json.'
+    };
+  }
+  let total = 0;
+  const chunks = [];
+  for await (const chunk of request) {
+    total += chunk.length;
+    if (total > CONTROL_CENTER_JSON_BODY_LIMIT_BYTES) {
+      return {
+        ok: false,
+        status: 413,
+        code: 'CONTROL_CENTER_BODY_TOO_LARGE',
+        message: 'control-center action request body is too large.',
+        details: { max_bytes: CONTROL_CENTER_JSON_BODY_LIMIT_BYTES }
+      };
+    }
+    chunks.push(chunk);
+  }
+  try {
+    return {
+      ok: true,
+      value: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'CONTROL_CENTER_INVALID_JSON',
+      message: 'control-center action request body must be valid JSON.',
+      details: { reason: error.message }
+    };
+  }
+}
+
+function sendMethodNotAllowed(response, code, message) {
+  sendJson(response, 405, { error: { code, message } });
 }
 
 async function serveBuiltAsset(request, response, config) {
@@ -222,9 +323,11 @@ function controlCenterServerMetadata(config, url) {
     host: config.host,
     port: config.port,
     local_only: true,
-    read_only: true,
-    get_only: true,
-    action_api_exposed: false,
+    read_only_dashboard: true,
+    dashboard_get_only: true,
+    bounded_local_action_endpoints: true,
+    action_api_exposed: true,
+    action_endpoints: ['/api/source-intake/proposal', '/api/settings/display-language'],
     mcp_json_rpc_exposed: false,
     cors_wildcard: false,
     cache_policy: 'no-store',
