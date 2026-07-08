@@ -20,6 +20,13 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'src/visual-review-result-preparation.js',
     'src/visual-review-dashboard.js',
     'src/visual-review-aggregation.js',
+    'src/playwright-test-integration.js',
+    'src/playwright-test-artifacts.js',
+    'src/playwright-test-import.js',
+    'src/playwright-test-local-run.js',
+    'src/playwright-test-external-ci.js',
+    'src/playwright-test-regression.js',
+    'src/playwright-test-runners.js',
     'src/desktop-review-provider-preparation-plan.js',
     'src/image-review.js',
     'src/identity-audit.js',
@@ -226,6 +233,39 @@ test('visual evidence core stays local, additive, and provider-free', async () =
   assert.match(source, /provider_call_performed:\s*false/);
   assert.match(source, /mcp_execution_exposed:\s*false/);
   assert.doesNotMatch(source, /from 'node:http'|from 'node:child_process'|createServer|\.listen\(|fetch\(|playwright/);
+});
+
+test('playwright test integration is advisory and keeps process execution isolated', async () => {
+  const integration = await readText('src/playwright-test-integration.js');
+  const artifacts = await readText('src/playwright-test-artifacts.js');
+  const importer = await readText('src/playwright-test-import.js');
+  const localRun = await readText('src/playwright-test-local-run.js');
+  const externalCi = await readText('src/playwright-test-external-ci.js');
+  const regression = await readText('src/playwright-test-regression.js');
+  const runners = await readText('src/playwright-test-runners.js');
+  const parser = await readText('src/parser.js');
+  const cli = await readText('src/cli.js');
+  const api = await readText('src/api.js');
+  const mcp = await readText('src/mcp.js');
+  const mcpProfiles = await readText('src/mcp-profiles.js');
+  const combined = `${integration}\n${artifacts}\n${importer}\n${localRun}\n${externalCi}\n${regression}\n${parser}\n${cli}\n${api}`;
+
+  assert.match(integration, /PLAYWRIGHT_TEST_MODES/);
+  assert.match(integration, /existing_review_mutated:\s*false/);
+  assert.match(integration, /release_gate_mutated:\s*false/);
+  assert.match(integration, /mcp_execution_exposed:\s*false/);
+  assert.match(localRun, /PLAYWRIGHT_TEST_LOCAL_RUN_EXECUTE_REQUIRED/);
+  assert.match(localRun, /process\.execPath/);
+  assert.match(externalCi, /gh run list/);
+  assert.match(externalCi, /workflow_dispatch/);
+  assert.match(externalCi, /PLAYWRIGHT_TEST_EXTERNAL_CI_EXECUTE_REQUIRED/);
+  assert.match(runners, /validateGhReadOnlyArgv/);
+  assert.match(runners, /GH_PROMPT_DISABLED/);
+  assert.doesNotMatch(`${integration}\n${artifacts}\n${importer}\n${localRun}\n${externalCi}\n${regression}`, /from 'node:child_process'|spawn\(/);
+  assert.match(runners, /from 'node:child_process'/);
+  assert.match(runners, /spawn\(command, args/);
+  assert.doesNotMatch(combined, /workflow run|run rerun|run cancel|gh api|createServer|\.listen\(|WebSocket|EventSource/);
+  assert.doesNotMatch(`${mcp}\n${mcpProfiles}`, /playwright[_-]test|PLAYWRIGHT_TEST/);
 });
 
 test('standalone image review stays workspace-confined and provider-free', async () => {

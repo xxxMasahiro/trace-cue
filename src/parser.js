@@ -4,6 +4,7 @@ const VALUE_OPTIONS = new Set([
   'agent-result',
   'approved-at',
   'approver',
+  'artifact-name',
   'artifact-root',
   'baseline',
   'baseline-id',
@@ -19,6 +20,9 @@ const VALUE_OPTIONS = new Set([
   'claim-gate',
   'comparison-kind',
   'comparison-run-id',
+  'config',
+  'confirm',
+  'cwd',
   'daemon',
   'dataset',
   'decision',
@@ -53,6 +57,7 @@ const VALUE_OPTIONS = new Set([
   'manual-checkpoint',
   'mock',
   'model',
+  'mode',
   'name',
   'older-than',
   'operation',
@@ -70,8 +75,10 @@ const VALUE_OPTIONS = new Set([
   'provider',
   'region',
   'reference-review',
+  'repo',
   'registry',
   'resource-guard',
+  'reporter',
   'review-index',
   'review-effort',
   'role-efforts',
@@ -79,6 +86,7 @@ const VALUE_OPTIONS = new Set([
   'rubric-profile',
   'result',
   'risk',
+  'run-id',
   'scope',
   'source',
   'source-text',
@@ -165,6 +173,8 @@ export function parseCliArgs(argv) {
       return parseAgentic(args, globals);
     case 'visual':
       return parseVisual(args, globals);
+    case 'playwright-test':
+      return parsePlaywrightTest(args, globals);
     case 'identity':
       return parseIdentity(args, globals);
     case 'artifact-root':
@@ -545,6 +555,139 @@ function parseControlCenter(args, globals) {
     }
   }
   return { ok: true, command, json: globals.json, options: parsed.options };
+}
+
+function parsePlaywrightTest(args, globals) {
+  if (globals.help) {
+    return { ok: true, command: 'help', json: globals.json, options: { topic: args.length > 0 ? `playwright-test ${args.join(' ')}` : 'playwright-test' } };
+  }
+  const subcommand = args[0];
+  if (!subcommand) {
+    return parseError('playwright-test', globals.json, {
+      code: 'MISSING_SUBCOMMAND',
+      message: 'playwright-test requires a subcommand.',
+      details: { subcommands: ['mode', 'status', 'list', 'report', 'import', 'local', 'external-ci'] }
+    });
+  }
+  if (subcommand === 'mode') {
+    const parsed = parseRequiredOptions('playwright-test mode', args.slice(1), globals, ['mode', 'confirm']);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (parsed.options.execute) {
+      return parseError('playwright-test mode', globals.json, {
+        code: 'CONFLICTING_OPTIONS',
+        message: 'playwright-test mode changes settings only and does not accept --execute.',
+        details: { option: 'execute' }
+      });
+    }
+    return parsed;
+  }
+  if (subcommand === 'status' || subcommand === 'list' || subcommand === 'report') {
+    return parsePlaywrightTestReadOnly(`playwright-test ${subcommand}`, args.slice(1), globals);
+  }
+  if (subcommand === 'import') {
+    return parseRequiredOptions('playwright-test import', args.slice(1), globals, ['input', 'confirm']);
+  }
+  if (subcommand === 'local') {
+    return parsePlaywrightTestLocal(args.slice(1), globals);
+  }
+  if (subcommand === 'external-ci') {
+    return parsePlaywrightTestExternalCi(args.slice(1), globals);
+  }
+  return parseError('playwright-test', globals.json, {
+    code: 'UNKNOWN_SUBCOMMAND',
+    message: `Unknown playwright-test subcommand: ${subcommand}`,
+    details: { subcommands: ['mode', 'status', 'list', 'report', 'import', 'local', 'external-ci'] }
+  });
+}
+
+function parsePlaywrightTestLocal(args, globals) {
+  const subcommand = args[0];
+  if (subcommand === 'plan') {
+    return parsePlaywrightTestReadOnly('playwright-test local plan', args.slice(1), globals);
+  }
+  if (subcommand === 'run') {
+    const parsed = parseRequiredOptions('playwright-test local run', args.slice(1), globals, ['plan', 'plan-hash']);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (!parsed.options.execute) {
+      return parseError('playwright-test local run', globals.json, {
+        code: 'MISSING_REQUIRED_OPTION',
+        message: 'playwright-test local run requires --execute.',
+        details: { option: 'execute' }
+      });
+    }
+    return parsed;
+  }
+  return parseError('playwright-test local', globals.json, {
+    code: subcommand ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+    message: subcommand ? `Unknown playwright-test local subcommand: ${subcommand}` : 'playwright-test local requires a subcommand.',
+    details: { subcommands: ['plan', 'run'] }
+  });
+}
+
+function parsePlaywrightTestReadOnly(command, args, globals) {
+  const parsed = parseOptionalOptions(command, args, globals);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (parsed.options.execute) {
+    return parseError(command, globals.json, {
+      code: 'CONFLICTING_OPTIONS',
+      message: `${command} does not accept --execute.`,
+      details: { option: 'execute' }
+    });
+  }
+  return parsed;
+}
+
+function parsePlaywrightTestExternalCi(args, globals) {
+  const subcommand = args[0];
+  if (subcommand === 'readiness') {
+    return parseRequiredReadOnlyOptions('playwright-test external-ci readiness', args.slice(1), globals, ['repo']);
+  }
+  if (subcommand === 'list') {
+    return parseRequiredReadOnlyOptions('playwright-test external-ci list', args.slice(1), globals, ['repo']);
+  }
+  if (subcommand === 'view') {
+    return parseRequiredReadOnlyOptions('playwright-test external-ci view', args.slice(1), globals, ['repo', 'run-id']);
+  }
+  if (subcommand === 'fetch') {
+    const parsed = parseRequiredOptions('playwright-test external-ci fetch', args.slice(1), globals, ['repo', 'run-id', 'artifact-name', 'confirm']);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (!parsed.options.execute) {
+      return parseError('playwright-test external-ci fetch', globals.json, {
+        code: 'MISSING_REQUIRED_OPTION',
+        message: 'playwright-test external-ci fetch requires --execute.',
+        details: { option: 'execute' }
+      });
+    }
+    return parsed;
+  }
+  return parseError('playwright-test external-ci', globals.json, {
+    code: subcommand ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+    message: subcommand ? `Unknown playwright-test external-ci subcommand: ${subcommand}` : 'playwright-test external-ci requires a subcommand.',
+    details: { subcommands: ['readiness', 'list', 'view', 'fetch'] }
+  });
+}
+
+function parseRequiredReadOnlyOptions(command, args, globals, requiredOptions) {
+  const parsed = parseRequiredOptions(command, args, globals, requiredOptions);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (parsed.options.execute) {
+    return parseError(command, globals.json, {
+      code: 'CONFLICTING_OPTIONS',
+      message: `${command} does not accept --execute.`,
+      details: { option: 'execute' }
+    });
+  }
+  return parsed;
 }
 
 function parseCapture(args, globals) {

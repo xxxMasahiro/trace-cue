@@ -46,6 +46,21 @@
       "id": "settings-persistence-status",
       "tokens": ["surface", "line", "foreground", "muted"],
       "contract": ["Show the fixed repository settings location and current locale state without accepting caller-controlled paths."]
+    },
+    {
+      "id": "playwright-test-regression-page",
+      "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "warning", "danger"],
+      "contract": ["Summarize Playwright Test evidence and expose only explicit import or read-only CI artifact fetch actions."]
+    },
+    {
+      "id": "playwright-test-mode-form",
+      "tokens": ["surface", "line", "foreground", "muted", "accent"],
+      "contract": ["Change the Playwright Test integration mode without running browsers, contacting CI, or mutating review gates."]
+    },
+    {
+      "id": "playwright-test-ci-fetch-form",
+      "tokens": ["surface", "line", "foreground", "muted", "accent", "danger"],
+      "contract": ["Fetch a named finished CI artifact through read-only gh after explicit confirmation; never trigger or modify CI."]
     }
   ]
 }

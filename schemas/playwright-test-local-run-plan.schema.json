@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/playwright-test-local-run-plan.schema.json",
+  "title": "TraceCue Playwright Test Local Run Plan",
+  "type": "object",
+  "required": ["schema_version", "kind", "status", "runner", "cwd", "timeout_ms", "execute_required", "plan_hash", "boundary"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "kind": { "const": "playwright_test_local_run_plan" },
+    "status": { "const": "planned" },
+    "runner": { "type": "object" },
+    "cwd": { "type": "string" },
+    "timeout_ms": { "type": "number" },
+    "execute_required": { "const": true },
+    "plan_hash": { "type": "string" },
+    "boundary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

@@ -214,6 +214,50 @@ export {
   visualReviewAggregationBoundary
 } from './visual-review-aggregation.js';
 export {
+  PLAYWRIGHT_TEST_EXTERNAL_CI_CONFIRM,
+  PLAYWRIGHT_TEST_IMPORT_CONFIRM,
+  PLAYWRIGHT_TEST_INTEGRATION_VERSION,
+  PLAYWRIGHT_TEST_MODE_CONFIRM,
+  PLAYWRIGHT_TEST_MODES,
+  PLAYWRIGHT_TEST_STATUSES,
+  buildFreshnessSignature,
+  classifyPlaywrightTestSummary,
+  normalizePlaywrightTestMode,
+  playwrightTestBoundary,
+  playwrightTestModeMatrix,
+  readPlaywrightTestSettings,
+  summarizeStatusLabel,
+  writePlaywrightTestMode
+} from './playwright-test-integration.js';
+export {
+  PLAYWRIGHT_TEST_IMPORT_VERSION,
+  importPlaywrightTestFromDownloadedDirectory,
+  runPlaywrightTestImport
+} from './playwright-test-import.js';
+export {
+  PLAYWRIGHT_TEST_LOCAL_RUN_VERSION,
+  runPlaywrightTestLocalPlan,
+  runPlaywrightTestLocalRun
+} from './playwright-test-local-run.js';
+export {
+  PLAYWRIGHT_TEST_EXTERNAL_CI_VERSION,
+  runPlaywrightTestExternalCiFetch,
+  runPlaywrightTestExternalCiList,
+  runPlaywrightTestExternalCiReadiness,
+  runPlaywrightTestExternalCiView
+} from './playwright-test-external-ci.js';
+export {
+  buildPlaywrightTestRegressionSummary,
+  runPlaywrightTestList,
+  runPlaywrightTestReport,
+  runPlaywrightTestStatus
+} from './playwright-test-regression.js';
+export {
+  runCommand,
+  runGhReadOnly,
+  validateGhReadOnlyArgv
+} from './playwright-test-runners.js';
+export {
   buildControlCenterReadModel,
   controlCenterBoundary,
   runControlCenterStatus
@@ -227,6 +271,9 @@ export {
   CONTROL_CENTER_SOURCE_TYPES,
   controlCenterActionBoundary,
   controlCenterActionCapabilities,
+  runControlCenterPlaywrightTestExternalCiFetch,
+  runControlCenterPlaywrightTestImport,
+  runControlCenterSetPlaywrightTestMode,
   runControlCenterSetDisplayLanguage,
   runControlCenterSourceIntakeProposal
 } from './control-center-actions.js';

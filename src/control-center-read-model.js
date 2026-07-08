@@ -9,10 +9,11 @@ import { runArtifactRootStatus } from './artifact-root-policy.js';
 import { controlCenterActionCapabilities } from './control-center-actions.js';
 import { runLanguageSettings } from './language-settings.js';
 import { buildMcpCapabilityReport } from './mcp-capabilities.js';
+import { buildPlaywrightTestRegressionSummary } from './playwright-test-regression.js';
 import { runResourceStatus } from './resource-status.js';
 import { runVisualReviewDashboard } from './visual-review-dashboard.js';
 
-const CONTROL_CENTER_READ_MODEL_VERSION = '1.1.0';
+const CONTROL_CENTER_READ_MODEL_VERSION = '1.2.0';
 const DEFAULT_RESULT_LIMIT = 5;
 
 export function controlCenterBoundary() {
@@ -24,6 +25,10 @@ export function controlCenterBoundary() {
     deletes_files: false,
     provider_call_performed: false,
     api_call_performed: false,
+    process_spawned: false,
+    network_used: false,
+    gh_used: false,
+    gh_write_used: false,
     automatic_upload: false,
     external_evidence_transfer: false,
     raw_pixels_read: false,
@@ -71,6 +76,7 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     resources,
     language,
     artifactRootStatus,
+    playwrightTest,
     ownerReview
   ] = await Promise.all([
     safeRead('visual_review_dashboard', () => runVisualReviewDashboard(visualOptions, sharedContext)),
@@ -80,6 +86,7 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     safeRead('resource_status', () => runResourceStatus({}, sharedContext)),
     safeRead('language_settings', () => runLanguageSettings({}, sharedContext)),
     safeRead('artifact_root_status', () => runArtifactRootStatus({}, sharedContext)),
+    safeRead('playwright_test', () => runPlaywrightTestReadModel(artifactRoot, sharedContext)),
     readOwnerReview(options, sharedContext)
   ]);
 
@@ -91,6 +98,7 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     resources,
     language,
     artifactRootStatus,
+    playwrightTest,
     ownerReview
   };
   const warnings = collectMessages(sources, 'warnings');
@@ -99,6 +107,7 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
   const ownerSummary = summarizeOwnerReview(ownerReview);
   const languageSummary = summarizeLanguage(language);
   const actionCapabilities = controlCenterActionCapabilities();
+  const playwrightSummary = summarizePlaywrightTest(playwrightTest, actionCapabilities);
   const status = overallStatus({ visual: visualSummary, ownerReview: ownerSummary, errors });
   const nextActions = buildNextActions({ status, visual: visualSummary, ownerReview: ownerSummary, resources });
 
@@ -122,7 +131,8 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     },
     evidence: {
       owner_review_matrix: ownerSummary.matrix,
-      visual_review_results: visualSummary.results
+      visual_review_results: visualSummary.results,
+      playwright_test: playwrightSummary
     },
     findings: {
       visual_review: visualSummary.findings,
@@ -130,8 +140,13 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
       blockers: ownerSummary.blockers
     },
     source_intake: summarizeSourceIntake(actionCapabilities),
+    regression: {
+      playwright_test: playwrightSummary,
+      boundary: controlCenterBoundary()
+    },
     settings: {
       display_language: summarizeDisplayLanguage(languageSummary, actionCapabilities),
+      playwright_test: summarizePlaywrightTestSettings(playwrightSummary, actionCapabilities),
       boundary: controlCenterBoundary()
     },
     setup_safety: {
@@ -144,8 +159,9 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     advanced: {
       commands: {
         dashboard: `${CLI_NAME} control-center status --json`,
-        visual_review_dashboard: `${CLI_NAME} visual review dashboard --json`,
-        settings_language: `${CLI_NAME} settings language --json`
+      visual_review_dashboard: `${CLI_NAME} visual review dashboard --json`,
+        settings_language: `${CLI_NAME} settings language --json`,
+        playwright_test_status: `${CLI_NAME} playwright-test status --json`
       },
       source_statuses: sourceStatuses(sources),
       action_capabilities: actionCapabilities,
@@ -163,6 +179,17 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     errors,
     boundary: controlCenterBoundary(),
     gate_effect: 'none'
+  };
+}
+
+async function runPlaywrightTestReadModel(artifactRoot, context) {
+  const summary = await buildPlaywrightTestRegressionSummary(context.cwd ?? process.cwd(), { 'artifact-root': artifactRoot }, context);
+  return {
+    status: 'ok',
+    data: { playwright_test: summary },
+    warnings: summary.warnings ?? [],
+    errors: [],
+    artifacts: []
   };
 }
 
@@ -333,6 +360,59 @@ function summarizeDisplayLanguage(language, actionCapabilities) {
     translation_execution_enabled: false,
     artifact_output_language_changed_by_display_locale: false,
     diagnostics: language.diagnostics,
+    boundary: controlCenterBoundary()
+  };
+}
+
+function summarizePlaywrightTest(source, actionCapabilities) {
+  const summary = source.data?.playwright_test ?? {};
+  const actions = actionCapabilities.playwright_test;
+  return {
+    status: summary.status ?? (source.status === 'error' ? 'error' : 'empty'),
+    status_label: summary.status_label ?? 'No Playwright Test result imported.',
+    selected_mode: summary.selected_mode ?? 'disabled',
+    supported_modes: summary.supported_modes ?? ['disabled', 'import_only', 'local_run', 'external_ci'],
+    labels: summary.labels ?? {},
+    mode_matrix: summary.mode_matrix ?? {},
+    last_result: summary.last_result ?? null,
+    next_action: summary.next_action ?? 'Choose how Control Center should use Playwright Test evidence.',
+    endpoints: {
+      mode: actions.mode.endpoint,
+      import_result: actions.import_result.endpoint,
+      external_ci_fetch: actions.external_ci_fetch.endpoint
+    },
+    confirmations: {
+      mode: actions.mode.confirm,
+      import_result: actions.import_result.confirm,
+      external_ci_fetch: actions.external_ci_fetch.confirm
+    },
+    local_run: {
+      available_in_cli: true,
+      exposed_in_control_center: false,
+      explicit_execute_required: true
+    },
+    dashboard_refresh_side_effects: summary.dashboard_refresh_side_effects ?? {
+      browser_launched: false,
+      process_spawned: false,
+      network_used: false,
+      gh_used: false,
+      heavy_artifact_scan_performed: false
+    },
+    boundary: summary.boundary ?? controlCenterBoundary()
+  };
+}
+
+function summarizePlaywrightTestSettings(playwrightTest, actionCapabilities) {
+  return {
+    status: playwrightTest.selected_mode ? 'configured' : 'defaults',
+    selected_mode: playwrightTest.selected_mode ?? 'disabled',
+    supported_modes: playwrightTest.supported_modes,
+    labels: playwrightTest.labels,
+    write_endpoint: actionCapabilities.playwright_test.mode.endpoint,
+    write_confirm: actionCapabilities.playwright_test.mode.confirm,
+    setting_write_does_not_execute: true,
+    browser_launched_by_settings: false,
+    ci_contacted_by_settings: false,
     boundary: controlCenterBoundary()
   };
 }

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/playwright-test-integration.schema.json",
+  "title": "TraceCue Playwright Test Integration",
+  "type": "object",
+  "required": ["schema_version", "integration_version", "mode", "supported_modes", "mode_matrix", "boundary"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "integration_version": { "type": "string" },
+    "mode": { "enum": ["disabled", "import_only", "local_run", "external_ci"] },
+    "supported_modes": { "type": "array" },
+    "mode_matrix": { "type": "object" },
+    "boundary": {
+      "type": "object",
+      "properties": {
+        "local_only": { "const": true },
+        "advisory_only": { "const": true },
+        "existing_review_mutated": { "const": false },
+        "deterministic_findings_mutated": { "const": false },
+        "release_gate_mutated": { "const": false },
+        "mcp_execution_exposed": { "const": false },
+        "gate_effect": { "const": "none" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

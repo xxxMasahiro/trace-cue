@@ -135,7 +135,7 @@ const schemas = Object.freeze({
     $id: 'https://trace-cue.local/schemas/control-center-read-model.schema.json',
     title: 'TraceCue Control Center Read Model',
     type: 'object',
-    required: ['schema_version', 'control_center_read_model_version', 'generated_at', 'status', 'review', 'evidence', 'findings', 'source_intake', 'settings', 'setup_safety', 'advanced', 'boundary', 'gate_effect'],
+    required: ['schema_version', 'control_center_read_model_version', 'generated_at', 'status', 'review', 'evidence', 'findings', 'source_intake', 'regression', 'settings', 'setup_safety', 'advanced', 'boundary', 'gate_effect'],
     properties: {
       schema_version: { type: 'string' },
       control_center_read_model_version: { type: 'string' },
@@ -146,6 +146,7 @@ const schemas = Object.freeze({
       evidence: { type: 'object' },
       findings: { type: 'object' },
       source_intake: { type: 'object' },
+      regression: { type: 'object' },
       settings: { type: 'object' },
       setup_safety: { type: 'object' },
       advanced: { type: 'object' },
@@ -164,6 +165,112 @@ const schemas = Object.freeze({
         additionalProperties: true
       },
       gate_effect: { enum: ['none'] }
+    },
+    additionalProperties: true
+  }),
+  playwright_test_integration: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/playwright-test-integration.schema.json',
+    title: 'TraceCue Playwright Test Integration',
+    type: 'object',
+    required: ['schema_version', 'integration_version', 'mode', 'supported_modes', 'mode_matrix', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      integration_version: { type: 'string' },
+      mode: { enum: ['disabled', 'import_only', 'local_run', 'external_ci'] },
+      supported_modes: { type: 'array' },
+      mode_matrix: { type: 'object' },
+      boundary: {
+        type: 'object',
+        properties: {
+          local_only: { const: true },
+          advisory_only: { const: true },
+          existing_review_mutated: { const: false },
+          deterministic_findings_mutated: { const: false },
+          release_gate_mutated: { const: false },
+          mcp_execution_exposed: { const: false },
+          gate_effect: { const: 'none' }
+        },
+        additionalProperties: true
+      }
+    },
+    additionalProperties: true
+  }),
+  playwright_test_result: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/playwright-test-result.schema.json',
+    title: 'TraceCue Playwright Test Result',
+    type: 'object',
+    required: ['schema_version', 'kind', 'id', 'status', 'source', 'summary', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      kind: { const: 'playwright_test_result' },
+      id: { type: 'string' },
+      status: { enum: ['empty', 'passed', 'failed', 'blocked', 'evidence_missing', 'stale', 'error'] },
+      status_label: { type: 'string' },
+      source: { type: 'object' },
+      summary: { type: 'object' },
+      freshness: { type: 'object' },
+      raw_content_included: { const: false },
+      boundary: {
+        type: 'object',
+        properties: {
+          advisory_only: { const: true },
+          existing_review_mutated: { const: false },
+          deterministic_findings_mutated: { const: false },
+          release_gate_mutated: { const: false },
+          raw_artifact_content_included: { const: false },
+          credential_values_recorded: { const: false },
+          gate_effect: { const: 'none' }
+        },
+        additionalProperties: true
+      }
+    },
+    additionalProperties: true
+  }),
+  playwright_test_local_run_plan: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/playwright-test-local-run-plan.schema.json',
+    title: 'TraceCue Playwright Test Local Run Plan',
+    type: 'object',
+    required: ['schema_version', 'kind', 'status', 'runner', 'cwd', 'timeout_ms', 'execute_required', 'plan_hash', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      kind: { const: 'playwright_test_local_run_plan' },
+      status: { const: 'planned' },
+      runner: { type: 'object' },
+      cwd: { type: 'string' },
+      timeout_ms: { type: 'number' },
+      execute_required: { const: true },
+      plan_hash: { type: 'string' },
+      boundary: { type: 'object' }
+    },
+    additionalProperties: true
+  }),
+  playwright_test_external_ci: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/playwright-test-external-ci.schema.json',
+    title: 'TraceCue Playwright Test External CI',
+    type: 'object',
+    required: ['schema_version', 'provider', 'boundary'],
+    properties: {
+      schema_version: { type: 'string' },
+      provider: { enum: ['github_actions'] },
+      repo: { type: 'string' },
+      allowed_commands: { type: 'array' },
+      denied_operations: { type: 'array' },
+      raw_output_included: { const: false },
+      boundary: {
+        type: 'object',
+        properties: {
+          gh_used: { type: 'boolean' },
+          gh_write_used: { const: false },
+          credential_values_recorded: { const: false },
+          release_gate_mutated: { const: false },
+          gate_effect: { const: 'none' }
+        },
+        additionalProperties: true
+      }
     },
     additionalProperties: true
   }),

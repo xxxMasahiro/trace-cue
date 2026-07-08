@@ -6,6 +6,9 @@ import { createEnvelope } from './envelope.js';
 import { runControlCenterStatus, controlCenterBoundary } from './control-center-read-model.js';
 import {
   CONTROL_CENTER_JSON_BODY_LIMIT_BYTES,
+  runControlCenterPlaywrightTestExternalCiFetch,
+  runControlCenterPlaywrightTestImport,
+  runControlCenterSetPlaywrightTestMode,
   runControlCenterSetDisplayLanguage,
   runControlCenterSourceIntakeProposal
 } from './control-center-actions.js';
@@ -215,6 +218,75 @@ async function handleControlCenterRequest(request, response, config, context) {
     sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
     return;
   }
+  if (url.pathname === '/api/playwright-test/mode') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_PLAYWRIGHT_TEST_MODE_POST_ONLY', 'control-center Playwright Test mode only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const result = await runControlCenterSetPlaywrightTestMode(body.value, { ...context, cwd: config.cwd });
+    const envelope = createEnvelope({
+      command: 'control-center playwright-test mode',
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+    return;
+  }
+  if (url.pathname === '/api/playwright-test/import') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_PLAYWRIGHT_TEST_IMPORT_POST_ONLY', 'control-center Playwright Test import only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const result = await runControlCenterPlaywrightTestImport(body.value, { ...context, cwd: config.cwd });
+    const envelope = createEnvelope({
+      command: 'control-center playwright-test import',
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+    return;
+  }
+  if (url.pathname === '/api/playwright-test/external-ci/fetch') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_POST_ONLY', 'control-center Playwright Test CI fetch only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const result = await runControlCenterPlaywrightTestExternalCiFetch(body.value, { ...context, cwd: config.cwd });
+    const envelope = createEnvelope({
+      command: 'control-center playwright-test external-ci fetch',
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+    return;
+  }
   if (request.method !== 'GET') {
     sendMethodNotAllowed(response, 'CONTROL_CENTER_ASSET_GET_ONLY', 'control-center assets only accept GET requests.');
     return;
@@ -327,7 +399,13 @@ function controlCenterServerMetadata(config, url) {
     dashboard_get_only: true,
     bounded_local_action_endpoints: true,
     action_api_exposed: true,
-    action_endpoints: ['/api/source-intake/proposal', '/api/settings/display-language'],
+    action_endpoints: [
+      '/api/source-intake/proposal',
+      '/api/settings/display-language',
+      '/api/playwright-test/mode',
+      '/api/playwright-test/import',
+      '/api/playwright-test/external-ci/fetch'
+    ],
     mcp_json_rpc_exposed: false,
     cors_wildcard: false,
     cache_policy: 'no-store',

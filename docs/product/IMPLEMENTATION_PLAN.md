@@ -9,6 +9,18 @@
 
 ## Phase Plan
 
+### Playwright Test Integration Roadmap 1-18
+
+Purpose: let TraceCue show and manage Playwright Test regression evidence from the Control Center and CLI while keeping browser execution, CI interaction, and review gates under explicit user control.
+
+Implemented scope: add disabled-by-default `playwright-test` mode settings for `disabled`, `import_only`, `local_run`, and `external_ci`; add local result import from workspace-confined JSON/JUnit/HTML-reference artifacts; add CLI-only local-run planning and execution with fixed Playwright CLI invocation, plan hash matching, timeout handling, receipts, and redaction; add read-only GitHub Actions artifact listing/viewing/downloading through `gh run list/view/download` only; scan downloaded artifacts before import; add Control Center Regression and Settings views for mode selection, local import, and external CI artifact fetch without exposing local browser execution; add CLI/API/schema registry/public schema coverage, product-local design-system component metadata, tests, docs, and manifests.
+
+Non-scope: remote CI trigger, rerun, cancel, workflow dispatch, PR/status/comment writes, GitHub artifact auto-discovery without exact artifact selection, MCP exposure, Control Center local browser execution, provider/API review, deterministic TraceCue finding mutation, Agentic Human Review proof mutation, release-gate mutation, default browser launches, hard-coded repository paths, and existing-feature tradeoffs.
+
+Implementation order: add shared mode/result/artifact helpers; add import, local-run, external-ci, and regression summary modules; wire parser, CLI help, constants, API exports, schemas, and schema registry; expose bounded Control Center actions and React/Vite Regression/Settings UI through the existing loopback server and dev proxy; synchronize design-system component metadata, product/workflow docs, security, verification, manifests, package tests, and structure gates; run focused Playwright Test tests, Control Center tests, architecture tests, full no-browser tests, package checks, product docs/security/structure/design/CI checks, product gate, `git diff --check`, commit, push, confirm main CI, fetch, and verify local/remote sync.
+
+Recovery: the slice is additive and mode-gated. If a defect appears, disable the mode or revert the Playwright Test modules, schemas, Control Center additions, docs, and tests. Existing browser review, Agentic Human Review, agent execution, visual review, MCP profiles, safe HTTP MCP, persistent sessions, resource cleanup, release readiness, and deterministic gates remain compatible.
+
 ### Agentic Human Review Dogfood Evidence Pack Summary
 
 Purpose: make longitudinal real-provider dogfood evidence review easier for the owner without replaying provider runs. The slice summarizes a workspace-confined evidence-set manifest, evidence-set output, or dogfood evidence-pack manifest into a compact owner-review digest and exposes a smaller owner-facing review pack for Control Center handoff.

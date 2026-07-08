@@ -32,19 +32,27 @@ test('control-center status builds a read-only local read model', async () => {
   const body = JSON.parse(result.stdout);
   assert.equal(body.command, 'control-center status');
   assert.equal(body.data.control_center.schema_version, '0.1.0');
-  assert.equal(body.data.control_center.control_center_read_model_version, '1.1.0');
+  assert.equal(body.data.control_center.control_center_read_model_version, '1.2.0');
   assert.equal(body.data.control_center.generated_at, fixedNow);
   assert.equal(body.data.control_center.status, 'empty');
   assert.equal(body.data.control_center.review.visual_review.status, 'empty');
   assert.equal(body.data.control_center.source_intake.status, 'available');
   assert.equal(body.data.control_center.source_intake.supported_efforts.includes('xhigh'), true);
   assert.equal(body.data.control_center.source_intake.safety.provider_execution, false);
+  assert.equal(body.data.control_center.regression.playwright_test.selected_mode, 'disabled');
+  assert.equal(body.data.control_center.regression.playwright_test.local_run.exposed_in_control_center, false);
+  assert.equal(body.data.control_center.regression.playwright_test.dashboard_refresh_side_effects.process_spawned, false);
+  assert.equal(body.data.control_center.regression.playwright_test.dashboard_refresh_side_effects.network_used, false);
+  assert.equal(body.data.control_center.settings.playwright_test.selected_mode, 'disabled');
   assert.equal(body.data.control_center.settings.display_language.supported_locales.length, 14);
   assert.equal(body.data.control_center.settings.display_language.translation_execution_enabled, false);
   assert.equal(body.data.control_center.review.trust_safety.read_only, true);
   assert.equal(body.data.control_center.boundary.read_only, true);
   assert.equal(body.data.control_center.boundary.writes_artifacts, false);
   assert.equal(body.data.control_center.boundary.provider_call_performed, false);
+  assert.equal(body.data.control_center.boundary.process_spawned, false);
+  assert.equal(body.data.control_center.boundary.network_used, false);
+  assert.equal(body.data.control_center.boundary.gh_used, false);
   assert.equal(body.data.control_center.boundary.raw_pixels_read, false);
   assert.equal(body.data.control_center.boundary.mcp_write_execute_exposed, false);
   assert.equal(body.data.control_center.gate_effect, 'none');
@@ -58,6 +66,7 @@ test('control-center status builds a read-only local read model', async () => {
   const model = await buildControlCenterReadModel({}, { cwd, now: fixedNow });
   assert.equal(model.setup_safety.language_settings.translation_execution_enabled, false);
   assert.equal(model.setup_safety.mcp.execution_tools_exposed, false);
+  assert.equal(model.advanced.source_statuses.some((source) => source.source === 'playwrightTest'), true);
 });
 
 test('control-center schema is exported through the local schema registry', () => {
@@ -66,6 +75,7 @@ test('control-center schema is exported through the local schema registry', () =
   assert.equal(schema.properties.boundary.properties.read_only.const, true);
   assert.equal(schema.properties.boundary.properties.provider_call_performed.const, false);
   assert.equal(schema.required.includes('source_intake'), true);
+  assert.equal(schema.required.includes('regression'), true);
   assert.equal(schema.required.includes('settings'), true);
 });
 
@@ -86,7 +96,10 @@ test('control-center appearance is controlled by the product design-system files
     'source-safety-strip',
     'artifact-generation-result',
     'settings-language-form',
-    'settings-persistence-status'
+    'settings-persistence-status',
+    'playwright-test-regression-page',
+    'playwright-test-mode-form',
+    'playwright-test-ci-fetch-form'
   ]) {
     assert.ok(componentData.components.some((component) => component.id === id), `${id} should be present`);
   }
@@ -114,7 +127,13 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
     assert.equal(started.metadata.dashboard_get_only, true);
     assert.equal(started.metadata.bounded_local_action_endpoints, true);
     assert.equal(started.metadata.action_api_exposed, true);
-    assert.deepEqual(started.metadata.action_endpoints, ['/api/source-intake/proposal', '/api/settings/display-language']);
+    assert.deepEqual(started.metadata.action_endpoints, [
+      '/api/source-intake/proposal',
+      '/api/settings/display-language',
+      '/api/playwright-test/mode',
+      '/api/playwright-test/import',
+      '/api/playwright-test/external-ci/fetch'
+    ]);
 
     const health = await fetch(new URL('/api/health', started.url));
     assert.equal(health.status, 200);
@@ -130,6 +149,8 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
     assert.equal(dashboardBody.data.control_center.boundary.read_only, true);
     assert.equal(dashboardBody.data.control_center.source_intake.confirm, 'create-source-intake-proposal');
     assert.equal(dashboardBody.data.control_center.settings.display_language.write_confirm, 'set-control-center-display-language');
+    assert.equal(dashboardBody.data.control_center.regression.playwright_test.confirmations.import_result, 'import-playwright-test-result');
+    assert.equal(dashboardBody.data.control_center.regression.playwright_test.confirmations.external_ci_fetch, 'fetch-playwright-test-ci-artifact');
 
     const post = await fetch(new URL('/api/dashboard', started.url), { method: 'POST' });
     assert.equal(post.status, 405);
@@ -148,6 +169,48 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
     const refreshedBody = await refreshed.json();
     assert.equal(refreshedBody.data.control_center.settings.display_language.current_locale, 'ja');
     assert.equal(refreshedBody.data.control_center.settings.display_language.text_direction, 'ltr');
+
+    const playwrightMode = await postJson(started, '/api/playwright-test/mode', {
+      mode: 'import_only',
+      confirm: 'set-playwright-test-mode'
+    });
+    assert.equal(playwrightMode.statusCode, 200);
+    const playwrightModeBody = JSON.parse(playwrightMode.body);
+    assert.equal(playwrightModeBody.command, 'control-center playwright-test mode');
+    assert.equal(playwrightModeBody.data.playwright_test_mode.mode, 'import_only');
+    assert.equal(playwrightModeBody.data.playwright_test_mode.safety.setting_write_does_not_execute, true);
+
+    await mkdir(path.join(cwd, 'results'), { recursive: true });
+    await writeFile(path.join(cwd, 'results', 'playwright.json'), JSON.stringify({
+      suites: [{
+        specs: [{
+          title: 'settings',
+          tests: [{
+            title: 'loads',
+            projectName: 'chromium',
+            results: [{ status: 'passed', attachments: [] }]
+          }]
+        }]
+      }]
+    }), 'utf8');
+    const playwrightImport = await postJson(started, '/api/playwright-test/import', {
+      input: 'results/playwright.json',
+      confirm: 'import-playwright-test-result'
+    });
+    assert.equal(playwrightImport.statusCode, 200);
+    const playwrightImportBody = JSON.parse(playwrightImport.body);
+    assert.equal(playwrightImportBody.command, 'control-center playwright-test import');
+    assert.equal(playwrightImportBody.data.playwright_test_import.status, 'passed');
+    assert.equal(playwrightImportBody.data.playwright_test_import.boundary.raw_artifact_content_included, false);
+
+    const playwrightFetchMissingExecute = await postJson(started, '/api/playwright-test/external-ci/fetch', {
+      repo: 'owner/repo',
+      run_id: '123',
+      artifact_name: 'results',
+      confirm: 'fetch-playwright-test-ci-artifact'
+    });
+    assert.equal(playwrightFetchMissingExecute.statusCode, 400);
+    assert.match(playwrightFetchMissingExecute.body, /CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_EXECUTE_REQUIRED/);
 
     const unsupportedLocale = await postJson(started, '/api/settings/display-language', {
       locale: 'zz',

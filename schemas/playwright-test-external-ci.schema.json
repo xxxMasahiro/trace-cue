@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/playwright-test-external-ci.schema.json",
+  "title": "TraceCue Playwright Test External CI",
+  "type": "object",
+  "required": ["schema_version", "provider", "boundary"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "provider": { "enum": ["github_actions"] },
+    "repo": { "type": "string" },
+    "allowed_commands": { "type": "array" },
+    "denied_operations": { "type": "array" },
+    "raw_output_included": { "const": false },
+    "boundary": {
+      "type": "object",
+      "properties": {
+        "gh_used": { "type": "boolean" },
+        "gh_write_used": { "const": false },
+        "credential_values_recorded": { "const": false },
+        "release_gate_mutated": { "const": false },
+        "gate_effect": { "const": "none" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

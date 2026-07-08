@@ -3,6 +3,9 @@ import { createEnvelope } from '../src/envelope.js';
 import { runControlCenterStatus, controlCenterBoundary } from '../src/control-center-read-model.js';
 import {
   CONTROL_CENTER_JSON_BODY_LIMIT_BYTES,
+  runControlCenterPlaywrightTestExternalCiFetch,
+  runControlCenterPlaywrightTestImport,
+  runControlCenterSetPlaywrightTestMode,
   runControlCenterSetDisplayLanguage,
   runControlCenterSourceIntakeProposal
 } from '../src/control-center-actions.js';
@@ -86,6 +89,72 @@ function controlCenterApiPlugin() {
           const result = await runControlCenterSetDisplayLanguage(body.value, { cwd: process.cwd() });
           const envelope = createEnvelope({
             command: 'control-center settings display-language',
+            status: result.status,
+            data: result.data,
+            warnings: result.warnings,
+            errors: result.errors,
+            artifacts: result.artifacts
+          });
+          sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+          return;
+        }
+        if (url.pathname === '/api/playwright-test/mode') {
+          if (request.method !== 'POST') {
+            sendJson(response, 405, { error: { code: 'CONTROL_CENTER_PLAYWRIGHT_TEST_MODE_POST_ONLY', message: 'control-center Playwright Test mode only accepts POST requests.' } });
+            return;
+          }
+          const body = await readJsonRequestBody(request);
+          if (!body.ok) {
+            sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+            return;
+          }
+          const result = await runControlCenterSetPlaywrightTestMode(body.value, { cwd: process.cwd() });
+          const envelope = createEnvelope({
+            command: 'control-center playwright-test mode',
+            status: result.status,
+            data: result.data,
+            warnings: result.warnings,
+            errors: result.errors,
+            artifacts: result.artifacts
+          });
+          sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+          return;
+        }
+        if (url.pathname === '/api/playwright-test/import') {
+          if (request.method !== 'POST') {
+            sendJson(response, 405, { error: { code: 'CONTROL_CENTER_PLAYWRIGHT_TEST_IMPORT_POST_ONLY', message: 'control-center Playwright Test import only accepts POST requests.' } });
+            return;
+          }
+          const body = await readJsonRequestBody(request);
+          if (!body.ok) {
+            sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+            return;
+          }
+          const result = await runControlCenterPlaywrightTestImport(body.value, { cwd: process.cwd() });
+          const envelope = createEnvelope({
+            command: 'control-center playwright-test import',
+            status: result.status,
+            data: result.data,
+            warnings: result.warnings,
+            errors: result.errors,
+            artifacts: result.artifacts
+          });
+          sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+          return;
+        }
+        if (url.pathname === '/api/playwright-test/external-ci/fetch') {
+          if (request.method !== 'POST') {
+            sendJson(response, 405, { error: { code: 'CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_POST_ONLY', message: 'control-center Playwright Test CI fetch only accepts POST requests.' } });
+            return;
+          }
+          const body = await readJsonRequestBody(request);
+          if (!body.ok) {
+            sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+            return;
+          }
+          const result = await runControlCenterPlaywrightTestExternalCiFetch(body.value, { cwd: process.cwd() });
+          const envelope = createEnvelope({
+            command: 'control-center playwright-test external-ci fetch',
             status: result.status,
             data: result.data,
             warnings: result.warnings,

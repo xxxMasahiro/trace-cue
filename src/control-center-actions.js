@@ -12,6 +12,14 @@ import {
   getTraceCueLocaleDirection,
   normalizeTraceCueLocale
 } from './locale-policy.js';
+import {
+  PLAYWRIGHT_TEST_EXTERNAL_CI_CONFIRM,
+  PLAYWRIGHT_TEST_IMPORT_CONFIRM,
+  PLAYWRIGHT_TEST_MODE_CONFIRM,
+  writePlaywrightTestMode
+} from './playwright-test-integration.js';
+import { runPlaywrightTestExternalCiFetch } from './playwright-test-external-ci.js';
+import { runPlaywrightTestImport } from './playwright-test-import.js';
 import { redact } from './redaction.js';
 
 export const CONTROL_CENTER_ACTION_SCHEMA_VERSION = '1.0.0';
@@ -37,6 +45,11 @@ export function controlCenterActionBoundary(overrides = {}) {
     provider_call_performed: false,
     api_call_performed: false,
     shell_used: false,
+    process_spawned: false,
+    network_used: false,
+    gh_used: false,
+    gh_write_used: false,
+    writes_artifacts: false,
     mcp_execution_exposed: false,
     external_evidence_transfer: false,
     raw_provider_response_stored: false,
@@ -78,12 +91,89 @@ export function controlCenterActionCapabilities() {
       translation_execution: false,
       artifact_output_language_write: false
     },
+    playwright_test: {
+      mode: {
+        endpoint: '/api/playwright-test/mode',
+        method: 'POST',
+        confirm: PLAYWRIGHT_TEST_MODE_CONFIRM,
+        setting_write_does_not_execute: true
+      },
+      import_result: {
+        endpoint: '/api/playwright-test/import',
+        method: 'POST',
+        confirm: PLAYWRIGHT_TEST_IMPORT_CONFIRM,
+        local_artifact_write: true,
+        browser_execution: false,
+        process_spawn: false,
+        network: false
+      },
+      local_run: {
+        cli_command: 'trace-cue playwright-test local run',
+        exposed_in_control_center: false,
+        explicit_execute_required: true
+      },
+      external_ci_fetch: {
+        endpoint: '/api/playwright-test/external-ci/fetch',
+        method: 'POST',
+        confirm: PLAYWRIGHT_TEST_EXTERNAL_CI_CONFIRM,
+        provider: 'github_actions',
+        gh_commands: ['gh run download'],
+        gh_write_allowed: false,
+        ci_trigger_allowed: false,
+        explicit_execute_required: true
+      }
+    },
     boundary: controlCenterActionBoundary({
       action_endpoints_exposed: true,
       bounded_local_settings_write: true,
       bounded_local_artifact_write: true
     })
   };
+}
+
+export async function runControlCenterSetPlaywrightTestMode(input = {}, context = {}) {
+  const result = await writePlaywrightTestMode({
+    mode: input.mode,
+    confirm: input.confirm
+  }, context);
+  return result;
+}
+
+export async function runControlCenterPlaywrightTestImport(input = {}, context = {}) {
+  const inputPath = normalizePathField(input.input ?? input.result_file ?? input.resultFile);
+  if (!inputPath.ok) {
+    return actionError(inputPath.code, inputPath.message, inputPath.details, {
+      playwright_test: true,
+      writes_artifacts: false
+    });
+  }
+  return runPlaywrightTestImport({
+    input: inputPath.value,
+    confirm: input.confirm,
+    'artifact-root': input.artifact_root ?? input.artifactRoot
+  }, context);
+}
+
+export async function runControlCenterPlaywrightTestExternalCiFetch(input = {}, context = {}) {
+  if (input.execute !== true && input.execute_confirmed !== true && input.executeConfirmed !== true) {
+    return actionError('CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_EXECUTE_REQUIRED', 'CI artifact fetch requires explicit execution confirmation.', {
+      execute_required: true
+    }, {
+      playwright_test: true,
+      external_ci: true,
+      process_spawned: false,
+      network_used: false,
+      gh_used: false
+    });
+  }
+  return runPlaywrightTestExternalCiFetch({
+    repo: input.repo,
+    'run-id': input.run_id ?? input.runId,
+    'artifact-name': input.artifact_name ?? input.artifactName,
+    confirm: input.confirm,
+    execute: true,
+    'artifact-root': input.artifact_root ?? input.artifactRoot
+  }, context);
 }
 
 export async function runControlCenterSourceIntakeProposal(input = {}, context = {}) {

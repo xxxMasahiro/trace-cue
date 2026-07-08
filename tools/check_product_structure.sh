@@ -55,6 +55,10 @@ for rel in \
   schemas/operation-policy.schema.json \
   schemas/operation-admin-readiness.schema.json \
   schemas/operation-provider-readiness.schema.json \
+  schemas/playwright-test-external-ci.schema.json \
+  schemas/playwright-test-integration.schema.json \
+  schemas/playwright-test-local-run-plan.schema.json \
+  schemas/playwright-test-result.schema.json \
   schemas/mcp-tool.schema.json \
   schemas/review.schema.json \
   schemas/target-manifest.schema.json \
@@ -83,6 +87,13 @@ for rel in \
   src/operation-policy.js \
   src/operation-admin-readiness.js \
   src/operation-provider-readiness.js \
+  src/playwright-test-artifacts.js \
+  src/playwright-test-external-ci.js \
+  src/playwright-test-import.js \
+  src/playwright-test-integration.js \
+  src/playwright-test-local-run.js \
+  src/playwright-test-regression.js \
+  src/playwright-test-runners.js \
   src/page-evidence.js \
   src/product-identity.js \
   src/observe.js \
@@ -97,6 +108,7 @@ for rel in \
   templates/review-target-manifest.json \
   tests/architecture.test.js \
   tests/cli.test.js \
+  tests/playwright-test.test.js \
   tests/browser-smoke.test.js \
   tests/pack-install-smoke.test.js \
   docs/product/REQUIREMENTS.md \

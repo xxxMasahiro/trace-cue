@@ -113,6 +113,20 @@ import {
 } from './visual-review-execution.js';
 import { runVisualReviewDashboard } from './visual-review-dashboard.js';
 import { runVisualReviewAggregation } from './visual-review-aggregation.js';
+import { writePlaywrightTestMode } from './playwright-test-integration.js';
+import { runPlaywrightTestImport } from './playwright-test-import.js';
+import { runPlaywrightTestLocalPlan, runPlaywrightTestLocalRun } from './playwright-test-local-run.js';
+import {
+  runPlaywrightTestExternalCiFetch,
+  runPlaywrightTestExternalCiList,
+  runPlaywrightTestExternalCiReadiness,
+  runPlaywrightTestExternalCiView
+} from './playwright-test-external-ci.js';
+import {
+  runPlaywrightTestList,
+  runPlaywrightTestReport,
+  runPlaywrightTestStatus
+} from './playwright-test-regression.js';
 import { runControlCenterServe } from './control-center-server.js';
 import { runControlCenterStatus } from './control-center-read-model.js';
 import { buildMcpClientConfig } from './mcp-client-config.js';
@@ -458,6 +472,50 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'visual review aggregate') {
       return runtimeResult(parsed.command, await (context.visualReviewAggregationRunner ?? runVisualReviewAggregation)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test mode') {
+      return runtimeResult(parsed.command, await (context.playwrightTestModeRunner ?? writePlaywrightTestMode)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test status') {
+      return runtimeResult(parsed.command, await (context.playwrightTestStatusRunner ?? runPlaywrightTestStatus)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test list') {
+      return runtimeResult(parsed.command, await (context.playwrightTestListRunner ?? runPlaywrightTestList)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test report') {
+      return runtimeResult(parsed.command, await (context.playwrightTestReportRunner ?? runPlaywrightTestReport)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test import') {
+      return runtimeResult(parsed.command, await (context.playwrightTestImportRunner ?? runPlaywrightTestImport)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test local plan') {
+      return runtimeResult(parsed.command, await (context.playwrightTestLocalPlanRunner ?? runPlaywrightTestLocalPlan)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test local run') {
+      return runtimeResult(parsed.command, await (context.playwrightTestLocalRunRunner ?? runPlaywrightTestLocalRun)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test external-ci readiness') {
+      return runtimeResult(parsed.command, await (context.playwrightTestExternalCiReadinessRunner ?? runPlaywrightTestExternalCiReadiness)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test external-ci list') {
+      return runtimeResult(parsed.command, await (context.playwrightTestExternalCiListRunner ?? runPlaywrightTestExternalCiList)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test external-ci view') {
+      return runtimeResult(parsed.command, await (context.playwrightTestExternalCiViewRunner ?? runPlaywrightTestExternalCiView)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test external-ci fetch') {
+      return runtimeResult(parsed.command, await (context.playwrightTestExternalCiFetchRunner ?? runPlaywrightTestExternalCiFetch)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'identity audit') {
@@ -882,6 +940,20 @@ function usageText(topic) {
       `       ${CLI_NAME} control-center serve [--host 127.0.0.1] [--port <port>] [--artifact-root <path>] [--limit <n>] [--max-bytes <bytes>] [--evidence-set <workspace-json>] [--json]`,
       '',
       'Reports and serves read-only local review status. The server is loopback-only and GET-only, exposes no action API, performs no provider call, writes no artifacts, launches no browser, and mutates no gates.'
+    ].join('\n');
+  }
+
+  if (topic === 'playwright-test' || topic?.startsWith('playwright-test')) {
+    return [
+      `Usage: ${CLI_NAME} playwright-test mode --mode <disabled|import_only|local_run|external_ci> --confirm set-playwright-test-mode [--json]`,
+      `       ${CLI_NAME} playwright-test status [--artifact-root <path>] [--json]`,
+      `       ${CLI_NAME} playwright-test import --input <result.json|junit.xml|report.html> --confirm import-playwright-test-result [--json]`,
+      `       ${CLI_NAME} playwright-test local plan [--config <path>] [--cwd <path>] [--project <name>] [--reporter <name>] [--json]`,
+      `       ${CLI_NAME} playwright-test local run --plan <plan-json> --plan-hash <sha256> --execute [--json]`,
+      `       ${CLI_NAME} playwright-test external-ci list --repo <owner/repo> [--limit <n>] [--json]`,
+      `       ${CLI_NAME} playwright-test external-ci fetch --repo <owner/repo> --run-id <number> --artifact-name <exact-name> --execute [--json]`,
+      '',
+      'Imports existing Playwright Test evidence, optionally runs local Playwright Test only after explicit execution, and fetches GitHub Actions artifacts through read-only gh run commands.'
     ].join('\n');
   }
 

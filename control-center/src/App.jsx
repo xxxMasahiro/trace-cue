@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createSourceIntakeProposal, fetchDashboard, setDisplayLanguage } from './apiClient.js';
+import {
+  createSourceIntakeProposal,
+  fetchDashboard,
+  fetchPlaywrightTestCiArtifact,
+  importPlaywrightTestResult,
+  setDisplayLanguage,
+  setPlaywrightTestMode
+} from './apiClient.js';
 import { designSystemMetadata, designSystemStyle } from './designSystem.js';
 import { createTranslator } from './i18n.js';
 import { PAGES } from './pageDefinitions.js';
@@ -14,6 +21,18 @@ const DEFAULT_INTAKE_FORM = {
   content_evidence_file: '',
   review_index_file: '',
   local_write_confirmed: false
+};
+
+const DEFAULT_PLAYWRIGHT_IMPORT_FORM = {
+  input: '',
+  local_write_confirmed: false
+};
+
+const DEFAULT_PLAYWRIGHT_CI_FORM = {
+  repo: '',
+  run_id: '',
+  artifact_name: '',
+  execute_confirmed: false
 };
 
 export default function App() {
@@ -89,6 +108,7 @@ export default function App() {
           <>
             {activePage === 'intake' ? <IntakePage dashboard={dashboard} t={t} /> : null}
             {activePage === 'review' ? <ReviewPage dashboard={dashboard} /> : null}
+            {activePage === 'regression' ? <RegressionPage dashboard={dashboard} reload={load} t={t} /> : null}
             {activePage === 'evidence' ? <EvidencePage dashboard={dashboard} /> : null}
             {activePage === 'findings' ? <FindingsPage dashboard={dashboard} /> : null}
             {activePage === 'settings' ? <SettingsPage dashboard={dashboard} locale={locale} setLocale={setLocale} reload={load} t={t} /> : null}
@@ -304,7 +324,224 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
           <div><dt>Translation</dt><dd>{language.translation_execution_enabled ? 'enabled' : 'disabled'}</dd></div>
         </dl>
       </section>
+      <PlaywrightModeSettings dashboard={dashboard} reload={reload} t={t} />
     </div>
+  );
+}
+
+function PlaywrightModeSettings({ dashboard, reload, t }) {
+  const settings = dashboard.settings?.playwright_test ?? {};
+  const labels = settings.labels ?? {};
+  const modes = settings.supported_modes ?? ['disabled', 'import_only', 'local_run', 'external_ci'];
+  const [selectedMode, setSelectedMode] = useState(settings.selected_mode ?? 'disabled');
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setSelectedMode(settings.selected_mode ?? 'disabled');
+  }, [settings.selected_mode]);
+
+  async function submit(event) {
+    event.preventDefault();
+    setError(null);
+    setStatus(null);
+    setSaving(true);
+    try {
+      const saved = await setPlaywrightTestMode({
+        mode: selectedMode,
+        confirm: settings.write_confirm
+      });
+      setStatus(`${saved.mode}`);
+      await reload();
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="panel" data-testid="tc-cc-settings-playwright-test-mode">
+      <div className="panel-header-inline">
+        <div>
+          <p className="eyebrow">{t('settings.title', 'Settings')}</p>
+          <h3>{t('settings.playwrightTitle', 'Playwright Test mode')}</h3>
+        </div>
+        <StatusBadge status={settings.status ?? 'configured'} />
+      </div>
+      <p className="muted">{t('settings.playwrightCaption', 'This only changes how Control Center may use Playwright Test evidence. Saving does not run a browser or contact CI.')}</p>
+      <form className="control-form compact" onSubmit={submit}>
+        <label>
+          {t('settings.playwrightTitle', 'Playwright Test mode')}
+          <select value={selectedMode} onChange={(event) => setSelectedMode(event.target.value)}>
+            {modes.map((mode) => <option key={mode} value={mode}>{labels[mode] ?? mode}</option>)}
+          </select>
+        </label>
+        <button className="primary-action" type="submit" disabled={saving}>
+          {saving ? 'Saving...' : t('settings.playwrightSave', 'Save mode')}
+        </button>
+      </form>
+      {status ? <StatePanel title="Mode saved" text={status} /> : null}
+      {error ? <StatePanel title="Cannot save mode" text={error} tone="danger" /> : null}
+    </section>
+  );
+}
+
+function RegressionPage({ dashboard, reload, t }) {
+  const regression = dashboard.regression?.playwright_test ?? {};
+  const [importForm, setImportForm] = useState(DEFAULT_PLAYWRIGHT_IMPORT_FORM);
+  const [ciForm, setCiForm] = useState(DEFAULT_PLAYWRIGHT_CI_FORM);
+  const [busy, setBusy] = useState(null);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  function updateImport(key, value) {
+    setImportForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateCi(key, value) {
+    setCiForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function submitImport(event) {
+    event.preventDefault();
+    setError(null);
+    setResult(null);
+    if (!importForm.local_write_confirmed) {
+      setError('Confirm local Playwright Test result import before continuing.');
+      return;
+    }
+    setBusy('import');
+    try {
+      const imported = await importPlaywrightTestResult({
+        input: importForm.input,
+        confirm: regression.confirmations?.import_result
+      });
+      setResult(imported);
+      await reload();
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function submitCi(event) {
+    event.preventDefault();
+    setError(null);
+    setResult(null);
+    if (!ciForm.execute_confirmed) {
+      setError('Confirm CI artifact fetch before continuing.');
+      return;
+    }
+    setBusy('ci');
+    try {
+      const fetched = await fetchPlaywrightTestCiArtifact({
+        repo: ciForm.repo,
+        run_id: ciForm.run_id,
+        artifact_name: ciForm.artifact_name,
+        execute_confirmed: true,
+        confirm: regression.confirmations?.external_ci_fetch
+      });
+      setResult(fetched);
+      await reload();
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="page-grid">
+      <section className="panel primary-panel">
+        <p className="eyebrow">{t('regression.title', 'Regression checks')}</p>
+        <h3>{regression.status_label ?? 'No Playwright Test result imported.'}</h3>
+        <p>{t('regression.caption', 'Import existing Playwright Test results or fetch a finished CI artifact. Local test execution stays CLI-only.')}</p>
+        <div className="metric-row">
+          <Metric label="Mode" value={regression.labels?.[regression.selected_mode] ?? regression.selected_mode ?? 'disabled'} />
+          <Metric label="Total" value={regression.last_result?.total_count ?? 0} />
+          <Metric label="Failed" value={regression.last_result?.failed_count ?? 0} />
+        </div>
+      </section>
+      <section className="panel">
+        <div className="panel-header-inline">
+          <div>
+            <p className="eyebrow">Playwright Test</p>
+            <h3>{t('regression.importTitle', 'Import result')}</h3>
+          </div>
+          <StatusBadge status={regression.selected_mode === 'disabled' ? 'disabled' : 'available'} />
+        </div>
+        <form className="control-form compact" onSubmit={submitImport}>
+          <label>
+            {t('regression.resultFile', 'Result file')}
+            <input value={importForm.input} onChange={(event) => updateImport('input', event.target.value)} placeholder="test-results/results.json" />
+          </label>
+          <label className="check-row">
+            <input type="checkbox" checked={importForm.local_write_confirmed} onChange={(event) => updateImport('local_write_confirmed', event.target.checked)} />
+            Import this local result into TraceCue
+          </label>
+          <button className="primary-action" type="submit" disabled={busy === 'import'}>
+            {busy === 'import' ? 'Importing...' : t('regression.importSubmit', 'Import result')}
+          </button>
+        </form>
+      </section>
+      <section className="panel">
+        <div className="panel-header-inline">
+          <div>
+            <p className="eyebrow">GitHub Actions</p>
+            <h3>{t('regression.ciTitle', 'Fetch CI artifact')}</h3>
+          </div>
+          <StatusBadge status={regression.selected_mode === 'external_ci' ? 'available' : 'optional'} />
+        </div>
+        <form className="control-form compact" onSubmit={submitCi}>
+          <label>
+            {t('regression.repo', 'Repository')}
+            <input value={ciForm.repo} onChange={(event) => updateCi('repo', event.target.value)} placeholder="owner/repo" />
+          </label>
+          <div className="form-grid">
+            <label>
+              {t('regression.runId', 'Run ID')}
+              <input value={ciForm.run_id} onChange={(event) => updateCi('run_id', event.target.value)} inputMode="numeric" />
+            </label>
+            <label>
+              {t('regression.artifactName', 'Artifact name')}
+              <input value={ciForm.artifact_name} onChange={(event) => updateCi('artifact_name', event.target.value)} />
+            </label>
+          </div>
+          <label className="check-row">
+            <input type="checkbox" checked={ciForm.execute_confirmed} onChange={(event) => updateCi('execute_confirmed', event.target.checked)} />
+            Fetch this finished CI artifact with read-only gh
+          </label>
+          <button className="primary-action" type="submit" disabled={busy === 'ci'}>
+            {busy === 'ci' ? 'Fetching...' : t('regression.ciSubmit', 'Fetch artifact')}
+          </button>
+        </form>
+      </section>
+      {error ? <StatePanel title="Cannot update regression evidence" text={error} tone="danger" /> : null}
+      {result ? <PlaywrightResultPanel result={result} /> : null}
+    </div>
+  );
+}
+
+function PlaywrightResultPanel({ result }) {
+  const summary = result.summary ?? {};
+  return (
+    <section className="panel primary-panel">
+      <p className="eyebrow">Result</p>
+      <h3>{result.status_label ?? result.status ?? 'Updated'}</h3>
+      <div className="metric-row">
+        <Metric label="Total" value={summary.total_count ?? 0} />
+        <Metric label="Passed" value={summary.passed_count ?? 0} />
+        <Metric label="Failed" value={summary.failed_count ?? 0} />
+      </div>
+      <dl className="definition-list">
+        <div><dt>Source</dt><dd>{result.source?.kind ?? result.kind ?? 'playwright_test'}</dd></div>
+        <div><dt>Raw content</dt><dd>{result.raw_content_included || summary.raw_content_included ? 'included' : 'hidden'}</dd></div>
+        <div><dt>Gate effect</dt><dd>{result.boundary?.gate_effect ?? 'none'}</dd></div>
+      </dl>
+    </section>
   );
 }
 

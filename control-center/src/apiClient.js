@@ -28,6 +28,30 @@ export async function setDisplayLanguage(payload) {
   return body.envelope.data.display_language;
 }
 
+export async function setPlaywrightTestMode(payload) {
+  const body = await postJson('/api/playwright-test/mode', payload);
+  if (!body.ok || body.envelope.status === 'error') {
+    throw new Error(body.message);
+  }
+  return body.envelope.data.playwright_test_mode;
+}
+
+export async function importPlaywrightTestResult(payload) {
+  const body = await postJson('/api/playwright-test/import', payload);
+  if (!body.ok || body.envelope.status === 'error') {
+    throw new Error(body.message);
+  }
+  return body.envelope.data.playwright_test_import;
+}
+
+export async function fetchPlaywrightTestCiArtifact(payload) {
+  const body = await postJson('/api/playwright-test/external-ci/fetch', payload);
+  if (!body.ok || body.envelope.status === 'error') {
+    throw new Error(body.message);
+  }
+  return body.envelope.data.playwright_test_import ?? body.envelope.data.playwright_test_external_ci_fetch;
+}
+
 async function postJson(url, payload) {
   const response = await fetch(url, {
     method: 'POST',
