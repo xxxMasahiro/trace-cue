@@ -12,13 +12,13 @@ product.mcp_bin	optional	all	all	bin/trace-cue-mcp.js	source	file_nonempty	workf
 product.source	required	all	all	src/cli.js	source	file_nonempty	workflow	CLI runtime entrypoint.
 product.public_api	optional	all	all	src/api.js	source	file_nonempty	workflow	Public local package API exports for reusable core functions.
 product.control_center_read_model	optional	all	all	src/control-center-read-model.js	source	file_nonempty	workflow	Read-only body-free browser status read model over existing TraceCue APIs.
-product.control_center_actions	optional	all	all	src/control-center-actions.js	source	file_nonempty	workflow	Confirmed local Control Center source-intake proposal, display-language settings, Playwright Test mode/import, and read-only external CI artifact fetch actions without provider, shell, MCP, browser, or external-transfer authority.
+product.control_center_actions	optional	all	all	src/control-center-actions.js	source	file_nonempty	workflow	Confirmed local Control Center source-intake proposal, display-language settings, Playwright Test mode/import, approved external CI settings, and read-only external CI artifact fetch actions without provider, shell, MCP, browser, or external-transfer authority.
 product.control_center_server	optional	all	all	src/control-center-server.js	source	file_nonempty	workflow	Loopback-only server for built React/Vite browser assets, GET-only dashboard API, and bounded local action endpoints.
 product.playwright_test_integration	optional	all	all	src/playwright-test-integration.js	source	file_nonempty	workflow	Disabled-by-default Playwright Test mode, boundary, result artifact, and status contract helper.
 product.playwright_test_artifacts	optional	all	all	src/playwright-test-artifacts.js	source	file_nonempty	workflow	Workspace-confined Playwright Test artifact scanning, bounded reads, and redaction helper.
 product.playwright_test_import	optional	all	all	src/playwright-test-import.js	source	file_nonempty	workflow	Local Playwright Test JSON/JUnit/HTML-reference artifact import and receipt writer.
 product.playwright_test_local_run	optional	all	all	src/playwright-test-local-run.js	source	file_nonempty	workflow	CLI-only Playwright Test local-run plan and explicit execute helper with plan-hash gating.
-product.playwright_test_external_ci	optional	all	all	src/playwright-test-external-ci.js	source	file_nonempty	workflow	Read-only GitHub Actions artifact list/view/download integration through gh run commands.
+product.playwright_test_external_ci	optional	all	all	src/playwright-test-external-ci.js	source	file_nonempty	workflow	Read-only GitHub Actions artifact list/view/download integration through gh run commands, including approved settings resolution before explicit download.
 product.playwright_test_regression	optional	all	all	src/playwright-test-regression.js	source	file_nonempty	workflow	Read-only Playwright Test regression summary and report helper for CLI and Control Center.
 product.playwright_test_runners	optional	all	all	src/playwright-test-runners.js	source	file_nonempty	workflow	Isolated fixed-argv process runner for Playwright Test local runs and read-only gh run commands.
 product.agent_advisory	optional	all	all	src/agent.js	source	file_nonempty	workflow	Local agent advisory package, ingest, report, and surface registry runtime.
@@ -47,7 +47,7 @@ product.locale_policy	optional	all	all	src/locale-policy.js	source	file_nonempty
 product.language_settings	optional	all	all	src/language-settings.js	source	file_nonempty	workflow	Local read-only language settings normalization for dashboard display locale and artifact output language metadata.
 product.localization_resources	optional	all	all	src/localization-resources.js	source	file_nonempty	workflow	Provider-free UI locale resources, report template resources, translation readiness, and dry-run contracts that preserve raw evidence.
 product.schema_registry	optional	all	all	src/schema-registry.js	source	file_nonempty	workflow	Machine-readable schema registry for CLI and adapter contracts.
-product.control_center_app	optional	all	all	control-center/src/App.jsx	source	file_nonempty	workflow	React/Vite browser surface for local review status, source intake, Playwright Test regression import/external CI fetch, display-language settings, and product design-system tokens.
+product.control_center_app	optional	all	all	control-center/src/App.jsx	source	file_nonempty	workflow	React/Vite browser surface for local review status, source intake, Playwright Test regression import/approved external CI settings/external CI fetch, display-language settings, and product design-system tokens.
 product.control_center_i18n	optional	all	all	control-center/src/i18n.js	source	file_nonempty	workflow	Control Center UI chrome locale resources backed by TraceCue locale policy.
 product.control_center_pages	optional	all	all	control-center/src/pageDefinitions.js	source	file_nonempty	workflow	Control Center page registry for minimal Intake, Review, Regression, Evidence, Findings, Settings, and Advanced views.
 product.sessions	optional	all	all	src/sessions.js	source	file_nonempty	workflow	Local session, action, report, and spec runtime.
@@ -58,7 +58,7 @@ product.control_center_schema	optional	all	all	schemas/control-center-read-model
 product.playwright_test_integration_schema	optional	all	all	schemas/playwright-test-integration.schema.json	doc	file_nonempty	workflow	Public schema for Playwright Test integration mode and boundary metadata.
 product.playwright_test_result_schema	optional	all	all	schemas/playwright-test-result.schema.json	doc	file_nonempty	workflow	Public schema for normalized advisory Playwright Test result output.
 product.playwright_test_local_run_plan_schema	optional	all	all	schemas/playwright-test-local-run-plan.schema.json	doc	file_nonempty	workflow	Public schema for Playwright Test local-run plans.
-product.playwright_test_external_ci_schema	optional	all	all	schemas/playwright-test-external-ci.schema.json	doc	file_nonempty	workflow	Public schema for read-only external CI artifact fetch metadata.
+product.playwright_test_external_ci_schema	optional	all	all	schemas/playwright-test-external-ci.schema.json	doc	file_nonempty	workflow	Public schema for read-only external CI artifact fetch and approved settings metadata.
 product.language_settings_schema	optional	all	all	schemas/language-settings.schema.json	doc	file_nonempty	workflow	Public schema for local language settings output.
 product.localization_resources_schema	optional	all	all	schemas/localization-resources.schema.json	doc	file_nonempty	workflow	Public schema for provider-free UI locale resources.
 product.report_templates_schema	optional	all	all	schemas/report-templates.schema.json	doc	file_nonempty	workflow	Public schema for provider-free report template resources.
@@ -116,7 +116,7 @@ product.consumer_usage	optional	all	all	docs/workflow/CONSUMER_USAGE.md	doc	file
 product.dashboard_settings	optional	all	all	ops/DASHBOARD_SETTINGS.json	ops	file_nonempty	workflow	Repository-local default dashboard display locale and artifact output language settings.
 product.architecture_test	optional	all	all	tests/architecture.test.js	test	file_nonempty	workflow	Architecture regression tests for reusable and generic runtime boundaries.
 product.test	required	all	all	tests/cli.test.js	test	file_nonempty	workflow	No-browser CLI parser, JSON output, and doctor tests.
-product.playwright_test_tests	optional	all	all	tests/playwright-test.test.js	test	file_nonempty	workflow	No-browser Playwright Test integration tests for modes, import, local-run gating, read-only external CI, schema/API/CLI, and gate-neutral boundaries.
+product.playwright_test_tests	optional	all	all	tests/playwright-test.test.js	test	file_nonempty	workflow	No-browser Playwright Test integration tests for modes, import, local-run gating, read-only external CI, approved external CI settings, schema/API/CLI, and gate-neutral boundaries.
 product.browser_smoke	optional	all	all	tests/browser-smoke.test.js	test	file_nonempty	workflow	Optional Playwright browser smoke tests.
 product.pack_install_smoke	optional	all	all	tests/pack-install-smoke.test.js	test	file_nonempty	workflow	Packed tarball install-layout smoke tests for CLI, API, MCP, schemas, templates, and local release boundaries.
 product.pack_dry_run_tool	optional	all	all	tools/pack-dry-run.mjs	custom	file_nonempty	workflow	Local package dry-run runner that derives npm cache paths from product identity metadata.

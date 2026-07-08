@@ -9,6 +9,7 @@ const VALUE_OPTIONS = new Set([
   'baseline',
   'baseline-id',
   'body-limit',
+  'branch',
   'capture-handoff',
   'baseline-snapshot-hash',
   'benchmark-case',
@@ -34,6 +35,7 @@ const VALUE_OPTIONS = new Set([
   'effort',
   'execution',
   'execution-mode',
+  'event',
   'expected-impression',
   'evaluator-policy',
   'evidence-set',
@@ -43,6 +45,7 @@ const VALUE_OPTIONS = new Set([
   'group',
   'host',
   'human-baseline',
+  'head-sha',
   'idle-timeout',
   'image',
   'input',
@@ -53,6 +56,7 @@ const VALUE_OPTIONS = new Set([
   'mask',
   'max-routes',
   'max-bytes',
+  'max-age-hours',
   'max-lifetime',
   'manual-checkpoint',
   'mock',
@@ -95,6 +99,7 @@ const VALUE_OPTIONS = new Set([
   'surface',
   'storage-state',
   'target',
+  'target-policy',
   'target-registry',
   'threshold',
   'timeout',
@@ -110,6 +115,7 @@ const VALUE_OPTIONS = new Set([
   'content-evidence',
   'viewport',
   'workflow',
+  'workflow-name',
   'xhigh'
 ]);
 
@@ -668,10 +674,47 @@ function parsePlaywrightTestExternalCi(args, globals) {
     }
     return parsed;
   }
+  if (subcommand === 'approved-settings') {
+    return parsePlaywrightTestReadOnly('playwright-test external-ci approved-settings', args.slice(1), globals);
+  }
+  if (subcommand === 'suggest-settings') {
+    return parseRequiredReadOnlyOptions('playwright-test external-ci suggest-settings', args.slice(1), globals, ['confirm']);
+  }
+  if (subcommand === 'approve-settings') {
+    const parsed = parseRequiredOptions('playwright-test external-ci approve-settings', args.slice(1), globals, ['repo', 'artifact-name', 'confirm']);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (parsed.options.execute) {
+      return parseError('playwright-test external-ci approve-settings', globals.json, {
+        code: 'CONFLICTING_OPTIONS',
+        message: 'playwright-test external-ci approve-settings changes settings only and does not accept --execute.',
+        details: { option: 'execute' }
+      });
+    }
+    return parsed;
+  }
+  if (subcommand === 'resolve-approved') {
+    return parsePlaywrightTestReadOnly('playwright-test external-ci resolve-approved', args.slice(1), globals);
+  }
+  if (subcommand === 'fetch-approved') {
+    const parsed = parseRequiredOptions('playwright-test external-ci fetch-approved', args.slice(1), globals, ['confirm']);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    if (!parsed.options.execute) {
+      return parseError('playwright-test external-ci fetch-approved', globals.json, {
+        code: 'MISSING_REQUIRED_OPTION',
+        message: 'playwright-test external-ci fetch-approved requires --execute.',
+        details: { option: 'execute' }
+      });
+    }
+    return parsed;
+  }
   return parseError('playwright-test external-ci', globals.json, {
     code: subcommand ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
     message: subcommand ? `Unknown playwright-test external-ci subcommand: ${subcommand}` : 'playwright-test external-ci requires a subcommand.',
-    details: { subcommands: ['readiness', 'list', 'view', 'fetch'] }
+    details: { subcommands: ['readiness', 'list', 'view', 'fetch', 'approved-settings', 'suggest-settings', 'approve-settings', 'resolve-approved', 'fetch-approved'] }
   });
 }
 

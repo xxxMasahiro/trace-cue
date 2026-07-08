@@ -379,12 +379,22 @@ function summarizePlaywrightTest(source, actionCapabilities) {
     endpoints: {
       mode: actions.mode.endpoint,
       import_result: actions.import_result.endpoint,
-      external_ci_fetch: actions.external_ci_fetch.endpoint
+      external_ci_fetch: actions.external_ci_fetch.endpoint,
+      external_ci_suggest_settings: actions.external_ci_suggest_settings.endpoint,
+      external_ci_approve_settings: actions.external_ci_approve_settings.endpoint,
+      external_ci_fetch_approved: actions.external_ci_fetch_approved.endpoint
     },
     confirmations: {
       mode: actions.mode.confirm,
       import_result: actions.import_result.confirm,
-      external_ci_fetch: actions.external_ci_fetch.confirm
+      external_ci_fetch: actions.external_ci_fetch.confirm,
+      external_ci_suggest_settings: actions.external_ci_suggest_settings.confirm,
+      external_ci_approve_settings: actions.external_ci_approve_settings.confirm,
+      external_ci_fetch_approved: actions.external_ci_fetch_approved.confirm
+    },
+    external_ci: summary.external_ci ?? {
+      token_storage: 'env_or_gh_auth_only',
+      approved_fetch: { configured: false, status: 'not_configured' }
     },
     local_run: {
       available_in_cli: true,
@@ -410,6 +420,7 @@ function summarizePlaywrightTestSettings(playwrightTest, actionCapabilities) {
     labels: playwrightTest.labels,
     write_endpoint: actionCapabilities.playwright_test.mode.endpoint,
     write_confirm: actionCapabilities.playwright_test.mode.confirm,
+    external_ci: playwrightTest.external_ci,
     setting_write_does_not_execute: true,
     browser_launched_by_settings: false,
     ci_contacted_by_settings: false,

@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  approvePlaywrightTestCiSettings,
   createSourceIntakeProposal,
   fetchDashboard,
+  fetchApprovedPlaywrightTestCiArtifact,
   fetchPlaywrightTestCiArtifact,
   importPlaywrightTestResult,
   setDisplayLanguage,
-  setPlaywrightTestMode
+  setPlaywrightTestMode,
+  suggestPlaywrightTestCiSettings
 } from './apiClient.js';
 import { designSystemMetadata, designSystemStyle } from './designSystem.js';
 import { createTranslator } from './i18n.js';
@@ -33,6 +36,17 @@ const DEFAULT_PLAYWRIGHT_CI_FORM = {
   run_id: '',
   artifact_name: '',
   execute_confirmed: false
+};
+
+const DEFAULT_PLAYWRIGHT_APPROVED_CI_FORM = {
+  repo: '',
+  workflow_name: '',
+  branch: '',
+  event: '',
+  artifact_name: '',
+  target_policy: 'latest_successful_run',
+  max_age_hours: 168,
+  fetch_confirmed: false
 };
 
 export default function App() {
@@ -392,9 +406,15 @@ function RegressionPage({ dashboard, reload, t }) {
   const regression = dashboard.regression?.playwright_test ?? {};
   const [importForm, setImportForm] = useState(DEFAULT_PLAYWRIGHT_IMPORT_FORM);
   const [ciForm, setCiForm] = useState(DEFAULT_PLAYWRIGHT_CI_FORM);
+  const [approvedCiForm, setApprovedCiForm] = useState(() => approvedFetchToForm(regression.external_ci?.approved_fetch));
   const [busy, setBusy] = useState(null);
   const [result, setResult] = useState(null);
+  const [settingsStatus, setSettingsStatus] = useState(null);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setApprovedCiForm(approvedFetchToForm(regression.external_ci?.approved_fetch));
+  }, [regression.external_ci?.approved_fetch?.approval_hash]);
 
   function updateImport(key, value) {
     setImportForm((current) => ({ ...current, [key]: value }));
@@ -402,6 +422,10 @@ function RegressionPage({ dashboard, reload, t }) {
 
   function updateCi(key, value) {
     setCiForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateApprovedCi(key, value) {
+    setApprovedCiForm((current) => ({ ...current, [key]: value }));
   }
 
   async function submitImport(event) {
@@ -453,6 +477,90 @@ function RegressionPage({ dashboard, reload, t }) {
     }
   }
 
+  async function submitSuggestSettings(event) {
+    event.preventDefault();
+    setError(null);
+    setResult(null);
+    setSettingsStatus(null);
+    setBusy('ci-suggest');
+    try {
+      const suggestion = await suggestPlaywrightTestCiSettings({
+        repo: approvedCiForm.repo,
+        workflow_name: approvedCiForm.workflow_name,
+        branch: approvedCiForm.branch,
+        event: approvedCiForm.event,
+        artifact_name: approvedCiForm.artifact_name,
+        max_age_hours: approvedCiForm.max_age_hours,
+        confirm: regression.confirmations?.external_ci_suggest_settings
+      });
+      const candidate = suggestion.candidate ?? {};
+      setApprovedCiForm((current) => ({
+        ...current,
+        repo: candidate.repo ?? current.repo,
+        workflow_name: candidate.workflow_name ?? current.workflow_name,
+        branch: candidate.branch ?? current.branch,
+        event: candidate.event ?? current.event,
+        artifact_name: candidate.artifact_name ?? current.artifact_name,
+        target_policy: candidate.target_policy ?? current.target_policy,
+        max_age_hours: candidate.max_age_hours ?? current.max_age_hours
+      }));
+      setSettingsStatus(suggestion.status ?? 'suggested');
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function submitApproveSettings(event) {
+    event.preventDefault();
+    setError(null);
+    setResult(null);
+    setSettingsStatus(null);
+    setBusy('ci-approve');
+    try {
+      const approved = await approvePlaywrightTestCiSettings({
+        repo: approvedCiForm.repo,
+        workflow_name: approvedCiForm.workflow_name,
+        branch: approvedCiForm.branch,
+        event: approvedCiForm.event,
+        artifact_name: approvedCiForm.artifact_name,
+        target_policy: approvedCiForm.target_policy,
+        max_age_hours: approvedCiForm.max_age_hours,
+        confirm: regression.confirmations?.external_ci_approve_settings
+      });
+      setSettingsStatus(approved.status ?? 'approved');
+      await reload();
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function submitApprovedFetch(event) {
+    event.preventDefault();
+    setError(null);
+    setResult(null);
+    if (!approvedCiForm.fetch_confirmed) {
+      setError('Confirm approved CI artifact fetch before continuing.');
+      return;
+    }
+    setBusy('ci-approved-fetch');
+    try {
+      const fetched = await fetchApprovedPlaywrightTestCiArtifact({
+        execute_confirmed: true,
+        confirm: regression.confirmations?.external_ci_fetch_approved
+      });
+      setResult(fetched);
+      await reload();
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="page-grid">
       <section className="panel primary-panel">
@@ -486,6 +594,59 @@ function RegressionPage({ dashboard, reload, t }) {
             {busy === 'import' ? 'Importing...' : t('regression.importSubmit', 'Import result')}
           </button>
         </form>
+      </section>
+      <section className="panel" data-testid="tc-cc-playwright-test-ci-approved-settings">
+        <div className="panel-header-inline">
+          <div>
+            <p className="eyebrow">GitHub Actions</p>
+            <h3>{t('regression.ciApprovedTitle', 'Approved CI settings')}</h3>
+          </div>
+          <StatusBadge status={regression.external_ci?.approved_fetch?.configured ? 'approved' : 'not_configured'} />
+        </div>
+        <form className="control-form compact" onSubmit={submitApproveSettings}>
+          <label>
+            {t('regression.repo', 'Repository')}
+            <input value={approvedCiForm.repo} onChange={(event) => updateApprovedCi('repo', event.target.value)} placeholder="owner/repo" />
+          </label>
+          <div className="form-grid">
+            <label>
+              {t('regression.workflow', 'Workflow')}
+              <input value={approvedCiForm.workflow_name} onChange={(event) => updateApprovedCi('workflow_name', event.target.value)} placeholder="CI" />
+            </label>
+            <label>
+              {t('regression.branch', 'Branch')}
+              <input value={approvedCiForm.branch} onChange={(event) => updateApprovedCi('branch', event.target.value)} placeholder="main" />
+            </label>
+          </div>
+          <div className="form-grid">
+            <label>
+              {t('regression.event', 'Event')}
+              <input value={approvedCiForm.event} onChange={(event) => updateApprovedCi('event', event.target.value)} placeholder="push" />
+            </label>
+            <label>
+              {t('regression.artifactName', 'Artifact name')}
+              <input value={approvedCiForm.artifact_name} onChange={(event) => updateApprovedCi('artifact_name', event.target.value)} placeholder="playwright-report" />
+            </label>
+          </div>
+          <div className="action-row">
+            <button className="secondary-action" type="button" disabled={busy === 'ci-suggest'} onClick={submitSuggestSettings}>
+              {busy === 'ci-suggest' ? 'Checking...' : t('regression.ciSuggest', 'Suggest settings')}
+            </button>
+            <button className="primary-action" type="submit" disabled={busy === 'ci-approve'}>
+              {busy === 'ci-approve' ? 'Saving...' : t('regression.ciApprove', 'Approve settings')}
+            </button>
+          </div>
+        </form>
+        <form className="control-form compact" onSubmit={submitApprovedFetch}>
+          <label className="check-row">
+            <input type="checkbox" checked={approvedCiForm.fetch_confirmed} onChange={(event) => updateApprovedCi('fetch_confirmed', event.target.checked)} />
+            Fetch the latest matching approved CI artifact
+          </label>
+          <button className="primary-action" type="submit" disabled={busy === 'ci-approved-fetch' || !regression.external_ci?.approved_fetch?.configured}>
+            {busy === 'ci-approved-fetch' ? 'Fetching...' : t('regression.ciFetchApproved', 'Fetch approved artifact')}
+          </button>
+        </form>
+        {settingsStatus ? <StatePanel title="CI settings" text={settingsStatus} /> : null}
       </section>
       <section className="panel">
         <div className="panel-header-inline">
@@ -523,6 +684,22 @@ function RegressionPage({ dashboard, reload, t }) {
       {result ? <PlaywrightResultPanel result={result} /> : null}
     </div>
   );
+}
+
+function approvedFetchToForm(approvedFetch = {}) {
+  if (!approvedFetch?.configured) {
+    return DEFAULT_PLAYWRIGHT_APPROVED_CI_FORM;
+  }
+  return {
+    repo: approvedFetch.repo ?? '',
+    workflow_name: approvedFetch.workflow_name ?? '',
+    branch: approvedFetch.branch ?? '',
+    event: approvedFetch.event ?? '',
+    artifact_name: approvedFetch.artifact_name ?? '',
+    target_policy: approvedFetch.target_policy ?? 'latest_successful_run',
+    max_age_hours: approvedFetch.max_age_hours ?? 168,
+    fetch_confirmed: false
+  };
 }
 
 function PlaywrightResultPanel({ result }) {

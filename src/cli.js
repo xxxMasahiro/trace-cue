@@ -117,9 +117,14 @@ import { writePlaywrightTestMode } from './playwright-test-integration.js';
 import { runPlaywrightTestImport } from './playwright-test-import.js';
 import { runPlaywrightTestLocalPlan, runPlaywrightTestLocalRun } from './playwright-test-local-run.js';
 import {
+  runPlaywrightTestExternalCiApprovedSettings,
+  runPlaywrightTestExternalCiApproveSettings,
   runPlaywrightTestExternalCiFetch,
+  runPlaywrightTestExternalCiFetchApproved,
   runPlaywrightTestExternalCiList,
   runPlaywrightTestExternalCiReadiness,
+  runPlaywrightTestExternalCiResolveApproved,
+  runPlaywrightTestExternalCiSuggestSettings,
   runPlaywrightTestExternalCiView
 } from './playwright-test-external-ci.js';
 import {
@@ -516,6 +521,26 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'playwright-test external-ci fetch') {
       return runtimeResult(parsed.command, await (context.playwrightTestExternalCiFetchRunner ?? runPlaywrightTestExternalCiFetch)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test external-ci approved-settings') {
+      return runtimeResult(parsed.command, await (context.playwrightTestExternalCiApprovedSettingsRunner ?? runPlaywrightTestExternalCiApprovedSettings)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test external-ci suggest-settings') {
+      return runtimeResult(parsed.command, await (context.playwrightTestExternalCiSuggestSettingsRunner ?? runPlaywrightTestExternalCiSuggestSettings)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test external-ci approve-settings') {
+      return runtimeResult(parsed.command, await (context.playwrightTestExternalCiApproveSettingsRunner ?? runPlaywrightTestExternalCiApproveSettings)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test external-ci resolve-approved') {
+      return runtimeResult(parsed.command, await (context.playwrightTestExternalCiResolveApprovedRunner ?? runPlaywrightTestExternalCiResolveApproved)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test external-ci fetch-approved') {
+      return runtimeResult(parsed.command, await (context.playwrightTestExternalCiFetchApprovedRunner ?? runPlaywrightTestExternalCiFetchApproved)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'identity audit') {
@@ -939,7 +964,7 @@ function usageText(topic) {
       `Usage: ${CLI_NAME} control-center status [--artifact-root <path>] [--limit <n>] [--max-bytes <bytes>] [--evidence-set <workspace-json>] [--json]`,
       `       ${CLI_NAME} control-center serve [--host 127.0.0.1] [--port <port>] [--artifact-root <path>] [--limit <n>] [--max-bytes <bytes>] [--evidence-set <workspace-json>] [--json]`,
       '',
-      'Reports and serves read-only local review status. The server is loopback-only and GET-only, exposes no action API, performs no provider call, writes no artifacts, launches no browser, and mutates no gates.'
+      'Reports and serves read-only local review status plus bounded POST actions for approved local settings/artifact workflows. The dashboard read endpoint is GET-only, the server is loopback-only, performs no provider call, launches no browser, and mutates no gates.'
     ].join('\n');
   }
 
@@ -951,7 +976,11 @@ function usageText(topic) {
       `       ${CLI_NAME} playwright-test local plan [--config <path>] [--cwd <path>] [--project <name>] [--reporter <name>] [--json]`,
       `       ${CLI_NAME} playwright-test local run --plan <plan-json> --plan-hash <sha256> --execute [--json]`,
       `       ${CLI_NAME} playwright-test external-ci list --repo <owner/repo> [--limit <n>] [--json]`,
-      `       ${CLI_NAME} playwright-test external-ci fetch --repo <owner/repo> --run-id <number> --artifact-name <exact-name> --execute [--json]`,
+      `       ${CLI_NAME} playwright-test external-ci fetch --repo <owner/repo> --run-id <number> --artifact-name <exact-name> --confirm fetch-playwright-test-ci-artifact --execute [--json]`,
+      `       ${CLI_NAME} playwright-test external-ci suggest-settings --confirm suggest-playwright-test-ci-settings [--repo <owner/repo>] [--artifact-name <exact-name>] [--json]`,
+      `       ${CLI_NAME} playwright-test external-ci approve-settings --repo <owner/repo> --artifact-name <exact-name> --confirm approve-playwright-test-ci-settings [--workflow-name <name>] [--branch <branch>] [--json]`,
+      `       ${CLI_NAME} playwright-test external-ci resolve-approved [--json]`,
+      `       ${CLI_NAME} playwright-test external-ci fetch-approved --confirm fetch-approved-playwright-test-ci-artifact --execute [--json]`,
       '',
       'Imports existing Playwright Test evidence, optionally runs local Playwright Test only after explicit execution, and fetches GitHub Actions artifacts through read-only gh run commands.'
     ].join('\n');

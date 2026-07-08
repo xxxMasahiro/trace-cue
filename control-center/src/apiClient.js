@@ -52,6 +52,30 @@ export async function fetchPlaywrightTestCiArtifact(payload) {
   return body.envelope.data.playwright_test_import ?? body.envelope.data.playwright_test_external_ci_fetch;
 }
 
+export async function suggestPlaywrightTestCiSettings(payload) {
+  const body = await postJson('/api/playwright-test/external-ci/suggest-settings', payload);
+  if (!body.ok || body.envelope.status === 'error') {
+    throw new Error(body.message);
+  }
+  return body.envelope.data.playwright_test_external_ci_settings_suggestion;
+}
+
+export async function approvePlaywrightTestCiSettings(payload) {
+  const body = await postJson('/api/playwright-test/external-ci/approve-settings', payload);
+  if (!body.ok || body.envelope.status === 'error') {
+    throw new Error(body.message);
+  }
+  return body.envelope.data.playwright_test_external_ci_approved_settings;
+}
+
+export async function fetchApprovedPlaywrightTestCiArtifact(payload) {
+  const body = await postJson('/api/playwright-test/external-ci/fetch-approved', payload);
+  if (!body.ok || body.envelope.status === 'error') {
+    throw new Error(body.message);
+  }
+  return body.envelope.data.playwright_test_import ?? body.envelope.data.playwright_test_external_ci_fetch_approved;
+}
+
 async function postJson(url, payload) {
   const response = await fetch(url, {
     method: 'POST',

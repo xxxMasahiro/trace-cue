@@ -180,6 +180,14 @@ const schemas = Object.freeze({
       mode: { enum: ['disabled', 'import_only', 'local_run', 'external_ci'] },
       supported_modes: { type: 'array' },
       mode_matrix: { type: 'object' },
+      external_ci: {
+        type: 'object',
+        properties: {
+          approved_fetch: { type: 'object' },
+          token_storage: { const: 'env_or_gh_auth_only' }
+        },
+        additionalProperties: true
+      },
       boundary: {
         type: 'object',
         properties: {
@@ -257,6 +265,14 @@ const schemas = Object.freeze({
       schema_version: { type: 'string' },
       provider: { enum: ['github_actions'] },
       repo: { type: 'string' },
+      status: { type: 'string' },
+      approved_fetch: { type: 'object' },
+      candidate: { type: 'object' },
+      latest_run: { type: ['object', 'null'] },
+      run_id: { type: 'string' },
+      artifact_name: { type: 'string' },
+      resolution_hash: { type: 'string' },
+      approved_settings_hash: { type: 'string' },
       allowed_commands: { type: 'array' },
       denied_operations: { type: 'array' },
       raw_output_included: { const: false },

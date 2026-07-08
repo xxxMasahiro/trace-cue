@@ -10,6 +10,14 @@
     "mode": { "enum": ["disabled", "import_only", "local_run", "external_ci"] },
     "supported_modes": { "type": "array" },
     "mode_matrix": { "type": "object" },
+    "external_ci": {
+      "type": "object",
+      "properties": {
+        "approved_fetch": { "type": "object" },
+        "token_storage": { "const": "env_or_gh_auth_only" }
+      },
+      "additionalProperties": true
+    },
     "boundary": {
       "type": "object",
       "properties": {

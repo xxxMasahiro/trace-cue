@@ -61,6 +61,11 @@
       "id": "playwright-test-ci-fetch-form",
       "tokens": ["surface", "line", "foreground", "muted", "accent", "danger"],
       "contract": ["Fetch a named finished CI artifact through read-only gh after explicit confirmation; never trigger or modify CI."]
+    },
+    {
+      "id": "playwright-test-ci-approved-settings",
+      "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "danger"],
+      "contract": ["Suggest, approve, and explicitly fetch from one approved GitHub Actions artifact policy without showing CI browser clutter or triggering CI."]
     }
   ]
 }

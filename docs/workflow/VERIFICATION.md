@@ -190,6 +190,9 @@ node ./bin/trace-cue.js playwright-test local plan --json
 node ./bin/trace-cue.js playwright-test local run --plan <plan-json> --plan-hash <sha256> --execute --json
 node ./bin/trace-cue.js playwright-test external-ci list --repo owner/repo --json
 node ./bin/trace-cue.js playwright-test external-ci fetch --repo owner/repo --run-id <number> --artifact-name <name> --confirm fetch-playwright-test-ci-artifact --execute --json
+node ./bin/trace-cue.js playwright-test external-ci approve-settings --repo owner/repo --workflow-name CI --branch main --artifact-name playwright-report --confirm approve-playwright-test-ci-settings --json
+node ./bin/trace-cue.js playwright-test external-ci resolve-approved --json
+node ./bin/trace-cue.js playwright-test external-ci fetch-approved --confirm fetch-approved-playwright-test-ci-artifact --execute --json
 node ./bin/trace-cue.js agentic review propose --brief "Review first impression, UI/UX, content comprehension, trust, and likely viewer feeling." --review-index .browser-debug/review-artifacts/<id>.json --effort standard --json
 node ./bin/trace-cue.js agentic review plan --proposal .browser-debug/agentic-human-review-proposals/<id>/proposal.json --json
 node ./bin/trace-cue.js agentic review provider-readiness --plan .browser-debug/agentic-human-review-plans/<id>/plan.json --json

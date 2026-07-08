@@ -99,7 +99,8 @@ test('control-center appearance is controlled by the product design-system files
     'settings-persistence-status',
     'playwright-test-regression-page',
     'playwright-test-mode-form',
-    'playwright-test-ci-fetch-form'
+    'playwright-test-ci-fetch-form',
+    'playwright-test-ci-approved-settings'
   ]) {
     assert.ok(componentData.components.some((component) => component.id === id), `${id} should be present`);
   }
@@ -132,7 +133,10 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
       '/api/settings/display-language',
       '/api/playwright-test/mode',
       '/api/playwright-test/import',
-      '/api/playwright-test/external-ci/fetch'
+      '/api/playwright-test/external-ci/fetch',
+      '/api/playwright-test/external-ci/suggest-settings',
+      '/api/playwright-test/external-ci/approve-settings',
+      '/api/playwright-test/external-ci/fetch-approved'
     ]);
 
     const health = await fetch(new URL('/api/health', started.url));
@@ -151,6 +155,9 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
     assert.equal(dashboardBody.data.control_center.settings.display_language.write_confirm, 'set-control-center-display-language');
     assert.equal(dashboardBody.data.control_center.regression.playwright_test.confirmations.import_result, 'import-playwright-test-result');
     assert.equal(dashboardBody.data.control_center.regression.playwright_test.confirmations.external_ci_fetch, 'fetch-playwright-test-ci-artifact');
+    assert.equal(dashboardBody.data.control_center.regression.playwright_test.confirmations.external_ci_suggest_settings, 'suggest-playwright-test-ci-settings');
+    assert.equal(dashboardBody.data.control_center.regression.playwright_test.confirmations.external_ci_approve_settings, 'approve-playwright-test-ci-settings');
+    assert.equal(dashboardBody.data.control_center.regression.playwright_test.confirmations.external_ci_fetch_approved, 'fetch-approved-playwright-test-ci-artifact');
 
     const post = await fetch(new URL('/api/dashboard', started.url), { method: 'POST' });
     assert.equal(post.status, 405);
@@ -169,6 +176,24 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
     const refreshedBody = await refreshed.json();
     assert.equal(refreshedBody.data.control_center.settings.display_language.current_locale, 'ja');
     assert.equal(refreshedBody.data.control_center.settings.display_language.text_direction, 'ltr');
+
+    const approveCiSettings = await postJson(started, '/api/playwright-test/external-ci/approve-settings', {
+      repo: 'owner/repo',
+      workflow_name: 'CI',
+      branch: 'main',
+      artifact_name: 'playwright-report',
+      confirm: 'approve-playwright-test-ci-settings'
+    });
+    assert.equal(approveCiSettings.statusCode, 200);
+    const approveCiSettingsBody = JSON.parse(approveCiSettings.body);
+    assert.equal(approveCiSettingsBody.command, 'control-center playwright-test external-ci approve-settings');
+    assert.equal(approveCiSettingsBody.data.playwright_test_external_ci_approved_settings.safety.setting_write_does_not_execute, true);
+    const afterCiSettings = await fetch(new URL('/api/dashboard', started.url));
+    const afterCiSettingsBody = await afterCiSettings.json();
+    assert.equal(afterCiSettingsBody.data.control_center.settings.display_language.current_locale, 'ja');
+    assert.equal(afterCiSettingsBody.data.control_center.regression.playwright_test.external_ci.approved_fetch.configured, true);
+    assert.equal(afterCiSettingsBody.data.control_center.regression.playwright_test.external_ci.approved_fetch.artifact_name, 'playwright-report');
+    assert.equal(afterCiSettingsBody.data.control_center.regression.playwright_test.dashboard_refresh_side_effects.gh_used, false);
 
     const playwrightMode = await postJson(started, '/api/playwright-test/mode', {
       mode: 'import_only',
@@ -211,6 +236,12 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
     });
     assert.equal(playwrightFetchMissingExecute.statusCode, 400);
     assert.match(playwrightFetchMissingExecute.body, /CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_EXECUTE_REQUIRED/);
+
+    const playwrightFetchApprovedMissingExecute = await postJson(started, '/api/playwright-test/external-ci/fetch-approved', {
+      confirm: 'fetch-approved-playwright-test-ci-artifact'
+    });
+    assert.equal(playwrightFetchApprovedMissingExecute.statusCode, 400);
+    assert.match(playwrightFetchApprovedMissingExecute.body, /CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_APPROVED_EXECUTE_REQUIRED/);
 
     const unsupportedLocale = await postJson(started, '/api/settings/display-language', {
       locale: 'zz',

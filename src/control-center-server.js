@@ -6,7 +6,10 @@ import { createEnvelope } from './envelope.js';
 import { runControlCenterStatus, controlCenterBoundary } from './control-center-read-model.js';
 import {
   CONTROL_CENTER_JSON_BODY_LIMIT_BYTES,
+  runControlCenterPlaywrightTestExternalCiApproveSettings,
   runControlCenterPlaywrightTestExternalCiFetch,
+  runControlCenterPlaywrightTestExternalCiFetchApproved,
+  runControlCenterPlaywrightTestExternalCiSuggestSettings,
   runControlCenterPlaywrightTestImport,
   runControlCenterSetPlaywrightTestMode,
   runControlCenterSetDisplayLanguage,
@@ -287,6 +290,75 @@ async function handleControlCenterRequest(request, response, config, context) {
     sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
     return;
   }
+  if (url.pathname === '/api/playwright-test/external-ci/suggest-settings') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_SUGGEST_SETTINGS_POST_ONLY', 'control-center Playwright Test CI settings suggestion only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const result = await runControlCenterPlaywrightTestExternalCiSuggestSettings(body.value, { ...context, cwd: config.cwd });
+    const envelope = createEnvelope({
+      command: 'control-center playwright-test external-ci suggest-settings',
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+    return;
+  }
+  if (url.pathname === '/api/playwright-test/external-ci/approve-settings') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_APPROVE_SETTINGS_POST_ONLY', 'control-center Playwright Test CI settings approval only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const result = await runControlCenterPlaywrightTestExternalCiApproveSettings(body.value, { ...context, cwd: config.cwd });
+    const envelope = createEnvelope({
+      command: 'control-center playwright-test external-ci approve-settings',
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+    return;
+  }
+  if (url.pathname === '/api/playwright-test/external-ci/fetch-approved') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_APPROVED_POST_ONLY', 'control-center Playwright Test approved CI fetch only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const result = await runControlCenterPlaywrightTestExternalCiFetchApproved(body.value, { ...context, cwd: config.cwd });
+    const envelope = createEnvelope({
+      command: 'control-center playwright-test external-ci fetch-approved',
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+    return;
+  }
   if (request.method !== 'GET') {
     sendMethodNotAllowed(response, 'CONTROL_CENTER_ASSET_GET_ONLY', 'control-center assets only accept GET requests.');
     return;
@@ -404,7 +476,10 @@ function controlCenterServerMetadata(config, url) {
       '/api/settings/display-language',
       '/api/playwright-test/mode',
       '/api/playwright-test/import',
-      '/api/playwright-test/external-ci/fetch'
+      '/api/playwright-test/external-ci/fetch',
+      '/api/playwright-test/external-ci/suggest-settings',
+      '/api/playwright-test/external-ci/approve-settings',
+      '/api/playwright-test/external-ci/fetch-approved'
     ],
     mcp_json_rpc_exposed: false,
     cors_wildcard: false,

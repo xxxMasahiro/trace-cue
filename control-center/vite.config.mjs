@@ -3,7 +3,10 @@ import { createEnvelope } from '../src/envelope.js';
 import { runControlCenterStatus, controlCenterBoundary } from '../src/control-center-read-model.js';
 import {
   CONTROL_CENTER_JSON_BODY_LIMIT_BYTES,
+  runControlCenterPlaywrightTestExternalCiApproveSettings,
   runControlCenterPlaywrightTestExternalCiFetch,
+  runControlCenterPlaywrightTestExternalCiFetchApproved,
+  runControlCenterPlaywrightTestExternalCiSuggestSettings,
   runControlCenterPlaywrightTestImport,
   runControlCenterSetPlaywrightTestMode,
   runControlCenterSetDisplayLanguage,
@@ -155,6 +158,72 @@ function controlCenterApiPlugin() {
           const result = await runControlCenterPlaywrightTestExternalCiFetch(body.value, { cwd: process.cwd() });
           const envelope = createEnvelope({
             command: 'control-center playwright-test external-ci fetch',
+            status: result.status,
+            data: result.data,
+            warnings: result.warnings,
+            errors: result.errors,
+            artifacts: result.artifacts
+          });
+          sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+          return;
+        }
+        if (url.pathname === '/api/playwright-test/external-ci/suggest-settings') {
+          if (request.method !== 'POST') {
+            sendJson(response, 405, { error: { code: 'CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_SUGGEST_SETTINGS_POST_ONLY', message: 'control-center Playwright Test CI settings suggestion only accepts POST requests.' } });
+            return;
+          }
+          const body = await readJsonRequestBody(request);
+          if (!body.ok) {
+            sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+            return;
+          }
+          const result = await runControlCenterPlaywrightTestExternalCiSuggestSettings(body.value, { cwd: process.cwd() });
+          const envelope = createEnvelope({
+            command: 'control-center playwright-test external-ci suggest-settings',
+            status: result.status,
+            data: result.data,
+            warnings: result.warnings,
+            errors: result.errors,
+            artifacts: result.artifacts
+          });
+          sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+          return;
+        }
+        if (url.pathname === '/api/playwright-test/external-ci/approve-settings') {
+          if (request.method !== 'POST') {
+            sendJson(response, 405, { error: { code: 'CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_APPROVE_SETTINGS_POST_ONLY', message: 'control-center Playwright Test CI settings approval only accepts POST requests.' } });
+            return;
+          }
+          const body = await readJsonRequestBody(request);
+          if (!body.ok) {
+            sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+            return;
+          }
+          const result = await runControlCenterPlaywrightTestExternalCiApproveSettings(body.value, { cwd: process.cwd() });
+          const envelope = createEnvelope({
+            command: 'control-center playwright-test external-ci approve-settings',
+            status: result.status,
+            data: result.data,
+            warnings: result.warnings,
+            errors: result.errors,
+            artifacts: result.artifacts
+          });
+          sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+          return;
+        }
+        if (url.pathname === '/api/playwright-test/external-ci/fetch-approved') {
+          if (request.method !== 'POST') {
+            sendJson(response, 405, { error: { code: 'CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_APPROVED_POST_ONLY', message: 'control-center Playwright Test approved CI fetch only accepts POST requests.' } });
+            return;
+          }
+          const body = await readJsonRequestBody(request);
+          if (!body.ok) {
+            sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+            return;
+          }
+          const result = await runControlCenterPlaywrightTestExternalCiFetchApproved(body.value, { cwd: process.cwd() });
+          const envelope = createEnvelope({
+            command: 'control-center playwright-test external-ci fetch-approved',
             status: result.status,
             data: result.data,
             warnings: result.warnings,

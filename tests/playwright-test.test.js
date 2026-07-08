@@ -4,12 +4,18 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import {
+  PLAYWRIGHT_TEST_EXTERNAL_CI_APPROVE_SETTINGS_CONFIRM,
   PLAYWRIGHT_TEST_EXTERNAL_CI_CONFIRM,
+  PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_APPROVED_CONFIRM,
+  PLAYWRIGHT_TEST_EXTERNAL_CI_SUGGEST_SETTINGS_CONFIRM,
   PLAYWRIGHT_TEST_IMPORT_CONFIRM,
   PLAYWRIGHT_TEST_MODE_CONFIRM,
   executeCli,
+  runPlaywrightTestExternalCiFetchApproved,
   runPlaywrightTestExternalCiFetch,
   runPlaywrightTestExternalCiList,
+  runPlaywrightTestExternalCiResolveApproved,
+  runPlaywrightTestExternalCiSuggestSettings,
   validateGhReadOnlyArgv
 } from '../src/api.js';
 import { parseCliArgs } from '../src/parser.js';
@@ -223,4 +229,276 @@ test('playwright-test external CI fetch downloads then imports a bounded artifac
   assert.equal(fetched.data.playwright_test_external_ci_fetch.status, 'downloaded');
   assert.equal(fetched.data.playwright_test_external_ci_fetch.boundary.gh_write_used, false);
   assert.equal(fetched.data.playwright_test_external_ci_fetch.raw_content_included, false);
+});
+
+test('playwright-test external CI approved settings resolve latest successful run without changing exact fetch', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-playwright-ci-approved-'));
+  await mkdir(path.join(cwd, 'ops'), { recursive: true });
+  await writeFile(path.join(cwd, 'ops', 'DASHBOARD_SETTINGS.json'), JSON.stringify({
+    schema_version: '1.0.0',
+    kind: 'dashboard-settings',
+    ui_locale: 'ja',
+    playwright_test: {
+      mode: 'external_ci'
+    }
+  }, null, 2), 'utf8');
+
+  const approve = await executeCli([
+    'playwright-test',
+    'external-ci',
+    'approve-settings',
+    '--repo',
+    'owner/repo',
+    '--workflow-name',
+    'CI',
+    '--branch',
+    'main',
+    '--artifact-name',
+    'playwright-report',
+    '--confirm',
+    PLAYWRIGHT_TEST_EXTERNAL_CI_APPROVE_SETTINGS_CONFIRM,
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(approve.exitCode, 0);
+  const settings = JSON.parse(await readFile(path.join(cwd, 'ops', 'DASHBOARD_SETTINGS.json'), 'utf8'));
+  assert.equal(settings.ui_locale, 'ja');
+  assert.equal(settings.playwright_test.external_ci.approved_fetch.repo, 'owner/repo');
+  assert.equal(settings.playwright_test.external_ci.approved_fetch.artifact_name, 'playwright-report');
+  assert.equal(settings.playwright_test.external_ci.approved_fetch.token_storage, 'env_or_gh_auth_only');
+
+  const parsedResolve = parseCliArgs(['playwright-test', 'external-ci', 'resolve-approved', '--json']);
+  assert.equal(parsedResolve.ok, true);
+  assert.equal(parsedResolve.command, 'playwright-test external-ci resolve-approved');
+
+  const resolved = await runPlaywrightTestExternalCiResolveApproved({}, {
+    cwd,
+    now: fixedNow,
+    ghRunner: async (command, args) => {
+      assert.equal(command, 'gh');
+      assert.deepEqual(args, ['run', 'list', '--repo', 'owner/repo', '--json', 'databaseId,headSha,headBranch,event,status,conclusion,workflowName,displayTitle,createdAt,updatedAt', '--limit', '20']);
+      return {
+        code: 0,
+        signal: null,
+        stdout: JSON.stringify([
+          {
+            databaseId: 100,
+            headSha: 'a'.repeat(40),
+            headBranch: 'main',
+            event: 'push',
+            status: 'completed',
+            conclusion: 'success',
+            workflowName: 'CI',
+            updatedAt: '2026-06-17T00:00:00.000Z',
+            createdAt: '2026-06-17T00:00:00.000Z'
+          },
+          {
+            databaseId: 101,
+            headSha: 'b'.repeat(40),
+            headBranch: 'main',
+            event: 'push',
+            status: 'completed',
+            conclusion: 'success',
+            workflowName: 'CI',
+            updatedAt: '2026-06-18T00:00:00.000Z',
+            createdAt: '2026-06-18T00:00:00.000Z'
+          }
+        ]),
+        stderr: ''
+      };
+    }
+  });
+  assert.equal(resolved.status, 'ok');
+  assert.equal(resolved.data.playwright_test_external_ci_resolved.run_id, '101');
+  assert.equal(resolved.data.playwright_test_external_ci_resolved.artifact_name, 'playwright-report');
+  assert.equal(resolved.data.playwright_test_external_ci_resolved.raw_output_included, false);
+
+  const noExecute = parseCliArgs(['playwright-test', 'external-ci', 'fetch-approved', '--confirm', PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_APPROVED_CONFIRM, '--json']);
+  assert.equal(noExecute.ok, false);
+  assert.equal(noExecute.error.code, 'MISSING_REQUIRED_OPTION');
+});
+
+test('playwright-test external CI suggest-settings proposes non-persisted approved settings from local and gh metadata', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-playwright-ci-suggest-'));
+  await mkdir(path.join(cwd, '.github', 'workflows'), { recursive: true });
+  await writeFile(path.join(cwd, '.github', 'workflows', 'ci.yml'), [
+    'name: CI',
+    'jobs:',
+    '  test:',
+    '    steps:',
+    '      - uses: actions/upload-artifact@v4',
+    '        with:',
+    '          name: playwright-report'
+  ].join('\n'), 'utf8');
+
+  const parsed = parseCliArgs(['playwright-test', 'external-ci', 'suggest-settings', '--repo', 'owner/repo', '--confirm', PLAYWRIGHT_TEST_EXTERNAL_CI_SUGGEST_SETTINGS_CONFIRM, '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'playwright-test external-ci suggest-settings');
+
+  const suggestion = await runPlaywrightTestExternalCiSuggestSettings({
+    repo: 'owner/repo',
+    confirm: PLAYWRIGHT_TEST_EXTERNAL_CI_SUGGEST_SETTINGS_CONFIRM
+  }, {
+    cwd,
+    now: fixedNow,
+    ghRunner: async (command, args) => {
+      assert.equal(command, 'gh');
+      assert.deepEqual(args, ['run', 'list', '--repo', 'owner/repo', '--json', 'databaseId,headSha,headBranch,event,status,conclusion,workflowName,displayTitle,createdAt,updatedAt', '--limit', '10']);
+      return {
+        code: 0,
+        signal: null,
+        stdout: JSON.stringify([{
+          databaseId: 432,
+          headSha: 'e'.repeat(40),
+          headBranch: 'main',
+          event: 'push',
+          status: 'completed',
+          conclusion: 'success',
+          workflowName: 'CI',
+          updatedAt: '2026-06-18T00:00:00.000Z',
+          createdAt: '2026-06-18T00:00:00.000Z'
+        }]),
+        stderr: ''
+      };
+    }
+  });
+  assert.equal(suggestion.status, 'ok');
+  const data = suggestion.data.playwright_test_external_ci_settings_suggestion;
+  assert.equal(data.status, 'suggested');
+  assert.equal(data.persisted, false);
+  assert.equal(data.candidate.repo, 'owner/repo');
+  assert.equal(data.candidate.workflow_name, 'CI');
+  assert.equal(data.candidate.branch, 'main');
+  assert.equal(data.candidate.artifact_name, 'playwright-report');
+  assert.equal(data.latest_run.run_id, '432');
+  assert.equal(data.latest_run.raw_output_included, false);
+  assert.equal(data.boundary.gh_write_used, false);
+});
+
+test('playwright-test external CI fetch-approved delegates to exact download and fails closed on ambiguous artifacts', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-playwright-ci-fetch-approved-'));
+  await executeCli([
+    'playwright-test',
+    'external-ci',
+    'approve-settings',
+    '--repo',
+    'owner/repo',
+    '--workflow-name',
+    'CI',
+    '--branch',
+    'main',
+    '--artifact-name',
+    'playwright-report',
+    '--confirm',
+    PLAYWRIGHT_TEST_EXTERNAL_CI_APPROVE_SETTINGS_CONFIRM,
+    '--json'
+  ], { cwd, now: fixedNow });
+
+  let call = 0;
+  const fetched = await runPlaywrightTestExternalCiFetchApproved({
+    confirm: PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_APPROVED_CONFIRM,
+    execute: true
+  }, {
+    cwd,
+    now: fixedNow,
+    ghRunner: async (command, args) => {
+      call += 1;
+      assert.equal(command, 'gh');
+      if (call === 1) {
+        assert.equal(args[1], 'list');
+        return {
+          code: 0,
+          signal: null,
+          stdout: JSON.stringify([{
+            databaseId: 222,
+            headSha: 'c'.repeat(40),
+            headBranch: 'main',
+            event: 'push',
+            status: 'completed',
+            conclusion: 'success',
+            workflowName: 'CI',
+            updatedAt: '2026-06-18T00:00:00.000Z',
+            createdAt: '2026-06-18T00:00:00.000Z'
+          }]),
+          stderr: ''
+        };
+      }
+      assert.deepEqual(args.slice(0, 7), ['run', 'download', '222', '--repo', 'owner/repo', '--name', 'playwright-report']);
+      const dir = args[args.indexOf('--dir') + 1];
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, 'results.json'), JSON.stringify({
+        suites: [{
+          specs: [{
+            title: 'home',
+            tests: [{
+              title: 'loads',
+              projectName: 'chromium',
+              results: [{ status: 'passed', attachments: [] }]
+            }]
+          }]
+        }]
+      }), 'utf8');
+      return { code: 0, signal: null, stdout: 'downloaded', stderr: '' };
+    }
+  });
+  assert.equal(fetched.status, 'ok');
+  assert.equal(fetched.data.playwright_test_external_ci_fetch_approved.status, 'downloaded');
+  assert.equal(fetched.data.playwright_test_import.source.approved_fetch.mode, 'approved_settings');
+  assert.equal(call, 2);
+
+  let ambiguousCall = 0;
+  const ambiguous = await runPlaywrightTestExternalCiFetchApproved({
+    confirm: PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_APPROVED_CONFIRM,
+    execute: true
+  }, {
+    cwd,
+    now: fixedNow,
+    ghRunner: async (command, args) => {
+      ambiguousCall += 1;
+      if (ambiguousCall === 1) {
+        return {
+          code: 0,
+          signal: null,
+          stdout: JSON.stringify([{
+            databaseId: 333,
+            headSha: 'd'.repeat(40),
+            headBranch: 'main',
+            event: 'push',
+            status: 'completed',
+            conclusion: 'success',
+            workflowName: 'CI',
+            updatedAt: '2026-06-18T00:00:00.000Z',
+            createdAt: '2026-06-18T00:00:00.000Z'
+          }]),
+          stderr: ''
+        };
+      }
+      const dir = args[args.indexOf('--dir') + 1];
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, 'one.json'), '{}', 'utf8');
+      await writeFile(path.join(dir, 'two.json'), '{}', 'utf8');
+      return { code: 0, signal: null, stdout: 'downloaded', stderr: '' };
+    }
+  });
+  assert.equal(ambiguous.status, 'error');
+  assert.equal(ambiguous.errors[0].code, 'PLAYWRIGHT_TEST_EXTERNAL_CI_ARTIFACT_AMBIGUOUS');
+});
+
+test('playwright-test external CI approved settings reject credential fields', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-playwright-ci-secret-'));
+  const result = await executeCli([
+    'playwright-test',
+    'external-ci',
+    'approve-settings',
+    '--repo',
+    'owner/repo',
+    '--artifact-name',
+    'playwright-report',
+    '--token-env',
+    'GH_TOKEN',
+    '--confirm',
+    PLAYWRIGHT_TEST_EXTERNAL_CI_APPROVE_SETTINGS_CONFIRM,
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stdout, /PLAYWRIGHT_TEST_EXTERNAL_CI_SETTINGS_SECRET_REJECTED/);
 });

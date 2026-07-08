@@ -105,6 +105,7 @@ export async function buildPlaywrightTestRegressionSummary(cwd, options = {}, co
     supported_modes: settings.supported_modes,
     labels: settings.labels,
     mode_matrix: settings.mode_matrix,
+    external_ci: settings.external_ci,
     last_result: latest ? {
       id: latest.id,
       status: latest.status,

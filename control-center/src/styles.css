@@ -211,6 +211,29 @@ h3 {
   opacity: 0.65;
 }
 
+.secondary-action {
+  min-height: 40px;
+  width: fit-content;
+  border: 1px solid var(--tc-color-line);
+  border-radius: var(--tc-radius-md);
+  padding-inline: var(--tc-space-md);
+  background: var(--tc-color-surface);
+  color: var(--tc-color-foreground);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.secondary-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tc-space-sm);
+}
+
 .definition-list {
   display: grid;
   gap: var(--tc-space-sm);

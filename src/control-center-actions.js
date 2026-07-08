@@ -13,12 +13,20 @@ import {
   normalizeTraceCueLocale
 } from './locale-policy.js';
 import {
+  PLAYWRIGHT_TEST_EXTERNAL_CI_APPROVE_SETTINGS_CONFIRM,
   PLAYWRIGHT_TEST_EXTERNAL_CI_CONFIRM,
+  PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_APPROVED_CONFIRM,
+  PLAYWRIGHT_TEST_EXTERNAL_CI_SUGGEST_SETTINGS_CONFIRM,
   PLAYWRIGHT_TEST_IMPORT_CONFIRM,
   PLAYWRIGHT_TEST_MODE_CONFIRM,
+  writePlaywrightTestExternalCiApprovedSettings,
   writePlaywrightTestMode
 } from './playwright-test-integration.js';
-import { runPlaywrightTestExternalCiFetch } from './playwright-test-external-ci.js';
+import {
+  runPlaywrightTestExternalCiFetch,
+  runPlaywrightTestExternalCiFetchApproved,
+  runPlaywrightTestExternalCiSuggestSettings
+} from './playwright-test-external-ci.js';
 import { runPlaywrightTestImport } from './playwright-test-import.js';
 import { redact } from './redaction.js';
 
@@ -121,6 +129,35 @@ export function controlCenterActionCapabilities() {
         gh_write_allowed: false,
         ci_trigger_allowed: false,
         explicit_execute_required: true
+      },
+      external_ci_suggest_settings: {
+        endpoint: '/api/playwright-test/external-ci/suggest-settings',
+        method: 'POST',
+        confirm: PLAYWRIGHT_TEST_EXTERNAL_CI_SUGGEST_SETTINGS_CONFIRM,
+        provider: 'github_actions',
+        gh_commands: ['gh run list'],
+        gh_write_allowed: false,
+        ci_trigger_allowed: false,
+        persists_settings: false
+      },
+      external_ci_approve_settings: {
+        endpoint: '/api/playwright-test/external-ci/approve-settings',
+        method: 'POST',
+        confirm: PLAYWRIGHT_TEST_EXTERNAL_CI_APPROVE_SETTINGS_CONFIRM,
+        provider: 'github_actions',
+        setting_write_does_not_execute: true,
+        gh_used: false,
+        credential_values_recorded: false
+      },
+      external_ci_fetch_approved: {
+        endpoint: '/api/playwright-test/external-ci/fetch-approved',
+        method: 'POST',
+        confirm: PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_APPROVED_CONFIRM,
+        provider: 'github_actions',
+        gh_commands: ['gh run list', 'gh run download'],
+        gh_write_allowed: false,
+        ci_trigger_allowed: false,
+        explicit_execute_required: true
       }
     },
     boundary: controlCenterActionBoundary({
@@ -170,6 +207,53 @@ export async function runControlCenterPlaywrightTestExternalCiFetch(input = {}, 
     repo: input.repo,
     'run-id': input.run_id ?? input.runId,
     'artifact-name': input.artifact_name ?? input.artifactName,
+    confirm: input.confirm,
+    execute: true,
+    'artifact-root': input.artifact_root ?? input.artifactRoot
+  }, context);
+}
+
+export async function runControlCenterPlaywrightTestExternalCiSuggestSettings(input = {}, context = {}) {
+  return runPlaywrightTestExternalCiSuggestSettings({
+    repo: input.repo,
+    workflow_name: input.workflow_name ?? input.workflowName,
+    branch: input.branch,
+    event: input.event,
+    artifact_name: input.artifact_name ?? input.artifactName,
+    limit: input.limit,
+    'max-age-hours': input.max_age_hours ?? input.maxAgeHours,
+    confirm: input.confirm
+  }, context);
+}
+
+export async function runControlCenterPlaywrightTestExternalCiApproveSettings(input = {}, context = {}) {
+  return writePlaywrightTestExternalCiApprovedSettings({
+    repo: input.repo,
+    workflow_name: input.workflow_name ?? input.workflowName,
+    branch: input.branch,
+    event: input.event,
+    artifact_name: input.artifact_name ?? input.artifactName,
+    target_policy: input.target_policy ?? input.targetPolicy,
+    head_sha: input.head_sha ?? input.headSha,
+    limit: input.limit,
+    max_age_hours: input.max_age_hours ?? input.maxAgeHours,
+    confirm: input.confirm
+  }, context);
+}
+
+export async function runControlCenterPlaywrightTestExternalCiFetchApproved(input = {}, context = {}) {
+  if (input.execute !== true && input.execute_confirmed !== true && input.executeConfirmed !== true) {
+    return actionError('CONTROL_CENTER_PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_APPROVED_EXECUTE_REQUIRED', 'Approved CI artifact fetch requires explicit execution confirmation.', {
+      execute_required: true
+    }, {
+      playwright_test: true,
+      external_ci: true,
+      process_spawned: false,
+      network_used: false,
+      gh_used: false
+    });
+  }
+  return runPlaywrightTestExternalCiFetchApproved({
     confirm: input.confirm,
     execute: true,
     'artifact-root': input.artifact_root ?? input.artifactRoot

@@ -214,7 +214,11 @@ export {
   visualReviewAggregationBoundary
 } from './visual-review-aggregation.js';
 export {
+  PLAYWRIGHT_TEST_EXTERNAL_CI_APPROVE_SETTINGS_CONFIRM,
+  PLAYWRIGHT_TEST_EXTERNAL_CI_APPROVED_TARGET_POLICIES,
   PLAYWRIGHT_TEST_EXTERNAL_CI_CONFIRM,
+  PLAYWRIGHT_TEST_EXTERNAL_CI_FETCH_APPROVED_CONFIRM,
+  PLAYWRIGHT_TEST_EXTERNAL_CI_SUGGEST_SETTINGS_CONFIRM,
   PLAYWRIGHT_TEST_IMPORT_CONFIRM,
   PLAYWRIGHT_TEST_INTEGRATION_VERSION,
   PLAYWRIGHT_TEST_MODE_CONFIRM,
@@ -227,6 +231,8 @@ export {
   playwrightTestModeMatrix,
   readPlaywrightTestSettings,
   summarizeStatusLabel,
+  validatePlaywrightTestExternalCiApprovedFetchSettings,
+  writePlaywrightTestExternalCiApprovedSettings,
   writePlaywrightTestMode
 } from './playwright-test-integration.js';
 export {
@@ -241,9 +247,14 @@ export {
 } from './playwright-test-local-run.js';
 export {
   PLAYWRIGHT_TEST_EXTERNAL_CI_VERSION,
+  runPlaywrightTestExternalCiApprovedSettings,
+  runPlaywrightTestExternalCiApproveSettings,
   runPlaywrightTestExternalCiFetch,
+  runPlaywrightTestExternalCiFetchApproved,
   runPlaywrightTestExternalCiList,
   runPlaywrightTestExternalCiReadiness,
+  runPlaywrightTestExternalCiResolveApproved,
+  runPlaywrightTestExternalCiSuggestSettings,
   runPlaywrightTestExternalCiView
 } from './playwright-test-external-ci.js';
 export {
@@ -271,7 +282,10 @@ export {
   CONTROL_CENTER_SOURCE_TYPES,
   controlCenterActionBoundary,
   controlCenterActionCapabilities,
+  runControlCenterPlaywrightTestExternalCiApproveSettings,
   runControlCenterPlaywrightTestExternalCiFetch,
+  runControlCenterPlaywrightTestExternalCiFetchApproved,
+  runControlCenterPlaywrightTestExternalCiSuggestSettings,
   runControlCenterPlaywrightTestImport,
   runControlCenterSetPlaywrightTestMode,
   runControlCenterSetDisplayLanguage,

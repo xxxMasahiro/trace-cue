@@ -189,6 +189,11 @@ export async function importPlaywrightTestFromDownloadedDirectory({ cwd, directo
       artifacts
     };
   }
+  if (source?.approved_fetch && candidates.length > 1) {
+    return resultError('PLAYWRIGHT_TEST_EXTERNAL_CI_ARTIFACT_AMBIGUOUS', 'Approved external CI artifact contained multiple Playwright Test result candidates.', {
+      candidate_count: candidates.length
+    });
+  }
   const first = candidates[0];
   const relativeInput = path.relative(cwd, first).replaceAll(path.sep, '/');
   const read = await readPlaywrightTestInput(cwd, relativeInput);
