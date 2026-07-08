@@ -572,7 +572,7 @@ function parsePlaywrightTest(args, globals) {
     return parseError('playwright-test', globals.json, {
       code: 'MISSING_SUBCOMMAND',
       message: 'playwright-test requires a subcommand.',
-      details: { subcommands: ['mode', 'status', 'list', 'report', 'import', 'local', 'external-ci'] }
+      details: { subcommands: ['mode', 'status', 'list', 'report', 'review-material', 'import', 'local', 'external-ci'] }
     });
   }
   if (subcommand === 'mode') {
@@ -592,6 +592,9 @@ function parsePlaywrightTest(args, globals) {
   if (subcommand === 'status' || subcommand === 'list' || subcommand === 'report') {
     return parsePlaywrightTestReadOnly(`playwright-test ${subcommand}`, args.slice(1), globals);
   }
+  if (subcommand === 'review-material') {
+    return parsePlaywrightTestReviewMaterial(args.slice(1), globals);
+  }
   if (subcommand === 'import') {
     return parseRequiredOptions('playwright-test import', args.slice(1), globals, ['input', 'confirm']);
   }
@@ -604,8 +607,27 @@ function parsePlaywrightTest(args, globals) {
   return parseError('playwright-test', globals.json, {
     code: 'UNKNOWN_SUBCOMMAND',
     message: `Unknown playwright-test subcommand: ${subcommand}`,
-    details: { subcommands: ['mode', 'status', 'list', 'report', 'import', 'local', 'external-ci'] }
+    details: { subcommands: ['mode', 'status', 'list', 'report', 'review-material', 'import', 'local', 'external-ci'] }
   });
+}
+
+function parsePlaywrightTestReviewMaterial(args, globals) {
+  const command = 'playwright-test review-material';
+  const parsed = parseRequiredReadOnlyOptions(command, args, globals, ['result']);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  const allowed = new Set(['result', 'baseline', 'artifact-root']);
+  for (const option of Object.keys(parsed.options)) {
+    if (!allowed.has(option)) {
+      return parseError(command, globals.json, {
+        code: 'UNSUPPORTED_PLAYWRIGHT_TEST_REVIEW_MATERIAL_OPTION',
+        message: `${command} does not accept --${option} because it is a read-only normalized-result projection.`,
+        details: { option }
+      });
+    }
+  }
+  return parsed;
 }
 
 function parsePlaywrightTestLocal(args, globals) {

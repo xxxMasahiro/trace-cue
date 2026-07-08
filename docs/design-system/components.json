@@ -53,6 +53,11 @@
       "contract": ["Summarize Playwright Test evidence and expose only explicit import or read-only CI artifact fetch actions."]
     },
     {
+      "id": "playwright-test-review-material",
+      "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "warning", "danger"],
+      "contract": ["Render compact non-engineer Playwright Test review material from the read model without raw artifact viewers, run buttons, CI triggers, provider controls, or gate effects."]
+    },
+    {
       "id": "playwright-test-mode-form",
       "tokens": ["surface", "line", "foreground", "muted", "accent"],
       "contract": ["Change the Playwright Test integration mode without running browsers, contacting CI, or mutating review gates."]

@@ -32,7 +32,7 @@ test('control-center status builds a read-only local read model', async () => {
   const body = JSON.parse(result.stdout);
   assert.equal(body.command, 'control-center status');
   assert.equal(body.data.control_center.schema_version, '0.1.0');
-  assert.equal(body.data.control_center.control_center_read_model_version, '1.2.0');
+  assert.equal(body.data.control_center.control_center_read_model_version, '1.3.0');
   assert.equal(body.data.control_center.generated_at, fixedNow);
   assert.equal(body.data.control_center.status, 'empty');
   assert.equal(body.data.control_center.review.visual_review.status, 'empty');
@@ -40,6 +40,7 @@ test('control-center status builds a read-only local read model', async () => {
   assert.equal(body.data.control_center.source_intake.supported_efforts.includes('xhigh'), true);
   assert.equal(body.data.control_center.source_intake.safety.provider_execution, false);
   assert.equal(body.data.control_center.regression.playwright_test.selected_mode, 'disabled');
+  assert.equal(body.data.control_center.regression.playwright_test.review_projection, null);
   assert.equal(body.data.control_center.regression.playwright_test.local_run.exposed_in_control_center, false);
   assert.equal(body.data.control_center.regression.playwright_test.dashboard_refresh_side_effects.process_spawned, false);
   assert.equal(body.data.control_center.regression.playwright_test.dashboard_refresh_side_effects.network_used, false);
@@ -98,6 +99,7 @@ test('control-center appearance is controlled by the product design-system files
     'settings-language-form',
     'settings-persistence-status',
     'playwright-test-regression-page',
+    'playwright-test-review-material',
     'playwright-test-mode-form',
     'playwright-test-ci-fetch-form',
     'playwright-test-ci-approved-settings'
@@ -227,6 +229,14 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
     assert.equal(playwrightImportBody.command, 'control-center playwright-test import');
     assert.equal(playwrightImportBody.data.playwright_test_import.status, 'passed');
     assert.equal(playwrightImportBody.data.playwright_test_import.boundary.raw_artifact_content_included, false);
+    const afterImport = await fetch(new URL('/api/dashboard', started.url));
+    const afterImportBody = await afterImport.json();
+    const reviewProjection = afterImportBody.data.control_center.regression.playwright_test.review_projection;
+    assert.equal(reviewProjection.kind, 'e2e_result_review_material');
+    assert.equal(reviewProjection.result.status, 'passed');
+    assert.equal(reviewProjection.raw_content_included, false);
+    assert.equal(reviewProjection.boundary.read_only, true);
+    assert.equal(afterImportBody.data.control_center.regression.playwright_test.dashboard_refresh_side_effects.network_used, false);
 
     const playwrightFetchMissingExecute = await postJson(started, '/api/playwright-test/external-ci/fetch', {
       repo: 'owner/repo',

@@ -80,6 +80,7 @@ async function main() {
     await assertFile(packageDir, 'src/visual-review-execution.js');
     await assertFile(packageDir, 'src/visual-review-dashboard.js');
     await assertFile(packageDir, 'src/visual-review-aggregation.js');
+    await assertFile(packageDir, 'src/e2e-result-review-material.js');
     await assertFile(packageDir, 'src/agentic-human-review.js');
     await assertFile(packageDir, 'src/agentic-human-review-providers.js');
     await assertFile(packageDir, 'src/agentic-human-review-responses-adapter.js');
@@ -155,6 +156,7 @@ async function main() {
     await assertFile(packageDir, 'schemas/content-evidence.schema.json');
     await assertFile(packageDir, 'schemas/source-text.schema.json');
     await assertFile(packageDir, 'schemas/source-reading-review.schema.json');
+    await assertFile(packageDir, 'schemas/e2e-result-review-material.schema.json');
     await assertFile(packageDir, 'templates/review-target-manifest.json');
     await assertFile(packageDir, 'templates/status-dashboard-content-ux-target-manifest.json');
     await assertFile(packageDir, '.codex-plugin/plugin.json');
@@ -464,6 +466,11 @@ async function main() {
     assert.equal(typeof api.constrainedShellBoundary, 'function');
     assert.equal(typeof api.buildFinalHardeningReadiness, 'function');
     assert.equal(typeof api.finalHardeningBoundary, 'function');
+    assert.equal(api.E2E_RESULT_REVIEW_MATERIAL_VERSION, '1.0.0');
+    assert.equal(typeof api.runPlaywrightTestReviewMaterial, 'function');
+    assert.equal(typeof api.buildPlaywrightTestReviewMaterial, 'function');
+    assert.equal(typeof api.e2eResultReviewMaterialBoundary, 'function');
+    assert.equal(api.e2eResultReviewMaterialBoundary().read_only, true);
     assert.equal(api.schemaNames().includes('agent_execution'), true);
     assert.equal(api.schemaNames().includes('capture_handoff'), true);
     assert.equal(api.schemaNames().includes('capture_plan'), true);
@@ -496,6 +503,7 @@ async function main() {
     assert.equal(api.schemaNames().includes('video_evidence'), true);
     assert.equal(api.schemaNames().includes('content_evidence'), true);
     assert.equal(api.schemaNames().includes('source_understanding_review'), true);
+    assert.equal(api.schemaNames().includes('e2e_result_review_material'), true);
     assert.equal(api.schemaNames().includes('visual_review_provider_policy'), true);
     assert.equal(api.schemaNames().includes('visual_review_result_preparation'), true);
     assert.equal(api.schemaNames().includes('visual_review_dashboard'), true);

@@ -573,6 +573,7 @@ function RegressionPage({ dashboard, reload, t }) {
           <Metric label="Failed" value={regression.last_result?.failed_count ?? 0} />
         </div>
       </section>
+      {regression.review_projection ? <PlaywrightReviewMaterial projection={regression.review_projection} t={t} /> : null}
       <section className="panel">
         <div className="panel-header-inline">
           <div>
@@ -683,6 +684,57 @@ function RegressionPage({ dashboard, reload, t }) {
       {error ? <StatePanel title="Cannot update regression evidence" text={error} tone="danger" /> : null}
       {result ? <PlaywrightResultPanel result={result} /> : null}
     </div>
+  );
+}
+
+function PlaywrightReviewMaterial({ projection, t }) {
+  const cards = Array.isArray(projection.review_cards) ? projection.review_cards : [];
+  const failures = cards.filter((card) => card.type === 'failed_scenario').slice(0, 3);
+  const guidanceCards = cards.filter((card) => card.type !== 'failed_scenario').slice(0, 3);
+  return (
+    <section className="panel primary-panel" data-testid="tc-cc-playwright-test-review-material">
+      <div className="panel-header-inline">
+        <div>
+          <p className="eyebrow">{t('regression.reviewEyebrow', 'Review material')}</p>
+          <h3>{projection.owner_summary?.headline ?? projection.result?.status_label ?? 'Playwright Test review material'}</h3>
+        </div>
+        <StatusBadge status={projection.evidence_quality?.status ?? projection.result?.status} />
+      </div>
+      <p>{projection.owner_summary?.plain_language_summary ?? projection.next_action}</p>
+      <div className="metric-row">
+        <Metric label={t('regression.reviewFailed', 'Failed')} value={projection.result?.failed_count ?? 0} />
+        <Metric label={t('regression.reviewFlaky', 'Flaky')} value={projection.result?.flaky_count ?? 0} />
+        <Metric label={t('regression.reviewComparison', 'Comparison')} value={projection.comparison?.direction ?? 'none'} />
+      </div>
+      {failures.length > 0 ? (
+        <ul className="result-list review-card-list" aria-label={t('regression.failedScenarios', 'Failed scenarios')}>
+          {failures.map((card) => (
+            <li key={card.id}>
+              <div>
+                <strong>{card.title}</strong>
+                <p>{card.body}</p>
+              </div>
+              <StatusBadge status={card.status} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <dl className="definition-list">
+        <div><dt>{t('regression.nextAction', 'Next action')}</dt><dd>{projection.next_action}</dd></div>
+        <div><dt>{t('regression.evidenceQuality', 'Evidence quality')}</dt><dd>{projection.evidence_quality?.signals?.[0] ?? 'No evidence quality signal.'}</dd></div>
+        <div><dt>{t('regression.rawContent', 'Raw content')}</dt><dd>{projection.raw_content_included ? 'included' : 'hidden'}</dd></div>
+      </dl>
+      {guidanceCards.length > 0 ? (
+        <ul className="status-list review-guidance-list" aria-label={t('regression.guidanceCards', 'Guidance cards')}>
+          {guidanceCards.map((card) => (
+            <li key={card.id}>
+              <span>{card.title}</span>
+              <span>{card.owner_action}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 

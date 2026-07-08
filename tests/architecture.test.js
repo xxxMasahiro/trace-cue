@@ -26,6 +26,7 @@ test('runtime and tests avoid caller-specific implementation literals', async ()
     'src/playwright-test-local-run.js',
     'src/playwright-test-external-ci.js',
     'src/playwright-test-regression.js',
+    'src/e2e-result-review-material.js',
     'src/playwright-test-runners.js',
     'src/desktop-review-provider-preparation-plan.js',
     'src/image-review.js',
@@ -242,13 +243,14 @@ test('playwright test integration is advisory and keeps process execution isolat
   const localRun = await readText('src/playwright-test-local-run.js');
   const externalCi = await readText('src/playwright-test-external-ci.js');
   const regression = await readText('src/playwright-test-regression.js');
+  const reviewMaterial = await readText('src/e2e-result-review-material.js');
   const runners = await readText('src/playwright-test-runners.js');
   const parser = await readText('src/parser.js');
   const cli = await readText('src/cli.js');
   const api = await readText('src/api.js');
   const mcp = await readText('src/mcp.js');
   const mcpProfiles = await readText('src/mcp-profiles.js');
-  const combined = `${integration}\n${artifacts}\n${importer}\n${localRun}\n${externalCi}\n${regression}\n${parser}\n${cli}\n${api}`;
+  const combined = `${integration}\n${artifacts}\n${importer}\n${localRun}\n${externalCi}\n${regression}\n${reviewMaterial}\n${parser}\n${cli}\n${api}`;
 
   assert.match(integration, /PLAYWRIGHT_TEST_MODES/);
   assert.match(integration, /existing_review_mutated:\s*false/);
@@ -259,9 +261,12 @@ test('playwright test integration is advisory and keeps process execution isolat
   assert.match(externalCi, /gh run list/);
   assert.match(externalCi, /workflow_dispatch/);
   assert.match(externalCi, /PLAYWRIGHT_TEST_EXTERNAL_CI_EXECUTE_REQUIRED/);
+  assert.match(reviewMaterial, /normalized_result_only:\s*true/);
+  assert.match(reviewMaterial, /review_material_written:\s*false/);
+  assert.match(reviewMaterial, /provider_call_performed:\s*false/);
   assert.match(runners, /validateGhReadOnlyArgv/);
   assert.match(runners, /GH_PROMPT_DISABLED/);
-  assert.doesNotMatch(`${integration}\n${artifacts}\n${importer}\n${localRun}\n${externalCi}\n${regression}`, /from 'node:child_process'|spawn\(/);
+  assert.doesNotMatch(`${integration}\n${artifacts}\n${importer}\n${localRun}\n${externalCi}\n${regression}\n${reviewMaterial}`, /from 'node:child_process'|spawn\(|from 'node:http'|createServer|\.listen\(|fetch\(/);
   assert.match(runners, /from 'node:child_process'/);
   assert.match(runners, /spawn\(command, args/);
   assert.doesNotMatch(combined, /workflow run|run rerun|run cancel|gh api|createServer|\.listen\(|WebSocket|EventSource/);

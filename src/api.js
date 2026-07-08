@@ -261,8 +261,17 @@ export {
   buildPlaywrightTestRegressionSummary,
   runPlaywrightTestList,
   runPlaywrightTestReport,
+  runPlaywrightTestReviewMaterial,
   runPlaywrightTestStatus
 } from './playwright-test-regression.js';
+export {
+  E2E_RESULT_REVIEW_EFFORTS,
+  E2E_RESULT_REVIEW_MATERIAL_VERSION,
+  buildPlaywrightTestReviewMaterial,
+  buildPlaywrightTestReviewProjectionFromResults,
+  e2eResultReviewMaterialBoundary,
+  readNormalizedPlaywrightTestResult
+} from './e2e-result-review-material.js';
 export {
   runCommand,
   runGhReadOnly,

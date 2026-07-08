@@ -59,6 +59,7 @@ for rel in \
   schemas/playwright-test-integration.schema.json \
   schemas/playwright-test-local-run-plan.schema.json \
   schemas/playwright-test-result.schema.json \
+  schemas/e2e-result-review-material.schema.json \
   schemas/mcp-tool.schema.json \
   schemas/review.schema.json \
   schemas/target-manifest.schema.json \
@@ -93,6 +94,7 @@ for rel in \
   src/playwright-test-integration.js \
   src/playwright-test-local-run.js \
   src/playwright-test-regression.js \
+  src/e2e-result-review-material.js \
   src/playwright-test-runners.js \
   src/page-evidence.js \
   src/product-identity.js \

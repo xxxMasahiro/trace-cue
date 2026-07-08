@@ -10,6 +10,10 @@ import {
   readPlaywrightTestSettings,
   summarizeStatusLabel
 } from './playwright-test-integration.js';
+import {
+  buildPlaywrightTestReviewProjectionFromResults,
+  runPlaywrightTestReviewMaterial
+} from './e2e-result-review-material.js';
 
 export async function runPlaywrightTestStatus(options = {}, context = {}) {
   const cwd = context.cwd ?? process.cwd();
@@ -91,10 +95,13 @@ export async function runPlaywrightTestReport(options = {}, context = {}) {
   };
 }
 
+export { runPlaywrightTestReviewMaterial };
+
 export async function buildPlaywrightTestRegressionSummary(cwd, options = {}, context = {}) {
   const settings = await readPlaywrightTestSettings(cwd);
   const results = await readResultIndex(cwd, options);
   const latest = results[0] ?? null;
+  const previous = results.slice(1).find((result) => result?.kind === 'playwright_test_result') ?? null;
   const status = latest ? classifyPlaywrightTestSummary(latest.summary ?? {}) : 'empty';
   const summary = {
     schema_version: SCHEMA_VERSION,
@@ -118,6 +125,9 @@ export async function buildPlaywrightTestRegressionSummary(cwd, options = {}, co
       generated_at: latest.freshness?.generated_at ?? null,
       raw_content_included: false
     } : null,
+    review_projection: latest
+      ? buildPlaywrightTestReviewProjectionFromResults(latest, previous)
+      : null,
     next_action: nextActionForMode(settings.mode, latest),
     dashboard_refresh_side_effects: {
       browser_launched: false,

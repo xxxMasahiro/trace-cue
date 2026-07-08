@@ -109,6 +109,140 @@ test('playwright-test import normalizes JSON results without raw content', async
   assert.equal(statusBody.data.playwright_test.last_result.failed_count, 1);
 });
 
+test('playwright-test review-material projects normalized results only', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-playwright-review-material-'));
+  await mkdir(path.join(cwd, 'results'), { recursive: true });
+  await writeFile(path.join(cwd, 'results', 'baseline.json'), JSON.stringify({
+    stats: { startTime: '2026-06-17T00:00:00.000Z' },
+    suites: [{
+      specs: [{
+        title: 'checkout flow',
+        tests: [{
+          title: 'shows confirmation',
+          projectName: 'chromium',
+          results: [{ status: 'passed', attachments: [] }]
+        }]
+      }]
+    }]
+  }), 'utf8');
+  await writeFile(path.join(cwd, 'results', 'current.json'), JSON.stringify({
+    stats: { startTime: '2026-06-18T00:00:00.000Z' },
+    suites: [{
+      specs: [{
+        title: 'checkout flow',
+        tests: [{
+          title: 'shows confirmation',
+          projectName: 'chromium',
+          results: [{
+            status: 'failed',
+            error: { message: `unexpected text Bearer ${'b'.repeat(20)}` },
+            attachments: [{ name: 'screenshot', path: 'hidden.png' }]
+          }]
+        }]
+      }]
+    }]
+  }), 'utf8');
+
+  const baselineImport = await executeCli([
+    'playwright-test',
+    'import',
+    '--input',
+    'results/baseline.json',
+    '--confirm',
+    PLAYWRIGHT_TEST_IMPORT_CONFIRM,
+    '--json'
+  ], { cwd, now: '2026-06-17T00:00:00.000Z' });
+  const currentImport = await executeCli([
+    'playwright-test',
+    'import',
+    '--input',
+    'results/current.json',
+    '--confirm',
+    PLAYWRIGHT_TEST_IMPORT_CONFIRM,
+    '--json'
+  ], { cwd, now: fixedNow });
+  const baselineId = JSON.parse(baselineImport.stdout).data.playwright_test_import.id;
+  const currentId = JSON.parse(currentImport.stdout).data.playwright_test_import.id;
+
+  const parsed = parseCliArgs(['playwright-test', 'review-material', '--result', currentId, '--baseline', baselineId, '--json']);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command, 'playwright-test review-material');
+
+  const executeRejected = parseCliArgs(['playwright-test', 'review-material', '--result', currentId, '--execute', '--json']);
+  assert.equal(executeRejected.ok, false);
+  assert.equal(executeRejected.error.code, 'CONFLICTING_OPTIONS');
+
+  const providerRejected = parseCliArgs(['playwright-test', 'review-material', '--result', currentId, '--provider', 'openai', '--json']);
+  assert.equal(providerRejected.ok, false);
+  assert.equal(providerRejected.error.code, 'UNSUPPORTED_PLAYWRIGHT_TEST_REVIEW_MATERIAL_OPTION');
+
+  const materialResult = await executeCli([
+    'playwright-test',
+    'review-material',
+    '--result',
+    currentId,
+    '--baseline',
+    baselineId,
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(materialResult.exitCode, 0);
+  assert.equal(materialResult.stdout.includes('Bearer'), false);
+  const material = JSON.parse(materialResult.stdout).data.e2e_result_review_material;
+  assert.equal(material.kind, 'e2e_result_review_material');
+  assert.equal(material.result.status, 'failed');
+  assert.equal(material.result.failed_count, 1);
+  assert.equal(material.comparison.status, 'comparable');
+  assert.equal(material.comparison.direction, 'regressed');
+  assert.equal(material.review_cards.some((card) => card.type === 'failed_scenario'), true);
+  assert.equal(material.review_input_by_effort.xhigh.provider_call_performed, false);
+  assert.equal(material.review_input_by_effort.xhigh.prompt_context.includes('Review stance'), true);
+  assert.equal(material.boundary.read_only, true);
+  assert.equal(material.boundary.writes_artifacts, false);
+  assert.equal(material.boundary.network_used, false);
+  assert.equal(material.boundary.gh_used, false);
+  assert.equal(material.raw_content_included, false);
+
+  const rawArtifactRejected = await executeCli([
+    'playwright-test',
+    'review-material',
+    '--result',
+    'results/current.json',
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.notEqual(rawArtifactRejected.exitCode, 0);
+  const rawBody = JSON.parse(rawArtifactRejected.stdout);
+  assert.equal(rawBody.errors[0].code, 'PLAYWRIGHT_TEST_RESULT_KIND_INVALID');
+});
+
+test('playwright-test review-material explains missing HTML-only evidence', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-playwright-review-material-html-'));
+  await mkdir(path.join(cwd, 'reports'), { recursive: true });
+  await writeFile(path.join(cwd, 'reports', 'index.html'), '<html><body>Playwright report</body></html>', 'utf8');
+  const imported = await executeCli([
+    'playwright-test',
+    'import',
+    '--input',
+    'reports/index.html',
+    '--confirm',
+    PLAYWRIGHT_TEST_IMPORT_CONFIRM,
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(imported.exitCode, 0);
+  const resultId = JSON.parse(imported.stdout).data.playwright_test_import.id;
+  const materialResult = await executeCli([
+    'playwright-test',
+    'review-material',
+    '--result',
+    resultId,
+    '--json'
+  ], { cwd, now: fixedNow });
+  assert.equal(materialResult.exitCode, 0);
+  const material = JSON.parse(materialResult.stdout).data.e2e_result_review_material;
+  assert.equal(material.result.evidence_missing, true);
+  assert.equal(material.evidence_quality.status, 'missing');
+  assert.equal(material.boundary.raw_artifact_content_included, false);
+});
+
 test('playwright-test local run requires execute and fixed plan hash', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-playwright-local-'));
   await mkdir(path.join(cwd, 'node_modules', 'playwright'), { recursive: true });

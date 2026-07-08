@@ -327,6 +327,26 @@ h3 {
   color: var(--tc-color-muted);
 }
 
+.review-card-list,
+.review-guidance-list {
+  margin-top: var(--tc-space-md);
+}
+
+.review-card-list li,
+.review-guidance-list li {
+  align-items: flex-start;
+}
+
+.review-guidance-list span {
+  overflow-wrap: anywhere;
+}
+
+.review-guidance-list span:last-child {
+  max-width: 62%;
+  color: var(--tc-color-muted);
+  text-align: end;
+}
+
 .result-counts {
   display: grid;
   gap: var(--tc-space-xs);

@@ -130,6 +130,7 @@ import {
 import {
   runPlaywrightTestList,
   runPlaywrightTestReport,
+  runPlaywrightTestReviewMaterial,
   runPlaywrightTestStatus
 } from './playwright-test-regression.js';
 import { runControlCenterServe } from './control-center-server.js';
@@ -493,6 +494,10 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'playwright-test report') {
       return runtimeResult(parsed.command, await (context.playwrightTestReportRunner ?? runPlaywrightTestReport)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'playwright-test review-material') {
+      return runtimeResult(parsed.command, await (context.playwrightTestReviewMaterialRunner ?? runPlaywrightTestReviewMaterial)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'playwright-test import') {
@@ -972,6 +977,9 @@ function usageText(topic) {
     return [
       `Usage: ${CLI_NAME} playwright-test mode --mode <disabled|import_only|local_run|external_ci> --confirm set-playwright-test-mode [--json]`,
       `       ${CLI_NAME} playwright-test status [--artifact-root <path>] [--json]`,
+      `       ${CLI_NAME} playwright-test list [--artifact-root <path>] [--limit <n>] [--json]`,
+      `       ${CLI_NAME} playwright-test report [--result <id|path>] [--artifact-root <path>] [--json]`,
+      `       ${CLI_NAME} playwright-test review-material --result <id|path> [--baseline <id|path>] [--artifact-root <path>] [--json]`,
       `       ${CLI_NAME} playwright-test import --input <result.json|junit.xml|report.html> --confirm import-playwright-test-result [--json]`,
       `       ${CLI_NAME} playwright-test local plan [--config <path>] [--cwd <path>] [--project <name>] [--reporter <name>] [--json]`,
       `       ${CLI_NAME} playwright-test local run --plan <plan-json> --plan-hash <sha256> --execute [--json]`,

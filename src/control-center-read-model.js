@@ -13,7 +13,7 @@ import { buildPlaywrightTestRegressionSummary } from './playwright-test-regressi
 import { runResourceStatus } from './resource-status.js';
 import { runVisualReviewDashboard } from './visual-review-dashboard.js';
 
-const CONTROL_CENTER_READ_MODEL_VERSION = '1.2.0';
+const CONTROL_CENTER_READ_MODEL_VERSION = '1.3.0';
 const DEFAULT_RESULT_LIMIT = 5;
 
 export function controlCenterBoundary() {
@@ -375,6 +375,7 @@ function summarizePlaywrightTest(source, actionCapabilities) {
     labels: summary.labels ?? {},
     mode_matrix: summary.mode_matrix ?? {},
     last_result: summary.last_result ?? null,
+    review_projection: summary.review_projection ?? null,
     next_action: summary.next_action ?? 'Choose how Control Center should use Playwright Test evidence.',
     endpoints: {
       mode: actions.mode.endpoint,

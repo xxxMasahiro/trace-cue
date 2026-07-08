@@ -2190,6 +2190,7 @@ test('schema commands expose machine-readable contracts', async () => {
     ['language_settings', '../schemas/language-settings.schema.json'],
     ['playwright_test_integration', '../schemas/playwright-test-integration.schema.json'],
     ['playwright_test_result', '../schemas/playwright-test-result.schema.json'],
+    ['e2e_result_review_material', '../schemas/e2e-result-review-material.schema.json'],
     ['playwright_test_local_run_plan', '../schemas/playwright-test-local-run-plan.schema.json'],
     ['playwright_test_external_ci', '../schemas/playwright-test-external-ci.schema.json'],
     ['operation_registry', '../schemas/operation-registry.schema.json'],
