@@ -81,6 +81,16 @@ async function main() {
     await assertFile(packageDir, 'src/visual-review-dashboard.js');
     await assertFile(packageDir, 'src/visual-review-aggregation.js');
     await assertFile(packageDir, 'src/e2e-result-review-material.js');
+    await assertFile(packageDir, 'control-center/index.html');
+    await assertFile(packageDir, 'control-center/vite.config.mjs');
+    await assertFile(packageDir, 'control-center/src/App.jsx');
+    await assertFile(packageDir, 'control-center/src/apiClient.js');
+    await assertFile(packageDir, 'control-center/src/designSystem.js');
+    await assertFile(packageDir, 'control-center/src/i18n.js');
+    await assertFile(packageDir, 'control-center/src/localePolicy.js');
+    await assertFile(packageDir, 'control-center/src/main.jsx');
+    await assertFile(packageDir, 'control-center/src/pageDefinitions.js');
+    await assertFile(packageDir, 'control-center/src/styles.css');
     await assertFile(packageDir, 'src/agentic-human-review.js');
     await assertFile(packageDir, 'src/agentic-human-review-providers.js');
     await assertFile(packageDir, 'src/agentic-human-review-responses-adapter.js');
@@ -157,6 +167,9 @@ async function main() {
     await assertFile(packageDir, 'schemas/source-text.schema.json');
     await assertFile(packageDir, 'schemas/source-reading-review.schema.json');
     await assertFile(packageDir, 'schemas/e2e-result-review-material.schema.json');
+    await assertFile(packageDir, 'schemas/control-center-read-model.schema.json');
+    await assertFile(packageDir, 'schemas/playwright-test-external-ci.schema.json');
+    await assertFile(packageDir, 'schemas/playwright-test-integration.schema.json');
     await assertFile(packageDir, 'templates/review-target-manifest.json');
     await assertFile(packageDir, 'templates/status-dashboard-content-ux-target-manifest.json');
     await assertFile(packageDir, '.codex-plugin/plugin.json');
@@ -165,6 +178,9 @@ async function main() {
     await assertFile(packageDir, 'docs/workflow/CONSUMER_USAGE.md');
     await assertFile(packageDir, 'docs/workflow/IDENTITY_MIGRATION.md');
     await assertFile(packageDir, 'docs/workflow/SECURITY.md');
+    await assertFile(packageDir, 'docs/design-system/DESIGN_SYSTEM.md');
+    await assertFile(packageDir, 'docs/design-system/components.json');
+    await assertFile(packageDir, 'docs/design-system/tokens.json');
     await assertFile(packageDir, 'ops/OPERATION_POLICY.json');
     await assertFile(packageDir, 'ops/ARTIFACT_ROOT_POLICY.json');
     await assert.rejects(access(path.join(packageDir, 'docs/product/IMPLEMENTATION_PLAN.md')));

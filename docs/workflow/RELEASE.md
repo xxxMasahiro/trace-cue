@@ -21,6 +21,8 @@ npm run release:check
 ./tools/product-gate
 ```
 
+`npm run test:browser` runs the Control Center React/Vite build before launching browser smoke tests so the built-asset UI path matches CI.
+
 The package dry-run uses a `/tmp` npm cache and must not publish:
 
 ```bash

@@ -50,7 +50,7 @@
     {
       "id": "playwright-test-regression-page",
       "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "warning", "danger"],
-      "contract": ["Summarize Playwright Test evidence and expose only explicit import or read-only CI artifact fetch actions."]
+      "contract": ["Summarize Playwright Test evidence in status, review material, local import, approved CI, and manual CI sections while exposing only explicit import or read-only CI artifact fetch actions."]
     },
     {
       "id": "playwright-test-review-material",
@@ -60,7 +60,7 @@
     {
       "id": "playwright-test-mode-form",
       "tokens": ["surface", "line", "foreground", "muted", "accent"],
-      "contract": ["Change the Playwright Test integration mode without running browsers, contacting CI, or mutating review gates."]
+      "contract": ["Change the Playwright Test integration mode without running browsers, contacting CI, or mutating review gates; local_run must remain CLI-only in the browser UI."]
     },
     {
       "id": "playwright-test-ci-fetch-form",
@@ -70,7 +70,7 @@
     {
       "id": "playwright-test-ci-approved-settings",
       "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "danger"],
-      "contract": ["Suggest, approve, and explicitly fetch from one approved GitHub Actions artifact policy without showing CI browser clutter or triggering CI."]
+      "contract": ["Suggest, approve, summarize, and explicitly fetch from one approved GitHub Actions artifact policy without dropping target policy, commit SHA, lookup limit, or max-age fields; never trigger CI."]
     }
   ]
 }

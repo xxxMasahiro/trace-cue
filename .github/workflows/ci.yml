@@ -64,5 +64,8 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Build browser UI
+        run: npm run control-center:build
+
       - name: Run browser smoke tests
         run: npm run test:browser

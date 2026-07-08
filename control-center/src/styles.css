@@ -98,6 +98,12 @@ h3 {
   color: var(--tc-color-muted);
 }
 
+.mode-note {
+  margin: 0;
+  color: var(--tc-color-muted);
+  font-size: 0.9rem;
+}
+
 .workspace {
   min-width: 0;
   padding: var(--tc-space-lg);
@@ -238,6 +244,10 @@ h3 {
   display: grid;
   gap: var(--tc-space-sm);
   margin: var(--tc-space-md) 0 0;
+}
+
+.policy-summary {
+  max-width: 720px;
 }
 
 .definition-list div {

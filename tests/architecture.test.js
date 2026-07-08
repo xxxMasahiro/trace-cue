@@ -1073,7 +1073,13 @@ test('CI workflow stays generic and release-safe', async () => {
   assert.match(workflow, /run: npm run test:rename-readiness/);
   assert.match(workflow, /run: npm run test:pack/);
   assert.match(workflow, /run: npm run test:pack-install/);
+  assert.match(workflow, /run: npm run control-center:build/);
   assert.match(workflow, /run: npm run test:browser/);
+  const browserJob = workflow.slice(workflow.indexOf('browser-smoke:'));
+  const browserJobBuildIndex = browserJob.indexOf('run: npm run control-center:build');
+  const browserJobTestIndex = browserJob.indexOf('run: npm run test:browser');
+  assert.ok(browserJobBuildIndex >= 0);
+  assert.ok(browserJobTestIndex > browserJobBuildIndex);
   assert.doesNotMatch(workflow, /npm publish|gh repo|secrets\.|curl |wget /i);
 });
 

@@ -221,6 +221,7 @@ export async function runControlCenterPlaywrightTestExternalCiSuggestSettings(in
     event: input.event,
     artifact_name: input.artifact_name ?? input.artifactName,
     limit: input.limit,
+    head_sha: input.head_sha ?? input.headSha,
     'max-age-hours': input.max_age_hours ?? input.maxAgeHours,
     confirm: input.confirm
   }, context);

@@ -23,7 +23,7 @@
     "control-center:dev": "vite --config control-center/vite.config.mjs --host 127.0.0.1",
     "doctor": "node ./bin/trace-cue.js doctor --json",
     "test": "node --test tests/architecture.test.js tests/cli.test.js tests/control-center.test.js tests/playwright-test.test.js",
-    "test:browser": "TRACE_CUE_BROWSER_SMOKE=1 node --test tests/browser-smoke.test.js",
+    "test:browser": "npm run control-center:build && TRACE_CUE_BROWSER_SMOKE=1 node --test tests/browser-smoke.test.js",
     "test:rename-readiness": "node ./tools/check_rename_readiness.mjs",
     "test:pack": "node ./tools/pack-dry-run.mjs",
     "test:pack-install": "node ./tools/pack-install-smoke.mjs",

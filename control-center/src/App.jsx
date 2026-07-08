@@ -45,6 +45,8 @@ const DEFAULT_PLAYWRIGHT_APPROVED_CI_FORM = {
   event: '',
   artifact_name: '',
   target_policy: 'latest_successful_run',
+  head_sha: '',
+  limit: 20,
   max_age_hours: 168,
   fetch_confirmed: false
 };
@@ -392,12 +394,15 @@ function PlaywrightModeSettings({ dashboard, reload, t }) {
             {modes.map((mode) => <option key={mode} value={mode}>{labels[mode] ?? mode}</option>)}
           </select>
         </label>
+        <p className="mode-note" data-testid="tc-cc-playwright-test-mode-note">
+          {playwrightModeNote(selectedMode, t)}
+        </p>
         <button className="primary-action" type="submit" disabled={saving}>
-          {saving ? 'Saving...' : t('settings.playwrightSave', 'Save mode')}
+          {saving ? t('common.saving', 'Saving...') : t('settings.playwrightSave', 'Save mode')}
         </button>
       </form>
-      {status ? <StatePanel title="Mode saved" text={status} /> : null}
-      {error ? <StatePanel title="Cannot save mode" text={error} tone="danger" /> : null}
+      {status ? <StatePanel title={t('settings.playwrightSaved', 'Mode saved')} text={status} /> : null}
+      {error ? <StatePanel title={t('settings.playwrightCannotSave', 'Cannot save mode')} text={error} tone="danger" /> : null}
     </section>
   );
 }
@@ -433,7 +438,7 @@ function RegressionPage({ dashboard, reload, t }) {
     setError(null);
     setResult(null);
     if (!importForm.local_write_confirmed) {
-      setError('Confirm local Playwright Test result import before continuing.');
+      setError(t('regression.importConfirmRequired', 'Confirm local Playwright Test result import before continuing.'));
       return;
     }
     setBusy('import');
@@ -456,7 +461,7 @@ function RegressionPage({ dashboard, reload, t }) {
     setError(null);
     setResult(null);
     if (!ciForm.execute_confirmed) {
-      setError('Confirm CI artifact fetch before continuing.');
+      setError(t('regression.ciConfirmRequired', 'Confirm CI artifact fetch before continuing.'));
       return;
     }
     setBusy('ci');
@@ -490,6 +495,9 @@ function RegressionPage({ dashboard, reload, t }) {
         branch: approvedCiForm.branch,
         event: approvedCiForm.event,
         artifact_name: approvedCiForm.artifact_name,
+        target_policy: approvedCiForm.target_policy,
+        head_sha: approvedCiForm.head_sha,
+        limit: approvedCiForm.limit,
         max_age_hours: approvedCiForm.max_age_hours,
         confirm: regression.confirmations?.external_ci_suggest_settings
       });
@@ -502,6 +510,8 @@ function RegressionPage({ dashboard, reload, t }) {
         event: candidate.event ?? current.event,
         artifact_name: candidate.artifact_name ?? current.artifact_name,
         target_policy: candidate.target_policy ?? current.target_policy,
+        head_sha: candidate.head_sha ?? current.head_sha,
+        limit: candidate.limit ?? current.limit,
         max_age_hours: candidate.max_age_hours ?? current.max_age_hours
       }));
       setSettingsStatus(suggestion.status ?? 'suggested');
@@ -526,6 +536,8 @@ function RegressionPage({ dashboard, reload, t }) {
         event: approvedCiForm.event,
         artifact_name: approvedCiForm.artifact_name,
         target_policy: approvedCiForm.target_policy,
+        head_sha: approvedCiForm.head_sha,
+        limit: approvedCiForm.limit,
         max_age_hours: approvedCiForm.max_age_hours,
         confirm: regression.confirmations?.external_ci_approve_settings
       });
@@ -543,7 +555,7 @@ function RegressionPage({ dashboard, reload, t }) {
     setError(null);
     setResult(null);
     if (!approvedCiForm.fetch_confirmed) {
-      setError('Confirm approved CI artifact fetch before continuing.');
+      setError(t('regression.approvedCiConfirmRequired', 'Confirm approved CI artifact fetch before continuing.'));
       return;
     }
     setBusy('ci-approved-fetch');
@@ -562,10 +574,10 @@ function RegressionPage({ dashboard, reload, t }) {
   }
 
   return (
-    <div className="page-grid">
+    <div className="page-grid" data-testid="tc-cc-playwright-test-regression-page">
       <section className="panel primary-panel">
         <p className="eyebrow">{t('regression.title', 'Regression checks')}</p>
-        <h3>{regression.status_label ?? 'No Playwright Test result imported.'}</h3>
+        <h3>{regression.status_label ?? t('regression.emptyTitle', 'No Playwright Test result imported.')}</h3>
         <p>{t('regression.caption', 'Import existing Playwright Test results or fetch a finished CI artifact. Local test execution stays CLI-only.')}</p>
         <div className="metric-row">
           <Metric label="Mode" value={regression.labels?.[regression.selected_mode] ?? regression.selected_mode ?? 'disabled'} />
@@ -580,7 +592,7 @@ function RegressionPage({ dashboard, reload, t }) {
             <p className="eyebrow">Playwright Test</p>
             <h3>{t('regression.importTitle', 'Import result')}</h3>
           </div>
-          <StatusBadge status={regression.selected_mode === 'disabled' ? 'disabled' : 'available'} />
+          <StatusBadge status="available" label={t('regression.localImportAvailable', 'Local import available')} />
         </div>
         <form className="control-form compact" onSubmit={submitImport}>
           <label>
@@ -589,10 +601,10 @@ function RegressionPage({ dashboard, reload, t }) {
           </label>
           <label className="check-row">
             <input type="checkbox" checked={importForm.local_write_confirmed} onChange={(event) => updateImport('local_write_confirmed', event.target.checked)} />
-            Import this local result into TraceCue
+            {t('regression.importConfirmLabel', 'Import this local result into TraceCue')}
           </label>
           <button className="primary-action" type="submit" disabled={busy === 'import'}>
-            {busy === 'import' ? 'Importing...' : t('regression.importSubmit', 'Import result')}
+            {busy === 'import' ? t('regression.importBusy', 'Importing...') : t('regression.importSubmit', 'Import result')}
           </button>
         </form>
       </section>
@@ -604,6 +616,7 @@ function RegressionPage({ dashboard, reload, t }) {
           </div>
           <StatusBadge status={regression.external_ci?.approved_fetch?.configured ? 'approved' : 'not_configured'} />
         </div>
+        <ApprovedCiPolicySummary approvedFetch={regression.external_ci?.approved_fetch} form={approvedCiForm} t={t} />
         <form className="control-form compact" onSubmit={submitApproveSettings}>
           <label>
             {t('regression.repo', 'Repository')}
@@ -629,25 +642,49 @@ function RegressionPage({ dashboard, reload, t }) {
               <input value={approvedCiForm.artifact_name} onChange={(event) => updateApprovedCi('artifact_name', event.target.value)} placeholder="playwright-report" />
             </label>
           </div>
+          <div className="form-grid">
+            <label>
+              {t('regression.targetPolicy', 'Target policy')}
+              <select value={approvedCiForm.target_policy} onChange={(event) => updateApprovedCi('target_policy', event.target.value)}>
+                <option value="latest_successful_run">{t('regression.targetPolicyLatestRun', 'Latest successful run')}</option>
+                <option value="latest_successful_branch_run">{t('regression.targetPolicyLatestBranchRun', 'Latest successful branch run')}</option>
+                <option value="specific_head_sha">{t('regression.targetPolicySpecificHeadSha', 'Specific commit SHA')}</option>
+              </select>
+            </label>
+            <label>
+              {t('regression.headSha', 'Commit SHA')}
+              <input value={approvedCiForm.head_sha} onChange={(event) => updateApprovedCi('head_sha', event.target.value)} placeholder="40-character SHA" />
+            </label>
+          </div>
+          <div className="form-grid">
+            <label>
+              {t('regression.maxAgeHours', 'Max age hours')}
+              <input type="number" min="1" max="2160" value={approvedCiForm.max_age_hours} onChange={(event) => updateApprovedCi('max_age_hours', event.target.value)} />
+            </label>
+            <label>
+              {t('regression.runLookupLimit', 'Run lookup limit')}
+              <input type="number" min="1" max="50" value={approvedCiForm.limit} onChange={(event) => updateApprovedCi('limit', event.target.value)} />
+            </label>
+          </div>
           <div className="action-row">
             <button className="secondary-action" type="button" disabled={busy === 'ci-suggest'} onClick={submitSuggestSettings}>
-              {busy === 'ci-suggest' ? 'Checking...' : t('regression.ciSuggest', 'Suggest settings')}
+              {busy === 'ci-suggest' ? t('regression.ciSuggestBusy', 'Checking...') : t('regression.ciSuggest', 'Suggest settings')}
             </button>
             <button className="primary-action" type="submit" disabled={busy === 'ci-approve'}>
-              {busy === 'ci-approve' ? 'Saving...' : t('regression.ciApprove', 'Approve settings')}
+              {busy === 'ci-approve' ? t('common.saving', 'Saving...') : t('regression.ciApprove', 'Approve settings')}
             </button>
           </div>
         </form>
         <form className="control-form compact" onSubmit={submitApprovedFetch}>
           <label className="check-row">
             <input type="checkbox" checked={approvedCiForm.fetch_confirmed} onChange={(event) => updateApprovedCi('fetch_confirmed', event.target.checked)} />
-            Fetch the latest matching approved CI artifact
+            {t('regression.ciFetchApprovedConfirmLabel', 'Fetch the latest matching approved CI artifact')}
           </label>
           <button className="primary-action" type="submit" disabled={busy === 'ci-approved-fetch' || !regression.external_ci?.approved_fetch?.configured}>
-            {busy === 'ci-approved-fetch' ? 'Fetching...' : t('regression.ciFetchApproved', 'Fetch approved artifact')}
+            {busy === 'ci-approved-fetch' ? t('regression.ciFetchBusy', 'Fetching...') : t('regression.ciFetchApproved', 'Fetch approved artifact')}
           </button>
         </form>
-        {settingsStatus ? <StatePanel title="CI settings" text={settingsStatus} /> : null}
+        {settingsStatus ? <StatePanel title={t('regression.ciSettingsStatus', 'CI settings')} text={settingsStatus} /> : null}
       </section>
       <section className="panel">
         <div className="panel-header-inline">
@@ -674,14 +711,14 @@ function RegressionPage({ dashboard, reload, t }) {
           </div>
           <label className="check-row">
             <input type="checkbox" checked={ciForm.execute_confirmed} onChange={(event) => updateCi('execute_confirmed', event.target.checked)} />
-            Fetch this finished CI artifact with read-only gh
+            {t('regression.ciFetchConfirmLabel', 'Fetch this finished CI artifact with read-only gh')}
           </label>
           <button className="primary-action" type="submit" disabled={busy === 'ci'}>
-            {busy === 'ci' ? 'Fetching...' : t('regression.ciSubmit', 'Fetch artifact')}
+            {busy === 'ci' ? t('regression.ciFetchBusy', 'Fetching...') : t('regression.ciSubmit', 'Fetch artifact')}
           </button>
         </form>
       </section>
-      {error ? <StatePanel title="Cannot update regression evidence" text={error} tone="danger" /> : null}
+      {error ? <StatePanel title={t('regression.cannotUpdate', 'Cannot update regression evidence')} text={error} tone="danger" /> : null}
       {result ? <PlaywrightResultPanel result={result} /> : null}
     </div>
   );
@@ -723,6 +760,7 @@ function PlaywrightReviewMaterial({ projection, t }) {
         <div><dt>{t('regression.nextAction', 'Next action')}</dt><dd>{projection.next_action}</dd></div>
         <div><dt>{t('regression.evidenceQuality', 'Evidence quality')}</dt><dd>{projection.evidence_quality?.signals?.[0] ?? 'No evidence quality signal.'}</dd></div>
         <div><dt>{t('regression.rawContent', 'Raw content')}</dt><dd>{projection.raw_content_included ? 'included' : 'hidden'}</dd></div>
+        <div><dt>{t('regression.reviewScope', 'Review scope')}</dt><dd>{t('regression.reviewScopeValue', 'Top 3 failures and top 3 guidance cards')}</dd></div>
       </dl>
       {guidanceCards.length > 0 ? (
         <ul className="status-list review-guidance-list" aria-label={t('regression.guidanceCards', 'Guidance cards')}>
@@ -749,9 +787,24 @@ function approvedFetchToForm(approvedFetch = {}) {
     event: approvedFetch.event ?? '',
     artifact_name: approvedFetch.artifact_name ?? '',
     target_policy: approvedFetch.target_policy ?? 'latest_successful_run',
+    head_sha: approvedFetch.head_sha ?? '',
+    limit: approvedFetch.limit ?? 20,
     max_age_hours: approvedFetch.max_age_hours ?? 168,
     fetch_confirmed: false
   };
+}
+
+function ApprovedCiPolicySummary({ approvedFetch = {}, form = {}, t }) {
+  const source = approvedFetch?.configured ? approvedFetch : form;
+  return (
+    <dl className="definition-list policy-summary" data-testid="tc-cc-approved-ci-policy-summary">
+      <div><dt>{t('regression.targetPolicy', 'Target policy')}</dt><dd>{policyLabel(source.target_policy, t)}</dd></div>
+      <div><dt>{t('regression.maxAgeHours', 'Max age hours')}</dt><dd>{displayText(source.max_age_hours, t)}</dd></div>
+      <div><dt>{t('regression.runLookupLimit', 'Run lookup limit')}</dt><dd>{displayText(source.limit, t)}</dd></div>
+      <div><dt>{t('regression.headSha', 'Commit SHA')}</dt><dd>{displayText(source.head_sha, t)}</dd></div>
+      <div><dt>{t('regression.approvedAt', 'Approved at')}</dt><dd>{displayText(source.approved_at, t)}</dd></div>
+    </dl>
+  );
 }
 
 function PlaywrightResultPanel({ result }) {
@@ -974,9 +1027,9 @@ function StatePanel({ title, text, tone = 'neutral' }) {
   );
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, label }) {
   const normalized = String(status ?? 'missing').replaceAll('_', ' ');
-  return <span className={`status-badge ${toneForStatus(status)}`}>{normalized}</span>;
+  return <span className={`status-badge ${toneForStatus(status)}`}>{label ?? normalized}</span>;
 }
 
 function cellStatus(row, effort) {
@@ -988,8 +1041,34 @@ function cellStatus(row, effort) {
 }
 
 function toneForStatus(status) {
-  if (['ready', 'ok', 'available', 'configured', 'proposal_ready', 'ready_for_owner_review'].includes(status)) return 'ready';
-  if (['blocked', 'error', 'failed'].includes(status)) return 'blocked';
-  if (['needs_attention', 'incomplete', 'prepared', 'owner_review_recommended'].includes(status)) return 'attention';
+  if (['ready', 'ok', 'available', 'configured', 'proposal_ready', 'ready_for_owner_review', 'approved', 'passed', 'downloaded', 'usable', 'suggested', 'import_available'].includes(status)) return 'ready';
+  if (['blocked', 'error', 'failed', 'evidence_missing', 'missing_required'].includes(status)) return 'blocked';
+  if (['needs_attention', 'incomplete', 'prepared', 'owner_review_recommended', 'optional', 'disabled', 'not_configured', 'stale', 'limited', 'advisory', 'missing'].includes(status)) return 'attention';
   return 'missing';
+}
+
+function playwrightModeNote(mode, t) {
+  const notes = {
+    disabled: t('settings.playwrightModeDisabled', 'Disabled: Playwright Test evidence stays off. Existing TraceCue review behavior is unchanged.'),
+    import_only: t('settings.playwrightModeImportOnly', 'Import only: existing result files can be imported. Browsers and CI are not started.'),
+    local_run: t('settings.playwrightModeLocalRun', 'Local run: CLI only. The browser UI stores the mode but does not run Playwright Test.'),
+    external_ci: t('settings.playwrightModeExternalCi', 'External CI: existing GitHub Actions artifacts can be fetched with explicit confirmation. CI is not triggered.')
+  };
+  return notes[mode] ?? t('settings.playwrightModeUnknown', 'This mode changes evidence handling only.');
+}
+
+function displayText(value, t) {
+  if (value === undefined || value === null || value === '') {
+    return t('common.none', 'none');
+  }
+  return String(value);
+}
+
+function policyLabel(value, t) {
+  const labels = {
+    latest_successful_run: t('regression.targetPolicyLatestRun', 'Latest successful run'),
+    latest_successful_branch_run: t('regression.targetPolicyLatestBranchRun', 'Latest successful branch run'),
+    specific_head_sha: t('regression.targetPolicySpecificHeadSha', 'Specific commit SHA')
+  };
+  return labels[value] ?? displayText(value, t);
 }

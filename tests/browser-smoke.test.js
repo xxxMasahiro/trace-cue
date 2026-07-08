@@ -1,11 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, cp, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright';
 import { executeCli } from '../src/cli.js';
+import { startControlCenterServer } from '../src/api.js';
 
 const runBrowserSmoke = process.env.TRACE_CUE_BROWSER_SMOKE === '1' || process.env.BROWSER_DEBUG_BROWSER_SMOKE === '1';
+const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+const fixedNow = '2026-06-17T00:00:00.000Z';
 
 test('observe captures a local file page with Playwright', { skip: !runBrowserSmoke }, async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-smoke-'));
@@ -66,6 +71,39 @@ test('observe captures a local file page with Playwright', { skip: !runBrowserSm
   const observationJson = await readFile(path.join(cwd, observation.path), 'utf8');
   assert.doesNotMatch(observationJson, /secret-value/);
   assert.match(observationJson, /\[REDACTED\]/);
+});
+
+test('review center browser UI renders regression settings from built assets', { skip: !runBrowserSmoke }, async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-review-center-smoke-'));
+  const builtAssets = path.join(repoRoot, 'dist', 'control-center');
+  await access(builtAssets);
+  await cp(builtAssets, path.join(cwd, 'dist', 'control-center'), { recursive: true });
+
+  const started = await startControlCenterServer({ port: 0 }, { cwd, now: fixedNow });
+  let browser = null;
+  try {
+    browser = await chromium.launch();
+    const page = await browser.newPage();
+    await page.goto(started.url, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Regression', exact: true }).click();
+    await page.locator('[data-testid="tc-cc-playwright-test-regression-page"]').waitFor();
+    await page.locator('[data-testid="tc-cc-approved-ci-policy-summary"]').waitFor();
+    const regressionText = await page.locator('[data-testid="tc-cc-playwright-test-regression-page"]').innerText();
+    assert.match(regressionText, /Target policy/);
+    assert.match(regressionText, /Max age hours/);
+    assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
+
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.locator('[data-testid="tc-cc-settings-playwright-test-mode"] select').selectOption('local_run');
+    const modeText = await page.locator('[data-testid="tc-cc-settings-playwright-test-mode"]').innerText();
+    assert.match(modeText, /CLI only/);
+    assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+    await closeServer(started.server);
+  }
 });
 
 test('session action can click and observe the changed page', { skip: !runBrowserSmoke }, async () => {
@@ -1021,4 +1059,16 @@ async function observationText(cwd, result) {
   assert.ok(observation);
   const observed = JSON.parse(await readFile(path.join(cwd, observation.path), 'utf8'));
   return observed.page.visible_text;
+}
+
+function closeServer(server) {
+  return new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    });
+  });
 }

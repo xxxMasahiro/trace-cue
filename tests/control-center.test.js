@@ -343,6 +343,146 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
   }
 });
 
+test('control-center server completes Playwright Test external CI success paths through read-only gh', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-ci-'));
+  await mkdir(path.join(cwd, '.github', 'workflows'), { recursive: true });
+  await writeFile(path.join(cwd, '.github', 'workflows', 'ci.yml'), [
+    'name: CI',
+    'jobs:',
+    '  test:',
+    '    steps:',
+    '      - uses: actions/upload-artifact@v4',
+    '        with:',
+    '          name: playwright-report'
+  ].join('\n'), 'utf8');
+
+  const ghCalls = [];
+  const started = await startControlCenterServer({ port: 0 }, {
+    cwd,
+    now: fixedNow,
+    ghRunner: async (command, args) => {
+      assert.equal(command, 'gh');
+      ghCalls.push(args);
+      if (args[0] === 'run' && args[1] === 'list') {
+        return {
+          code: 0,
+          signal: null,
+          stdout: JSON.stringify([{
+            databaseId: 222,
+            headSha: 'c'.repeat(40),
+            headBranch: 'main',
+            event: 'push',
+            status: 'completed',
+            conclusion: 'success',
+            workflowName: 'CI',
+            updatedAt: fixedNow,
+            createdAt: fixedNow
+          }]),
+          stderr: ''
+        };
+      }
+      if (args[0] === 'run' && args[1] === 'download') {
+        assert.equal(args[3], '--repo');
+        assert.equal(args[4], 'owner/repo');
+        assert.equal(args[5], '--name');
+        assert.equal(args[6], 'playwright-report');
+        const dir = args[args.indexOf('--dir') + 1];
+        await mkdir(dir, { recursive: true });
+        await writeFile(path.join(dir, 'results.json'), JSON.stringify({
+          suites: [{
+            specs: [{
+              title: 'checkout',
+              tests: [{
+                title: 'loads',
+                projectName: 'chromium',
+                results: [{ status: 'passed', attachments: [] }]
+              }]
+            }]
+          }]
+        }), 'utf8');
+        return { code: 0, signal: null, stdout: 'downloaded', stderr: '' };
+      }
+      return { code: 1, signal: null, stdout: '', stderr: 'unexpected gh command' };
+    }
+  });
+  try {
+    const suggestion = await postJson(started, '/api/playwright-test/external-ci/suggest-settings', {
+      repo: 'owner/repo',
+      confirm: 'suggest-playwright-test-ci-settings'
+    });
+    assert.equal(suggestion.statusCode, 200);
+    const suggestionBody = JSON.parse(suggestion.body);
+    const suggested = suggestionBody.data.playwright_test_external_ci_settings_suggestion;
+    assert.equal(suggested.status, 'suggested');
+    assert.equal(suggested.persisted, false);
+    assert.equal(suggested.candidate.repo, 'owner/repo');
+    assert.equal(suggested.candidate.workflow_name, 'CI');
+    assert.equal(suggested.candidate.artifact_name, 'playwright-report');
+    assert.equal(suggested.candidate.limit, 10);
+    assert.equal(suggested.boundary.gh_write_used, false);
+
+    const approveCiSettings = await postJson(started, '/api/playwright-test/external-ci/approve-settings', {
+      repo: 'owner/repo',
+      workflow_name: 'CI',
+      branch: 'main',
+      event: 'push',
+      artifact_name: 'playwright-report',
+      target_policy: 'latest_successful_branch_run',
+      max_age_hours: 24,
+      limit: 5,
+      confirm: 'approve-playwright-test-ci-settings'
+    });
+    assert.equal(approveCiSettings.statusCode, 200);
+    const approveCiSettingsBody = JSON.parse(approveCiSettings.body);
+    const approved = approveCiSettingsBody.data.playwright_test_external_ci_approved_settings.approved_fetch;
+    assert.equal(approved.target_policy, 'latest_successful_branch_run');
+    assert.equal(approved.max_age_hours, 24);
+    assert.equal(approved.limit, 5);
+    assert.equal(approved.head_sha, null);
+    assert.equal(approveCiSettingsBody.data.playwright_test_external_ci_approved_settings.safety.gh_used, false);
+
+    const manualFetch = await postJson(started, '/api/playwright-test/external-ci/fetch', {
+      repo: 'owner/repo',
+      run_id: '222',
+      artifact_name: 'playwright-report',
+      execute_confirmed: true,
+      confirm: 'fetch-playwright-test-ci-artifact'
+    });
+    assert.equal(manualFetch.statusCode, 200);
+    const manualFetchBody = JSON.parse(manualFetch.body);
+    assert.equal(manualFetchBody.command, 'control-center playwright-test external-ci fetch');
+    assert.equal(manualFetchBody.data.playwright_test_import.status, 'passed');
+    assert.equal(manualFetchBody.data.playwright_test_external_ci_fetch.boundary.gh_write_used, false);
+    assert.equal(manualFetchBody.data.playwright_test_external_ci_fetch.raw_content_included, false);
+
+    const approvedFetch = await postJson(started, '/api/playwright-test/external-ci/fetch-approved', {
+      execute_confirmed: true,
+      confirm: 'fetch-approved-playwright-test-ci-artifact'
+    });
+    assert.equal(approvedFetch.statusCode, 200);
+    const approvedFetchBody = JSON.parse(approvedFetch.body);
+    assert.equal(approvedFetchBody.command, 'control-center playwright-test external-ci fetch-approved');
+    assert.equal(approvedFetchBody.data.playwright_test_import.status, 'passed');
+    assert.equal(approvedFetchBody.data.playwright_test_import.source.approved_fetch.mode, 'approved_settings');
+    assert.equal(approvedFetchBody.data.playwright_test_external_ci_fetch_approved.status, 'downloaded');
+    assert.equal(approvedFetchBody.data.playwright_test_external_ci_fetch_approved.boundary.gh_write_used, false);
+
+    const afterFetch = await fetch(new URL('/api/dashboard', started.url));
+    const afterFetchBody = await afterFetch.json();
+    const regression = afterFetchBody.data.control_center.regression.playwright_test;
+    assert.equal(regression.review_projection.raw_content_included, false);
+    assert.equal(regression.external_ci.approved_fetch.limit, 5);
+    assert.equal(regression.external_ci.approved_fetch.max_age_hours, 24);
+    assert.equal(regression.dashboard_refresh_side_effects.gh_used, false);
+    assert.equal(regression.dashboard_refresh_side_effects.network_used, false);
+
+    assert.equal(ghCalls.some((args) => args.includes('workflow_dispatch') || args.includes('rerun') || args.includes('cancel')), false);
+    assert.equal(ghCalls.filter((args) => args[0] === 'run' && args[1] === 'download').length, 2);
+  } finally {
+    await closeServer(started.server);
+  }
+});
+
 test('control-center server rejects non-loopback hosts before listening', async () => {
   await assert.rejects(
     startControlCenterServer({ host: '0.0.0.0', port: 0 }, { now: fixedNow }),
