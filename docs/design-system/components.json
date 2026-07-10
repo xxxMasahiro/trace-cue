@@ -38,6 +38,26 @@
       "contract": ["Keep one current goal, one primary safe action, adjacent truthful status, and one result or empty state in the ordinary workspace; route technical details to the retained detail destinations."]
     },
     {
+      "id": "control-center-ai-send-confirmation",
+      "tokens": ["surface", "line", "foreground", "muted", "accent", "warning"],
+      "contract": ["Before every external AI send, show what will be sent, the configured destination in ordinary language, and where the result will be saved; require explicit agreement and do not provide an ordinary setting that disables this protection."]
+    },
+    {
+      "id": "control-center-ai-review-progress",
+      "tokens": ["background", "surface", "line", "foreground", "muted", "accent", "success"],
+      "contract": ["Explain real AI-assisted review progress as a short sequence of user-understandable steps; allow the page to be left without losing work and never show invented timers, percentages, or completion."]
+    },
+    {
+      "id": "control-center-ai-review-result",
+      "tokens": ["background", "surface", "line", "foreground", "muted", "accent", "success", "warning", "danger"],
+      "contract": ["Order evidence-backed improvements by priority, explain their user impact in plain language, and let the user choose 修正する, 今回は見送る, or 相談して決める without exposing commands or provider internals."]
+    },
+    {
+      "id": "control-center-preference-settings",
+      "tokens": ["background", "surface", "line", "foreground", "muted", "accent", "success"],
+      "contract": ["Use one continuous prototype-style form for display language, default review screen, concise Playwright Test mode, AI suggestions, and mandatory external-send confirmation, with one 設定を保存 action."]
+    },
+    {
       "id": "source-intake-form",
       "tokens": ["background", "surface", "line", "foreground", "muted", "accent"],
       "contract": ["Collect only the source text path, source type, review goal, review depth, optional context, and explicit local-write confirmation."]

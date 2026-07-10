@@ -2,6 +2,15 @@
 
 ## Current State
 
+The durable Control Center production mock candidate is stored at
+`docs/design-system/mockups/control-center/`. Open `index.html` directly or use
+its documented query-string states; `assets/` contains the desktop/mobile PNG
+review set. `capture.mjs` regenerates those captures and `verify.mjs` checks the
+goal-led interaction, AI send confirmation, work-area dialog centering, and
+mobile overflow. This is still an approval-pending design artifact, not the
+React production implementation. Its sample progress, findings, and completion
+copy are representative only and must not become simulated production state.
+
 The latest Control Center slice adds purpose-led ordinary navigation without
 replacing the existing product surfaces. The top level is `確認` (`confirm`),
 `進行中` (`running`), and `設定` (`settings`). The ordinary workflow shows

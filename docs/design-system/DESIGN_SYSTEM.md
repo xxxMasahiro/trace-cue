@@ -14,6 +14,24 @@ TraceCue now includes a React + Vite local review center surface under `control-
 
 The browser surface follows the accepted Control Center prototype. Desktop uses a 232px navigation rail, an 1120px ordinary content width, and a 760px narrow form/settings width. The UI font stack is the operating-system sans serif stack with `Noto Sans JP`; body text is 16px, page titles are 30px, settings section titles are 19px, and supporting copy is 14px. Ordinary pages use white space and divider lines instead of stacked cards. It must not add decorative backgrounds, nested cards, marketing layout, raw JSON-first pages, command launchers, provider selectors, or execution controls.
 
+## Production Mock Candidate
+
+The durable HTML mock and its desktop/mobile PNG captures live under
+`docs/design-system/mockups/control-center/`. They define the proposed ordinary
+Control Center flow before the React production surface is changed: start from
+a user goal, choose review depth in everyday language, explicitly confirm an
+external AI send, follow progress, decide what to do with findings, and manage
+the small set of ordinary preferences. Query-string screen states are stable so
+the same design can be reviewed and recaptured without relying on transient
+browser evidence.
+
+The mock remains a candidate until product review accepts it. Its progress,
+findings, and completion content are representative interaction data only.
+Production code must derive those states from TraceCue execution and evidence;
+it must never copy the mock's sample data as simulated behavior. After approval,
+the accepted PNGs and HTML become the visual and interaction baseline for the
+corresponding production implementation.
+
 ## Purpose-Led Control Center
 
 The ordinary Control Center experience uses three top-level destinations:

@@ -2,6 +2,15 @@
 
 ## Current Status
 
+The repository now contains a durable Control Center production mock candidate
+under `docs/design-system/mockups/control-center/`. It includes a standalone
+goal-led HTML flow, stable query-string screen states, desktop/mobile PNG review
+captures, explicit external AI send confirmation, ordinary AI/privacy settings,
+and reproducible Playwright capture and interaction checks. The candidate is
+separate from the React production implementation and remains approval-pending;
+its representative progress, findings, and completion content must not be
+copied into production as simulated state.
+
 The Control Center purpose-led production slice is implemented as an additive
 ordinary navigation layer over the existing React/Vite application and read
 model. Ordinary users receive three top-level destinations, `確認` (`confirm`),
@@ -138,6 +147,7 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 ## Completed Work
 
 - [x] Aligned the production Control Center settings page with the accepted prototype typography, 760px narrow layout, divider-based rows, display-language choice, concise Playwright Test mode choice, and one save action; removed technical locale, persistence, diagnostics, regression-import, CI-policy, and trust-boundary displays from ordinary settings while preserving backend, CLI, API, read-model, endpoint, and security contracts.
+- [x] Added a durable approval-pending Control Center production mock candidate with standalone HTML, stable screen states, desktop/mobile PNGs, capture and interaction checks, and design-system contracts without changing React production behavior.
 - [x] Added bounded TraceCue Control Center source intake and display-language settings with React/Vite Intake and Settings views, confirmed local source-text proposal generation, fixed-path display-locale persistence, design-system component metadata, no-browser action/server tests, and preserved no-provider/no-shell/no-MCP/no-browser/no-external-transfer/no-gate-mutation boundaries.
 - [x] Added Agentic Human Review source-text quality owner-review context for downstream evidence-set, human-baseline claim-readiness, longitudinal-quality, claim-standard-gate, and evidence-regeneration diagnostics, including source-text quality artifact family handling, supported CLI/API wrapper intake, downstream re-sanitization, unsafe authority-flag neutralization, context diagnostics, stale-effort invalidation without raw hash output, no-leak coverage, owner-context schema parity, and preserved no-warning/no-condition/no-blocker/no-pass-state/no-claim-state/no-proof/no-rerun-execution/no-gate-mutation boundaries.
 - [x] Strengthened durable autonomous workflow instructions so A/B
