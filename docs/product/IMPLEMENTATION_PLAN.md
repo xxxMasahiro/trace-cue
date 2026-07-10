@@ -25,36 +25,36 @@ effort selection that preserves canonical `standard`, `deep`, and `xhigh`
 proposal values; use the approved titles `大切な改善点を知りたい`,
 `改善点を詳しく洗い出したい`, and `重要な判断の前に念入りに確かめたい`
 with short labels `大切な改善点を確認`, `詳しく確認`, and `念入りに確認`;
+add persistent real page review, explicit external AI disclosure/confirmation,
+normalized results, per-finding decisions, and new-operation recheck/deeper;
 keep the existing source-intake proposal and Settings actions; preserve detailed
 Regression/Evidence/Findings/Advanced backend, CLI, API, and read-model contracts;
 and keep technical detail forms out of the ordinary Settings page.
 
 Compatibility boundary: preserve the exact eight existing Control Center action
-endpoints and confirmations. The purpose-led UI adds no provider execution,
-browser execution, visual review execution, Agentic Human Review plan/run,
-generic action endpoint, shell, MCP JSON-RPC, cleanup, credential input,
-external upload, CI mutation, gate mutation, or automatic completion. Effort
-selection and submission create only the existing local non-executing proposal.
-The UI must not use fake progress timers, percentages, findings, decisions,
-recheck outcomes, or completion states.
+endpoint paths and confirmations. Add only namespaced preference and
+agentic-review endpoints. The purpose-led UI may run the existing browser review
+and Agentic Human Review plan/run through this dedicated operation, but adds no
+generic provider selection, shell, MCP JSON-RPC, cleanup, credential input,
+external upload, CI mutation, gate mutation, automatic retry, or evidence-free
+completion. The UI must not use fake progress timers, percentages, findings,
+decisions, recheck outcomes, or completion states.
 
-Implementation order: freeze compatibility assertions for the existing eight
-actions and existing Regression/Evidence/Findings/Advanced projections; add the
-purpose-led navigation and focused ordinary workspace; map purpose labels to
-canonical proposal efforts; derive all five stage states from existing structured
-read-model truth; simplify Settings to the accepted prototype typography,
-spacing, 760px layout, display-language row, concise Playwright Test row, and one
-save action; complete ordinary UI localization; update design-system component
-contracts; extend desktop/mobile, keyboard, focus, no-overflow, no-fake-progress, and action
-allowlist tests; synchronize product, workflow, security, verification, changelog,
-and manifest records; then run focused tests, the full no-browser suite, Control
-Center build/browser smoke, package checks, product document/security/structure/
-design checks, product gate, and diff checks.
+Implementation order: freeze the original eight-action metadata; add the
+persistent operation schema and preferences; compose browser review with AHR
+propose/plan; bind a one-time confirmation to a concrete disclosure; execute once
+through the existing AHR run boundary; normalize results and persist finding
+decisions; create new operations for recheck/deeper; connect the React flow;
+keep Settings at the accepted 760px prototype width with one save action; extend
+desktop/mobile, keyboard, focus, no-overflow, no-fake-progress, duplicate-start,
+restart-unknown, and disclosure tests; synchronize docs/manifests; then run all
+local, browser, package, product, and CI gates.
 
-Recovery: the slice is presentation and navigation only. Reverting the
-purpose-led components and contracts restores the prior browser layout without
-artifact migration, endpoint changes, credential cleanup, provider-policy
-changes, MCP changes, CLI changes, Regression data loss, or release-gate changes.
+Recovery: disable AI suggestions to keep review local, or revert the namespaced
+operation endpoints and React workflow. Existing eight endpoints, CLI provider
+workflow, MCP profiles, Playwright settings, deterministic findings, and release
+gates remain unchanged. Stored operation records are local advisory artifacts and
+do not require migration to restore the prior surface.
 
 ### Playwright Test Integration Roadmap 1-18
 

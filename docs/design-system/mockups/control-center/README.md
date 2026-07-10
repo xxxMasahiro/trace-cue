@@ -1,6 +1,6 @@
-# TraceCue Control Center Production Mock Candidate
+# TraceCue Control Center Production Mock
 
-This directory contains the durable, reviewable HTML mock candidate for the
+This directory contains the approved, durable HTML design reference for the
 non-engineer Control Center workflow. It is separate from the React production
 implementation under `control-center/` and from ignored browser evidence under
 `.browser-debug/`.
@@ -36,6 +36,7 @@ under `/home/masahiro/tmp/tracecue-control-center-prototype`.
 
 ## Status
 
-This is a design candidate, not production behavior. The progress and result
-content is representative interaction data. Production implementation must use
-real TraceCue state and must not simulate execution, findings, or completion.
+This is the approved design reference, not runtime behavior. The progress and
+result content is representative interaction data. The React/Vite production
+implementation uses real persisted TraceCue state and does not simulate
+execution, findings, decisions, or completion.

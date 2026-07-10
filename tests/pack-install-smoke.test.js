@@ -168,6 +168,7 @@ async function main() {
     await assertFile(packageDir, 'schemas/source-reading-review.schema.json');
     await assertFile(packageDir, 'schemas/e2e-result-review-material.schema.json');
     await assertFile(packageDir, 'schemas/control-center-read-model.schema.json');
+    await assertFile(packageDir, 'schemas/control-center-agentic-review.schema.json');
     await assertFile(packageDir, 'schemas/playwright-test-external-ci.schema.json');
     await assertFile(packageDir, 'schemas/playwright-test-integration.schema.json');
     await assertFile(packageDir, 'templates/review-target-manifest.json');

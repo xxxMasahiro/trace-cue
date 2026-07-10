@@ -922,11 +922,11 @@ When full replacement repair is exhausted and the remaining contract failure is 
 
 `control-center status --json` returns a `control_center` read model that composes existing read-only TraceCue status APIs. The model is body-free and summary-oriented: it includes source-intake capability metadata, display-language settings metadata, Playwright Test regression metadata, review readiness, next action, visual review counts, optional owner-review matrix data, findings counts, setup/safety summaries, source statuses, safe command handoff text, warnings, errors, and explicit boundary flags. It does not include raw artifact bodies, raw pixels, raw provider responses, credential values, browser traces, DOM payloads, network payloads, full source text, chunk text, or executable commands.
 
-`control-center serve` starts a loopback-only server. The server serves the built React + Vite bundle from `dist/control-center`, exposes `GET /api/health` plus GET-only `/api/dashboard`, and rejects non-loopback Host or Origin headers. It also exposes only approved bounded local POST endpoints for the browser UI: `/api/source-intake/proposal`, `/api/settings/display-language`, `/api/playwright-test/mode`, `/api/playwright-test/import`, `/api/playwright-test/external-ci/fetch`, `/api/playwright-test/external-ci/suggest-settings`, `/api/playwright-test/external-ci/approve-settings`, and `/api/playwright-test/external-ci/fetch-approved`. Source intake creates local Agentic Human Review proposals from workspace-confined source text after an explicit confirmation token. Display-language writes only the Control Center display locale to the fixed `ops/DASHBOARD_SETTINGS.json` path after an explicit confirmation token. Playwright Test actions stay advisory: mode and approved settings writes do not execute, import is workspace-confined, external-CI fetches require confirmation plus explicit execution, and `gh` use is limited to read-only `gh run list` and `gh run download`. These action endpoints are not a generic command runner, not provider execution, not MCP JSON-RPC, not shell execution, not browser launch, not cleanup execution, not external upload, not CI trigger/retry/cancel, and not release-gate mutation.
+`control-center serve` starts a loopback-only server. The server serves the built React + Vite bundle from `dist/control-center`, exposes `GET /api/health` plus GET-only `/api/dashboard`, and rejects non-loopback Host or Origin headers. The original eight bounded action paths remain unchanged and separately reported in server metadata. `/api/settings/control-center` persists only default viewport and AI-suggestion preference while keeping send confirmation immutable. The dedicated `/api/agentic-review/{prepare,confirmation,start,status,decision,repeat,list}` family orchestrates the existing browser review and Agentic Human Review proposal/plan/run APIs. It is not a generic action, command, provider, or artifact endpoint.
 
-The React surface lives under `control-center/`. It imports the product-local design-system JSON from `docs/design-system/`, maps those tokens to CSS custom properties, and uses the same read model that the CLI emits. The ordinary UI has three destinations: Confirm, In progress, and Settings. Source intake creates local non-executing proposal artifacts from source text. Settings changes only Control Center chrome language across the supported 14-locale policy and Playwright Test mode selection without execution. Detailed Regression, Evidence, Findings, and Advanced contracts remain available through the backend, CLI, API, and read model rather than being presented as ordinary settings content.
+The React surface lives under `control-center/`. It imports the product-local design-system JSON from `docs/design-system/`, maps those tokens to CSS custom properties, and uses the same read model that the CLI emits. The ordinary UI has three destinations: Confirm, In progress, and Settings. New review accepts a web URL, a plain-language purpose, and one of three purpose-led review choices. Settings combines display language, default viewport, Playwright Test mode, AI suggestions, and mandatory send confirmation behind one save action. Provider/model/credential and technical artifact controls are not ordinary UI.
 
-The browser surface is intentionally not a landing page, generic command launcher, schema browser, provider console, artifact browser, raw JSON viewer, or review execution plane. Future UI expansion must preserve the read-only dashboard boundary and require separate approved execution contracts before adding provider, shell, cleanup, browser, MCP write/execute, external transfer, or gate-affecting authority.
+The browser surface is intentionally not a landing page, generic command launcher, schema browser, provider console, artifact browser, or raw JSON viewer. It is an execution plane only for its dedicated page-review operation contract. Shell, cleanup, MCP write/execute, credential entry, arbitrary provider authority, raw artifact serving, CI mutation, and gate-affecting authority remain excluded.
 
 ### Purpose-Led Control Center Projection
 
@@ -934,41 +934,71 @@ The production Control Center adds an ordinary purpose-led projection while
 preserving the existing read-model fields and bounded backend actions. The top
 navigation contains `確認` (`confirm`), `進行中` (`running`), and `設定`
 (`settings`). The ordinary Settings page follows the accepted 760px-wide
-prototype form: one display-language row, one concise Playwright Test mode row,
-and one save action. It omits cards, status badges, persistence paths, locale
+prototype form: display language, default viewport, one concise Playwright Test
+mode choice, AI suggestions, mandatory send confirmation, and one save action.
+It omits cards, status badges, persistence paths, locale
 internals, diagnostics, trust badges, regression import forms, and CI policy
 forms. Those existing contracts remain available to backend, CLI, API, and
 read-model consumers without being ordinary settings UI.
 
 The ordinary workflow renders five stage labels: `準備` (`prepare`), `確認`
 (`review`), `判断` (`decide`), `再確認` (`recheck`), and `完了` (`complete`).
-Stage state is derived only from the current
-`control_center` read model. The React client does not create timers, optimistic
+Stage state is derived only from persisted `agentic_review.items` and operation
+status. The React client does not create timers, optimistic
 percentages, sample findings, synthetic decisions, synthetic recheck results,
-or client-only completion. When the read model does not support a stage, the UI
-shows a plain unavailable or next-step state instead of simulating progress.
+or client-only completion. It polls the bounded status endpoint while work is
+active and leaves long-running work available after navigation or page close.
 
 The source-intake effort control preserves the existing request field and enum.
 It maps `standard` to the selection title `大切な改善点を知りたい` and short
 label `大切な改善点を確認`, `deep` to `改善点を詳しく洗い出したい` and
 `詳しく確認`, and `xhigh` to `重要な判断の前に念入りに確かめたい` and
-`念入りに確認`. These labels select proposal scope only. Submission still
-calls only `/api/source-intake/proposal`, requires the existing confirmation,
-and returns a local non-executing proposal summary. It does not call a provider,
-launch a browser, create an Agentic Human Review plan, run a review, or claim
-completion.
+`念入りに確認`. These labels select the existing Agentic Human Review effort.
+Prepare first runs the TraceCue page review and creates an AHR proposal and plan
+locally. If AI is enabled, the operation enters `confirmation_required`; the
+provider call starts only after the user confirms the exact disclosure and
+one-time revision.
 
-The purpose-led slice adds no POST endpoint and preserves the exact existing
-eight-action allowlist: `/api/source-intake/proposal`,
+The purpose-led slice preserves the exact existing eight-action metadata
+allowlist: `/api/source-intake/proposal`,
 `/api/settings/display-language`, `/api/playwright-test/mode`,
 `/api/playwright-test/import`, `/api/playwright-test/external-ci/fetch`,
 `/api/playwright-test/external-ci/suggest-settings`,
 `/api/playwright-test/external-ci/approve-settings`, and
-`/api/playwright-test/external-ci/fetch-approved`. Client primary actions outside
-those existing forms are navigation-only. Free-form next-action text, command
-handoff text, paths, and status labels must never be converted into execution.
+`/api/playwright-test/external-ci/fetch-approved`. Additional namespaced Control
+Center preference and agentic-review endpoints are reported separately.
+Free-form next-action text, command handoff text, paths, and status labels must
+never be converted into execution.
 
 The ordinary projection may declare Complete only when current structured local
 evidence supports completion with no unresolved blocker. Proposal readiness,
 advisory-only output, absent evidence, or `gate_effect=none` alone cannot produce
 a completed workflow state.
+
+### Control Center Agentic Review Operation
+
+Each operation is stored under the configured workspace-confined artifact root,
+defaulting to
+`.browser-debug/control-center-agentic-reviews/<operation-id>/operation.json`.
+The public `control_center_agentic_review` projection exposes goal, safe target
+label, effort, viewport, service display name, disclosure, state, decisions,
+safe result, and boundary flags. It excludes target query strings, artifact
+paths, hashes, provider/model ids, credential values, request bodies, and raw
+provider responses.
+
+The state machine is `preparing -> confirmation_required -> dispatching ->
+validating -> completed`, with terminal `failed` and restart-recovery
+`dispatch_unknown`. AI-disabled preparation completes as a local review without
+proposal, plan, confirmation, provider call, API call, or evidence transfer.
+The send nonce expires after 15 minutes, is persisted only as SHA-256, and is
+bound to the disclosure revision plus the prepared plan and transfer contract.
+A nonce can start one provider execution.
+
+Provider execution reuses `runAgenticHumanReviewRun`; credentials remain in its
+environment/provider boundary. The operation stores only a normalized advisory
+projection. Automatic retry and cancellation are unavailable. A process restart
+while dispatch is uncertain changes the state to `dispatch_unknown` rather than
+calling the provider again. `decision` upserts one `fix`, `later`, or `ask` value
+for a returned finding. `repeat` always creates a new operation and browser
+review, links it to the previous operation, and either keeps the effort for
+`recheck` or advances it for `deeper`.

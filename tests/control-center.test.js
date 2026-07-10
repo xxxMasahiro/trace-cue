@@ -69,7 +69,7 @@ test('control-center status builds a read-only local read model', async () => {
   const body = JSON.parse(result.stdout);
   assert.equal(body.command, 'control-center status');
   assert.equal(body.data.control_center.schema_version, '0.1.0');
-  assert.equal(body.data.control_center.control_center_read_model_version, '1.4.0');
+  assert.equal(body.data.control_center.control_center_read_model_version, '1.5.0');
   assert.equal(body.data.control_center.generated_at, fixedNow);
   assert.equal(body.data.control_center.status, 'empty');
   assert.equal(body.data.control_center.activity.status, 'empty');

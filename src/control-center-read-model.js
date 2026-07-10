@@ -7,13 +7,18 @@ import { runAgentExecutionList } from './agent-execution.js';
 import { runAgenticHumanReviewDogfoodEvidencePackReviewPack } from './agentic-human-review.js';
 import { runArtifactRootStatus } from './artifact-root-policy.js';
 import { controlCenterActionCapabilities } from './control-center-actions.js';
+import { controlCenterPreferenceSummary, readControlCenterPreferences } from './control-center-preferences.js';
+import {
+  CONTROL_CENTER_AGENTIC_REVIEW_ENDPOINTS,
+  runControlCenterAgenticReviewList
+} from './control-center-agentic-review-actions.js';
 import { runLanguageSettings } from './language-settings.js';
 import { buildMcpCapabilityReport } from './mcp-capabilities.js';
 import { buildPlaywrightTestRegressionSummary } from './playwright-test-regression.js';
 import { runResourceStatus } from './resource-status.js';
 import { runVisualReviewDashboard } from './visual-review-dashboard.js';
 
-const CONTROL_CENTER_READ_MODEL_VERSION = '1.4.0';
+const CONTROL_CENTER_READ_MODEL_VERSION = '1.5.0';
 const DEFAULT_RESULT_LIMIT = 5;
 const DEFAULT_ACTIVITY_LIMIT = 50;
 const ACTIVITY_STATES = Object.freeze(['waiting', 'running', 'needs_attention', 'ready', 'blocked']);
@@ -87,7 +92,9 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     language,
     artifactRootStatus,
     playwrightTest,
-    ownerReview
+    ownerReview,
+    preferences,
+    agenticReview
   ] = await Promise.all([
     safeRead('visual_review_dashboard', () => runVisualReviewDashboard(visualOptions, sharedContext)),
     safeRead('agent_requests', () => runAgentRequestsList({ 'artifact-root': artifactRoot }, sharedContext)),
@@ -97,7 +104,18 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     safeRead('language_settings', () => runLanguageSettings({}, sharedContext)),
     safeRead('artifact_root_status', () => runArtifactRootStatus({}, sharedContext)),
     safeRead('playwright_test', () => runPlaywrightTestReadModel(artifactRoot, sharedContext)),
-    readOwnerReview(options, sharedContext)
+    readOwnerReview(options, sharedContext),
+    safeRead('control_center_preferences', async () => ({
+      status: 'ok',
+      data: { control_center_preferences: await readControlCenterPreferences(sharedContext) },
+      warnings: [],
+      errors: [],
+      artifacts: []
+    })),
+    safeRead('control_center_agentic_review', () => runControlCenterAgenticReviewList(
+      { limit: DEFAULT_ACTIVITY_LIMIT },
+      { ...sharedContext, artifactRoot }
+    ))
   ]);
 
   const sources = {
@@ -109,7 +127,9 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     language,
     artifactRootStatus,
     playwrightTest,
-    ownerReview
+    ownerReview,
+    preferences,
+    agenticReview
   };
   const warnings = collectMessages(sources, 'warnings');
   const errors = collectMessages(sources, 'errors');
@@ -142,6 +162,7 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     },
     activity,
     operator_flow: operatorFlow,
+    agentic_review: summarizeControlCenterAgenticReview(agenticReview),
     review: {
       can_owner_review_proceed: ownerSummary.can_owner_review_proceed,
       next_action: nextActions[0] ?? fallbackAction(status),
@@ -168,6 +189,7 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     settings: {
       display_language: summarizeDisplayLanguage(languageSummary, actionCapabilities),
       playwright_test: summarizePlaywrightTestSettings(playwrightSummary, actionCapabilities),
+      control_center: controlCenterPreferenceSummary(preferences.data?.control_center_preferences),
       boundary: controlCenterBoundary()
     },
     setup_safety: {
@@ -200,6 +222,32 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     errors,
     boundary: controlCenterBoundary(),
     gate_effect: 'none'
+  };
+}
+
+function summarizeControlCenterAgenticReview(source) {
+  const value = source.data?.control_center_agentic_review ?? {};
+  const items = Array.isArray(value.operations) ? value.operations : [];
+  const runningStates = new Set(['preparing', 'dispatching', 'validating']);
+  return {
+    status: source.status === 'error' ? 'error' : items.length > 0 ? 'available' : 'empty',
+    items,
+    counts: {
+      total: items.length,
+      running: items.filter((item) => runningStates.has(item.state)).length,
+      confirmation_required: items.filter((item) => item.state === 'confirmation_required').length,
+      completed: items.filter((item) => item.state === 'completed').length,
+      needs_attention: items.filter((item) => ['failed', 'dispatch_unknown'].includes(item.state)).length
+    },
+    endpoints: CONTROL_CENTER_AGENTIC_REVIEW_ENDPOINTS,
+    projection: {
+      paths_included: false,
+      hashes_included: false,
+      commands_included: false,
+      raw_bodies_included: false,
+      credential_values_included: false
+    },
+    boundary: controlCenterBoundary()
   };
 }
 

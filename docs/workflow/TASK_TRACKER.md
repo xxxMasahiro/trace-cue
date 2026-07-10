@@ -2,14 +2,21 @@
 
 ## Current Status
 
-The repository now contains a durable Control Center production mock candidate
+Final verification passed on 2026-07-11: 153 no-browser tests, 14 Playwright
+browser smoke tests, mock interaction/responsive verification, `release:check`,
+packed-install smoke, all product repository checks, and `product-gate`. TraceCue
+self-review `site-review-2026-07-10T23-42-44-565Z-9f5d68d1` visited four routes
+at desktop/mobile (eight states), found zero issues, and returned quality/local
+release status `passed`/`pass`.
+
+The repository now contains the approved durable Control Center production mock
 under `docs/design-system/mockups/control-center/`. It includes a standalone
 goal-led HTML flow, stable query-string screen states, desktop/mobile PNG review
 captures, explicit external AI send confirmation, ordinary AI/privacy settings,
 and reproducible Playwright capture and interaction checks. The candidate is
-separate from the React production implementation and remains approval-pending;
-its representative progress, findings, and completion content must not be
-copied into production as simulated state.
+separate from the React production implementation. Its representative progress,
+findings, and completion content remain mock-only; production uses persisted
+TraceCue operation state.
 
 The Control Center purpose-led production slice is implemented as an additive
 ordinary navigation layer over the existing React/Vite application and read
@@ -22,14 +29,16 @@ existing projections and bounded actions intact. Review effort uses the approved
 purpose titles `大切な改善点を知りたい`, `改善点を詳しく洗い出したい`, and
 `重要な判断の前に念入りに確かめたい`, with short labels
 `大切な改善点を確認`, `詳しく確認`, and `念入りに確認`, while preserving
-canonical `standard`, `deep`, and `xhigh` values in the existing proposal request.
-The slice preserves the exact existing eight action endpoints, creates proposals
-only, launches no provider or browser, adds no generic action endpoint, and uses
-no fake progress, findings, recheck result, or completion state.
+canonical `standard`, `deep`, and `xhigh` values. The slice preserves the exact
+existing eight action endpoint paths and adds only namespaced preferences and
+agentic-review operations. It runs real browser evidence, requires a one-time
+service/evidence disclosure before external AI, persists normalized results and
+decisions, creates new evidence for recheck/deeper, and uses no fake progress,
+findings, recheck result, or completion state.
 
 Playwright Test regression evidence integration is implemented as a disabled-by-default, advisory-only CLI/API/Control Center surface. TraceCue can import workspace-confined Playwright Test artifacts, project normalized results into non-engineer review cards plus standard/deep/xhigh review inputs, compare a current result with a normalized baseline, plan and explicitly run local Playwright Test from the CLI with plan-hash gating, fetch existing GitHub Actions artifacts through read-only `gh run list/view/download` commands with exact run/artifact selection, and use approved external-CI fetch settings to resolve the latest matching successful run before explicit download. The Control Center now includes Regression and Settings surfaces for mode selection, local import, compact review material, approved external-CI settings, and external CI artifact fetch, but it does not expose local browser execution. Results remain local and do not mutate TraceCue deterministic findings, Agentic Human Review proof, release gates, product gates, MCP profiles, or remote CI state.
 
-TraceCue Control Center source intake, display-language settings, and Playwright Test regression actions are implemented as bounded local browser actions on top of the read-only dashboard model. `/api/dashboard` remains GET-only and body-free. `/api/source-intake/proposal` requires an explicit confirmation token, accepts only workspace-relative source text and optional evidence/index paths, reuses the Agentic Human Review proposal path, writes local non-executing proposal artifacts, and suppresses full source text and chunk text from normal UI output. `/api/settings/display-language` requires an explicit confirmation token and writes only the Control Center display locale to the fixed `ops/DASHBOARD_SETTINGS.json` path. The React/Vite app now has Intake, Regression, and Settings views, uses the product-local design system and locale policy, and still exposes no provider execution, shell execution, MCP JSON-RPC, browser automation, Control Center local-run button, cleanup execution, external upload, CI trigger/rerun/cancel, or gate mutation.
+Control Center agentic review execution is complete: persistent operation schema/API, browser review plus AHR propose/plan/run composition, concrete send disclosure, hashed one-time nonce, duplicate-start rejection, restart-safe `dispatch_unknown`, normalized pathless results, per-finding decisions, and new-operation recheck/deeper are implemented. Credentials remain environment-only; automatic retry, generic provider controls, raw responses, shell, MCP execution, cleanup, CI mutation, deterministic finding mutation, and gate mutation remain excluded.
 
 The durable autonomous workflow protocol now treats `A. Pre-Implementation
 Proposal` and `B. Implementation Plan` as mandatory pre-implementation
@@ -147,7 +156,8 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 ## Completed Work
 
 - [x] Aligned the production Control Center settings page with the accepted prototype typography, 760px narrow layout, divider-based rows, display-language choice, concise Playwright Test mode choice, and one save action; removed technical locale, persistence, diagnostics, regression-import, CI-policy, and trust-boundary displays from ordinary settings while preserving backend, CLI, API, read-model, endpoint, and security contracts.
-- [x] Added a durable approval-pending Control Center production mock candidate with standalone HTML, stable screen states, desktop/mobile PNGs, capture and interaction checks, and design-system contracts without changing React production behavior.
+- [x] Approved the durable Control Center production mock with standalone HTML, stable screen states, desktop/mobile PNGs, capture and interaction checks, and design-system contracts; production now uses it as the visual baseline.
+- [x] Implemented dedicated Control Center agentic review execution with persistent operations, real browser evidence, AHR propose/plan/run reuse, concrete one-time send confirmation, normalized pathless results, per-finding decisions, linked recheck/deeper, simple AI/privacy preferences, restart-safe unknown dispatch, Playwright browser coverage, and no automatic retry or gate mutation.
 - [x] Added bounded TraceCue Control Center source intake and display-language settings with React/Vite Intake and Settings views, confirmed local source-text proposal generation, fixed-path display-locale persistence, design-system component metadata, no-browser action/server tests, and preserved no-provider/no-shell/no-MCP/no-browser/no-external-transfer/no-gate-mutation boundaries.
 - [x] Added Agentic Human Review source-text quality owner-review context for downstream evidence-set, human-baseline claim-readiness, longitudinal-quality, claim-standard-gate, and evidence-regeneration diagnostics, including source-text quality artifact family handling, supported CLI/API wrapper intake, downstream re-sanitization, unsafe authority-flag neutralization, context diagnostics, stale-effort invalidation without raw hash output, no-leak coverage, owner-context schema parity, and preserved no-warning/no-condition/no-blocker/no-pass-state/no-claim-state/no-proof/no-rerun-execution/no-gate-mutation boundaries.
 - [x] Strengthened durable autonomous workflow instructions so A/B

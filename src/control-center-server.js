@@ -15,6 +15,17 @@ import {
   runControlCenterSetDisplayLanguage,
   runControlCenterSourceIntakeProposal
 } from './control-center-actions.js';
+import { runControlCenterSetPreferences } from './control-center-preferences.js';
+import {
+  CONTROL_CENTER_AGENTIC_REVIEW_ENDPOINTS,
+  runControlCenterAgenticReviewConfirmation,
+  runControlCenterAgenticReviewDecision,
+  runControlCenterAgenticReviewList,
+  runControlCenterAgenticReviewPrepare,
+  runControlCenterAgenticReviewRepeat,
+  runControlCenterAgenticReviewStart,
+  runControlCenterAgenticReviewStatus
+} from './control-center-agentic-review-actions.js';
 import { isAllowedMcpHttpHost, isAllowedMcpHttpOrigin, isLoopbackHost } from './mcp-transport-policy.js';
 
 const DEFAULT_CONTROL_CENTER_HOST = '127.0.0.1';
@@ -175,6 +186,68 @@ async function handleControlCenterRequest(request, response, config, context) {
     sendJson(response, result.status === 'ok' ? 200 : 500, envelope);
     return;
   }
+  if (url.pathname === '/api/agentic-review/status' || url.pathname === '/api/agentic-review/list') {
+    if (request.method !== 'GET') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_AGENTIC_REVIEW_GET_ONLY', 'Review status only accepts GET requests.');
+      return;
+    }
+    const isList = url.pathname.endsWith('/list');
+    const agenticReviewContext = {
+      ...context,
+      cwd: config.cwd,
+      artifactRoot: config.readModelOptions['artifact-root']
+    };
+    const result = isList
+      ? await runControlCenterAgenticReviewList({ limit: url.searchParams.get('limit') }, agenticReviewContext)
+      : await runControlCenterAgenticReviewStatus({ id: url.searchParams.get('id') }, agenticReviewContext);
+    const envelope = createEnvelope({
+      command: isList ? 'control-center agentic-review list' : 'control-center agentic-review status',
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+    return;
+  }
+  const agenticReviewPostActions = {
+    '/api/agentic-review/prepare': ['prepare', runControlCenterAgenticReviewPrepare, 202],
+    '/api/agentic-review/confirmation': ['confirmation', runControlCenterAgenticReviewConfirmation, 200],
+    '/api/agentic-review/start': ['start', runControlCenterAgenticReviewStart, 202],
+    '/api/agentic-review/decision': ['decision', runControlCenterAgenticReviewDecision, 200],
+    '/api/agentic-review/repeat': ['repeat', runControlCenterAgenticReviewRepeat, 202]
+  };
+  const agenticReviewAction = agenticReviewPostActions[url.pathname];
+  if (agenticReviewAction) {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_AGENTIC_REVIEW_POST_ONLY', 'Review actions only accept POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const [actionName, actionRunner, acceptedStatus] = agenticReviewAction;
+    const result = await actionRunner(body.value, {
+      ...context,
+      cwd: config.cwd,
+      artifactRoot: config.readModelOptions['artifact-root']
+    });
+    const envelope = createEnvelope({
+      command: `control-center agentic-review ${actionName}`,
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    sendJson(response, result.status === 'ok' ? acceptedStatus : 400, envelope);
+    return;
+  }
   if (url.pathname === '/api/source-intake/proposal') {
     if (request.method !== 'POST') {
       sendMethodNotAllowed(response, 'CONTROL_CENTER_SOURCE_INTAKE_POST_ONLY', 'control-center source intake only accepts POST requests.');
@@ -211,6 +284,29 @@ async function handleControlCenterRequest(request, response, config, context) {
     const result = await runControlCenterSetDisplayLanguage(body.value, { ...context, cwd: config.cwd });
     const envelope = createEnvelope({
       command: 'control-center settings display-language',
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+    return;
+  }
+  if (url.pathname === '/api/settings/control-center') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_PREFERENCES_POST_ONLY', 'Control Center preferences only accept POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const result = await runControlCenterSetPreferences(body.value, { ...context, cwd: config.cwd });
+    const envelope = createEnvelope({
+      command: 'control-center settings preferences',
       status: result.status,
       data: result.data,
       warnings: result.warnings,
@@ -481,6 +577,9 @@ function controlCenterServerMetadata(config, url) {
       '/api/playwright-test/external-ci/approve-settings',
       '/api/playwright-test/external-ci/fetch-approved'
     ],
+    control_center_preference_endpoints: ['/api/settings/control-center'],
+    agentic_review_endpoints: Object.values(CONTROL_CENTER_AGENTIC_REVIEW_ENDPOINTS),
+    agentic_review_execution_requires_explicit_external_send_confirmation: true,
     mcp_json_rpc_exposed: false,
     cors_wildcard: false,
     cache_policy: 'no-store',

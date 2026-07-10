@@ -857,6 +857,8 @@ test('HTTP MCP listener stays isolated to the approved transport module', async 
 test('control-center browser surface keeps read dashboard and bounded local action isolation', async () => {
   const readModel = await readText('src/control-center-read-model.js');
   const actions = await readText('src/control-center-actions.js');
+  const agenticReviewActions = await readText('src/control-center-agentic-review-actions.js');
+  const preferences = await readText('src/control-center-preferences.js');
   const server = await readText('src/control-center-server.js');
   const api = await readText('src/api.js');
   const cli = await readText('src/cli.js');
@@ -894,6 +896,17 @@ test('control-center browser surface keeps read dashboard and bounded local acti
   assert.doesNotMatch(actions, /from 'node:http'|createServer|\.listen\(|WebSocket|EventSource/);
   assert.doesNotMatch(actions, /node:child_process|child_process|execFile|spawn\(|from 'playwright'|import\('playwright'\)/);
   assert.doesNotMatch(actions, /\bfetch\s*\(|XMLHttpRequest|curl|wget|process\.env/);
+
+  assert.match(agenticReviewActions, /runReview/);
+  assert.match(agenticReviewActions, /runAgenticHumanReviewRun/);
+  assert.match(agenticReviewActions, /confirmation_required/);
+  assert.match(agenticReviewActions, /dispatch_unknown/);
+  assert.match(agenticReviewActions, /automatic_retry:\s*false/);
+  assert.match(agenticReviewActions, /raw_provider_response_included:\s*false/);
+  assert.doesNotMatch(agenticReviewActions, /node:child_process|child_process|execFile|spawn\(|\bfetch\s*\(|XMLHttpRequest|curl|wget/);
+  assert.doesNotMatch(agenticReviewActions, /from '\.\/mcp|handleMcpRequest|jsonrpc/);
+  assert.match(preferences, /external_send_confirmation_required:\s*true/);
+  assert.doesNotMatch(preferences, /node:child_process|child_process|execFile|spawn\(|\bfetch\s*\(|process\.env/);
 
   assert.doesNotMatch(`${api}\n${cli}\n${parser}`, /from 'node:http'|createServer|\.listen\(/);
 });

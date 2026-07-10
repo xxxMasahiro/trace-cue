@@ -127,6 +127,19 @@
       },
       "additionalProperties": false
     },
+    "agentic_review": {
+      "type": "object",
+      "required": ["status", "items", "counts", "endpoints", "projection", "boundary"],
+      "properties": {
+        "status": { "enum": ["empty", "available", "error"] },
+        "items": { "type": "array" },
+        "counts": { "type": "object" },
+        "endpoints": { "type": "object" },
+        "projection": { "type": "object" },
+        "boundary": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
     "review": { "type": "object" },
     "evidence": { "type": "object" },
     "findings": { "type": "object" },

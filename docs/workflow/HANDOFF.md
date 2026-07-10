@@ -2,14 +2,19 @@
 
 ## Current State
 
-The durable Control Center production mock candidate is stored at
-`docs/design-system/mockups/control-center/`. Open `index.html` directly or use
-its documented query-string states; `assets/` contains the desktop/mobile PNG
-review set. `capture.mjs` regenerates those captures and `verify.mjs` checks the
-goal-led interaction, AI send confirmation, work-area dialog centering, and
-mobile overflow. This is still an approval-pending design artifact, not the
-React production implementation. Its sample progress, findings, and completion
-copy are representative only and must not become simulated production state.
+The production Control Center implementation and verification loop are complete.
+`npm test` passed 153 tests, `npm run test:browser` passed 14 tests,
+`release:check`, packed install, product repository checks, and `product-gate`
+passed. TraceCue self-review
+`site-review-2026-07-10T23-42-44-565Z-9f5d68d1` covered four routes in desktop
+and mobile, returned no findings, and set both quality and local release status
+to pass.
+
+The approved Control Center production mock is stored at
+`docs/design-system/mockups/control-center/`; its HTML and PNG set remain the
+design reference, while all progress/findings in the mock remain representative.
+The React/Vite production implementation now follows that reference using real
+persisted operations and real TraceCue state.
 
 The latest Control Center slice adds purpose-led ordinary navigation without
 replacing the existing product surfaces. The top level is `確認` (`confirm`),
@@ -21,14 +26,18 @@ actions, and CLI handoffs are preserved. Purpose titles map
 `大切な改善点を知りたい` to `standard`, `改善点を詳しく洗い出したい` to
 `deep`, and `重要な判断の前に念入りに確かめたい` to `xhigh`; the short
 labels are `大切な改善点を確認`, `詳しく確認`, and `念入りに確認`.
-Submission still creates only the existing local proposal. All eight existing
-Control Center action endpoints remain unchanged; there is no provider execution,
-browser execution, generic action endpoint, fake progress, synthetic finding,
-synthetic recheck, or evidence-free completion.
+Submission now prepares a real browser review and, when AI suggestions are on,
+an AHR proposal/plan. A one-time dialog names the configured service and exact
+evidence classes before one provider run. The original eight action endpoint
+paths remain unchanged; namespaced preferences and agentic-review endpoints are
+reported separately. There is no generic action, automatic retry, fake progress,
+synthetic finding, synthetic recheck, or evidence-free completion.
 
 Playwright Test regression evidence integration is implemented as a disabled-by-default, advisory-only CLI/API/Control Center surface. The current slice adds mode settings for `disabled`, `import_only`, `local_run`, and `external_ci`, local artifact import, normalized-result-only E2E review-material projection with non-engineer review cards, evidence-quality limits, baseline comparison, and standard/deep/xhigh review inputs, CLI-only explicit local-run planning/execution with plan-hash gating, read-only GitHub Actions artifact retrieval through `gh run list/view/download`, approved external-CI fetch settings with latest-successful-run resolution, schemas, focused tests, Control Center Regression/Settings UI, and design-system component metadata. Control Center read-model generation remains body-free and must not spawn processes, launch browsers, call `gh`, contact networks, download artifacts, read raw artifact bodies, or scan heavily. Playwright Test evidence remains local and must not mutate TraceCue review findings, Agentic Human Review proof, release gates, product gates, MCP exposure, or remote CI state.
 
-TraceCue Control Center source intake, display-language settings, and Playwright Test regression actions are implemented as bounded local browser actions on top of the read-only dashboard model. `/api/dashboard` remains GET-only and body-free. `/api/source-intake/proposal` requires an explicit confirmation token, accepts only workspace-relative source text and optional evidence/index paths, reuses the Agentic Human Review proposal path, writes local non-executing proposal artifacts, and suppresses full source text and chunk text from normal UI output. `/api/settings/display-language` requires an explicit confirmation token and writes only the Control Center display locale to the fixed `ops/DASHBOARD_SETTINGS.json` path. The approved Playwright Test browser actions are mode selection, workspace-confined result import, approved external-CI settings, and explicitly confirmed read-only existing CI artifact fetch. The React/Vite app now has Intake, Regression, and Settings action surfaces, uses the product-local design system and locale policy, and still exposes no provider execution, shell execution, MCP JSON-RPC, browser automation, Control Center local-run button, cleanup execution, external upload, CI trigger/rerun/cancel, or gate mutation.
+Control Center operations persist under the configured workspace-confined
+artifact root, defaulting to `.browser-debug/control-center-agentic-reviews/`.
+Public output contains no local paths, hashes, provider/model ids, credential values, request bodies, or raw provider responses. Credentials remain environment-only. Duplicate starts fail, a restart during uncertain dispatch becomes `dispatch_unknown` without automatic retry, decisions persist per finding, and recheck/deeper create linked operations with new browser evidence. AI output remains advisory and cannot mutate deterministic findings, proof contracts, owner authority, or release gates.
 
 Agentic Human Review dogfood evidence-pack summarization and review-pack projection are implemented as read-only owner-review surfaces. `agentic review dogfood evidence-pack summarize` accepts a workspace-confined dogfood evidence-pack manifest, evidence-set manifest, evidence-set output, or supported runtime wrapper, reuses evidence-set, claim-readiness, longitudinal-quality, claim-standard-gate, and owner-review-context logic, and emits `agentic_human_review_dogfood_evidence_pack_summary` with matrix status, owner-review digest, claim-review status, and advisory regeneration handoff. `agentic review dogfood evidence-pack review-pack` reuses the same preparation path and emits `agentic_human_review_dogfood_review_pack` with owner-facing status, standard/deep/xhigh matrix badges, grouped blockers, top owner actions, trust/safety flags, and pathless advanced references. The outputs suppress detailed result paths, source paths, raw hash values in review packs, raw provider responses, credential values, full source text, chunk text, candidate/reference prose, and concrete rerun commands. They do not call providers, read credentials, transfer evidence externally, write artifacts, launch browsers, expose MCP execution, automatically rerun commands, mutate deterministic findings, change release gates, satisfy proof contracts, or authorize human-equivalent or human-superior claims.
 

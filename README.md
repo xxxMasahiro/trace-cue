@@ -85,6 +85,24 @@ For CLI review, run `target init`, edit the target manifest in the consumer repo
 
 Before browser review, run the target app's full local stack needed for the reviewed state. Frontend-only dev servers can correctly produce `needs_attention` or browser-health findings when required API/backend endpoints are not running.
 
+### Local Review Center
+
+Build and start the loopback-only React/Vite review center:
+
+```bash
+npm run control-center:build
+TRACE_CUE_CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NAME="Review AI" \
+TRACE_CUE_CONTROL_CENTER_AGENTIC_REVIEW_PROVIDER="generic-api-provider" \
+node ./bin/trace-cue.js control-center serve --port 4174
+```
+
+When AI suggestions are enabled, configure the existing Agentic Human Review
+provider boundary separately with its environment variables. The browser UI
+does not accept credentials, provider ids, model ids, endpoints, paths, hashes,
+or transfer flags. It displays the configured service and transferable evidence
+before issuing a single-use confirmation. Disabling AI suggestions keeps the
+page review local.
+
 ## Local CLI
 
 ```bash

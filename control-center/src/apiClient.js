@@ -1,15 +1,66 @@
 export async function fetchDashboard() {
-  const response = await fetch('/api/dashboard', {
+  const envelope = await requestJson('/api/dashboard', {
     method: 'GET',
-    headers: { Accept: 'application/json' },
     cache: 'no-store'
   });
-  const body = await response.json();
-  if (!response.ok || body.status === 'error') {
-    const message = body.errors?.[0]?.message ?? body.error?.message ?? 'The local read-only dashboard could not be loaded.';
-    throw new Error(message);
-  }
-  return body.data.control_center;
+  return envelope.data?.control_center ?? envelope.control_center ?? envelope.data ?? envelope;
+}
+
+export async function prepareAgenticReview(payload) {
+  return reviewData(await requestJson('/api/agentic-review/prepare', postOptions(payload)));
+}
+
+export async function fetchAgenticReviewConfirmation(reviewId) {
+  return reviewData(await requestJson('/api/agentic-review/confirmation', postOptions({
+    review_id: reviewId,
+    operation_id: reviewId,
+    id: reviewId
+  })));
+}
+
+export async function startAgenticReview(payload) {
+  const id = payload.review_id ?? payload.operation_id ?? payload.id;
+  return reviewData(await requestJson('/api/agentic-review/start', postOptions({
+    ...payload,
+    operation_id: id,
+    id,
+    nonce: payload.consent_token ?? payload.nonce,
+    revision: payload.consent_revision ?? payload.revision
+  })));
+}
+
+export async function fetchAgenticReviewStatus(reviewId) {
+  const query = new URLSearchParams({ id: reviewId });
+  const data = reviewData(await requestJson(`/api/agentic-review/status?${query}`, {
+    method: 'GET',
+    cache: 'no-store'
+  }));
+  return data.operation ?? data;
+}
+
+export async function saveAgenticReviewDecision(payload) {
+  const id = payload.review_id ?? payload.operation_id ?? payload.id;
+  return reviewData(await requestJson('/api/agentic-review/decision', postOptions({
+    ...payload,
+    operation_id: id,
+    id
+  })));
+}
+
+export async function repeatAgenticReview(payload) {
+  const id = payload.review_id ?? payload.operation_id ?? payload.id;
+  const mode = payload.repeat_kind ?? payload.mode;
+  return reviewData(await requestJson('/api/agentic-review/repeat', postOptions({
+    ...payload,
+    operation_id: id,
+    id,
+    mode
+  })));
+}
+
+export async function setControlCenterPreferences(payload) {
+  const envelope = await requestJson('/api/settings/control-center', postOptions(payload));
+  return envelope.data?.control_center_preferences ?? envelope.data?.control_center ?? envelope.data ?? envelope;
 }
 
 export async function createSourceIntakeProposal(payload) {
@@ -77,20 +128,53 @@ export async function fetchApprovedPlaywrightTestCiArtifact(payload) {
 }
 
 async function postJson(url, payload) {
-  const response = await fetch(url, {
+  try {
+    const envelope = await requestJson(url, postOptions(payload));
+    return { ok: true, envelope, message: '' };
+  } catch (error) {
+    const envelope = error.envelope ?? {};
+    const message = error.message ?? 'The local action could not be completed.';
+    return { ok: false, envelope, message };
+  }
+}
+
+function postOptions(payload) {
+  return {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json'
-    },
+    headers: { 'Content-Type': 'application/json' },
     cache: 'no-store',
     body: JSON.stringify(payload)
-  });
-  const envelope = await response.json();
-  const message = envelope.errors?.[0]?.message ?? envelope.error?.message ?? 'The local action could not be completed.';
-  return {
-    ok: response.ok,
-    envelope,
-    message
   };
+}
+
+async function requestJson(url, options) {
+  const response = await fetch(url, {
+    headers: { Accept: 'application/json', ...(options.headers ?? {}) },
+    ...options
+  });
+  let envelope;
+  try {
+    envelope = await response.json();
+  } catch {
+    envelope = {};
+  }
+  if (!response.ok || envelope.status === 'error') {
+    const message = envelope.errors?.[0]?.message
+      ?? envelope.error?.message
+      ?? 'The local action could not be completed.';
+    const error = new Error(message);
+    error.envelope = envelope;
+    throw error;
+  }
+  return envelope;
+}
+
+function reviewData(envelope) {
+  return envelope.data?.agentic_review
+    ?? envelope.data?.control_center_agentic_review
+    ?? envelope.data?.review
+    ?? envelope.data
+    ?? envelope.agentic_review
+    ?? envelope.review
+    ?? envelope;
 }

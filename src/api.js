@@ -301,6 +301,27 @@ export {
   runControlCenterSourceIntakeProposal
 } from './control-center-actions.js';
 export {
+  CONTROL_CENTER_AGENTIC_REVIEW_ARTIFACT_DIR,
+  CONTROL_CENTER_AGENTIC_REVIEW_DECISIONS,
+  CONTROL_CENTER_AGENTIC_REVIEW_ENDPOINTS,
+  CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_MODES,
+  CONTROL_CENTER_AGENTIC_REVIEW_SCHEMA_VERSION,
+  runControlCenterAgenticReviewConfirmation,
+  runControlCenterAgenticReviewDecision,
+  runControlCenterAgenticReviewList,
+  runControlCenterAgenticReviewPrepare,
+  runControlCenterAgenticReviewRepeat,
+  runControlCenterAgenticReviewStart,
+  runControlCenterAgenticReviewStatus
+} from './control-center-agentic-review-actions.js';
+export {
+  CONTROL_CENTER_PREFERENCES_CONFIRM,
+  CONTROL_CENTER_REVIEW_VIEWPORTS,
+  controlCenterPreferenceSummary,
+  readControlCenterPreferences,
+  runControlCenterSetPreferences
+} from './control-center-preferences.js';
+export {
   createControlCenterServer,
   resolveControlCenterServerConfig,
   runControlCenterServe,

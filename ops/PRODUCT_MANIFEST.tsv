@@ -12,6 +12,8 @@ product.mcp_bin	optional	all	all	bin/trace-cue-mcp.js	source	file_nonempty	workf
 product.source	required	all	all	src/cli.js	source	file_nonempty	workflow	CLI runtime entrypoint.
 product.public_api	optional	all	all	src/api.js	source	file_nonempty	workflow	Public local package API exports for reusable core functions.
 product.control_center_read_model	optional	all	all	src/control-center-read-model.js	source	file_nonempty	workflow	Read-only body-free browser status read model over existing TraceCue APIs.
+product.control_center_agentic_review	optional	all	all	src/control-center-agentic-review-actions.js	source	file_nonempty	workflow	Purpose-limited Control Center review operation broker over the existing approval-gated Agentic Human Review core.
+product.control_center_preferences	optional	all	all	src/control-center-preferences.js	source	file_nonempty	workflow	Fixed-path ordinary Control Center preferences with mandatory external-send confirmation.
 product.control_center_actions	optional	all	all	src/control-center-actions.js	source	file_nonempty	workflow	Confirmed local Control Center source-intake proposal, display-language settings, Playwright Test mode/import, approved external CI settings, and read-only external CI artifact fetch actions without provider, shell, MCP, browser, or external-transfer authority.
 product.control_center_server	optional	all	all	src/control-center-server.js	source	file_nonempty	workflow	Loopback-only server for built React/Vite browser assets, GET-only dashboard API, and bounded local action endpoints.
 product.playwright_test_integration	optional	all	all	src/playwright-test-integration.js	source	file_nonempty	workflow	Disabled-by-default Playwright Test mode, boundary, result artifact, and status contract helper.
@@ -56,6 +58,7 @@ product.supervisor	optional	all	all	src/supervisor.js	source	file_nonempty	workf
 product.target	optional	all	all	src/target.js	source	file_nonempty	workflow	Reusable target manifest generation and validation runtime.
 product.schemas	optional	all	all	schemas/review.schema.json	doc	file_nonempty	workflow	Public machine-readable schema files for review and adapter contracts.
 product.control_center_schema	optional	all	all	schemas/control-center-read-model.schema.json	doc	file_nonempty	workflow	Public schema for the read-only browser status read model.
+product.control_center_agentic_review_schema	optional	all	all	schemas/control-center-agentic-review.schema.json	doc	file_nonempty	workflow	Public schema for the safe Control Center Agentic Human Review operation projection.
 product.playwright_test_integration_schema	optional	all	all	schemas/playwright-test-integration.schema.json	doc	file_nonempty	workflow	Public schema for Playwright Test integration mode and boundary metadata.
 product.playwright_test_result_schema	optional	all	all	schemas/playwright-test-result.schema.json	doc	file_nonempty	workflow	Public schema for normalized advisory Playwright Test result output.
 product.playwright_test_local_run_plan_schema	optional	all	all	schemas/playwright-test-local-run-plan.schema.json	doc	file_nonempty	workflow	Public schema for Playwright Test local-run plans.

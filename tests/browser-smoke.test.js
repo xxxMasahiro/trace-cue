@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, cp, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,91 @@ import { startControlCenterServer } from '../src/api.js';
 const runBrowserSmoke = process.env.TRACE_CUE_BROWSER_SMOKE === '1' || process.env.BROWSER_DEBUG_BROWSER_SMOKE === '1';
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fixedNow = '2026-06-17T00:00:00.000Z';
+
+function controlCenterReviewContext(cwd) {
+  let operationId = 0;
+  return {
+    cwd,
+    now: () => new Date(fixedNow),
+    createId: () => `control-center-agentic-review-browser-${++operationId}`,
+    agenticReviewServiceName: 'Example Review AI',
+    agenticReviewProviderId: 'fake-provider',
+    async runReview() {
+      return {
+        status: 'ok', data: { findings: [] }, warnings: [], errors: [],
+        artifacts: [{ type: 'review_artifact_index', path: '.browser-debug/browser-review-index.json' }]
+      };
+    },
+    async runAgenticHumanReviewPropose() {
+      return {
+        status: 'ok', data: {}, warnings: [], errors: [],
+        artifacts: [{ type: 'agentic_human_review_proposal', path: '.browser-debug/proposal.json' }]
+      };
+    },
+    async runAgenticHumanReviewPlan() {
+      return {
+        status: 'ok',
+        data: {
+          agentic_human_review_plan: {
+            plan_hash: 'browser-plan-hash',
+            package_hash: 'browser-package-hash',
+            provider_capability_hash: 'browser-capability-hash',
+            provider: { id: 'fake-provider' },
+            model: { id: 'fake-model' },
+            surface: { id: 'browser-smoke' },
+            transfer_permissions: {
+              required_flags: ['allow-page-text', 'allow-url'],
+              classes: {
+                page_text: { included: true, required_for_execution: true },
+                url: { included: true, required_for_execution: true }
+              }
+            }
+          }
+        },
+        warnings: [], errors: [],
+        artifacts: [{ type: 'agentic_human_review_plan', path: '.browser-debug/plan.json' }]
+      };
+    },
+    async runAgenticHumanReviewRun() {
+      const relativePath = `.browser-debug/browser-advisory-${operationId}.json`;
+      await mkdir(path.join(cwd, '.browser-debug'), { recursive: true });
+      await writeFile(path.join(cwd, relativePath), `${JSON.stringify({
+        agentic_human_review_advisory: { status: 'completed' },
+        non_engineer_summary: { main_takeaway: 'Make the booking action easier to find.' },
+        agentic_human_review_findings: [
+          {
+            id: 'booking-action',
+            message: 'The booking action is easy to miss',
+            impact: 'First-time visitors may stop before booking.',
+            suggested_fix: 'Place the booking action near the first explanation.'
+          },
+          {
+            id: 'price-explanation',
+            message: 'The price explanation appears too late',
+            impact: 'Visitors may hesitate before choosing a plan.',
+            suggested_fix: 'Show a short price explanation beside the plan choice.'
+          }
+        ],
+        agentic_human_review_action_plan: { suggested_fixes: ['Move the booking action higher.'] },
+        owner_decision_requests: []
+      })}\n`, 'utf8');
+      return {
+        status: 'ok',
+        data: {
+          agentic_human_review_execution: {
+            boundary: {
+              provider_call_performed: true,
+              api_call_performed: true,
+              external_evidence_transfer: true
+            }
+          }
+        },
+        warnings: [], errors: [],
+        artifacts: [{ type: 'agentic_human_review_advisory', path: relativePath }]
+      };
+    }
+  };
+}
 
 test('observe captures a local file page with Playwright', { skip: !runBrowserSmoke }, async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-smoke-'));
@@ -73,14 +158,12 @@ test('observe captures a local file page with Playwright', { skip: !runBrowserSm
   assert.match(observationJson, /\[REDACTED\]/);
 });
 
-test('review center browser UI completes the goal-oriented preparation flow', { skip: !runBrowserSmoke }, async () => {
+test('review center completes prepare, consent, review, decision, repeat, and settings flows', { skip: !runBrowserSmoke }, async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-review-center-smoke-'));
   const builtAssets = path.join(repoRoot, 'dist', 'control-center');
   await access(builtAssets);
   await cp(builtAssets, path.join(cwd, 'dist', 'control-center'), { recursive: true });
-  await writeFile(path.join(cwd, 'transcript.txt'), 'A local source for the review preparation smoke test.\n', 'utf8');
-
-  const started = await startControlCenterServer({ port: 0 }, { cwd, now: fixedNow });
+  const started = await startControlCenterServer({ port: 0 }, controlCenterReviewContext(cwd));
   let browser = null;
   try {
     browser = await chromium.launch();
@@ -90,57 +173,80 @@ test('review center browser UI completes the goal-oriented preparation flow', { 
       if (message.type() === 'error') consoleErrors.push(message.text());
     });
     await page.goto(started.url, { waitUntil: 'networkidle' });
-    await page.locator('[data-testid="tc-cc-confirmation-list"]').waitFor();
+    await page.locator('[data-testid="tc-cc-home"]').waitFor();
     await page.getByRole('button', { name: /New review/ }).click();
-    await page.locator('[data-testid="tc-cc-new-check"]').waitFor();
-    const methodSelector = page.locator('[data-testid="tc-cc-review-method-selector"]');
+    await page.locator('[data-testid="tc-cc-new-review"]').waitFor();
+    const methodSelector = page.locator('.method-grid');
     assert.equal(await methodSelector.getByRole('radio').count(), 3);
     assert.equal(await methodSelector.getByRole('radio', { name: /improvements that matter most/i }).isChecked(), true);
+    assert.ok((await methodSelector.getByRole('radio').first().boundingBox()).width >= 24);
     assert.doesNotMatch(await methodSelector.innerText(), /\bstandard\b|\bdeep\b|\bxhigh\b/i);
-    await page.getByLabel('Source text file').fill('transcript.txt');
-    await page.getByLabel('What do you want to learn?').fill('Can a first-time reader understand the next action?');
-    await page.getByRole('checkbox', { name: /Prepare this review/ }).check();
+    await page.getByLabel('URL to review').fill('https://example.jp/reserve');
+    await page.getByLabel('What do you want to make easier?').fill('Help first-time visitors complete a booking without getting lost.');
     await page.getByRole('button', { name: 'Prepare review', exact: true }).click();
-    await page.getByRole('heading', { name: 'Review preparation is ready' }).waitFor();
-    const preparedText = await page.locator('.result-summary').innerText();
-    assert.match(preparedText, /Essential review/);
-    assert.doesNotMatch(preparedText, /\bstandard\b|\bdeep\b|\bxhigh\b/i);
-
-    await page.getByRole('button', { name: 'Prepare a more detailed review' }).click();
-    const dialog = page.locator('#deeper-dialog-title').locator('..');
-    await dialog.waitFor({ state: 'visible' });
+    const dialog = page.getByRole('dialog', { name: 'Start this review?' });
+    await dialog.waitFor();
+    assert.match(await dialog.innerText(), /Example Review AI/);
+    assert.match(await dialog.innerText(), /Visible page text/);
     const dialogBox = await dialog.boundingBox();
-    assert.equal(Math.round(dialogBox.x + (dialogBox.width / 2)), 836);
-    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    const workspaceBox = await page.locator('.workspace').boundingBox();
+    assert.ok(Math.abs((dialogBox.x + (dialogBox.width / 2)) - (workspaceBox.x + (workspaceBox.width / 2))) <= 2);
+    await dialog.getByRole('button', { name: 'Start review', exact: true }).click();
+
+    const workspace = page.locator('[data-testid="tc-cc-review-workspace"]');
+    await workspace.waitFor();
+    await page.getByRole('heading', { name: 'The booking action is easy to miss' }).waitFor({ timeout: 10_000 });
+    assert.equal(await page.getByRole('button', { name: /Fix this/ }).getAttribute('class'), '');
+    await page.getByRole('button', { name: /Fix this/ }).click();
+    await page.getByRole('heading', { name: 'The price explanation appears too late' }).waitFor();
+    await page.getByRole('button', { name: /Ask someone/ }).click();
+    await page.getByRole('heading', { name: 'All improvements have a decision' }).waitFor();
+    const completedOperation = await page.evaluate(async () => {
+      const id = new URLSearchParams(window.location.search).get('item');
+      return (await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json()).data.control_center_agentic_review.operation;
+    });
+    assert.equal(completedOperation.decisions.length, 2);
+    assert.equal(completedOperation.stage, 'complete');
+
+    await page.getByRole('button', { name: 'Review in more detail' }).click();
+    await page.getByRole('heading', { name: /example\.jp/ }).waitFor();
+    await page.getByRole('heading', { name: 'The review is ready to start' }).waitFor({ timeout: 10_000 });
+    const repeatedOperation = await page.evaluate(async () => {
+      const id = new URLSearchParams(window.location.search).get('item');
+      return (await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json()).data.control_center_agentic_review.operation;
+    });
+    assert.equal(repeatedOperation.review_effort, 'deep');
+    assert.equal(repeatedOperation.parent_review.repeat_mode, 'deeper');
 
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    const settingsHub = page.locator('[data-testid="tc-cc-settings-hub"]');
+    const settingsHub = page.locator('[data-testid="tc-cc-settings"]');
     await settingsHub.waitFor();
     const settingsBox = await settingsHub.boundingBox();
     assert.equal(Math.round(settingsBox.width), 760);
     assert.equal(await settingsHub.locator('h1').evaluate((element) => getComputedStyle(element).fontSize), '30px');
     assert.equal(await settingsHub.locator('h1').evaluate((element) => getComputedStyle(element).outlineStyle), 'none');
-    assert.equal(await settingsHub.locator('.setting-copy span').first().evaluate((element) => getComputedStyle(element).fontSize), '14px');
-    assert.equal(Math.round((await settingsHub.locator('.select-control').first().boundingBox()).height), 48);
+    assert.equal(await settingsHub.locator('.setting-row p').first().evaluate((element) => getComputedStyle(element).fontSize), '14px');
+    assert.equal(Math.round((await settingsHub.locator('select').first().boundingBox()).height), 48);
     assert.equal(await settingsHub.locator('.panel').count(), 0);
     assert.equal(await settingsHub.locator('.primary-action').count(), 1);
     const settingsText = await settingsHub.innerText();
     assert.doesNotMatch(settingsText, /Language state|Settings storage|Diagnostics|Target policy|Max age hours/);
     assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
 
-    await page.locator('[data-testid="tc-cc-settings-playwright-test-mode"] select').selectOption('local_run');
-    const modeText = await page.locator('[data-testid="tc-cc-settings-playwright-test-mode"]').innerText();
-    assert.match(modeText, /command line/);
+    await page.getByLabel('Automated checks').selectOption('local_run');
     assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
-
-    await settingsHub.locator('select').first().selectOption('ja');
+    await page.getByLabel('Display language').selectOption('ja');
     await page.getByRole('button', { name: /Save settings|設定を保存/ }).click();
-    await page.getByRole('button', { name: '確認', exact: true }).click();
-    await page.getByRole('heading', { name: '確認', exact: true }).waitFor();
+    await page.getByText('設定を保存しました', { exact: true }).waitFor();
+    const savedDashboard = await page.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
+    assert.equal(savedDashboard.settings.display_language.current_locale, 'ja');
+    assert.equal(savedDashboard.settings.playwright_test.selected_mode, 'local_run');
+    assert.equal(savedDashboard.settings.control_center.external_send_confirmation_required, true);
 
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: '確認', exact: true }).click();
     await page.getByRole('button', { name: /新しく確認/ }).click();
-    await page.locator('[data-testid="tc-cc-new-check"]').waitFor();
+    await page.locator('[data-testid="tc-cc-new-review"]').waitFor();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert.equal(overflow, 0);
     assert.equal(consoleErrors.length, 0);

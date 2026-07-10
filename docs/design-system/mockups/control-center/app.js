@@ -9,7 +9,7 @@ const query = new URLSearchParams(window.location.search);
 const state = {
   screen: validScreens.has(query.get("screen")) ? query.get("screen") : "home",
   method: "standard",
-  decision: "fix",
+  decision: null,
   aiSuggestions: true,
 };
 
