@@ -927,3 +927,46 @@ When full replacement repair is exhausted and the remaining contract failure is 
 The React surface lives under `control-center/`. It imports the product-local design-system JSON from `docs/design-system/`, maps those tokens to CSS custom properties, and uses the same read model that the CLI emits. The UI has seven compact views: Intake, Review, Regression, Evidence, Findings, Settings, and Advanced. Intake creates local non-executing proposal artifacts from source text. Regression shows Playwright Test status, compact review material, local result import, approved external-CI policy summary/fetch, and manual exact CI artifact fetch without local-run buttons or CI triggers. Settings changes only Control Center chrome language across the supported 14-locale policy and Playwright Test mode selection without execution. Review shows the status, next action, top owner actions, and trust/safety strip. Evidence shows owner-review matrix rows when supplied and visual review result summaries. Findings shows advisory finding counts, owner decision requests, and grouped blockers. Advanced shows source status, inert command handoff text, and design-system metadata.
 
 The browser surface is intentionally not a landing page, generic command launcher, schema browser, provider console, artifact browser, raw JSON viewer, or review execution plane. Future UI expansion must preserve the read-only dashboard boundary and require separate approved execution contracts before adding provider, shell, cleanup, browser, MCP write/execute, external transfer, or gate-affecting authority.
+
+### Purpose-Led Control Center Projection
+
+The production Control Center adds an ordinary purpose-led projection without
+replacing the existing seven compact views or their read-model fields. The top
+navigation contains `確認` (`confirm`), `進行中` (`running`), and `設定`
+(`settings`). Regression, Evidence, Findings, and Advanced remain mounted as existing detail destinations behind an
+explicit details navigation group. Their existing import, approved external-CI,
+evidence matrix, finding, blocker, command-handoff, and diagnostic behavior
+remains compatible.
+
+The ordinary workflow renders five stage labels: `準備` (`prepare`), `確認`
+(`review`), `判断` (`decide`), `再確認` (`recheck`), and `完了` (`complete`).
+Stage state is derived only from the current
+`control_center` read model. The React client does not create timers, optimistic
+percentages, sample findings, synthetic decisions, synthetic recheck results,
+or client-only completion. When the read model does not support a stage, the UI
+shows a plain unavailable or next-step state instead of simulating progress.
+
+The source-intake effort control preserves the existing request field and enum.
+It maps `standard` to the selection title `大切な改善点を知りたい` and short
+label `大切な改善点を確認`, `deep` to `改善点を詳しく洗い出したい` and
+`詳しく確認`, and `xhigh` to `重要な判断の前に念入りに確かめたい` and
+`念入りに確認`. These labels select proposal scope only. Submission still
+calls only `/api/source-intake/proposal`, requires the existing confirmation,
+and returns a local non-executing proposal summary. It does not call a provider,
+launch a browser, create an Agentic Human Review plan, run a review, or claim
+completion.
+
+The purpose-led slice adds no POST endpoint and preserves the exact existing
+eight-action allowlist: `/api/source-intake/proposal`,
+`/api/settings/display-language`, `/api/playwright-test/mode`,
+`/api/playwright-test/import`, `/api/playwright-test/external-ci/fetch`,
+`/api/playwright-test/external-ci/suggest-settings`,
+`/api/playwright-test/external-ci/approve-settings`, and
+`/api/playwright-test/external-ci/fetch-approved`. Client primary actions outside
+those existing forms are navigation-only. Free-form next-action text, command
+handoff text, paths, and status labels must never be converted into execution.
+
+The ordinary projection may declare Complete only when current structured local
+evidence supports completion with no unresolved blocker. Proposal readiness,
+advisory-only output, absent evidence, or `gate_effect=none` alone cannot produce
+a completed workflow state.

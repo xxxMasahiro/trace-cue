@@ -73,19 +73,48 @@ test('observe captures a local file page with Playwright', { skip: !runBrowserSm
   assert.match(observationJson, /\[REDACTED\]/);
 });
 
-test('review center browser UI renders regression settings from built assets', { skip: !runBrowserSmoke }, async () => {
+test('review center browser UI completes the goal-oriented preparation flow', { skip: !runBrowserSmoke }, async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-review-center-smoke-'));
   const builtAssets = path.join(repoRoot, 'dist', 'control-center');
   await access(builtAssets);
   await cp(builtAssets, path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  await writeFile(path.join(cwd, 'transcript.txt'), 'A local source for the review preparation smoke test.\n', 'utf8');
 
   const started = await startControlCenterServer({ port: 0 }, { cwd, now: fixedNow });
   let browser = null;
   try {
     browser = await chromium.launch();
-    const page = await browser.newPage();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const consoleErrors = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text());
+    });
     await page.goto(started.url, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'Regression', exact: true }).click();
+    await page.locator('[data-testid="tc-cc-confirmation-list"]').waitFor();
+    await page.getByRole('button', { name: /New review/ }).click();
+    await page.locator('[data-testid="tc-cc-new-check"]').waitFor();
+    const methodSelector = page.locator('[data-testid="tc-cc-review-method-selector"]');
+    assert.equal(await methodSelector.getByRole('radio').count(), 3);
+    assert.equal(await methodSelector.getByRole('radio', { name: /improvements that matter most/i }).isChecked(), true);
+    assert.doesNotMatch(await methodSelector.innerText(), /\bstandard\b|\bdeep\b|\bxhigh\b/i);
+    await page.getByLabel('Source text file').fill('transcript.txt');
+    await page.getByLabel('What do you want to learn?').fill('Can a first-time reader understand the next action?');
+    await page.getByRole('checkbox', { name: /Prepare this review/ }).check();
+    await page.getByRole('button', { name: 'Prepare review', exact: true }).click();
+    await page.getByRole('heading', { name: 'Review preparation is ready' }).waitFor();
+    const preparedText = await page.locator('.result-summary').innerText();
+    assert.match(preparedText, /Essential review/);
+    assert.doesNotMatch(preparedText, /\bstandard\b|\bdeep\b|\bxhigh\b/i);
+
+    await page.getByRole('button', { name: 'Prepare a more detailed review' }).click();
+    const dialog = page.locator('#deeper-dialog-title').locator('..');
+    await dialog.waitFor({ state: 'visible' });
+    const dialogBox = await dialog.boundingBox();
+    assert.equal(Math.round(dialogBox.x + (dialogBox.width / 2)), 836);
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByText('Automated test results', { exact: true }).click();
     await page.locator('[data-testid="tc-cc-playwright-test-regression-page"]').waitFor();
     await page.locator('[data-testid="tc-cc-approved-ci-policy-summary"]').waitFor();
     const regressionText = await page.locator('[data-testid="tc-cc-playwright-test-regression-page"]').innerText();
@@ -93,11 +122,22 @@ test('review center browser UI renders regression settings from built assets', {
     assert.match(regressionText, /Max age hours/);
     assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
 
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page.locator('[data-testid="tc-cc-settings-playwright-test-mode"] select').selectOption('local_run');
     const modeText = await page.locator('[data-testid="tc-cc-settings-playwright-test-mode"]').innerText();
     assert.match(modeText, /CLI only/);
     assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
+
+    await page.locator('.settings-hub > .page-grid').first().locator('select').first().selectOption('ja');
+    await page.getByRole('button', { name: /Save language|言語を保存/ }).click();
+    await page.getByRole('button', { name: '確認', exact: true }).click();
+    await page.getByRole('heading', { name: '確認', exact: true }).waitFor();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: /新しく確認/ }).click();
+    await page.locator('[data-testid="tc-cc-new-check"]').waitFor();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.equal(overflow, 0);
+    assert.equal(consoleErrors.length, 0);
   } finally {
     if (browser) {
       await browser.close();

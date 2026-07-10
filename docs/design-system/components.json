@@ -18,6 +18,26 @@
       "contract": ["Keep the local review center dense, readable, evidence-focused, and free of decorative controls."]
     },
     {
+      "id": "control-center-purpose-navigation",
+      "tokens": ["background", "surface", "line", "foreground", "muted", "accent"],
+      "contract": ["Show exactly three ordinary destinations: 確認 (confirm), 進行中 (running), and 設定 (settings); keep Regression, Evidence, Findings, and Advanced reachable through an explicit details group without removing their existing behavior."]
+    },
+    {
+      "id": "control-center-work-stage",
+      "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "warning"],
+      "contract": ["Summarize 準備 (prepare), 確認 (review), 判断 (decide), 再確認 (recheck), and 完了 (complete) from current read-model truth only; never simulate progress, findings, recheck results, or completion."]
+    },
+    {
+      "id": "control-center-purpose-effort",
+      "tokens": ["surface", "line", "foreground", "muted", "accent"],
+      "contract": ["Map the titles 大切な改善点を知りたい, 改善点を詳しく洗い出したい, and 重要な判断の前に念入りに確かめたい plus the short labels 大切な改善点を確認, 詳しく確認, and 念入りに確認 to standard, deep, and xhigh while preserving the exact canonical effort in the existing proposal request and never implying provider or browser execution."]
+    },
+    {
+      "id": "control-center-focused-workspace",
+      "tokens": ["background", "surface", "line", "foreground", "muted", "accent", "success", "warning", "danger"],
+      "contract": ["Keep one current goal, one primary safe action, adjacent truthful status, and one result or empty state in the ordinary workspace; route technical details to the retained detail destinations."]
+    },
+    {
       "id": "source-intake-form",
       "tokens": ["background", "surface", "line", "foreground", "muted", "accent"],
       "contract": ["Collect only the source text path, source type, review goal, review depth, optional context, and explicit local-write confirmation."]

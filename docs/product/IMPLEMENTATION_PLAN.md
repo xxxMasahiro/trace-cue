@@ -9,6 +9,52 @@
 
 ## Phase Plan
 
+### Control Center Purpose-Led Production Slice
+
+Purpose: make the existing bounded Control Center usable as a non-engineer
+navigation system by leading from the user's goal and completion condition while
+preserving every existing detail surface, CLI capability, read-model field, and
+security boundary.
+
+Implemented scope: add three ordinary top-level destinations for `確認`
+(`confirm`), `進行中` (`running`), and `設定` (`settings`); add a five-stage
+`準備` (`prepare`), `確認` (`review`), `判断` (`decide`), `再確認` (`recheck`),
+and `完了` (`complete`) projection derived only from current read-model state;
+add purpose-led
+effort selection that preserves canonical `standard`, `deep`, and `xhigh`
+proposal values; use the approved titles `大切な改善点を知りたい`,
+`改善点を詳しく洗い出したい`, and `重要な判断の前に念入りに確かめたい`
+with short labels `大切な改善点を確認`, `詳しく確認`, and `念入りに確認`;
+keep Regression, Evidence, Findings, and Advanced reachable through explicit
+details navigation; keep the existing source-intake proposal, Regression, and
+Settings actions; and keep all existing CLI behavior compatible.
+
+Compatibility boundary: preserve the exact eight existing Control Center action
+endpoints and confirmations. The purpose-led UI adds no provider execution,
+browser execution, visual review execution, Agentic Human Review plan/run,
+generic action endpoint, shell, MCP JSON-RPC, cleanup, credential input,
+external upload, CI mutation, gate mutation, or automatic completion. Effort
+selection and submission create only the existing local non-executing proposal.
+The UI must not use fake progress timers, percentages, findings, decisions,
+recheck outcomes, or completion states.
+
+Implementation order: freeze compatibility assertions for the existing eight
+actions and existing Regression/Evidence/Findings/Advanced projections; add the
+purpose-led navigation and focused ordinary workspace; map purpose labels to
+canonical proposal efforts; derive all five stage states from existing structured
+read-model truth; retain detail routes and existing forms; complete ordinary UI
+localization; update design-system component contracts; extend desktop/mobile,
+keyboard, focus, no-overflow, no-fake-progress, detail-reachability, and action
+allowlist tests; synchronize product, workflow, security, verification, changelog,
+and manifest records; then run focused tests, the full no-browser suite, Control
+Center build/browser smoke, package checks, product document/security/structure/
+design checks, product gate, and diff checks.
+
+Recovery: the slice is additive presentation and navigation. Reverting the
+purpose-led components and contracts restores the prior seven-view navigation
+without artifact migration, endpoint changes, credential cleanup, provider-policy
+changes, MCP changes, CLI changes, Regression data loss, or release-gate changes.
+
 ### Playwright Test Integration Roadmap 1-18
 
 Purpose: let TraceCue show and manage Playwright Test regression evidence from the Control Center and CLI while keeping browser execution, CI interaction, and review gates under explicit user control.

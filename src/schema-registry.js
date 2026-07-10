@@ -111,6 +111,93 @@ const ownerReviewContextSchema = {
   additionalProperties: true
 };
 
+const controlCenterActivitySchema = {
+  type: 'object',
+  required: ['status', 'items', 'counts', 'empty', 'limit', 'truncated', 'projection', 'boundary'],
+  properties: {
+    status: { enum: ['empty', 'available'] },
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'source', 'state', 'status_label', 'title', 'updated_at', 'finding_count', 'owner_decision_count', 'navigation', 'can_execute', 'gate_effect'],
+        properties: {
+          id: { type: 'string' },
+          source: { enum: ['agent_request', 'agent_workflow', 'agent_execution', 'visual_review', 'owner_review', 'playwright_test'] },
+          state: { enum: ['waiting', 'running', 'needs_attention', 'ready', 'blocked'] },
+          status_label: { type: 'string' },
+          title: { type: 'string' },
+          updated_at: { type: ['string', 'null'] },
+          finding_count: { type: 'number' },
+          owner_decision_count: { type: 'number' },
+          navigation: {
+            type: 'object',
+            required: ['destination', 'intent'],
+            properties: {
+              destination: { enum: ['running', 'work'] },
+              intent: { enum: ['inspect_progress', 'inspect_result'] }
+            },
+            additionalProperties: false
+          },
+          can_execute: { const: false },
+          gate_effect: { const: 'none' }
+        },
+        additionalProperties: false
+      }
+    },
+    counts: { type: 'object' },
+    empty: { type: 'boolean' },
+    limit: { type: 'number' },
+    truncated: { type: 'boolean' },
+    projection: {
+      type: 'object',
+      properties: {
+        summary_only: { const: true },
+        paths_included: { const: false },
+        commands_included: { const: false },
+        raw_bodies_included: { const: false },
+        navigation_only: { const: true }
+      },
+      additionalProperties: false
+    },
+    boundary: { type: 'object' }
+  },
+  additionalProperties: false
+};
+
+const controlCenterOperatorFlowSchema = {
+  type: 'object',
+  required: ['status', 'primary_destination', 'sections', 'navigation_only', 'action_execution_exposed', 'provider_execution_exposed', 'browser_execution_exposed', 'mcp_execution_exposed', 'gate_effect', 'boundary'],
+  properties: {
+    status: { const: 'available' },
+    primary_destination: { enum: ['confirm', 'new', 'work', 'running', 'settings'] },
+    sections: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'label_key', 'purpose_key', 'item_count', 'primary_navigation', 'navigation_only'],
+        properties: {
+          id: { enum: ['confirm', 'new', 'work', 'running', 'settings'] },
+          label_key: { type: 'string' },
+          purpose_key: { type: 'string' },
+          item_count: { type: 'number' },
+          primary_navigation: { type: 'boolean' },
+          navigation_only: { const: true }
+        },
+        additionalProperties: false
+      }
+    },
+    navigation_only: { const: true },
+    action_execution_exposed: { const: false },
+    provider_execution_exposed: { const: false },
+    browser_execution_exposed: { const: false },
+    mcp_execution_exposed: { const: false },
+    gate_effect: { const: 'none' },
+    boundary: { type: 'object' }
+  },
+  additionalProperties: false
+};
+
 const schemas = Object.freeze({
   envelope: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -142,6 +229,8 @@ const schemas = Object.freeze({
       generated_at: { type: 'string' },
       status: { enum: ['empty', 'ready', 'needs_attention', 'blocked', 'error'] },
       status_label: { type: 'string' },
+      activity: controlCenterActivitySchema,
+      operator_flow: controlCenterOperatorFlowSchema,
       review: { type: 'object' },
       evidence: { type: 'object' },
       findings: { type: 'object' },

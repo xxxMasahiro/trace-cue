@@ -12,9 +12,46 @@ import {
   runControlCenterStatus,
   startControlCenterServer
 } from '../src/api.js';
+import {
+  buildControlCenterActivity,
+  buildControlCenterOperatorFlow
+} from '../src/control-center-read-model.js';
 import { parseCliArgs } from '../src/parser.js';
+import { buildControlCenterViewModel } from '../control-center/src/controlCenterViewModel.js';
+import { createTranslator } from '../control-center/src/i18n.js';
+import { getNextReviewMethod, reviewMethodCopy } from '../control-center/src/reviewMethods.js';
+import { parseControlCenterRoute } from '../control-center/src/useControlCenterRoute.js';
 
 const fixedNow = '2026-06-17T00:00:00.000Z';
+
+test('control-center UI keeps effort ids internal and routes only to approved views', () => {
+  const { t } = createTranslator('ja');
+  assert.equal(reviewMethodCopy(t, 'standard').title, '大切な改善点を知りたい');
+  assert.equal(reviewMethodCopy(t, 'deep').title, '改善点を詳しく洗い出したい');
+  assert.equal(reviewMethodCopy(t, 'xhigh').title, '重要な判断の前に念入りに確かめたい');
+  assert.equal(getNextReviewMethod('standard').id, 'deep');
+  assert.equal(getNextReviewMethod('deep').id, 'xhigh');
+  assert.equal(getNextReviewMethod('xhigh'), null);
+  assert.deepEqual(parseControlCenterRoute('?page=confirm&view=new'), { page: 'confirm', view: 'new', itemId: null });
+  assert.deepEqual(parseControlCenterRoute('?page=unsupported&view=execute'), { page: 'confirm', view: 'list', itemId: null });
+
+  const viewModel = buildControlCenterViewModel({
+    settings: { display_language: { current_locale: 'ja' } },
+    activity: {
+      items: [
+        { id: 'agent_execution:1', source: 'agent_execution', state: 'running', finding_count: 0, owner_decision_count: 0 },
+        { id: 'visual_review:1', source: 'visual_review', state: 'ready', finding_count: 2, owner_decision_count: 1 }
+      ]
+    },
+    review: {},
+    evidence: {},
+    findings: {},
+    regression: {}
+  });
+  assert.equal(viewModel.runningItems.length, 1);
+  assert.equal(viewModel.runningItems[0].title, '実行中の作業');
+  assert.equal(viewModel.confirmationItems[1].reviewMethodId, null);
+});
 
 test('control-center status builds a read-only local read model', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-'));
@@ -32,9 +69,19 @@ test('control-center status builds a read-only local read model', async () => {
   const body = JSON.parse(result.stdout);
   assert.equal(body.command, 'control-center status');
   assert.equal(body.data.control_center.schema_version, '0.1.0');
-  assert.equal(body.data.control_center.control_center_read_model_version, '1.3.0');
+  assert.equal(body.data.control_center.control_center_read_model_version, '1.4.0');
   assert.equal(body.data.control_center.generated_at, fixedNow);
   assert.equal(body.data.control_center.status, 'empty');
+  assert.equal(body.data.control_center.activity.status, 'empty');
+  assert.equal(body.data.control_center.activity.empty, true);
+  assert.equal(body.data.control_center.activity.items.length, 0);
+  assert.equal(body.data.control_center.activity.counts.total, 0);
+  assert.equal(body.data.control_center.activity.projection.paths_included, false);
+  assert.equal(body.data.control_center.activity.projection.commands_included, false);
+  assert.equal(body.data.control_center.activity.projection.raw_bodies_included, false);
+  assert.equal(body.data.control_center.operator_flow.primary_destination, 'new');
+  assert.equal(body.data.control_center.operator_flow.navigation_only, true);
+  assert.equal(body.data.control_center.operator_flow.action_execution_exposed, false);
   assert.equal(body.data.control_center.review.visual_review.status, 'empty');
   assert.equal(body.data.control_center.source_intake.status, 'available');
   assert.equal(body.data.control_center.source_intake.supported_efforts.includes('xhigh'), true);
@@ -70,14 +117,129 @@ test('control-center status builds a read-only local read model', async () => {
   assert.equal(model.advanced.source_statuses.some((source) => source.source === 'playwrightTest'), true);
 });
 
-test('control-center schema is exported through the local schema registry', () => {
+test('control-center activity and operator flow stay summary-only and navigation-only', () => {
+  const activity = buildControlCenterActivity({
+    agentRequests: {
+      data: {
+        agent_requests: [{
+          package_id: 'request-1',
+          status: 'waiting_for_agent',
+          created_at: '2026-06-16T10:00:00.000Z',
+          package_path: '.browser-debug/agent-packages/request-1/packet.json',
+          next_step: 'run a command',
+          raw_body: 'untrusted body'
+        }]
+      }
+    },
+    agentWorkflows: {
+      data: {
+        agent_workflows: [{
+          id: 'workflow-1',
+          status: 'advisory_imported',
+          updated_at: '2026-06-16T11:00:00.000Z',
+          advisory_findings: 2,
+          owner_decision_requests: 1,
+          dashboard_handoff: { report_command: 'do not expose' }
+        }]
+      }
+    },
+    agentExecutions: {
+      data: {
+        agent_executions: [{
+          id: 'execution-1',
+          status: 'running',
+          evaluated_at: '2026-06-16T12:00:00.000Z',
+          execution_path: '.browser-debug/agent-executions/execution-1/execution.json'
+        }]
+      }
+    },
+    visual: {
+      results: [{
+        id: 'visual-1',
+        status: 'completed',
+        finding_count: 3,
+        owner_decision_requests: 0,
+        summary: 'raw visual review body'
+      }]
+    },
+    ownerReview: {
+      status: 'ready_for_owner_review',
+      can_owner_review_proceed: true,
+      overview: { blocked_group_count: 0 },
+      top_owner_actions: []
+    },
+    playwrightTest: {
+      status: 'needs_attention',
+      last_result: {
+        id: 'playwright-1',
+        status: 'failed',
+        failed_count: 1,
+        flaky_count: 0,
+        imported_at: '2026-06-16T13:00:00.000Z',
+        source_path: 'results/private.json'
+      }
+    }
+  });
+
+  assert.equal(activity.status, 'available');
+  assert.equal(activity.empty, false);
+  assert.equal(activity.items.length, 6);
+  assert.deepEqual(activity.counts, {
+    total: 6,
+    discovered_total: 6,
+    waiting: 1,
+    running: 1,
+    needs_attention: 3,
+    ready: 1,
+    blocked: 0,
+    by_source: {
+      agent_request: 1,
+      agent_workflow: 1,
+      agent_execution: 1,
+      visual_review: 1,
+      owner_review: 1,
+      playwright_test: 1
+    }
+  });
+  assert.equal(activity.items.every((item) => item.can_execute === false && item.gate_effect === 'none'), true);
+  assert.equal(activity.items.every((item) => ['running', 'work'].includes(item.navigation.destination)), true);
+  const serializedItems = JSON.stringify(activity.items);
+  assert.equal(serializedItems.includes('.browser-debug'), false);
+  assert.equal(serializedItems.includes('do not expose'), false);
+  assert.equal(serializedItems.includes('untrusted body'), false);
+  assert.equal(serializedItems.includes('results/private.json'), false);
+  assert.equal(serializedItems.includes('report_command'), false);
+  assert.equal(serializedItems.includes('raw_body'), false);
+
+  const operatorFlow = buildControlCenterOperatorFlow(activity);
+  assert.equal(operatorFlow.primary_destination, 'work');
+  assert.deepEqual(operatorFlow.sections.map((section) => section.id), ['confirm', 'new', 'work', 'running', 'settings']);
+  assert.equal(operatorFlow.sections.find((section) => section.id === 'running').item_count, 2);
+  assert.equal(operatorFlow.navigation_only, true);
+  assert.equal(operatorFlow.action_execution_exposed, false);
+  assert.equal(operatorFlow.provider_execution_exposed, false);
+  assert.equal(operatorFlow.browser_execution_exposed, false);
+  assert.equal(operatorFlow.mcp_execution_exposed, false);
+  assert.equal(operatorFlow.gate_effect, 'none');
+});
+
+test('control-center schema is exported through the local schema registry', async () => {
   const schema = getSchema('control_center_read_model');
+  const publicSchema = JSON.parse(await readFile('schemas/control-center-read-model.schema.json', 'utf8'));
   assert.equal(schema.title, 'TraceCue Control Center Read Model');
   assert.equal(schema.properties.boundary.properties.read_only.const, true);
   assert.equal(schema.properties.boundary.properties.provider_call_performed.const, false);
   assert.equal(schema.required.includes('source_intake'), true);
   assert.equal(schema.required.includes('regression'), true);
   assert.equal(schema.required.includes('settings'), true);
+  assert.equal(schema.required.includes('activity'), false);
+  assert.equal(schema.required.includes('operator_flow'), false);
+  assert.equal(typeof schema.properties.activity, 'object');
+  assert.equal(typeof schema.properties.operator_flow, 'object');
+  assert.deepEqual(schema.properties.activity.properties.status, publicSchema.properties.activity.properties.status);
+  assert.deepEqual(schema.properties.operator_flow.properties.primary_destination, publicSchema.properties.operator_flow.properties.primary_destination);
+  assert.equal(schema.properties.activity.properties.items.items.properties.can_execute.const, false);
+  assert.equal(schema.properties.operator_flow.properties.navigation_only.const, true);
 });
 
 test('control-center appearance is controlled by the product design-system files', async () => {
@@ -108,7 +270,7 @@ test('control-center appearance is controlled by the product design-system files
   }
 
   for (const tokenName of Object.keys(tokenData.tokens.color)) {
-    assert.match(designSystem, new RegExp(`--tc-color-${tokenName}`));
+    assert.match(designSystem, new RegExp(`--tc-color-${tokenName.replaceAll('_', '-')}`));
   }
   assert.match(designSystem, /--tc-font-ui/);
   assert.match(designSystem, /--tc-font-mono/);

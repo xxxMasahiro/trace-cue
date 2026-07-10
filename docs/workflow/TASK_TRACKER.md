@@ -2,6 +2,22 @@
 
 ## Current Status
 
+The Control Center purpose-led production slice is implemented as an additive
+ordinary navigation layer over the existing React/Vite application and read
+model. Ordinary users receive three top-level destinations, `確認` (`confirm`),
+`進行中` (`running`), and `設定` (`settings`), plus the five `準備` (`prepare`),
+`確認` (`review`), `判断` (`decide`), `再確認` (`recheck`), and `完了` (`complete`)
+work stages derived from current local evidence. Regression, Evidence,
+Findings, and Advanced remain reachable as detail destinations with their
+existing projections and bounded actions intact. Review effort uses the approved
+purpose titles `大切な改善点を知りたい`, `改善点を詳しく洗い出したい`, and
+`重要な判断の前に念入りに確かめたい`, with short labels
+`大切な改善点を確認`, `詳しく確認`, and `念入りに確認`, while preserving
+canonical `standard`, `deep`, and `xhigh` values in the existing proposal request.
+The slice preserves the exact existing eight action endpoints, creates proposals
+only, launches no provider or browser, adds no generic action endpoint, and uses
+no fake progress, findings, recheck result, or completion state.
+
 Playwright Test regression evidence integration is implemented as a disabled-by-default, advisory-only CLI/API/Control Center surface. TraceCue can import workspace-confined Playwright Test artifacts, project normalized results into non-engineer review cards plus standard/deep/xhigh review inputs, compare a current result with a normalized baseline, plan and explicitly run local Playwright Test from the CLI with plan-hash gating, fetch existing GitHub Actions artifacts through read-only `gh run list/view/download` commands with exact run/artifact selection, and use approved external-CI fetch settings to resolve the latest matching successful run before explicit download. The Control Center now includes Regression and Settings surfaces for mode selection, local import, compact review material, approved external-CI settings, and external CI artifact fetch, but it does not expose local browser execution. Results remain local and do not mutate TraceCue deterministic findings, Agentic Human Review proof, release gates, product gates, MCP profiles, or remote CI state.
 
 TraceCue Control Center source intake, display-language settings, and Playwright Test regression actions are implemented as bounded local browser actions on top of the read-only dashboard model. `/api/dashboard` remains GET-only and body-free. `/api/source-intake/proposal` requires an explicit confirmation token, accepts only workspace-relative source text and optional evidence/index paths, reuses the Agentic Human Review proposal path, writes local non-executing proposal artifacts, and suppresses full source text and chunk text from normal UI output. `/api/settings/display-language` requires an explicit confirmation token and writes only the Control Center display locale to the fixed `ops/DASHBOARD_SETTINGS.json` path. The React/Vite app now has Intake, Regression, and Settings views, uses the product-local design system and locale policy, and still exposes no provider execution, shell execution, MCP JSON-RPC, browser automation, Control Center local-run button, cleanup execution, external upload, CI trigger/rerun/cancel, or gate mutation.

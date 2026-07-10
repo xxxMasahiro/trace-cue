@@ -13,8 +13,18 @@ import { buildPlaywrightTestRegressionSummary } from './playwright-test-regressi
 import { runResourceStatus } from './resource-status.js';
 import { runVisualReviewDashboard } from './visual-review-dashboard.js';
 
-const CONTROL_CENTER_READ_MODEL_VERSION = '1.3.0';
+const CONTROL_CENTER_READ_MODEL_VERSION = '1.4.0';
 const DEFAULT_RESULT_LIMIT = 5;
+const DEFAULT_ACTIVITY_LIMIT = 50;
+const ACTIVITY_STATES = Object.freeze(['waiting', 'running', 'needs_attention', 'ready', 'blocked']);
+const ACTIVITY_SOURCES = Object.freeze([
+  'agent_request',
+  'agent_workflow',
+  'agent_execution',
+  'visual_review',
+  'owner_review',
+  'playwright_test'
+]);
 
 export function controlCenterBoundary() {
   return {
@@ -110,6 +120,15 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
   const playwrightSummary = summarizePlaywrightTest(playwrightTest, actionCapabilities);
   const status = overallStatus({ visual: visualSummary, ownerReview: ownerSummary, errors });
   const nextActions = buildNextActions({ status, visual: visualSummary, ownerReview: ownerSummary, resources });
+  const activity = buildControlCenterActivity({
+    agentRequests,
+    agentWorkflows,
+    agentExecutions,
+    visual: visualSummary,
+    ownerReview: ownerSummary,
+    playwrightTest: playwrightSummary
+  });
+  const operatorFlow = buildControlCenterOperatorFlow(activity);
 
   return {
     schema_version: SCHEMA_VERSION,
@@ -121,6 +140,8 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
       generated_at: now.toISOString(),
       stale: false
     },
+    activity,
+    operator_flow: operatorFlow,
     review: {
       can_owner_review_proceed: ownerSummary.can_owner_review_proceed,
       next_action: nextActions[0] ?? fallbackAction(status),
@@ -180,6 +201,339 @@ export async function buildControlCenterReadModel(options = {}, context = {}) {
     boundary: controlCenterBoundary(),
     gate_effect: 'none'
   };
+}
+
+export function buildControlCenterActivity({
+  agentRequests = {},
+  agentWorkflows = {},
+  agentExecutions = {},
+  visual = {},
+  ownerReview = {},
+  playwrightTest = {}
+} = {}) {
+  const discoveredItems = [
+    ...activityItemsFromAgentRequests(agentRequests),
+    ...activityItemsFromAgentWorkflows(agentWorkflows),
+    ...activityItemsFromAgentExecutions(agentExecutions),
+    ...activityItemsFromVisualReview(visual),
+    ...activityItemsFromOwnerReview(ownerReview),
+    ...activityItemsFromPlaywrightTest(playwrightTest)
+  ].sort(compareActivityItems);
+  const items = discoveredItems.slice(0, DEFAULT_ACTIVITY_LIMIT);
+  const counts = activityCounts(items, discoveredItems.length);
+  return {
+    status: items.length > 0 ? 'available' : 'empty',
+    items,
+    counts,
+    empty: items.length === 0,
+    limit: DEFAULT_ACTIVITY_LIMIT,
+    truncated: discoveredItems.length > items.length,
+    projection: {
+      summary_only: true,
+      paths_included: false,
+      commands_included: false,
+      raw_bodies_included: false,
+      navigation_only: true
+    },
+    boundary: controlCenterBoundary()
+  };
+}
+
+export function buildControlCenterOperatorFlow(activity = {}) {
+  const counts = activity.counts ?? activityCounts([]);
+  const runningCount = numberOrZero(counts.running) + numberOrZero(counts.waiting);
+  const workCount = numberOrZero(counts.needs_attention) + numberOrZero(counts.ready) + numberOrZero(counts.blocked);
+  const primaryDestination = numberOrZero(counts.needs_attention) + numberOrZero(counts.blocked) > 0
+    ? 'work'
+    : runningCount > 0
+      ? 'running'
+      : numberOrZero(counts.total) > 0
+        ? 'confirm'
+        : 'new';
+  return {
+    status: 'available',
+    primary_destination: primaryDestination,
+    sections: [
+      operatorSection('confirm', 'operator.confirm', 'operator.confirm.purpose', numberOrZero(counts.total), true),
+      operatorSection('new', 'operator.new', 'operator.new.purpose', 0, false),
+      operatorSection('work', 'operator.work', 'operator.work.purpose', workCount, false),
+      operatorSection('running', 'operator.running', 'operator.running.purpose', runningCount, true),
+      operatorSection('settings', 'operator.settings', 'operator.settings.purpose', 0, true)
+    ],
+    navigation_only: true,
+    action_execution_exposed: false,
+    provider_execution_exposed: false,
+    browser_execution_exposed: false,
+    mcp_execution_exposed: false,
+    gate_effect: 'none',
+    boundary: controlCenterBoundary()
+  };
+}
+
+function activityItemsFromAgentRequests(source) {
+  const requests = source.data?.agent_requests ?? source.agent_requests ?? [];
+  return arrayOf(requests).map((request, index) => {
+    const state = activityStateForAdvisory(request.status, request);
+    return activityItem({
+      source: 'agent_request',
+      sourceId: request.package_id,
+      index,
+      state,
+      title: 'Agent review request',
+      updatedAt: request.created_at,
+      findingCount: request.advisory_findings,
+      ownerDecisionCount: request.owner_decision_requests
+    });
+  });
+}
+
+function activityItemsFromAgentWorkflows(source) {
+  const workflows = source.data?.agent_workflows ?? source.agent_workflows ?? [];
+  return arrayOf(workflows).map((workflow, index) => {
+    const state = activityStateForAdvisory(workflow.status, workflow);
+    return activityItem({
+      source: 'agent_workflow',
+      sourceId: workflow.id,
+      index,
+      state,
+      title: 'Agent review workflow',
+      updatedAt: workflow.updated_at ?? workflow.created_at,
+      findingCount: workflow.advisory_findings,
+      ownerDecisionCount: workflow.owner_decision_requests
+    });
+  });
+}
+
+function activityItemsFromAgentExecutions(source) {
+  const executions = source.data?.agent_executions ?? source.agent_executions ?? [];
+  return arrayOf(executions).map((execution, index) => activityItem({
+    source: 'agent_execution',
+    sourceId: execution.id,
+    index,
+    state: activityStateForExecution(execution.status),
+    title: 'Agent execution',
+    updatedAt: execution.evaluated_at ?? execution.completed_at ?? execution.created_at
+  }));
+}
+
+function activityItemsFromVisualReview(visual) {
+  return arrayOf(visual.results).map((result, index) => activityItem({
+    source: 'visual_review',
+    sourceId: result.id,
+    index,
+    state: activityStateForReviewResult(result),
+    title: 'Visual review result',
+    updatedAt: result.updated_at ?? result.completed_at ?? result.created_at,
+    findingCount: result.finding_count,
+    ownerDecisionCount: result.owner_decision_requests
+  }));
+}
+
+function activityItemsFromOwnerReview(ownerReview) {
+  if (!ownerReview || ['disabled', undefined, null].includes(ownerReview.status)) {
+    return [];
+  }
+  return [activityItem({
+    source: 'owner_review',
+    sourceId: 'owner-review',
+    index: 0,
+    state: activityStateForOwnerReview(ownerReview),
+    title: 'Owner review',
+    findingCount: ownerReview.overview?.blocked_group_count,
+    ownerDecisionCount: arrayOf(ownerReview.top_owner_actions).length
+  })];
+}
+
+function activityItemsFromPlaywrightTest(playwrightTest) {
+  const result = playwrightTest.last_result;
+  const projection = playwrightTest.review_projection;
+  if (!result && !projection) {
+    return [];
+  }
+  const summary = projection?.result ?? result ?? {};
+  return [activityItem({
+    source: 'playwright_test',
+    sourceId: summary.id ?? 'latest',
+    index: 0,
+    state: activityStateForPlaywright(playwrightTest, summary),
+    title: 'Playwright Test result',
+    updatedAt: summary.completed_at ?? summary.imported_at ?? summary.created_at ?? summary.generated_at,
+    findingCount: summary.failed_count,
+    ownerDecisionCount: projection?.owner_summary?.owner_decision_count
+  })];
+}
+
+function activityItem({
+  source,
+  sourceId,
+  index,
+  state,
+  title,
+  updatedAt,
+  findingCount = 0,
+  ownerDecisionCount = 0
+}) {
+  const normalizedState = ACTIVITY_STATES.includes(state) ? state : 'needs_attention';
+  return {
+    id: `${source}:${safeActivityIdentifier(sourceId, index)}`,
+    source,
+    state: normalizedState,
+    status_label: activityStatusLabel(normalizedState),
+    title,
+    updated_at: safeTimestamp(updatedAt),
+    finding_count: numberOrZero(findingCount),
+    owner_decision_count: numberOrZero(ownerDecisionCount),
+    navigation: {
+      destination: ['waiting', 'running'].includes(normalizedState) ? 'running' : 'work',
+      intent: ['waiting', 'running'].includes(normalizedState) ? 'inspect_progress' : 'inspect_result'
+    },
+    can_execute: false,
+    gate_effect: 'none'
+  };
+}
+
+function activityStateForAdvisory(status, item = {}) {
+  if (status === 'package_missing') {
+    return 'blocked';
+  }
+  if (status === 'waiting_for_agent') {
+    return 'waiting';
+  }
+  if (status === 'advisory_imported') {
+    return numberOrZero(item.advisory_findings) + numberOrZero(item.owner_decision_requests) > 0
+      ? 'needs_attention'
+      : 'ready';
+  }
+  return activityStateForExecution(status);
+}
+
+function activityStateForExecution(status) {
+  const normalized = String(status ?? '').toLowerCase();
+  if (['running', 'in_progress', 'executing', 'started'].includes(normalized)) {
+    return 'running';
+  }
+  if (['waiting', 'pending', 'prepared', 'planned', 'queued', 'waiting_for_agent'].includes(normalized)) {
+    return 'waiting';
+  }
+  if (['completed', 'complete', 'ok', 'passed', 'succeeded', 'success'].includes(normalized)) {
+    return 'ready';
+  }
+  if (['blocked', 'error', 'failed', 'failure', 'package_missing'].includes(normalized)) {
+    return 'blocked';
+  }
+  return 'needs_attention';
+}
+
+function activityStateForReviewResult(result) {
+  if (['blocked', 'error', 'failed'].includes(result.status)) {
+    return 'blocked';
+  }
+  if (numberOrZero(result.finding_count) + numberOrZero(result.owner_decision_requests) > 0) {
+    return 'needs_attention';
+  }
+  return 'ready';
+}
+
+function activityStateForOwnerReview(ownerReview) {
+  if (['blocked', 'incomplete', 'error'].includes(ownerReview.status)) {
+    return 'blocked';
+  }
+  if (ownerReview.status === 'ready_for_owner_review' && ownerReview.can_owner_review_proceed === true) {
+    return 'ready';
+  }
+  return 'needs_attention';
+}
+
+function activityStateForPlaywright(playwrightTest, result) {
+  if (playwrightTest.status === 'error') {
+    return 'blocked';
+  }
+  if (numberOrZero(result.failed_count) + numberOrZero(result.flaky_count) > 0 || result.status === 'failed') {
+    return 'needs_attention';
+  }
+  return 'ready';
+}
+
+function activityCounts(items, discoveredTotal = items.length) {
+  const counts = {
+    total: items.length,
+    discovered_total: discoveredTotal,
+    waiting: 0,
+    running: 0,
+    needs_attention: 0,
+    ready: 0,
+    blocked: 0,
+    by_source: Object.fromEntries(ACTIVITY_SOURCES.map((source) => [source, 0]))
+  };
+  for (const item of items) {
+    if (ACTIVITY_STATES.includes(item.state)) {
+      counts[item.state] += 1;
+    }
+    if (ACTIVITY_SOURCES.includes(item.source)) {
+      counts.by_source[item.source] += 1;
+    }
+  }
+  return counts;
+}
+
+function compareActivityItems(left, right) {
+  const priority = {
+    needs_attention: 0,
+    blocked: 1,
+    running: 2,
+    waiting: 3,
+    ready: 4
+  };
+  const stateDelta = (priority[left.state] ?? 9) - (priority[right.state] ?? 9);
+  if (stateDelta !== 0) {
+    return stateDelta;
+  }
+  return timestampNumber(right.updated_at) - timestampNumber(left.updated_at)
+    || left.id.localeCompare(right.id);
+}
+
+function operatorSection(id, labelKey, purposeKey, itemCount, primaryNavigation) {
+  return {
+    id,
+    label_key: labelKey,
+    purpose_key: purposeKey,
+    item_count: itemCount,
+    primary_navigation: primaryNavigation,
+    navigation_only: true
+  };
+}
+
+function activityStatusLabel(state) {
+  return {
+    waiting: 'Waiting',
+    running: 'In progress',
+    needs_attention: 'Needs attention',
+    ready: 'Ready',
+    blocked: 'Blocked'
+  }[state] ?? 'Needs attention';
+}
+
+function safeActivityIdentifier(value, index) {
+  const text = String(value ?? '').trim();
+  if (/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/u.test(text)) {
+    return text;
+  }
+  return `item-${index + 1}`;
+}
+
+function safeTimestamp(value) {
+  if (!value || !Number.isFinite(Date.parse(value))) {
+    return null;
+  }
+  return new Date(value).toISOString();
+}
+
+function timestampNumber(value) {
+  return value ? Date.parse(value) || 0 : 0;
+}
+
+function arrayOf(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 async function runPlaywrightTestReadModel(artifactRoot, context) {
