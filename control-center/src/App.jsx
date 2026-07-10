@@ -517,16 +517,9 @@ function CheckWorkspace({ dashboard, onBack, t }) {
 
 function SettingsHub({ dashboard, locale, setLocale, reload, t }) {
   return (
-    <div className="screen settings-hub" data-testid="tc-cc-settings-hub">
+    <div className="screen narrow settings-hub" data-testid="tc-cc-settings-hub">
       <PageHeading title={t('settings.title', 'Settings')} />
       <SettingsPage dashboard={dashboard} locale={locale} setLocale={setLocale} reload={reload} t={t} />
-      <Disclosure className="settings-section" testId="tc-cc-regression-details" summary={t('settings.automaticChecks', 'Automatic test results')} hint={t('settings.automaticChecksHint', 'Import existing results or connect approved CI artifacts.')}>
-        <RegressionPage dashboard={dashboard} reload={reload} t={t} />
-      </Disclosure>
-      <Disclosure className="settings-section" summary={t('settings.diagnostics', 'Diagnostics')} hint={t('settings.diagnosticsHint', 'Source status, safe commands, and product details.')}>
-        <AdvancedPage dashboard={dashboard} />
-      </Disclosure>
-      <TrustSafety dashboard={dashboard} t={t} />
     </div>
   );
 }
@@ -541,7 +534,7 @@ function friendlyNextAction(dashboard, t) {
 }
 
 function friendlyActionError(_error, t) {
-  return t('action.genericError', 'Check the entered information and try again. Technical details remain available in Settings.');
+  return t('action.genericError', 'Check the entered information and try again.');
 }
 
 function sourceTypeLabel(sourceType, t) {
@@ -560,7 +553,10 @@ function sourceTypeLabel(sourceType, t) {
 function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
   const language = dashboard.settings?.display_language ?? {};
   const locales = language.supported_locales ?? [];
+  const playwright = dashboard.settings?.playwright_test ?? {};
+  const modes = playwright.supported_modes ?? ['disabled', 'import_only', 'local_run', 'external_ci'];
   const [selectedLocale, setSelectedLocale] = useState(locale);
+  const [selectedMode, setSelectedMode] = useState(playwright.selected_mode ?? 'disabled');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
@@ -569,132 +565,88 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
     setSelectedLocale(locale);
   }, [locale]);
 
+  useEffect(() => {
+    setSelectedMode(playwright.selected_mode ?? 'disabled');
+  }, [playwright.selected_mode]);
+
   async function submit(event) {
     event.preventDefault();
     setError(null);
     setStatus(null);
     setSaving(true);
     try {
-      const saved = await setDisplayLanguage({
-        locale: selectedLocale,
-        confirm: language.write_confirm
-      });
-      setLocale(saved.locale);
-      setStatus(t('settings.applied', 'Language saved'));
+      if (selectedLocale !== language.current_locale) {
+        const savedLanguage = await setDisplayLanguage({
+          locale: selectedLocale,
+          confirm: language.write_confirm
+        });
+        setLocale(savedLanguage.locale);
+      }
+      if (selectedMode !== playwright.selected_mode) {
+        await setPlaywrightTestMode({
+          mode: selectedMode,
+          confirm: playwright.write_confirm
+        });
+      }
+      setStatus(t('settings.saved', 'Settings saved'));
       await reload();
     } catch (saveError) {
-      setError(saveError.message);
+      setError(friendlyActionError(saveError, t));
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="page-grid">
-      <section className="panel">
-        <div className="panel-header-inline">
-          <div>
-            <p className="eyebrow">{t('settings.title', 'Settings')}</p>
-            <h2>{t('settings.languageTitle', 'Display language')}</h2>
-          </div>
-          <StatusBadge status={language.status ?? 'configured'} />
-        </div>
-        <p className="muted">{t('settings.languageCaption', 'This changes Control Center chrome only. It does not translate source evidence or generated review text.')}</p>
-        <form className="control-form compact" onSubmit={submit}>
-          <label>
-            {t('settings.language', 'Control Center language')}
-            <select aria-label={t('settings.language', 'Display language')} value={selectedLocale} onChange={(event) => {
-              setSelectedLocale(event.target.value);
-              setLocale(event.target.value);
-            }}>
+    <form className="settings-form" onSubmit={submit}>
+      <section className="settings-group" aria-labelledby="everyday-settings">
+        <h2 id="everyday-settings">{t('settings.everydayTitle', 'Everyday use')}</h2>
+        <div className="setting-row">
+          <label className="setting-copy" htmlFor="display-language">
+            <strong>{t('settings.languageRowTitle', 'Display language')}</strong>
+            <span>{t('settings.languageRowDescription', 'The language used on this screen.')}</span>
+          </label>
+          <div className="setting-control">
+            <select
+              id="display-language"
+              className="select-control"
+              value={selectedLocale}
+              onChange={(event) => {
+                setSelectedLocale(event.target.value);
+                setLocale(event.target.value);
+              }}
+            >
               {locales.map((item) => (
-                <option key={item.code} value={item.code}>
-                  {item.native_name} / {item.english_name}
-                </option>
+                <option key={item.code} value={item.code}>{item.native_name}</option>
               ))}
             </select>
-          </label>
-          <button className="primary-action" type="submit" disabled={saving}>
-            {saving ? 'Saving...' : t('settings.save', 'Save language')}
-          </button>
-        </form>
-        {status ? <StatePanel title={status} text={selectedLocale} /> : null}
-        {error ? <StatePanel title="Cannot save language" text={error} tone="danger" /> : null}
-      </section>
-      <section className="panel" data-testid="tc-cc-settings-persistence-status">
-        <h2>Language state</h2>
-        <dl className="definition-list">
-          <div><dt>{t('settings.current', 'Current locale')}</dt><dd>{language.current_locale ?? locale}</dd></div>
-          <div><dt>Intl</dt><dd>{language.intl_locale ?? 'en-US'}</dd></div>
-          <div><dt>{t('settings.direction', 'Text direction')}</dt><dd>{language.text_direction ?? 'ltr'}</dd></div>
-          <div><dt>{t('settings.storage', 'Settings storage')}</dt><dd>{language.settings_path ?? 'ops/DASHBOARD_SETTINGS.json'}</dd></div>
-          <div><dt>Translation</dt><dd>{language.translation_execution_enabled ? 'enabled' : 'disabled'}</dd></div>
-        </dl>
-      </section>
-      <PlaywrightModeSettings dashboard={dashboard} reload={reload} t={t} />
-    </div>
-  );
-}
-
-function PlaywrightModeSettings({ dashboard, reload, t }) {
-  const settings = dashboard.settings?.playwright_test ?? {};
-  const labels = settings.labels ?? {};
-  const modes = settings.supported_modes ?? ['disabled', 'import_only', 'local_run', 'external_ci'];
-  const [selectedMode, setSelectedMode] = useState(settings.selected_mode ?? 'disabled');
-  const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState(null);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    setSelectedMode(settings.selected_mode ?? 'disabled');
-  }, [settings.selected_mode]);
-
-  async function submit(event) {
-    event.preventDefault();
-    setError(null);
-    setStatus(null);
-    setSaving(true);
-    try {
-      const saved = await setPlaywrightTestMode({
-        mode: selectedMode,
-        confirm: settings.write_confirm
-      });
-      setStatus(`${saved.mode}`);
-      await reload();
-    } catch (saveError) {
-      setError(saveError.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <section className="panel" data-testid="tc-cc-settings-playwright-test-mode">
-      <div className="panel-header-inline">
-        <div>
-          <p className="eyebrow">{t('settings.title', 'Settings')}</p>
-          <h2>{t('settings.playwrightTitle', 'Playwright Test mode')}</h2>
+          </div>
         </div>
-        <StatusBadge status={settings.status ?? 'configured'} />
-      </div>
-      <p className="muted">{t('settings.playwrightCaption', 'This only changes how Control Center may use Playwright Test evidence. Saving does not run a browser or contact CI.')}</p>
-      <form className="control-form compact" onSubmit={submit}>
-        <label>
-          {t('settings.playwrightTitle', 'Playwright Test mode')}
-          <select aria-label={t('settings.playwrightTitle', 'Playwright Test mode')} value={selectedMode} onChange={(event) => setSelectedMode(event.target.value)}>
-            {modes.map((mode) => <option key={mode} value={mode}>{labels[mode] ?? mode}</option>)}
-          </select>
-        </label>
-        <p className="mode-note" data-testid="tc-cc-playwright-test-mode-note">
-          {playwrightModeNote(selectedMode, t)}
-        </p>
+        <div className="setting-row" data-testid="tc-cc-settings-playwright-test-mode">
+          <label className="setting-copy" htmlFor="playwright-test-mode">
+            <strong>{t('settings.playwrightTitle', 'Playwright Test mode')}</strong>
+            <span data-testid="tc-cc-playwright-test-mode-note">{playwrightModeNote(selectedMode, t)}</span>
+          </label>
+          <div className="setting-control">
+            <select
+              id="playwright-test-mode"
+              className="select-control"
+              value={selectedMode}
+              onChange={(event) => setSelectedMode(event.target.value)}
+            >
+              {modes.map((mode) => <option key={mode} value={mode}>{playwrightModeLabel(mode, t)}</option>)}
+            </select>
+          </div>
+        </div>
+      </section>
+      {status ? <p className="settings-feedback success" role="status">{status}</p> : null}
+      {error ? <p className="settings-feedback error" role="alert">{error}</p> : null}
+      <div className="settings-footer">
         <button className="primary-action" type="submit" disabled={saving}>
-          {saving ? t('common.saving', 'Saving...') : t('settings.playwrightSave', 'Save mode')}
+          {saving ? t('common.saving', 'Saving...') : t('settings.saveAll', 'Save settings')}
         </button>
-      </form>
-      {status ? <StatePanel title={t('settings.playwrightSaved', 'Mode saved')} text={status} /> : null}
-      {error ? <StatePanel title={t('settings.playwrightCannotSave', 'Cannot save mode')} text={error} tone="danger" /> : null}
-    </section>
+      </div>
+    </form>
   );
 }
 
@@ -1340,12 +1292,22 @@ function toneForStatus(status) {
 
 function playwrightModeNote(mode, t) {
   const notes = {
-    disabled: t('settings.playwrightModeDisabled', 'Disabled: Playwright Test evidence stays off. Existing TraceCue review behavior is unchanged.'),
-    import_only: t('settings.playwrightModeImportOnly', 'Import only: existing result files can be imported. Browsers and CI are not started.'),
-    local_run: t('settings.playwrightModeLocalRun', 'Local run: CLI only. The browser UI stores the mode but does not run Playwright Test.'),
-    external_ci: t('settings.playwrightModeExternalCi', 'External CI: existing GitHub Actions artifacts can be fetched with explicit confirmation. CI is not triggered.')
+    disabled: t('settings.playwrightModeDisabled', 'Do not use automatic test results.'),
+    import_only: t('settings.playwrightModeImportOnly', 'Review a result that has already been saved.'),
+    local_run: t('settings.playwrightModeLocalRun', 'Review a result from this computer. Starting the test still requires the command line.'),
+    external_ci: t('settings.playwrightModeExternalCi', 'Review a completed CI result.')
   };
-  return notes[mode] ?? t('settings.playwrightModeUnknown', 'This mode changes evidence handling only.');
+  return notes[mode] ?? t('settings.playwrightModeUnknown', 'Choose how to use automatic test results.');
+}
+
+function playwrightModeLabel(mode, t) {
+  const labels = {
+    disabled: t('settings.playwrightModeDisabledLabel', 'Do not use'),
+    import_only: t('settings.playwrightModeImportOnlyLabel', 'Use a saved result'),
+    local_run: t('settings.playwrightModeLocalRunLabel', 'Use a result from this computer'),
+    external_ci: t('settings.playwrightModeExternalCiLabel', 'Use a CI result')
+  };
+  return labels[mode] ?? mode;
 }
 
 function displayText(value, t) {

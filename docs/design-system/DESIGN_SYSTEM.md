@@ -12,7 +12,7 @@ TraceCue is primarily a command-line tool. The product may later generate HTML o
 
 TraceCue now includes a React + Vite local review center surface under `control-center/`. The surface imports `docs/design-system/tokens.json` and `docs/design-system/components.json` so colors, spacing, radius, fonts, and component contracts remain product-local design-system inputs instead of hard-coded one-off UI policy.
 
-The first browser surface keeps a compact operational layout: status, next action, evidence matrix, findings, and advanced diagnostics. It should stay dense, readable, and evidence-focused. It must not add decorative backgrounds, nested cards, marketing layout, raw JSON-first pages, command launchers, provider selectors, or execution controls.
+The browser surface follows the accepted Control Center prototype. Desktop uses a 232px navigation rail, an 1120px ordinary content width, and a 760px narrow form/settings width. The UI font stack is the operating-system sans serif stack with `Noto Sans JP`; body text is 16px, page titles are 30px, settings section titles are 19px, and supporting copy is 14px. Ordinary pages use white space and divider lines instead of stacked cards. It must not add decorative backgrounds, nested cards, marketing layout, raw JSON-first pages, command launchers, provider selectors, or execution controls.
 
 ## Purpose-Led Control Center
 
@@ -22,8 +22,9 @@ destination is the default purpose-led workspace. `running` shows only work
 supported by current read-model truth, and `settings` contains ordinary display
 and evidence-mode preferences. English locale labels remain Reviews, In
 progress, and Settings.
-Regression, Evidence, Findings, and Advanced remain reachable through an
-explicit details group and retain their existing data and bounded actions.
+Technical persistence state, paths, locale internals, diagnostic summaries,
+regression import forms, and CI policy details are not shown on the ordinary
+settings page. Their backend, CLI, API, and read-model contracts remain intact.
 
 The ordinary workflow may summarize five user stages: `準備` (`prepare`), `確認`
 (`review`), `判断` (`decide`), `再確認` (`recheck`), and `完了` (`complete`). A
@@ -43,5 +44,7 @@ a browser.
 
 Ordinary screens follow a focused source/action/result pattern: one current
 goal, one primary safe action, adjacent status, and one clear result or empty
-state. Technical paths, commands, evidence matrices, regression controls,
-diagnostics, and contract metadata stay in their existing detail destinations.
+state. Settings follows one continuous form: `表示する言葉`, a concise
+`Playwright Testモード`, and one `設定を保存` action. Status badges, duplicate
+headings, storage paths, locale codes, text-direction values, translation state,
+trust-boundary badges, and diagnostic disclosures stay out of this page.

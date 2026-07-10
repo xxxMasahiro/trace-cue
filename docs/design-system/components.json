@@ -60,17 +60,17 @@
     {
       "id": "settings-language-form",
       "tokens": ["surface", "line", "foreground", "muted", "accent"],
-      "contract": ["Change Control Center display language only; never translate source evidence, provider text, or generated reviews."]
+      "contract": ["Use the prototype-style setting row and the shared save action to change Control Center display language only; never translate source evidence, provider text, or generated reviews."]
     },
     {
       "id": "settings-persistence-status",
       "tokens": ["surface", "line", "foreground", "muted"],
-      "contract": ["Show the fixed repository settings location and current locale state without accepting caller-controlled paths."]
+      "contract": ["Keep fixed-path persistence and locale internals in backend and CLI contracts; do not expose storage paths, locale codes, direction, or translation state on the ordinary settings page."]
     },
     {
       "id": "playwright-test-regression-page",
       "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "warning", "danger"],
-      "contract": ["Summarize Playwright Test evidence in status, review material, local import, approved CI, and manual CI sections while exposing only explicit import or read-only CI artifact fetch actions."]
+      "contract": ["Keep detailed Playwright Test evidence, import, and CI policy behavior outside the ordinary settings page while preserving the existing backend, CLI, API, and read-model contracts."]
     },
     {
       "id": "playwright-test-review-material",
@@ -80,7 +80,7 @@
     {
       "id": "playwright-test-mode-form",
       "tokens": ["surface", "line", "foreground", "muted", "accent"],
-      "contract": ["Change the Playwright Test integration mode without running browsers, contacting CI, or mutating review gates; local_run must remain CLI-only in the browser UI."]
+      "contract": ["Render one prototype-style Playwright Test setting row with a short purpose label and explanation; saving changes mode only, never runs browsers, contacts CI, or mutates review gates, and local_run remains CLI-only."]
     },
     {
       "id": "playwright-test-ci-fetch-form",

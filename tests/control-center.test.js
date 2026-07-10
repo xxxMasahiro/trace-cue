@@ -272,11 +272,18 @@ test('control-center appearance is controlled by the product design-system files
   for (const tokenName of Object.keys(tokenData.tokens.color)) {
     assert.match(designSystem, new RegExp(`--tc-color-${tokenName.replaceAll('_', '-')}`));
   }
-  assert.match(designSystem, /--tc-font-ui/);
-  assert.match(designSystem, /--tc-font-mono/);
+  for (const tokenName of Object.keys(tokenData.tokens.font)) {
+    assert.match(designSystem, new RegExp(`--tc-font-${tokenName.replaceAll('_', '-')}`));
+  }
+  for (const tokenName of Object.keys(tokenData.tokens.layout)) {
+    assert.match(designSystem, new RegExp(`--tc-layout-${tokenName.replaceAll('_', '-')}`));
+  }
   assert.match(styles, /var\(--tc-color-surface\)/);
   assert.match(styles, /var\(--tc-color-success\)/);
   assert.match(styles, /\.app-shell[\s\S]*font-family: var\(--tc-font-ui\)/);
+  assert.match(styles, /\.screen\.narrow[\s\S]*var\(--tc-layout-narrow-content-width\)/);
+  assert.match(styles, /\.page-header h1[\s\S]*var\(--tc-font-page-title\)/);
+  assert.match(styles, /\.settings-group > h2[\s\S]*var\(--tc-font-section-title\)/);
   assert.doesNotMatch(styles, /#[0-9a-fA-F]{3,8}\b/);
 });
 

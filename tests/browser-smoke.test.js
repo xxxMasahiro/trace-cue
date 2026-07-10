@@ -114,21 +114,27 @@ test('review center browser UI completes the goal-oriented preparation flow', { 
     await page.getByRole('button', { name: 'Close', exact: true }).click();
 
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await page.getByText('Automated test results', { exact: true }).click();
-    await page.locator('[data-testid="tc-cc-playwright-test-regression-page"]').waitFor();
-    await page.locator('[data-testid="tc-cc-approved-ci-policy-summary"]').waitFor();
-    const regressionText = await page.locator('[data-testid="tc-cc-playwright-test-regression-page"]').innerText();
-    assert.match(regressionText, /Target policy/);
-    assert.match(regressionText, /Max age hours/);
+    const settingsHub = page.locator('[data-testid="tc-cc-settings-hub"]');
+    await settingsHub.waitFor();
+    const settingsBox = await settingsHub.boundingBox();
+    assert.equal(Math.round(settingsBox.width), 760);
+    assert.equal(await settingsHub.locator('h1').evaluate((element) => getComputedStyle(element).fontSize), '30px');
+    assert.equal(await settingsHub.locator('h1').evaluate((element) => getComputedStyle(element).outlineStyle), 'none');
+    assert.equal(await settingsHub.locator('.setting-copy span').first().evaluate((element) => getComputedStyle(element).fontSize), '14px');
+    assert.equal(Math.round((await settingsHub.locator('.select-control').first().boundingBox()).height), 48);
+    assert.equal(await settingsHub.locator('.panel').count(), 0);
+    assert.equal(await settingsHub.locator('.primary-action').count(), 1);
+    const settingsText = await settingsHub.innerText();
+    assert.doesNotMatch(settingsText, /Language state|Settings storage|Diagnostics|Target policy|Max age hours/);
     assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
 
     await page.locator('[data-testid="tc-cc-settings-playwright-test-mode"] select').selectOption('local_run');
     const modeText = await page.locator('[data-testid="tc-cc-settings-playwright-test-mode"]').innerText();
-    assert.match(modeText, /CLI only/);
+    assert.match(modeText, /command line/);
     assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
 
-    await page.locator('.settings-hub > .page-grid').first().locator('select').first().selectOption('ja');
-    await page.getByRole('button', { name: /Save language|言語を保存/ }).click();
+    await settingsHub.locator('select').first().selectOption('ja');
+    await page.getByRole('button', { name: /Save settings|設定を保存/ }).click();
     await page.getByRole('button', { name: '確認', exact: true }).click();
     await page.getByRole('heading', { name: '確認', exact: true }).waitFor();
 
