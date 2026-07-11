@@ -408,8 +408,8 @@ verification, and security synchronization.
 The new CI job is intentionally lightweight and does not rerun no-browser,
 package, or browser suites. The pre-push hook is opt-in, does not fetch, changes
 only local repository hook configuration through the installer, and refuses to
-replace unmanaged settings. Temporary memory and local dashboard settings are
-excluded and remain valid dirty-worktree exceptions.
+replace unmanaged settings. Temporary memory and the ignored local dashboard
+override are excluded from document-sync authority.
 
 Completion evidence: document-sync commit `b2c410f` passed 161 no-browser tests,
 14 browser smoke tests, release checks, and the local product gate. TraceCue's
@@ -417,9 +417,27 @@ own browser review passed with zero findings at desktop review
 `review-2026-07-11T16-48-30-075Z-2a6c0405` and mobile review
 `review-2026-07-11T16-48-30-085Z-b53b267f`. Main CI run `29160540410` passed
 the Node 20, Node 22, Browser smoke, and Repository contracts jobs. Local and
-remote SHAs were synchronized after the push. Pre-existing user changes in
-`docs/memory/SESSION_MEMORY.md` and `ops/DASHBOARD_SETTINGS.json` remain the
-only intended dirty-worktree exceptions and were not modified by this slice.
+remote SHAs were synchronized after the push. The later local-settings-store
+slice resolves the two dirty-worktree exceptions that remained at that time.
 
 Next step: observe the TraceCue-only policy in normal pull requests and adjust
 rules only when concrete false-positive or missed-sync evidence is recorded.
+
+## Local Dashboard Settings Store
+
+TraceCue now treats `ops/DASHBOARD_SETTINGS.json` as tracked shared defaults and
+stores ordinary user choices in ignored `ops/DASHBOARD_SETTINGS.local.json`.
+The current Japanese display, both-viewport default, AI suggestions, and
+mandatory external-send confirmation were migrated before the tracked default
+was normalized. Language inspection, Control Center preferences, Playwright
+Test mode, and approved external-CI policy all read one allowlisted layered
+store. Execution and credential authority remain pinned off.
+
+The ordinary React Settings form now sends one combined save request. The
+server validates every field and performs one serialized atomic file replace;
+legacy setting endpoints use the same serialized store. Malformed, oversized,
+symlinked, non-regular, and workspace-escaping local settings fail closed.
+
+Next step: finish the local release and browser gates, commit and push the
+TraceCue-only slice, confirm main CI, record current-HEAD product evidence, and
+verify parent read-only authority reports `ready` without editing the parent.

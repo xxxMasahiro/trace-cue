@@ -442,3 +442,20 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
 - [x] Confirm final local gates, TraceCue browser regression, pushed commit
   `b2c410f`, main CI run `29160540410`, local/remote SHA equality, and intended
   dirty-worktree exceptions.
+
+## Local Dashboard Settings Store
+
+- [x] Classify tracked dashboard settings as shared defaults and choose an
+  ignored local override outside the reserved future artifact root.
+- [x] Preserve the current Japanese, viewport, AI-suggestion, and confirmation
+  choices before normalizing the tracked shared defaults.
+- [x] Centralize allowlisted layered reads, safety pinning, confined serialized
+  atomic writes, malformed-input rejection, and compatibility exports.
+- [x] Move display language, Control Center preferences, Playwright Test mode,
+  and approved external-CI settings to the local store.
+- [x] Replace the ordinary Settings page's partial three-request flow with one
+  validated atomic save while retaining legacy endpoint compatibility.
+- [x] Add focused storage, security, concurrency, server, CLI/API/MCP, and
+  tracked-file immutability regression tests.
+- [ ] Complete browser validation, release/product gates, clean commit/push,
+  main CI, current-HEAD evidence capture, and parent read-only authority check.

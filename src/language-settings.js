@@ -10,9 +10,16 @@ import {
 } from './locale-policy.js';
 import { PRODUCT_IDENTITY } from './product-identity.js';
 import { redact } from './redaction.js';
+import {
+  DASHBOARD_DEFAULT_SETTINGS_PATH,
+  DASHBOARD_SETTINGS_PATH,
+  DASHBOARD_USER_SETTINGS_PATH,
+  readDashboardSettingsLayers
+} from './dashboard-settings-store.js';
+
+export { DASHBOARD_SETTINGS_PATH } from './dashboard-settings-store.js';
 
 export const LANGUAGE_SETTINGS_SCHEMA_VERSION = '1.0.0';
-export const DASHBOARD_SETTINGS_PATH = 'ops/DASHBOARD_SETTINGS.json';
 export const DEFAULT_DASHBOARD_UI_LOCALE = 'en';
 export const DEFAULT_SOURCE_LANGUAGE = 'auto';
 export const DEFAULT_OUTPUT_LANGUAGE_MODE = 'source';
@@ -49,7 +56,8 @@ export function buildLanguageSettingsPolicyContract() {
       package_name: PRODUCT_IDENTITY.packageName,
       display_name: PRODUCT_IDENTITY.displayName
     },
-    settings_path: DASHBOARD_SETTINGS_PATH,
+    settings_path: DASHBOARD_USER_SETTINGS_PATH,
+    shared_defaults_path: DASHBOARD_DEFAULT_SETTINGS_PATH,
     locale_authority: {
       supported_locale_count: TRACE_CUE_LOCALE_CODES.length,
       supported_locale_codes: [...TRACE_CUE_LOCALE_CODES],
@@ -168,7 +176,9 @@ export async function resolveLanguageSettings(options = {}, context = {}) {
     outputLanguageMode: options['output-language-mode'] ?? options.outputLanguageMode,
     outputLanguage: options['output-language'] ?? options.outputLanguage,
     translationMode: options['translation-mode'] ?? options.translationMode,
-    settingsPath: requestedPath,
+    settingsPath: settingsInput.settingsPath ?? requestedPath,
+    sharedDefaultsPath: settingsInput.sharedDefaultsPath,
+    localSettingsPath: settingsInput.localSettingsPath,
     storageStatus: settingsInput.storageStatus
   });
   return {
@@ -226,6 +236,8 @@ export function normalizeLanguageSettings(settings = {}, options = {}) {
     storage: {
       status: options.storageStatus ?? 'defaults',
       repository_settings_path: DASHBOARD_SETTINGS_PATH,
+      shared_defaults_path: options.sharedDefaultsPath ?? DASHBOARD_DEFAULT_SETTINGS_PATH,
+      local_settings_path: options.localSettingsPath ?? DASHBOARD_USER_SETTINGS_PATH,
       settings_write_enabled: false
     },
     dashboard_ui: {
@@ -411,6 +423,26 @@ function sourceLanguageStatus(sourceLanguage) {
 }
 
 async function readSettingsInput(cwd, requestedPath, allowMissingDefault) {
+  if (allowMissingDefault) {
+    try {
+      const layers = await readDashboardSettingsLayers(cwd);
+      return {
+        ok: true,
+        settings: layers.settings,
+        settingsPath: DASHBOARD_USER_SETTINGS_PATH,
+        sharedDefaultsPath: layers.shared_defaults_path,
+        localSettingsPath: layers.local_settings_path,
+        storageStatus: layers.storage_status
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        code: 'LANGUAGE_SETTINGS_READ_FAILED',
+        message: 'Language settings file could not be read as JSON.',
+        details: { settings: DASHBOARD_USER_SETTINGS_PATH, reason: error.message }
+      };
+    }
+  }
   const resolved = resolveWorkspaceSettingsPath(cwd, requestedPath);
   if (!resolved.ok) {
     return resolved;
@@ -423,13 +455,6 @@ async function readSettingsInput(cwd, requestedPath, allowMissingDefault) {
       storageStatus: 'repository-settings'
     };
   } catch (error) {
-    if (error.code === 'ENOENT' && allowMissingDefault) {
-      return {
-        ok: true,
-        settings: defaultDashboardSettings(),
-        storageStatus: 'defaults'
-      };
-    }
     return {
       ok: false,
       code: error.code === 'ENOENT' ? 'LANGUAGE_SETTINGS_NOT_FOUND' : 'LANGUAGE_SETTINGS_READ_FAILED',

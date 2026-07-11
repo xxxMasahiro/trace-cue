@@ -10,7 +10,9 @@ import {
   PLAYWRIGHT_TEST_EXTERNAL_CI_SUGGEST_SETTINGS_CONFIRM,
   PLAYWRIGHT_TEST_IMPORT_CONFIRM,
   PLAYWRIGHT_TEST_MODE_CONFIRM,
+  DASHBOARD_USER_SETTINGS_PATH,
   executeCli,
+  readEffectiveDashboardSettings,
   runPlaywrightTestExternalCiFetchApproved,
   runPlaywrightTestExternalCiFetch,
   runPlaywrightTestExternalCiList,
@@ -42,7 +44,7 @@ test('playwright-test mode and status are advisory and side-effect-light', async
   assert.equal(savedBody.data.playwright_test_mode.boundary.network_used, false);
   assert.equal(savedBody.data.playwright_test_mode.boundary.gh_used, false);
 
-  const settings = JSON.parse(await readFile(path.join(cwd, 'ops', 'DASHBOARD_SETTINGS.json'), 'utf8'));
+  const settings = JSON.parse(await readFile(path.join(cwd, DASHBOARD_USER_SETTINGS_PATH), 'utf8'));
   assert.equal(settings.playwright_test.mode, 'external_ci');
   assert.equal(settings.playwright_test.external_ci.token_storage, 'env_or_gh_auth_only');
 
@@ -394,11 +396,12 @@ test('playwright-test external CI approved settings resolve latest successful ru
     '--json'
   ], { cwd, now: fixedNow });
   assert.equal(approve.exitCode, 0);
-  const settings = JSON.parse(await readFile(path.join(cwd, 'ops', 'DASHBOARD_SETTINGS.json'), 'utf8'));
+  const localSettings = JSON.parse(await readFile(path.join(cwd, DASHBOARD_USER_SETTINGS_PATH), 'utf8'));
+  const settings = await readEffectiveDashboardSettings(cwd);
   assert.equal(settings.ui_locale, 'ja');
-  assert.equal(settings.playwright_test.external_ci.approved_fetch.repo, 'owner/repo');
-  assert.equal(settings.playwright_test.external_ci.approved_fetch.artifact_name, 'playwright-report');
-  assert.equal(settings.playwright_test.external_ci.approved_fetch.token_storage, 'env_or_gh_auth_only');
+  assert.equal(localSettings.playwright_test.external_ci.approved_fetch.repo, 'owner/repo');
+  assert.equal(localSettings.playwright_test.external_ci.approved_fetch.artifact_name, 'playwright-report');
+  assert.equal(localSettings.playwright_test.external_ci.approved_fetch.token_storage, 'env_or_gh_auth_only');
 
   const parsedResolve = parseCliArgs(['playwright-test', 'external-ci', 'resolve-approved', '--json']);
   assert.equal(parsedResolve.ok, true);

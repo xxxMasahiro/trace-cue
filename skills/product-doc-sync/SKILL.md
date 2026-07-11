@@ -36,9 +36,13 @@ npm run document-sync:check
   required-document authority.
 - Synchronization is evaluated over the complete pull-request or push range,
   not each individual commit.
-- Temporary memory, local dashboard settings, and ignored/generated artifacts
+- Temporary memory, ignored local dashboard overrides, and ignored/generated artifacts
   cannot satisfy a required document group.
+- The tracked dashboard defaults remain reviewable repository content; only
+  `ops/DASHBOARD_SETTINGS.local.json` is a local exclusion.
 - AHR, external-send/provider, MCP, persistent-session, evidence, evaluation,
   and claim changes require security and verification synchronization.
+- Dashboard shared defaults and local-settings persistence changes also require
+  product, verification, and security synchronization.
 - The mechanical checker detects omissions; semantic correctness still
   requires role-specific document review and focused product tests.

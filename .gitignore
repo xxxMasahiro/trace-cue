@@ -7,6 +7,8 @@ playwright-report/
 .browser-debug/
 .cache/
 .tmp/
+/ops/DASHBOARD_SETTINGS.local.json
+/ops/DASHBOARD_SETTINGS.local.json.*.tmp
 .env
 .env.*
 !.env.example

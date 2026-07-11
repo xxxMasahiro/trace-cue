@@ -242,7 +242,7 @@ Security tests block unapproved use of persistent browser profiles, storageState
 - The checker and hook must not fetch, push, contact a network, call providers,
   launch browsers, execute MCP tools, upload evidence, mutate review artifacts,
   or change release gates. Git invocations are fixed read-only argument lists.
-- Temporary memory, local dashboard settings, ignored browser evidence, build
+- Temporary memory, ignored local dashboard overrides, ignored browser evidence, build
   outputs, coverage, dependencies, and test reports cannot satisfy a sensitive
   rule. AHR, external-send/provider, MCP, persistent-session, evidence,
   evaluation, and claim classifications cannot be bypassed by an exception
@@ -252,3 +252,22 @@ Security tests block unapproved use of persistent browser profiles, storageState
   Git configuration changes are prohibited.
 - The CI job receives read-only repository contents permission and no secrets.
   Missing comparison history fails closed rather than disabling enforcement.
+
+## Local Dashboard Settings Security
+
+- Tracked `ops/DASHBOARD_SETTINGS.json` is shared defaults and is never written
+  by Control Center, Playwright Test, CLI setting actions, or MCP inspection.
+- Ignored `ops/DASHBOARD_SETTINGS.local.json` accepts only allowlisted language,
+  ordinary Control Center preference, and non-secret Playwright Test branches.
+  Unknown safety, persistence, credential, token, cookie, authorization, shell,
+  provider, browser, MCP, external-send, destructive, and gate authority cannot
+  be enabled through the overlay.
+- External-send confirmation remains mandatory even if the local JSON is hand
+  edited. Approved external-CI settings retain env-or-gh-auth-only credential
+  handling and never store credential values.
+- Reads reject oversized, malformed, non-object, non-regular, symlinked, or
+  workspace-escaping files. Writes are size bounded, serialized per workspace,
+  mode 0600, temporary-file based, and atomically renamed.
+- Saving settings performs no browser launch, provider/API call, network or
+  `gh` operation, shell/process execution, MCP execution, artifact upload,
+  deterministic finding mutation, or release-gate change.

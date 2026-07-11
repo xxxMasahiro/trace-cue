@@ -35,15 +35,22 @@
       "shell_execution_allowed_by_settings": false,
       "browser_execution_allowed_by_settings": false,
       "translation_execution_allowed_by_settings": false
+    },
+    "control_center": {
+      "default_viewport": "both",
+      "ai_suggestions_enabled": true,
+      "external_send_confirmation_required": true
     }
   },
   "persistence": {
     "schema_version": "1.0.0",
-    "active_store": "repository-settings",
-    "storage": "ops/DASHBOARD_SETTINGS.json",
+    "active_store": "local-settings",
+    "storage": "ops/DASHBOARD_SETTINGS.local.json",
+    "shared_defaults": "ops/DASHBOARD_SETTINGS.json",
     "repository_persistence_available": true,
     "repository_read_available": true,
     "repository_write_available": false,
+    "local_settings_write_available": true,
     "settings_write_authority_expanded": false,
     "shell_execution_enabled": false,
     "provider_dispatch_enabled": false,
@@ -51,5 +58,6 @@
     "destructive_execution_enabled": false
   },
   "external_send_allowed": false,
-  "arbitrary_command_entry_allowed": false
+  "arbitrary_command_entry_allowed": false,
+  "workflow_language": "en"
 }

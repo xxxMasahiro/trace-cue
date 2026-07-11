@@ -859,6 +859,7 @@ test('control-center browser surface keeps read dashboard and bounded local acti
   const actions = await readText('src/control-center-actions.js');
   const agenticReviewActions = await readText('src/control-center-agentic-review-actions.js');
   const preferences = await readText('src/control-center-preferences.js');
+  const settingsStore = await readText('src/dashboard-settings-store.js');
   const server = await readText('src/control-center-server.js');
   const api = await readText('src/api.js');
   const cli = await readText('src/cli.js');
@@ -885,7 +886,7 @@ test('control-center browser surface keeps read dashboard and bounded local acti
   assert.match(server, /Cache-Control/);
   assert.doesNotMatch(server, /WebSocket|EventSource|node:child_process|execFile|spawn\(|provider_execute|cleanup_execute|agent_execution_run/);
 
-  assert.match(actions, /DASHBOARD_SETTINGS_PATH/);
+  assert.match(actions, /DASHBOARD_USER_SETTINGS_PATH/);
   assert.match(actions, /runAgenticHumanReviewPropose/);
   assert.match(actions, /writeFile/);
   assert.match(actions, /CONTROL_CENTER_SOURCE_INTAKE_CONFIRM/);
@@ -907,6 +908,11 @@ test('control-center browser surface keeps read dashboard and bounded local acti
   assert.doesNotMatch(agenticReviewActions, /from '\.\/mcp|handleMcpRequest|jsonrpc/);
   assert.match(preferences, /external_send_confirmation_required:\s*true/);
   assert.doesNotMatch(preferences, /node:child_process|child_process|execFile|spawn\(|\bfetch\s*\(|process\.env/);
+  assert.match(settingsStore, /DASHBOARD_DEFAULT_SETTINGS_PATH/);
+  assert.match(settingsStore, /DASHBOARD_USER_SETTINGS_PATH/);
+  assert.match(settingsStore, /atomic|rename\(/);
+  assert.match(settingsStore, /repository_write_available:\s*false/);
+  assert.doesNotMatch(settingsStore, /node:child_process|execFile|spawn\(|\bfetch\s*\(|process\.env/);
 
   assert.doesNotMatch(`${api}\n${cli}\n${parser}`, /from 'node:http'|createServer|\.listen\(/);
 });

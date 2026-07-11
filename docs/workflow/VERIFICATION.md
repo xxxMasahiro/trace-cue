@@ -127,6 +127,16 @@ Phase 50 adds no-browser coverage for `visual review plan --capture-handoff`, ca
 
 Phase 59 and Slice 9-12 add no-browser coverage for `settings show`, `settings language`, `settings language policy`, `settings locale resources`, `settings report templates`, `translation readiness`, `translation dry-run`, fail-closed `translation run --execute`, locale alias normalization, dashboard display locale and artifact output language separation, UI/report locale fallback and RTL guards, raw-evidence/canonical-enum non-translation policy, schema parity, API exports, safe MCP read-only inspection, review/dashboard metadata, provider-free translation boundaries, local settings-file confinement, no credential reads, no network/provider calls, and no artifact writes. Browser smoke tests are not required unless browser runtime behavior changes.
 
+The local dashboard settings store adds focused coverage for shared-default and
+local-overlay precedence, tracked-default byte stability, current-user migration,
+one-request Control Center saves, legacy writer compatibility, serialized
+updates, mode-0600 atomic replacement, malformed JSON preservation, size/type
+limits, symlink/workspace escape rejection, immutable external-send confirmation,
+and forced-off execution/credential/gate fields. Full CLI/API/MCP tests verify
+that isolated test workspaces do not inherit developer preferences. Browser
+smoke must verify save, reload projection, success feedback, desktop/mobile
+layout, no console errors, and no tracked settings mutation.
+
 Phase 60 adds no-browser coverage for `operation registry`, operation/group/risk selection, schema parity, API exports, safe MCP read-only inspection, registry-derived MCP capability exclusions, registry-derived MCP execution gate operation metadata, package smoke coverage, and architecture boundaries proving no provider execution, deletion, capture, translation execution, npm publication, artifact-root migration, legacy alias removal, shell execution, or MCP write/execute expansion. Browser smoke tests are not required for Phase 60 unless browser runtime behavior changes.
 
 Phase 60.1 adds no-browser coverage for `operation roadmap`, phase/group/risk selection, phase A/B/C boundary contracts, schema parity, API exports, safe MCP read-only inspection, unsupported execution-option rejection, package smoke coverage, and architecture boundaries proving no draft-roadmap promotion, execution-token issuance, live execution, remote CI triggering, provider execution, deletion, capture, translation execution, npm publication, artifact-root migration, legacy alias removal, shell execution, or MCP write/execute expansion. Browser smoke tests are not required for Phase 60.1 unless browser runtime behavior changes.

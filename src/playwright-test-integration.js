@@ -4,9 +4,14 @@ import { createHash } from 'node:crypto';
 import { DEFAULT_ARTIFACT_ROOT, SCHEMA_VERSION } from './constants.js';
 import { artifactObject, createArtifactId, ensureArtifactRoot, artifactRelPath, writeJsonArtifact } from './artifacts.js';
 import { redactText } from './playwright-test-artifacts.js';
+import {
+  DASHBOARD_USER_SETTINGS_PATH,
+  readEffectiveDashboardSettings,
+  updateLocalDashboardSettings
+} from './dashboard-settings-store.js';
 
 export const PLAYWRIGHT_TEST_INTEGRATION_VERSION = '1.0.0';
-export const PLAYWRIGHT_TEST_SETTINGS_PATH = 'ops/DASHBOARD_SETTINGS.json';
+export const PLAYWRIGHT_TEST_SETTINGS_PATH = DASHBOARD_USER_SETTINGS_PATH;
 export const PLAYWRIGHT_TEST_MODE_CONFIRM = 'set-playwright-test-mode';
 export const PLAYWRIGHT_TEST_IMPORT_CONFIRM = 'import-playwright-test-result';
 export const PLAYWRIGHT_TEST_EXTERNAL_CI_CONFIRM = 'fetch-playwright-test-ci-artifact';
@@ -111,14 +116,11 @@ function modeContract(overrides = {}) {
 }
 
 export async function readPlaywrightTestSettings(cwd) {
-  const settingsPath = path.resolve(cwd, PLAYWRIGHT_TEST_SETTINGS_PATH);
   let existing = {};
   try {
-    existing = JSON.parse(await readFile(settingsPath, 'utf8'));
-  } catch (error) {
-    if (error.code !== 'ENOENT') {
-      return fallbackSettings('disabled', 'settings_unreadable');
-    }
+    existing = await readEffectiveDashboardSettings(cwd);
+  } catch {
+    return fallbackSettings('disabled', 'settings_unreadable');
   }
   const candidate = existing.playwright_test?.mode ?? existing.settings?.playwright_test?.mode ?? 'disabled';
   const normalized = normalizePlaywrightTestMode(candidate, 'disabled');
@@ -178,32 +180,16 @@ export async function writePlaywrightTestMode(input = {}, context = {}) {
     return resultError(validation.code, validation.message, validation.details);
   }
   const cwd = context.cwd ?? process.cwd();
-  const settingsPath = path.resolve(cwd, PLAYWRIGHT_TEST_SETTINGS_PATH);
-  let existing = {};
   try {
-    existing = JSON.parse(await readFile(settingsPath, 'utf8'));
-  } catch (error) {
-    if (error.code !== 'ENOENT') {
-      return resultError('PLAYWRIGHT_TEST_SETTINGS_UNREADABLE', 'Playwright Test settings could not be read.', {});
-    }
+    const now = materializeNow(context.now).toISOString();
+    await updateLocalDashboardSettings(cwd, (existing) => applyPlaywrightTestModeSettings(existing, validation.mode, now));
+    return playwrightTestModeResult(validation.mode, now);
+  } catch {
+    return resultError('PLAYWRIGHT_TEST_SETTINGS_UNREADABLE', 'Playwright Test settings could not be read.', {});
   }
-  const now = materializeNow(context.now).toISOString();
-  const next = {
-    ...existing,
-    playwright_test: {
-      ...(existing.playwright_test ?? {}),
-      schema_version: SCHEMA_VERSION,
-      integration_version: PLAYWRIGHT_TEST_INTEGRATION_VERSION,
-      mode: validation.mode,
-      selected_at: now,
-      external_ci: {
-        ...(existing.playwright_test?.external_ci ?? {}),
-        token_storage: 'env_or_gh_auth_only'
-      }
-    }
-  };
-  await mkdir(path.dirname(settingsPath), { recursive: true });
-  await writeFile(settingsPath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+}
+
+function playwrightTestModeResult(mode, selectedAt) {
   return {
     status: 'ok',
     data: {
@@ -211,9 +197,9 @@ export async function writePlaywrightTestMode(input = {}, context = {}) {
         schema_version: SCHEMA_VERSION,
         integration_version: PLAYWRIGHT_TEST_INTEGRATION_VERSION,
         status: 'applied',
-        mode: validation.mode,
+        mode,
         settings_path: PLAYWRIGHT_TEST_SETTINGS_PATH,
-        selected_at: now,
+        selected_at: selectedAt,
         safety: {
           setting_write_does_not_execute: true,
           browser_launched: false,
@@ -241,15 +227,6 @@ export async function writePlaywrightTestExternalCiApprovedSettings(input = {}, 
     return resultError(validation.code, validation.message, validation.details);
   }
   const cwd = context.cwd ?? process.cwd();
-  const settingsPath = path.resolve(cwd, PLAYWRIGHT_TEST_SETTINGS_PATH);
-  let existing = {};
-  try {
-    existing = JSON.parse(await readFile(settingsPath, 'utf8'));
-  } catch (error) {
-    if (error.code !== 'ENOENT') {
-      return resultError('PLAYWRIGHT_TEST_SETTINGS_UNREADABLE', 'Playwright Test settings could not be read.', {});
-    }
-  }
   const approvedAt = materializeNow(context.now).toISOString();
   const approved = {
     ...validation.value,
@@ -260,22 +237,24 @@ export async function writePlaywrightTestExternalCiApprovedSettings(input = {}, 
       ...validation.value
     })
   };
-  const next = {
-    ...existing,
-    playwright_test: {
-      ...(existing.playwright_test ?? {}),
-      schema_version: SCHEMA_VERSION,
-      integration_version: PLAYWRIGHT_TEST_INTEGRATION_VERSION,
-      mode: existing.playwright_test?.mode ?? 'external_ci',
-      external_ci: {
-        ...(existing.playwright_test?.external_ci ?? {}),
-        token_storage: 'env_or_gh_auth_only',
-        approved_fetch: approved
+  try {
+    await updateLocalDashboardSettings(cwd, (existing) => ({
+      ...existing,
+      playwright_test: {
+        ...(existing.playwright_test ?? {}),
+        schema_version: SCHEMA_VERSION,
+        integration_version: PLAYWRIGHT_TEST_INTEGRATION_VERSION,
+        mode: existing.playwright_test?.mode ?? 'external_ci',
+        external_ci: {
+          ...(existing.playwright_test?.external_ci ?? {}),
+          token_storage: 'env_or_gh_auth_only',
+          approved_fetch: approved
+        }
       }
-    }
-  };
-  await mkdir(path.dirname(settingsPath), { recursive: true });
-  await writeFile(settingsPath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+    }));
+  } catch {
+    return resultError('PLAYWRIGHT_TEST_SETTINGS_UNREADABLE', 'Playwright Test settings could not be read.', {});
+  }
   return {
     status: 'ok',
     data: {
@@ -298,6 +277,23 @@ export async function writePlaywrightTestExternalCiApprovedSettings(input = {}, 
     warnings: [],
     errors: [],
     artifacts: []
+  };
+}
+
+export function applyPlaywrightTestModeSettings(existing, mode, selectedAt) {
+  return {
+    ...existing,
+    playwright_test: {
+      ...(existing.playwright_test ?? {}),
+      schema_version: SCHEMA_VERSION,
+      integration_version: PLAYWRIGHT_TEST_INTEGRATION_VERSION,
+      mode,
+      selected_at: selectedAt,
+      external_ci: {
+        ...(existing.playwright_test?.external_ci ?? {}),
+        token_storage: 'env_or_gh_auth_only'
+      }
+    }
   };
 }
 

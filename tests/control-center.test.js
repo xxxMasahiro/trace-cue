@@ -335,6 +335,22 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
     const post = await fetch(new URL('/api/dashboard', started.url), { method: 'POST' });
     assert.equal(post.status, 405);
 
+    const combinedSettings = await postJson(started, '/api/settings/control-center', {
+      locale: 'ja',
+      playwright_mode: 'import_only',
+      default_viewport: 'mobile',
+      ai_suggestions_enabled: false,
+      confirm: 'save-control-center-settings'
+    });
+    assert.equal(combinedSettings.statusCode, 200);
+    const combinedSettingsBody = JSON.parse(combinedSettings.body);
+    assert.equal(combinedSettingsBody.command, 'control-center settings save');
+    assert.equal(combinedSettingsBody.data.control_center_settings.boundary.atomic_settings_write, true);
+    const persistedCombinedSettings = JSON.parse(await readFile(path.join(cwd, 'ops', 'DASHBOARD_SETTINGS.local.json'), 'utf8'));
+    assert.equal(persistedCombinedSettings.ui_locale, 'ja');
+    assert.equal(persistedCombinedSettings.playwright_test.mode, 'import_only');
+    assert.equal(persistedCombinedSettings.profiles.control_center.default_viewport, 'mobile');
+
     const settings = await postJson(started, '/api/settings/display-language', {
       locale: 'ja',
       confirm: 'set-control-center-display-language'

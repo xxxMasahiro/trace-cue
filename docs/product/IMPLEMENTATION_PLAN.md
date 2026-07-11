@@ -1848,3 +1848,22 @@ Phase 39 records the external-repository dogfood lesson that Browser Debug CLI c
   revert the additive slice. No artifact migration, credential cleanup,
   provider policy change, browser cleanup, or external repository change is
   required.
+
+## Local Dashboard Settings Store
+
+- Purpose: prevent ordinary non-engineer Control Center settings from making
+  the TraceCue repository dirty while preserving existing user choices.
+- Implemented scope: retain `ops/DASHBOARD_SETTINGS.json` as tracked shared
+  defaults; add ignored `ops/DASHBOARD_SETTINGS.local.json`; centralize layered
+  reads, allowlisted safety pinning, confined serialized atomic writes, and
+  compatibility exports; migrate display language, preferences, Playwright Test
+  mode, and approved external-CI settings; replace the browser form's three
+  writes with one validated save; preserve the current Japanese user settings.
+- Verification: focused storage rejection tests, existing CLI/API/MCP tests,
+  Control Center server tests, React/Vite browser smoke, tracked-file
+  immutability checks, full release/product gates, clean Git state, CI, and
+  current-HEAD product evidence.
+- Recovery: the ignored local file can be backed up and removed to return to
+  shared defaults. Reverting the store restores the prior tracked-file behavior
+  without artifact migration, credential cleanup, provider changes, or parent
+  repository mutation.

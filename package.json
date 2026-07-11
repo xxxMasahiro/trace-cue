@@ -24,7 +24,7 @@
     "document-sync:check": "node ./tools/check_document_sync.mjs --worktree",
     "document-sync:contract-check": "node --test tests/document-sync.test.js",
     "doctor": "node ./bin/trace-cue.js doctor --json",
-    "test": "node --test tests/architecture.test.js tests/cli.test.js tests/control-center.test.js tests/control-center-agentic-review.test.js tests/document-sync.test.js tests/playwright-test.test.js",
+    "test": "node --test tests/architecture.test.js tests/cli.test.js tests/control-center.test.js tests/control-center-agentic-review.test.js tests/dashboard-settings-store.test.js tests/document-sync.test.js tests/playwright-test.test.js",
     "test:browser": "npm run control-center:build && TRACE_CUE_BROWSER_SMOKE=1 node --test tests/browser-smoke.test.js",
     "test:rename-readiness": "node ./tools/check_rename_readiness.mjs",
     "test:pack": "node ./tools/pack-dry-run.mjs",

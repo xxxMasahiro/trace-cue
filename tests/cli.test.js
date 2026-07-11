@@ -177,6 +177,7 @@ test('doctor returns the JSON envelope without launching a browser', async () =>
 });
 
 test('language settings keep dashboard UI and artifact output language independent', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-language-settings-'));
   assert.deepEqual(TRACE_CUE_LOCALE_CODES, ['ja', 'en', 'ko', 'zh-CN', 'zh-TW', 'es', 'pt-BR', 'fr', 'de', 'id', 'vi', 'th', 'hi', 'ar']);
   assert.equal(new Set(TRACE_CUE_LOCALE_CODES).size, 14);
   assert.equal(normalizeTraceCueLocale('zh-Hant'), 'zh-TW');
@@ -281,7 +282,7 @@ test('language settings keep dashboard UI and artifact output language independe
   assert.equal(parsed.ok, true);
   assert.equal(parsed.command, 'settings language');
 
-  const result = await executeCli(['settings', 'language', '--json'], { now: fixedNow });
+  const result = await executeCli(['settings', 'language', '--json'], { cwd, now: fixedNow });
   assert.equal(result.exitCode, 0);
   const body = JSON.parse(result.stdout);
   assert.equal(body.command, 'settings language');
@@ -295,7 +296,7 @@ test('language settings keep dashboard UI and artifact output language independe
   assert.equal(policyResult.exitCode, 0);
   assert.equal(JSON.parse(policyResult.stdout).data.language_settings_policy.locale_authority.supported_locale_count, 14);
 
-  const direct = await runLanguageSettings({}, { now: fixedNow });
+  const direct = await runLanguageSettings({}, { cwd, now: fixedNow });
   assert.equal(direct.data.language_settings.dashboard_ui.locale, 'en');
   assert.equal(languageSettingsBoundary().gate_effect, 'none');
 });
@@ -14304,6 +14305,7 @@ test('operation provider-readiness reports provider planning, admin execution, a
 });
 
 test('MCP adapter exposes a local allowlisted tool surface', async () => {
+  const settingsCwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-mcp-settings-'));
   const initialized = await handleMcpRequest({ jsonrpc: '2.0', id: 0, method: 'initialize' });
   assert.equal(initialized.result.serverInfo.name, PRODUCT_IDENTITY.mcpServerName);
   assert.equal(initialized.result.metadata.name, 'full');
@@ -14432,7 +14434,7 @@ test('MCP adapter exposes a local allowlisted tool surface', async () => {
       name: 'browser_debug_language_settings',
       arguments: {}
     }
-  }, { mcpProfile: 'safe', now: fixedNow });
+  }, { cwd: settingsCwd, mcpProfile: 'safe', now: fixedNow });
   assert.equal(languageTool.result.structuredContent.command, 'settings language');
   assert.equal(languageTool.result.structuredContent.data.language_settings.dashboard_ui.locale, 'en');
   assert.equal(languageTool.result.structuredContent.data.boundary.mcp_write_execute_exposed, false);

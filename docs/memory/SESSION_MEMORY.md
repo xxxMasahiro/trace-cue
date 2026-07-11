@@ -1,12 +1,15 @@
 # SESSION_MEMORY.md
 
-Session memory has been reset.
+Session memory reset: 2026-07-12.
 
 Next-session handoff:
 
 1. Work in `/home/masahiro/projects/agent-toolbox/trace-cue`.
-2. Read `AGENTS.MD`, parent repository `AGENTS.MD`, `docs/workflow/INSTRUCTION_MEMORY.md`, `docs/workflow/HANDOFF.md`, `docs/workflow/TASK_TRACKER.md`, and `docs/memory/DEVELOPER_MEMORY.md` before continuing.
-3. `docs/memory/DEVELOPER_MEMORY.md` contains the current E. Next Proposal and F. Roadmap text for **AHR Dogfood Evidence-Pack Operations Preflight / Owner Review Worklist Projection**.
-4. Resume from the roadmap recorded in `docs/memory/DEVELOPER_MEMORY.md`. The next implementation range is `Roadmap: 1-8`, but implementation must not start until the developer explicitly approves the roadmap or gives an equivalent continuation instruction.
-5. After approval, return to `Start: [Roadmap: 1-8]` and follow `A -> B -> C -> D -> E -> F -> End` from `docs/workflow/INSTRUCTION_MEMORY.md`, including the mandatory multi-subagent xhigh reviews for A and B.
-6. The previous completed implementation was commit `ce3174f Add AHR dogfood evidence pack summary`; local and remote `main` were synchronized and CI passed before this memory reset.
+2. Treat this file as temporary carryover only. Read `AGENTS.MD`, the parent repository `AGENTS.MD`, `docs/workflow/INSTRUCTION_MEMORY.md`, `docs/workflow/HANDOFF.md`, `docs/workflow/TASK_TRACKER.md`, `docs/product/REQUIREMENTS.md`, `docs/product/SPECIFICATION.md`, and `docs/product/IMPLEMENTATION_PLAN.md` before continuing.
+3. The document-sync range enforcement slice is complete and recorded in `docs/workflow/HANDOFF.md` and `docs/workflow/TASK_TRACKER.md`.
+4. The Control Center settings persistence slice separates tracked shared defaults at `ops/DASHBOARD_SETTINGS.json` from ignored user choices at `ops/DASHBOARD_SETTINGS.local.json`. Ordinary settings save is one validated atomic local write.
+5. The existing Japanese display, both-viewport default, AI suggestions, and mandatory external-send confirmation were migrated to the ignored local file before the tracked defaults were normalized.
+6. Language, Control Center, Playwright Test mode, and approved external-CI setting writers use the shared local store. Local settings cannot enable credentials, providers, external sending, browsers, shell, MCP, destructive behavior, translation execution, or release gates.
+7. The parent lesson repository and FrameCue were read only and were not modified by this work.
+8. The next practical product work after settings authority is ready remains the approved Agentic Human Review real-page standard/deep/xhigh dogfood regeneration documented in `docs/workflow/HANDOFF.md`.
+9. Keep stop conditions active: no npm publication, package/license changes, marketplace registration, provider/API expansion, MCP permission expansion, external upload, cleanup outside the artifact root, shell execution, browser profile reuse, credential storage, or parent/consumer repository mutation without explicit approval.

@@ -2,9 +2,13 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { runAgenticHumanReviewPropose } from './agentic-human-review.js';
 import {
-  DASHBOARD_SETTINGS_PATH,
   LANGUAGE_SETTINGS_SCHEMA_VERSION
 } from './language-settings.js';
+import {
+  DASHBOARD_DEFAULT_SETTINGS_PATH,
+  DASHBOARD_USER_SETTINGS_PATH,
+  updateLocalDashboardSettings
+} from './dashboard-settings-store.js';
 import {
   TRACE_CUE_LOCALE_CODES,
   TRACE_CUE_LOCALE_POLICY,
@@ -87,7 +91,8 @@ export function controlCenterActionCapabilities() {
       endpoint: '/api/settings/display-language',
       method: 'POST',
       confirm: CONTROL_CENTER_SETTINGS_CONFIRM,
-      settings_path: DASHBOARD_SETTINGS_PATH,
+      settings_path: DASHBOARD_USER_SETTINGS_PATH,
+      shared_defaults_path: DASHBOARD_DEFAULT_SETTINGS_PATH,
       supported_locale_codes: [...TRACE_CUE_LOCALE_CODES],
       supported_locales: TRACE_CUE_LOCALE_POLICY.map((locale) => ({
         code: locale.code,
@@ -363,13 +368,9 @@ export async function runControlCenterSetDisplayLanguage(input = {}, context = {
     });
   }
   const cwd = context.cwd ?? process.cwd();
-  const settingsPath = path.resolve(cwd, DASHBOARD_SETTINGS_PATH);
-  const existing = await readDashboardSettings(settingsPath);
   const now = materializeNow(context.now).toISOString();
   const locale = validation.locale;
-  const next = normalizeDashboardSettingsForDisplayLanguage(existing, locale, now);
-  await mkdir(path.dirname(settingsPath), { recursive: true });
-  await writeFile(settingsPath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  await updateLocalDashboardSettings(cwd, (existing) => normalizeDashboardSettingsForDisplayLanguage(existing, locale, now));
   const summary = {
     schema_version: CONTROL_CENTER_ACTION_SCHEMA_VERSION,
     kind: 'control-center-display-language-settings',
@@ -377,7 +378,8 @@ export async function runControlCenterSetDisplayLanguage(input = {}, context = {
     locale,
     intl_locale: getTraceCueIntlLocale(locale),
     text_direction: getTraceCueLocaleDirection(locale),
-    settings_path: DASHBOARD_SETTINGS_PATH,
+    settings_path: DASHBOARD_USER_SETTINGS_PATH,
+    shared_defaults_path: DASHBOARD_DEFAULT_SETTINGS_PATH,
     selected_at: now,
     translation_execution_enabled: false,
     artifact_output_language_changed: false,
@@ -447,7 +449,7 @@ function validateSourceIntakeInput(input) {
   };
 }
 
-function validateDisplayLanguageInput(input) {
+export function validateDisplayLanguageInput(input) {
   const confirm = String(input.confirm ?? '').trim();
   if (confirm !== CONTROL_CENTER_SETTINGS_CONFIRM) {
     return validationFailure('CONTROL_CENTER_DISPLAY_LANGUAGE_CONFIRM_REQUIRED', 'Display language changes require explicit confirmation.', {
@@ -465,7 +467,7 @@ function validateDisplayLanguageInput(input) {
   return { ok: true, locale };
 }
 
-function normalizeDashboardSettingsForDisplayLanguage(existing, locale, selectedAt) {
+export function normalizeDashboardSettingsForDisplayLanguage(existing, locale, selectedAt) {
   const reportsLanguage = existing.profiles?.reports?.language ?? {};
   return {
     ...existing,
@@ -501,11 +503,13 @@ function normalizeDashboardSettingsForDisplayLanguage(existing, locale, selected
     persistence: {
       ...(existing.persistence ?? {}),
       schema_version: existing.persistence?.schema_version ?? LANGUAGE_SETTINGS_SCHEMA_VERSION,
-      active_store: 'repository-settings',
-      storage: DASHBOARD_SETTINGS_PATH,
+      active_store: 'local-settings',
+      storage: DASHBOARD_USER_SETTINGS_PATH,
+      shared_defaults: DASHBOARD_DEFAULT_SETTINGS_PATH,
       repository_persistence_available: true,
       repository_read_available: true,
-      repository_write_available: true,
+      repository_write_available: false,
+      local_settings_write_available: true,
       settings_write_authority_expanded: false,
       shell_execution_enabled: false,
       provider_dispatch_enabled: false,
@@ -515,33 +519,6 @@ function normalizeDashboardSettingsForDisplayLanguage(existing, locale, selected
     external_send_allowed: false,
     arbitrary_command_entry_allowed: false
   };
-}
-
-async function readDashboardSettings(settingsPath) {
-  try {
-    return JSON.parse(await readFile(settingsPath, 'utf8'));
-  } catch (error) {
-    if (error.code !== 'ENOENT') {
-      throw error;
-    }
-    return {
-      schema_version: LANGUAGE_SETTINGS_SCHEMA_VERSION,
-      kind: 'dashboard-settings',
-      source_language: 'en',
-      ui_locale: 'en',
-      display_locale: 'en',
-      profiles: {
-        reports: {
-          language: {
-            source_language: 'auto',
-            output_language_mode: 'source',
-            output_language: null,
-            translation_mode: 'none'
-          }
-        }
-      }
-    };
-  }
 }
 
 function normalizePathField(value) {

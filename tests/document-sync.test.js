@@ -45,6 +45,11 @@ test('sensitive runtime changes fail without the full product, verification, and
 
   const passed = evaluateDocumentSync(policy, ['src/agentic-human-review.js', ...productCore, ...verification, ...security]);
   assert.equal(passed.status, 'pass');
+
+  const settingsFailed = evaluateDocumentSync(policy, ['src/dashboard-settings-store.js']);
+  assert.equal(settingsFailed.status, 'fail');
+  assert.equal(settingsFailed.matched_rules.some((rule) => rule.id === 'dashboard-settings-persistence'), true);
+  assert.equal(evaluateDocumentSync(policy, ['src/dashboard-settings-store.js', ...productCore, ...verification, ...security]).status, 'pass');
 });
 
 test('MCP, browser session, and evidence rules combine requirements without weakening each other', () => {
@@ -98,10 +103,10 @@ test('workflow state stays paired and canonical product edits require all five a
 });
 
 test('temporary memory and local settings neither trigger nor satisfy document synchronization', () => {
-  const ignored = evaluateDocumentSync(policy, ['docs/memory/SESSION_MEMORY.md', 'ops/DASHBOARD_SETTINGS.json']);
+  const ignored = evaluateDocumentSync(policy, ['docs/memory/SESSION_MEMORY.md', 'ops/DASHBOARD_SETTINGS.local.json']);
   assert.equal(ignored.status, 'pass');
   assert.deepEqual(ignored.changed_files, []);
-  const sensitive = evaluateDocumentSync(policy, ['src/mcp.js', 'docs/memory/SESSION_MEMORY.md', 'ops/DASHBOARD_SETTINGS.json']);
+  const sensitive = evaluateDocumentSync(policy, ['src/mcp.js', 'docs/memory/SESSION_MEMORY.md', 'ops/DASHBOARD_SETTINGS.local.json']);
   assert.equal(sensitive.status, 'fail');
 });
 

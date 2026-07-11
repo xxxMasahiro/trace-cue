@@ -7,8 +7,6 @@ import {
   repeatAgenticReview,
   saveAgenticReviewDecision,
   setControlCenterPreferences,
-  setDisplayLanguage,
-  setPlaywrightTestMode,
   startAgenticReview
 } from './apiClient.js';
 import { designSystemStyle } from './designSystem.js';
@@ -510,24 +508,12 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
     event.preventDefault();
     setState('saving');
     try {
-      const language = dashboard?.settings?.display_language ?? {};
-      const playwright = dashboard?.settings?.playwright_test ?? {};
-      if (form.locale !== language.current_locale) {
-        await setDisplayLanguage({
-          locale: form.locale,
-          confirm: language.write_confirm ?? 'set-control-center-display-language'
-        });
-      }
-      if (form.playwrightMode !== playwright.selected_mode) {
-        await setPlaywrightTestMode({
-          mode: form.playwrightMode,
-          confirm: playwright.write_confirm ?? 'set-playwright-test-mode'
-        });
-      }
       await setControlCenterPreferences({
+        locale: form.locale,
+        playwright_mode: form.playwrightMode,
         default_viewport: form.defaultViewport,
         ai_suggestions_enabled: form.aiSuggestions,
-        confirm: 'save-control-center-preferences'
+        confirm: 'save-control-center-settings'
       });
       await reload({ quiet: true });
       setLocale(form.locale);

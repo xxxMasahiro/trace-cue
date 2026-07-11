@@ -16,6 +16,7 @@ import {
   runControlCenterSourceIntakeProposal
 } from './control-center-actions.js';
 import { runControlCenterSetPreferences } from './control-center-preferences.js';
+import { runControlCenterSaveSettings } from './control-center-settings.js';
 import {
   CONTROL_CENTER_AGENTIC_REVIEW_ENDPOINTS,
   runControlCenterAgenticReviewConfirmation,
@@ -304,9 +305,12 @@ async function handleControlCenterRequest(request, response, config, context) {
       sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
       return;
     }
-    const result = await runControlCenterSetPreferences(body.value, { ...context, cwd: config.cwd });
+    const combinedSave = Object.hasOwn(body.value, 'locale') || Object.hasOwn(body.value, 'playwright_mode');
+    const result = combinedSave
+      ? await runControlCenterSaveSettings(body.value, { ...context, cwd: config.cwd })
+      : await runControlCenterSetPreferences(body.value, { ...context, cwd: config.cwd });
     const envelope = createEnvelope({
-      command: 'control-center settings preferences',
+      command: combinedSave ? 'control-center settings save' : 'control-center settings preferences',
       status: result.status,
       data: result.data,
       warnings: result.warnings,

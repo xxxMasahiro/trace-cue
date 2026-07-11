@@ -9,7 +9,7 @@
     "docs/memory/DEVELOPER_MEMORY.md",
     "docs/memory/SESSION_MEMORY.md",
     "node_modules/**",
-    "ops/DASHBOARD_SETTINGS.json",
+    "ops/DASHBOARD_SETTINGS.local.json",
     "playwright-report/**",
     "test-results/**"
   ],
@@ -116,6 +116,22 @@
         ]
       },
       "required_groups": ["ci_governance"]
+    },
+    {
+      "id": "dashboard-settings-persistence",
+      "description": "Changes to shared defaults or local settings persistence require product, verification, and security synchronization.",
+      "trigger": {
+        "any_of": [
+          "ops/DASHBOARD_SETTINGS.json",
+          "src/dashboard-settings-store.js",
+          "src/control-center-settings.js",
+          "src/control-center-preferences.js",
+          "src/control-center-actions.js",
+          "src/playwright-test-integration.js"
+        ]
+      },
+      "required_groups": ["product_core", "verification", "security"],
+      "cannot_be_exempted": true
     },
     {
       "id": "agentic-human-review-and-provider-boundaries",

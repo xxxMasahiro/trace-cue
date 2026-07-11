@@ -322,6 +322,10 @@ export {
   runControlCenterSetPreferences
 } from './control-center-preferences.js';
 export {
+  CONTROL_CENTER_SAVE_SETTINGS_CONFIRM,
+  runControlCenterSaveSettings
+} from './control-center-settings.js';
+export {
   createControlCenterServer,
   resolveControlCenterServerConfig,
   runControlCenterServe,
@@ -341,6 +345,15 @@ export {
   runLanguageSettingsPolicy,
   runSettingsShow
 } from './language-settings.js';
+export {
+  DASHBOARD_DEFAULT_SETTINGS_PATH,
+  DASHBOARD_USER_SETTINGS_PATH,
+  readDashboardSettingsLayers,
+  readEffectiveDashboardSettings,
+  readLocalDashboardSettings,
+  updateLocalDashboardSettings,
+  writeLocalDashboardSettings
+} from './dashboard-settings-store.js';
 export {
   TRACE_CUE_LOCALE_CODES,
   TRACE_CUE_LOCALE_POLICY,

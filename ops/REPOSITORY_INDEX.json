@@ -81,6 +81,14 @@
       "role": "manifest"
     },
     {
+      "path": "src/control-center-settings.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/dashboard-settings-store.js",
+      "role": "manifest"
+    },
+    {
       "path": "src/control-center-server.js",
       "role": "manifest"
     },
@@ -186,6 +194,10 @@
     },
     {
       "path": "tests/cli.test.js",
+      "role": "manifest"
+    },
+    {
+      "path": "tests/dashboard-settings-store.test.js",
       "role": "manifest"
     },
     {

@@ -418,7 +418,7 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - The server must be loopback-only, Host/Origin validated, cache-disabled with `Cache-Control: no-store`, and keep `/api/dashboard` GET-only.
 - The server may expose only approved bounded local POST actions for Control Center workflows. The existing eight action endpoint paths remain unchanged. Separate namespaced endpoints may persist ordinary Control Center preferences and prepare, confirm, start, decide, or repeat one dedicated page review. External AI execution requires a fresh one-time confirmation bound to the prepared disclosure and plan.
 - Source intake must create only local non-executing proposal artifacts from workspace-confined source text; it must not run providers, call APIs, use shell commands, expose MCP execution, transfer evidence externally, store full source text, store chunk text, mutate review gates, or execute plans.
-- Display-language settings must write only the Control Center display locale to the fixed TraceCue settings path and must not translate source evidence, provider output, generated review text, or artifact output language.
+- Display-language settings must write only the ignored TraceCue-local user override and must not mutate tracked shared defaults, translate source evidence, provider output, generated review text, or artifact output language.
 - The UI must stay minimal and follow the accepted prototype typography, spacing, and narrow settings layout. The ordinary Settings page contains display language, default review screen size, a concise Playwright Test mode choice, AI suggestions, immutable send-before-confirmation, and one save action. Technical locale state, providers, models, credentials, storage paths, diagnostics, regression import/CI forms, and boundary badges must not appear there.
 
 ### Purpose-Led Production Navigation Criteria
@@ -453,8 +453,25 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - The policy must be repository-local, JSON-based, schema-versioned,
   dependency-free on Node 20, reusable by local checks, an optional safe
   pre-push hook, and CI without duplicating product or browser tests.
-- Temporary memory, local dashboard settings, ignored/generated browser
+- Temporary memory, ignored local dashboard overrides, ignored/generated browser
   evidence, dependencies, builds, coverage, and test reports must neither
   trigger synchronization nor count as synchronized authority.
 - Mechanical synchronization is an omission guard only. It must not replace
   semantic review, focused tests, security inspection, or existing gates.
+
+## Local Dashboard Settings Persistence
+
+- `ops/DASHBOARD_SETTINGS.json` is the tracked shared-default authority. Ordinary
+  Control Center and Playwright Test setting changes must never write it.
+- User choices are stored in ignored `ops/DASHBOARD_SETTINGS.local.json` and
+  layered over shared defaults through one allowlisted settings store.
+- The ordinary Settings page must validate display language, default viewport,
+  AI suggestions, and Playwright Test mode before one atomic save. A failed save
+  must not leave a partially applied combination.
+- Local settings must not disable external-send confirmation or enable provider,
+  credential, browser, shell, MCP, translation, destructive, or release-gate
+  authority. Malformed, oversized, non-regular, symlinked, or workspace-escaping
+  settings must fail closed.
+- Existing display-language, preference, Playwright mode, and approved external-CI
+  compatibility endpoints must use the same local store and preserve unrelated
+  settings branches. Saving user preferences must not make Git dirty.

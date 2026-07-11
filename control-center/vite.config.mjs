@@ -12,6 +12,8 @@ import {
   runControlCenterSetDisplayLanguage,
   runControlCenterSourceIntakeProposal
 } from '../src/control-center-actions.js';
+import { runControlCenterSaveSettings } from '../src/control-center-settings.js';
+import { runControlCenterSetPreferences } from '../src/control-center-preferences.js';
 
 function sendJson(response, status, body) {
   response.writeHead(status, {
@@ -92,6 +94,31 @@ function controlCenterApiPlugin() {
           const result = await runControlCenterSetDisplayLanguage(body.value, { cwd: process.cwd() });
           const envelope = createEnvelope({
             command: 'control-center settings display-language',
+            status: result.status,
+            data: result.data,
+            warnings: result.warnings,
+            errors: result.errors,
+            artifacts: result.artifacts
+          });
+          sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+          return;
+        }
+        if (url.pathname === '/api/settings/control-center') {
+          if (request.method !== 'POST') {
+            sendJson(response, 405, { error: { code: 'CONTROL_CENTER_PREFERENCES_POST_ONLY', message: 'Control Center settings only accept POST requests.' } });
+            return;
+          }
+          const body = await readJsonRequestBody(request);
+          if (!body.ok) {
+            sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+            return;
+          }
+          const combinedSave = Object.hasOwn(body.value, 'locale') || Object.hasOwn(body.value, 'playwright_mode');
+          const result = combinedSave
+            ? await runControlCenterSaveSettings(body.value, { cwd: process.cwd() })
+            : await runControlCenterSetPreferences(body.value, { cwd: process.cwd() });
+          const envelope = createEnvelope({
+            command: combinedSave ? 'control-center settings save' : 'control-center settings preferences',
             status: result.status,
             data: result.data,
             warnings: result.warnings,

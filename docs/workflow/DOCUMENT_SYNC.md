@@ -33,7 +33,9 @@ required `any_of` groups require at least one listed alternative.
   persistent browser sessions, evidence contracts, evaluation, and claims
   require product, verification, and security synchronization. These policy
   rules are not exemptible.
-- Temporary developer/session memory, local dashboard settings, ignored browser
+- Dashboard shared defaults and local persistence implementation require the
+  same product, verification, and security synchronization.
+- Temporary developer/session memory, ignored local dashboard overrides, ignored browser
   evidence, dependencies, builds, coverage, and test reports neither trigger a
   rule nor satisfy one.
 - Design-only implementation repairs continue to follow the design-system
@@ -41,6 +43,10 @@ required `any_of` groups require at least one listed alternative.
   the change defines a new visual specification. Interaction, accessibility,
   navigation, copy meaning, or state meaning is product behavior rather than a
   design-only repair.
+
+The tracked `ops/DASHBOARD_SETTINGS.json` file is a shared default and is not a
+local-settings exclusion. Only the ignored `ops/DASHBOARD_SETTINGS.local.json`
+user override is excluded.
 - Tests-only refactors do not automatically require product documents. Changes
   to verification meaning, evidence acceptance, or CI wiring still require the
   relevant verification or CI authorities under repository routing rules.
