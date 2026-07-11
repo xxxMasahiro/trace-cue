@@ -457,5 +457,7 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
   validated atomic save while retaining legacy endpoint compatibility.
 - [x] Add focused storage, security, concurrency, server, CLI/API/MCP, and
   tracked-file immutability regression tests.
-- [ ] Complete browser validation, release/product gates, clean commit/push,
-  main CI, current-HEAD evidence capture, and parent read-only authority check.
+- [x] Complete 166 no-browser tests, 14 browser tests, desktop/mobile TraceCue
+  review, release/product gates, implementation commit `6f4ba26`, and main CI
+  run `29167956685`; final current-HEAD evidence is recorded after the closure
+  commit so the parent authority can evaluate the exact final revision.
