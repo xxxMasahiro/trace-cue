@@ -25,7 +25,7 @@ export function designSystemStyle() {
     '--tc-color-navigation-mark-text': color.navigation_mark_text ?? color.navigation_muted ?? '#9cabb9',
     '--tc-color-navigation-hover': color.navigation_hover ?? color.navigation ?? '#111b25',
     '--tc-color-success': color.success ?? '#287d3c',
-    '--tc-color-success-soft': color.success_soft ?? '#eef8f0',
+    '--tc-color-success-soft': color.success_soft ?? '#eaf7ee',
     '--tc-color-warning': color.warning ?? '#a16207',
     '--tc-color-warning-soft': color.warning_soft ?? '#fff8e8',
     '--tc-color-danger': color.danger ?? '#b42318',

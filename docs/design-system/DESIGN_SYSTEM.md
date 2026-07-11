@@ -66,6 +66,11 @@ and one save action. Status badges, duplicate
 headings, storage paths, locale codes, text-direction values, translation state,
 trust-boundary badges, and diagnostic disclosures stay out of this page.
 
+Successful inline feedback uses the ordinary 1px line border on every side and
+the `success_soft` background token. It must not use a thick colored leading
+border; the quiet green surface communicates completion without competing with
+the next action.
+
 The send-confirmation dialog is centered in the work area, not the full browser
 viewport. It names the configured service and the evidence classes that will be
 sent. Finding decisions start unselected. Provider/model/credential controls,

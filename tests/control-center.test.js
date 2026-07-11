@@ -254,6 +254,7 @@ test('control-center appearance is controlled by the product design-system files
   assert.match(designSystem, /docs\/design-system\/components\.json/);
   for (const id of [
     'control-center-shell',
+    'control-center-success-feedback',
     'source-intake-form',
     'source-validation-message',
     'source-safety-strip',
@@ -284,6 +285,7 @@ test('control-center appearance is controlled by the product design-system files
   assert.match(styles, /\.screen\.narrow[\s\S]*var\(--tc-layout-narrow-content-width\)/);
   assert.match(styles, /\.page-header h1[\s\S]*var\(--tc-font-page-title\)/);
   assert.match(styles, /\.settings-group > h2[\s\S]*var\(--tc-font-section-title\)/);
+  assert.match(styles, /\.inline-notice\.success[\s\S]*border-inline-start-width: 1px;[\s\S]*background: var\(--tc-color-success-soft\)/);
   assert.doesNotMatch(styles, /#[0-9a-fA-F]{3,8}\b/);
 });
 

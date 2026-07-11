@@ -11,6 +11,7 @@ const state = {
   method: "standard",
   decision: null,
   aiSuggestions: true,
+  settingsSaved: query.get("saved") === "1",
 };
 
 const methods = {
@@ -210,6 +211,7 @@ function renderSettings() {
         ${settingToggle("AIの提案を使う", "改善案を分かりやすく整理します。", "ai-suggestions", state.aiSuggestions, false)}
         ${settingToggle("外部へ送る前に確認する", "送信先と内容を毎回表示します。この保護はオフにできません。", "send-confirmation", true, true)}
       </section>
+      ${state.settingsSaved ? '<div class="inline-notice success" role="status"><strong>設定を保存しました</strong></div>' : ''}
       <div class="settings-footer"><button class="button primary" type="submit">設定を保存</button></div>
     </form>
   </section>`;
@@ -303,7 +305,13 @@ document.addEventListener("click", (event) => {
 document.addEventListener("submit", (event) => {
   event.preventDefault();
   if (event.target.id === "review-form") dialog.showModal();
-  if (event.target.id === "settings-form") showToast("設定を保存しました");
+  if (event.target.id === "settings-form") {
+    state.settingsSaved = true;
+    const url = new URL(window.location.href);
+    url.searchParams.set("saved", "1");
+    window.history.replaceState({}, "", url);
+    renderSettings();
+  }
 });
 
 render();

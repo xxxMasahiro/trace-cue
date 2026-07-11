@@ -17,6 +17,7 @@ states for review and screenshot generation:
 - `?screen=finding`
 - `?screen=running`
 - `?screen=settings`
+- `?screen=settings&saved=1` (settings saved feedback)
 
 The send-confirmation dialog is opened from the New review screen or by adding
 `&dialog=send` to `?screen=new`.

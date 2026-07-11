@@ -237,7 +237,21 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
     await page.getByLabel('Display language').selectOption('ja');
     await page.getByRole('button', { name: /Save settings|設定を保存/ }).click();
-    await page.getByText('設定を保存しました', { exact: true }).waitFor();
+    const savedNotice = page.locator('.inline-notice.success').filter({ hasText: '設定を保存しました' });
+    await savedNotice.waitFor();
+    const savedNoticeStyle = await savedNotice.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        borderLeftWidth: style.borderLeftWidth,
+        borderRightWidth: style.borderRightWidth,
+        backgroundColor: style.backgroundColor,
+        successSoft: getComputedStyle(element.closest('.app-shell')).getPropertyValue('--tc-color-success-soft').trim()
+      };
+    });
+    assert.equal(savedNoticeStyle.borderLeftWidth, '1px');
+    assert.equal(savedNoticeStyle.borderRightWidth, '1px');
+    assert.equal(savedNoticeStyle.backgroundColor, 'rgb(234, 247, 238)');
+    assert.equal(savedNoticeStyle.successSoft, '#eaf7ee');
     const savedDashboard = await page.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
     assert.equal(savedDashboard.settings.display_language.current_locale, 'ja');
     assert.equal(savedDashboard.settings.playwright_test.selected_mode, 'local_run');

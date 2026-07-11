@@ -42,6 +42,22 @@ try {
   await page.getByText('AIの提案を使う', { exact: true }).waitFor();
   await page.getByText('外部へ送る前に確認する', { exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: '設定を保存' }).count(), 1);
+  await page.getByRole('button', { name: '設定を保存' }).click();
+  const savedNotice = page.getByRole('status').filter({ hasText: '設定を保存しました' });
+  await savedNotice.waitFor();
+  const savedNoticeStyle = await savedNotice.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      borderLeftWidth: style.borderLeftWidth,
+      borderRightWidth: style.borderRightWidth,
+      backgroundColor: style.backgroundColor,
+      successSoft: getComputedStyle(document.documentElement).getPropertyValue('--green-soft').trim(),
+    };
+  });
+  assert.equal(savedNoticeStyle.borderLeftWidth, '1px');
+  assert.equal(savedNoticeStyle.borderRightWidth, '1px');
+  assert.equal(savedNoticeStyle.backgroundColor, 'rgb(234, 247, 238)');
+  assert.equal(savedNoticeStyle.successSoft, '#eaf7ee');
 
   const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await mobile.goto(`${entry}?screen=settings`);

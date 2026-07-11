@@ -1831,7 +1831,11 @@ textarea.text-input {
 .inline-notice p { margin: 4px 0 0; color: var(--tc-color-muted); }
 .inline-notice.warning { border-inline-start-color: var(--tc-color-warning); }
 .inline-notice.danger { border-inline-start-color: var(--tc-color-danger); }
-.inline-notice.success { border-inline-start-color: var(--tc-color-success); }
+.inline-notice.success {
+  border-inline-start-width: 1px;
+  border-color: var(--tc-color-line);
+  background: var(--tc-color-success-soft);
+}
 .state-panel.warning { border-color: var(--tc-color-warning); }
 .state-panel.success { border-color: var(--tc-color-success); }
 

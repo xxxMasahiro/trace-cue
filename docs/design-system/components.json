@@ -58,6 +58,11 @@
       "contract": ["Use one continuous prototype-style form for display language, default review screen, concise Playwright Test mode, AI suggestions, and mandatory external-send confirmation, with one 設定を保存 action."]
     },
     {
+      "id": "control-center-success-feedback",
+      "tokens": ["line", "foreground", "success_soft"],
+      "contract": ["Show successful inline feedback with the ordinary 1px line border on every side and the success_soft background; do not use a thick colored leading border."]
+    },
+    {
       "id": "source-intake-form",
       "tokens": ["background", "surface", "line", "foreground", "muted", "accent"],
       "contract": ["Collect only the source text path, source type, review goal, review depth, optional context, and explicit local-write confirmation."]

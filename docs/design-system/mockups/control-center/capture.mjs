@@ -12,6 +12,7 @@ const captures = [
   { name: 'mock-progress-desktop.png', screen: 'progress', viewport: { width: 1440, height: 1000 } },
   { name: 'mock-result-desktop.png', screen: 'result', viewport: { width: 1440, height: 1000 } },
   { name: 'mock-settings-desktop.png', screen: 'settings', viewport: { width: 1440, height: 1000 } },
+  { name: 'mock-settings-saved-desktop.png', screen: 'settings', saved: true, viewport: { width: 1440, height: 1000 } },
   { name: 'mock-new-review-mobile.png', screen: 'new', viewport: { width: 390, height: 844 } },
   { name: 'mock-settings-mobile.png', screen: 'settings', viewport: { width: 390, height: 844 } },
 ];
@@ -28,6 +29,7 @@ try {
     const url = new URL(entry);
     url.searchParams.set('screen', capture.screen);
     if (capture.dialog) url.searchParams.set('dialog', capture.dialog);
+    if (capture.saved) url.searchParams.set('saved', '1');
     await page.goto(url.href, { waitUntil: 'load' });
     await page.locator(`[data-mock-screen="${capture.screen}"]`).waitFor();
     if (capture.dialog) await page.locator('#send-dialog').waitFor({ state: 'visible' });
