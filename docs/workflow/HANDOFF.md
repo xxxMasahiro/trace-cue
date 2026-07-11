@@ -411,6 +411,15 @@ only local repository hook configuration through the installer, and refuses to
 replace unmanaged settings. Temporary memory and local dashboard settings are
 excluded and remain valid dirty-worktree exceptions.
 
-Next step: complete local product checks and TraceCue browser regression, then
-commit only the document-sync slice, push, confirm all main CI jobs, fetch, and
-verify local and remote SHAs match.
+Completion evidence: document-sync commit `b2c410f` passed 161 no-browser tests,
+14 browser smoke tests, release checks, and the local product gate. TraceCue's
+own browser review passed with zero findings at desktop review
+`review-2026-07-11T16-48-30-075Z-2a6c0405` and mobile review
+`review-2026-07-11T16-48-30-085Z-b53b267f`. Main CI run `29160540410` passed
+the Node 20, Node 22, Browser smoke, and Repository contracts jobs. Local and
+remote SHAs were synchronized after the push. Pre-existing user changes in
+`docs/memory/SESSION_MEMORY.md` and `ops/DASHBOARD_SETTINGS.json` remain the
+only intended dirty-worktree exceptions and were not modified by this slice.
+
+Next step: observe the TraceCue-only policy in normal pull requests and adjust
+rules only when concrete false-positive or missed-sync evidence is recorded.
