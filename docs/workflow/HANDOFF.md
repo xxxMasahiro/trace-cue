@@ -394,3 +394,23 @@ Agentic Human Review AHR-01-44, the first manual live upstream dogfood pass, the
 - Agent execution code exposes execution through MCP, accepts free-form shell commands, automates SaaS web UIs, adds OAuth/login automation, persists credentials, or adds HTTP/socket provider control paths.
 - Product identity work starts changing package names, repository names, plugin names, MCP server names, CLI command names, public package naming, license, marketplace registration, npm publication, or external evidence transfer without explicit approval.
 - MCP read-only agent status or HTTP transport work starts writing advisory artifacts, creating workflows, creating execution plans, running executions, calling providers, deleting files, uploading evidence, mutating review artifacts, changing gates, adding shell tools, adding socket transport, adding remote HTTP listeners, exposing HTTP `full` or `admin`, or handling credentials without explicit approval.
+
+## Document Synchronization Enforcement
+
+The current slice adds a TraceCue-only document synchronization authority. The
+machine policy is `ops/DOCUMENT_SYNC_POLICY.json`; the human operating contract
+is `docs/workflow/DOCUMENT_SYNC.md`. The checker evaluates the complete PR or
+push range, combines matching rules, includes renames/deletions, and fails
+closed when base/head commits are unavailable. Sensitive AHR, external-send,
+MCP, persistent-session, evidence, evaluation, and claim paths require product,
+verification, and security synchronization.
+
+The new CI job is intentionally lightweight and does not rerun no-browser,
+package, or browser suites. The pre-push hook is opt-in, does not fetch, changes
+only local repository hook configuration through the installer, and refuses to
+replace unmanaged settings. Temporary memory and local dashboard settings are
+excluded and remain valid dirty-worktree exceptions.
+
+Next step: complete local product checks and TraceCue browser regression, then
+commit only the document-sync slice, push, confirm all main CI jobs, fetch, and
+verify local and remote SHAs match.

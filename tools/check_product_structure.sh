@@ -24,6 +24,7 @@ for rel in \
   AGENTS.MD \
   CHANGELOG.md \
   .codex-plugin/plugin.json \
+  .githooks/pre-push \
   .mcp.json \
   .github/workflows/ci.yml \
   package.json \
@@ -41,6 +42,7 @@ for rel in \
   schemas/agentic-human-review-receipt.schema.json \
   schemas/agentic-human-review-report-quality.schema.json \
   schemas/agentic-human-review-source-text-quality.schema.json \
+	  schemas/document-sync-policy.schema.json \
 	  schemas/capture-handoff.schema.json \
 	  schemas/capture-plan.schema.json \
 	  schemas/envelope.schema.json \
@@ -110,6 +112,7 @@ for rel in \
   templates/review-target-manifest.json \
   tests/architecture.test.js \
   tests/cli.test.js \
+  tests/document-sync.test.js \
   tests/playwright-test.test.js \
   tests/browser-smoke.test.js \
   tests/pack-install-smoke.test.js \
@@ -121,6 +124,7 @@ for rel in \
   docs/design-system/components.json \
   docs/workflow/TASK_TRACKER.md \
   docs/workflow/HANDOFF.md \
+  docs/workflow/DOCUMENT_SYNC.md \
   docs/workflow/RELEASE.md \
   docs/workflow/SECURITY.md \
   docs/workflow/VERIFICATION.md \
@@ -128,6 +132,7 @@ for rel in \
   ops/STAGE_MANIFEST.tsv \
   ops/TEST_PLAN_MANIFEST.tsv \
   ops/CI_MANIFEST.tsv \
+  ops/DOCUMENT_SYNC_POLICY.json \
   ops/DASHBOARD_SETTINGS.json \
   ops/DESIGN_SYSTEM_MANIFEST.tsv \
   ops/DASHBOARD_MANIFEST.tsv \
@@ -156,13 +161,16 @@ for rel in \
   tools/check_product_security.sh \
   tools/check_product_ci.sh \
   tools/check_product_design_system.sh \
+  tools/check_document_sync.mjs \
+  tools/install-git-hooks \
   tools/test_product_repository.sh \
+  tools/lib/document-sync.mjs \
   tools/lib/product_common.sh \
   tools/lib/product_gate_evidence.sh; do
   require_nonempty "$rel"
 done
 
-for rel in .codex-plugin .github .github/workflows bin schemas src templates tests docs/product docs/workflow docs/design-system docs/memory ops skills tools; do
+for rel in .codex-plugin .githooks .github .github/workflows bin schemas src templates tests docs/product docs/workflow docs/design-system docs/memory ops skills tools; do
   require_dir "$rel"
 done
 

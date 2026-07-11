@@ -49,6 +49,11 @@ if [[ -s "$WORKFLOW" ]]; then
   require_pattern "$WORKFLOW" 'run: npm run test:pack-install' 'packed install smoke tests'
   require_pattern "$WORKFLOW" 'run: npx playwright install --with-deps chromium' 'explicit Chromium install'
   require_pattern "$WORKFLOW" 'run: npm run test:browser' 'browser smoke tests'
+  require_pattern "$WORKFLOW" '^  repository-contracts:' 'repository contracts job'
+  require_pattern "$WORKFLOW" 'fetch-depth: 0' 'full history checkout for range checks'
+  require_pattern "$WORKFLOW" 'check_document_sync\.mjs.*--base.*--head' 'base and head document sync range check'
+  require_pattern "$WORKFLOW" 'check_product_structure\.sh' 'repository structure contract check'
+  require_pattern "$WORKFLOW" 'check_product_security\.sh' 'repository security contract check'
   reject_pattern "$WORKFLOW" 'npm publish|gh repo|curl |wget |secrets\.' 'release, network upload, or secret usage'
 fi
 
@@ -59,6 +64,7 @@ if [[ -s "$MANIFEST" ]]; then
   }
   require_pattern "$MANIFEST" 'github_actions_node' 'node CI manifest row'
   require_pattern "$MANIFEST" 'github_actions_browser' 'browser CI manifest row'
+  require_pattern "$MANIFEST" 'github_actions_repository_contracts' 'repository contracts CI manifest row'
   require_pattern "$MANIFEST" 'product_ci_manifest' 'local CI validation row'
 fi
 

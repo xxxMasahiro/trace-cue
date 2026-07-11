@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 "$SCRIPT_DIR/check_product_ci.sh"
 "$SCRIPT_DIR/check_product_design_system.sh"
 "$SCRIPT_DIR/product-mode" check
+node "$SCRIPT_DIR/check_document_sync.mjs" --worktree
 
 if [[ -f "$SCRIPT_DIR/../package.json" ]]; then
   (cd "$SCRIPT_DIR/.." && npm test)

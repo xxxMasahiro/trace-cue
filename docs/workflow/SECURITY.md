@@ -232,3 +232,23 @@ The review platform must:
 - Keep arbitrary shell execution, external upload, persistent browser profile reuse, default storageState persistence outside explicit artifact-auth opt-in, OAuth, webhook handling, and credential storage out of the review MVP.
 
 Security tests block unapproved use of persistent browser profiles, storageState persistence outside explicit artifact-auth opt-in, unapproved listeners, arbitrary shell execution, external upload paths, host cache/swap mutation, cleanup outside the configured artifact root, and MCP cleanup execution.
+
+## Document Synchronization Security
+
+- The document-sync checker reads repository-relative path names and local Git
+  metadata only. It must not read changed file bodies, credential values,
+  browser evidence bodies, provider responses, cookies, storage state, raw
+  pixels, or private source content.
+- The checker and hook must not fetch, push, contact a network, call providers,
+  launch browsers, execute MCP tools, upload evidence, mutate review artifacts,
+  or change release gates. Git invocations are fixed read-only argument lists.
+- Temporary memory, local dashboard settings, ignored browser evidence, build
+  outputs, coverage, dependencies, and test reports cannot satisfy a sensitive
+  rule. AHR, external-send/provider, MCP, persistent-session, evidence,
+  evaluation, and claim classifications cannot be bypassed by an exception
+  record or commit message.
+- Hook installation is explicit and repository-local. It must refuse another
+  configured hook path and uninstall only `.githooks`; npm lifecycle and global
+  Git configuration changes are prohibited.
+- The CI job receives read-only repository contents permission and no secrets.
+  Missing comparison history fails closed rather than disabling enforcement.

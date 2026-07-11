@@ -1002,3 +1002,28 @@ calling the provider again. `decision` upserts one `fix`, `later`, or `ask` valu
 for a returned finding. `repeat` always creates a new operation and browser
 review, links it to the previous operation, and either keeps the effort for
 `recheck` or advances it for `deeper`.
+
+## Document Sync Contract
+
+`ops/DOCUMENT_SYNC_POLICY.json` defines excluded path patterns, reusable
+document groups, and additive rules. `schemas/document-sync-policy.schema.json`
+defines its versioned shape. `tools/lib/document-sync.mjs` validates policy,
+performs bounded `*`/`**` matching, parses NUL-delimited Git rename/delete
+records, and evaluates changed paths without file or network side effects.
+
+`tools/check_document_sync.mjs` accepts explicit changed files, a Git
+base/head range, or the current worktree. Range mode resolves both commits,
+uses their merge base, and reads `git diff --name-status -z --find-renames`.
+Unavailable commits are errors rather than skipped checks. Matching rules are
+combined by union; every required `all_of` path and each required `any_of`
+alternative group must be satisfied inside the same range.
+
+The optional `.githooks/pre-push` entry invokes the same checker. The installer
+sets only repository-local `core.hooksPath=.githooks`, refuses unmanaged hook
+configuration, and uninstalls only its own setting. It performs no fetch,
+network call, credential read, artifact write, browser action, provider call,
+MCP action, or external evidence transfer.
+
+The CI `repository-contracts` job alone uses `fetch-depth: 0`. It runs the
+lightweight repository contract checks and evaluates event-specific base/head
+SHAs. Existing Node and browser jobs retain their current responsibility.

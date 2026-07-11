@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TraceCue document sync policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "excluded_paths", "document_groups", "rules"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "kind": { "const": "document-sync-policy" },
+    "excluded_paths": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "document_groups": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/requirements" }
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "description", "trigger", "required_groups"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+          "description": { "type": "string", "minLength": 1 },
+          "trigger": { "$ref": "#/$defs/trigger" },
+          "required_groups": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          },
+          "cannot_be_exempted": { "type": "boolean" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "pathList": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "any_of": { "$ref": "#/$defs/pathList" },
+        "all_of": { "$ref": "#/$defs/pathList" },
+        "none_of": { "$ref": "#/$defs/pathList" }
+      },
+      "anyOf": [
+        { "required": ["any_of"] },
+        { "required": ["all_of"] }
+      ]
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "all_of": { "$ref": "#/$defs/pathList" },
+        "any_of": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pathList" }
+        }
+      },
+      "anyOf": [
+        { "required": ["all_of"] },
+        { "required": ["any_of"] }
+      ]
+    }
+  }
+}

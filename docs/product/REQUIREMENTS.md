@@ -440,3 +440,21 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - After dispatch begins, TraceCue must never retry automatically. If a restart makes completion uncertain, status becomes `dispatch_unknown`; the UI must explain the uncertainty and avoid a duplicate provider call.
 - Findings are advisory. Each finding may receive `fix`, `later`, or `ask`; these choices and AI output must not mutate deterministic findings, proof contracts, owner authority, or release gates.
 - `recheck` and `deeper` create new operations and new browser evidence. `deeper` advances `standard` to `deep` and `deep` to `xhigh`; it is unavailable after `xhigh`.
+
+## Document Synchronization Enforcement
+
+- TraceCue must reject integration ranges that change classified product,
+  workflow, CI, Agentic Human Review, provider/external-send, MCP, persistent
+  browser-session, evidence, evaluation, or claim authorities without the
+  required product, workflow, verification, security, and manifest updates.
+- Synchronization must be evaluated over the complete pull-request or push
+  range, not each commit. Renames and deletions must remain visible to the
+  classifier, and missing comparison commits must fail closed.
+- The policy must be repository-local, JSON-based, schema-versioned,
+  dependency-free on Node 20, reusable by local checks, an optional safe
+  pre-push hook, and CI without duplicating product or browser tests.
+- Temporary memory, local dashboard settings, ignored/generated browser
+  evidence, dependencies, builds, coverage, and test reports must neither
+  trigger synchronization nor count as synchronized authority.
+- Mechanical synchronization is an omission guard only. It must not replace
+  semantic review, focused tests, security inspection, or existing gates.

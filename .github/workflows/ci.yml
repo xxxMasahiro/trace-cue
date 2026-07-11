@@ -6,11 +6,73 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      base_sha:
+        description: Optional base commit for repository contract range checks
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 jobs:
+  repository-contracts:
+    name: Repository contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Check repository contracts
+        run: |
+          ./tools/check_product_structure.sh
+          ./tools/check_product_docs.sh
+          ./tools/check_product_security.sh
+          ./tools/check_product_ci.sh
+          ./tools/check_product_design_system.sh
+          ./tools/product-mode check
+          npm run document-sync:contract-check
+
+      - name: Check document synchronization range
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+          INPUT_BASE_SHA: ${{ inputs.base_sha }}
+        run: |
+          case "$EVENT_NAME" in
+            pull_request)
+              base="$PR_BASE_SHA"
+              head="$PR_HEAD_SHA"
+              ;;
+            push)
+              base="$PUSH_BASE_SHA"
+              head="$PUSH_HEAD_SHA"
+              ;;
+            workflow_dispatch)
+              base="${INPUT_BASE_SHA:-$(git rev-parse HEAD^)}"
+              head="$PUSH_HEAD_SHA"
+              ;;
+            *)
+              printf 'Unsupported repository contract event: %s\n' "$EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
+          if [[ -z "$base" || -z "$head" || "$base" =~ ^0+$ ]]; then
+            printf 'Document sync range requires available non-zero base and head commits.\n' >&2
+            exit 1
+          fi
+          node ./tools/check_document_sync.mjs --base "$base" --head "$head"
+
   node:
     name: Node ${{ matrix.node-version }}
     runs-on: ubuntu-latest

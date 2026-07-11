@@ -427,3 +427,17 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
 - Agent execution work stores credential values, raw provider responses, raw screenshots, trace contents, raw DOM, console payloads, network payloads, sourceData values, report bodies, cookies, storage state, existing browser profile data, or raw review artifacts.
 - Agent execution work bypasses dry-run planning, explicit `--execute`, env-only credential loading, local receipts, bounded disclosure, or advisory-only normalization.
 - Agent execution work exposes execution through MCP, accepts free-form shell commands, automates SaaS web UIs, adds OAuth/login automation, persists credentials, or adds HTTP/socket provider control paths.
+
+## Document Synchronization Enforcement
+
+- [x] Define a schema-versioned JSON policy for additive change classifications
+  and reusable required-document groups.
+- [x] Add a Node 20 dependency-free range/worktree checker with rename/delete
+  handling and fail-closed missing commit behavior.
+- [x] Add focused acceptance/rejection tests and an optional managed pre-push
+  hook installer that refuses unmanaged configuration.
+- [x] Add a non-duplicative full-history `repository-contracts` CI job.
+- [x] Synchronize product, workflow, routing, security, verification, structure,
+  CI, test, and product manifests.
+- [ ] Confirm final local gates, TraceCue browser regression, pushed commit,
+  main CI, local/remote SHA equality, and intended dirty-worktree exceptions.

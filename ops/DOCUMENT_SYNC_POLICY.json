@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "document-sync-policy",
+  "excluded_paths": [
+    ".browser-debug/**",
+    ".trace-cue/**",
+    "coverage/**",
+    "dist/**",
+    "docs/memory/DEVELOPER_MEMORY.md",
+    "docs/memory/SESSION_MEMORY.md",
+    "node_modules/**",
+    "ops/DASHBOARD_SETTINGS.json",
+    "playwright-report/**",
+    "test-results/**"
+  ],
+  "document_groups": {
+    "product_core": {
+      "all_of": [
+        "docs/product/REQUIREMENTS.md",
+        "docs/product/SPECIFICATION.md",
+        "docs/product/IMPLEMENTATION_PLAN.md",
+        "docs/workflow/TASK_TRACKER.md",
+        "docs/workflow/HANDOFF.md"
+      ]
+    },
+    "workflow_pair": {
+      "all_of": [
+        "docs/workflow/TASK_TRACKER.md",
+        "docs/workflow/HANDOFF.md"
+      ]
+    },
+    "verification": {
+      "all_of": [
+        "docs/workflow/VERIFICATION.md",
+        "ops/TEST_PLAN_MANIFEST.tsv"
+      ]
+    },
+    "security": {
+      "all_of": [
+        "docs/workflow/SECURITY.md",
+        "ops/SECURITY_MANIFEST.tsv"
+      ]
+    },
+    "ci_governance": {
+      "all_of": [
+        "docs/product/IMPLEMENTATION_PLAN.md",
+        "docs/workflow/TASK_TRACKER.md",
+        "docs/workflow/HANDOFF.md",
+        "docs/workflow/VERIFICATION.md",
+        "ops/CI_MANIFEST.tsv"
+      ]
+    },
+    "document_sync_governance": {
+      "all_of": [
+        "docs/workflow/DOCUMENT_SYNC.md",
+        "AGENTS.MD",
+        "skills/product-doc-sync/SKILL.md",
+        "ops/DOCUMENT_SYNC_POLICY.json",
+        "schemas/document-sync-policy.schema.json",
+        "ops/PRODUCT_MANIFEST.tsv"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "id": "canonical-product-documents",
+      "description": "Keep the five product and workflow authorities synchronized when a canonical product document changes.",
+      "trigger": {
+        "any_of": [
+          "docs/product/REQUIREMENTS.md",
+          "docs/product/SPECIFICATION.md",
+          "docs/product/IMPLEMENTATION_PLAN.md"
+        ]
+      },
+      "required_groups": ["product_core"]
+    },
+    {
+      "id": "workflow-state-pair",
+      "description": "Task tracker and handoff are one workflow-state pair.",
+      "trigger": {
+        "any_of": [
+          "docs/workflow/TASK_TRACKER.md",
+          "docs/workflow/HANDOFF.md"
+        ]
+      },
+      "required_groups": ["workflow_pair"]
+    },
+    {
+      "id": "document-sync-authority",
+      "description": "Changes to document-sync enforcement must update its complete governance contract.",
+      "trigger": {
+        "any_of": [
+          ".githooks/pre-push",
+          "AGENTS.MD",
+          "docs/workflow/DOCUMENT_SYNC.md",
+          "ops/DOCUMENT_SYNC_POLICY.json",
+          "schemas/document-sync-policy.schema.json",
+          "skills/product-doc-sync/SKILL.md",
+          "tools/check_document_sync.mjs",
+          "tests/document-sync.test.js",
+          "tools/install-git-hooks",
+          "tools/lib/document-sync.mjs"
+        ]
+      },
+      "required_groups": ["product_core", "verification", "security", "document_sync_governance"],
+      "cannot_be_exempted": true
+    },
+    {
+      "id": "ci-governance",
+      "description": "CI contract changes must update verification, workflow state, and the CI manifest.",
+      "trigger": {
+        "any_of": [
+          ".github/workflows/**",
+          "ops/CI_MANIFEST.tsv",
+          "tools/check_product_ci.sh"
+        ]
+      },
+      "required_groups": ["ci_governance"]
+    },
+    {
+      "id": "agentic-human-review-and-provider-boundaries",
+      "description": "Agentic review and provider changes require product, verification, and security synchronization.",
+      "trigger": {
+        "any_of": [
+          "bin/trace-cue-ahr-responses-adapter.js",
+          "schemas/agentic-human-review-*.schema.json",
+          "src/agent-execution*.js",
+          "src/agentic-human-review*.js",
+          "src/control-center-agentic-review-actions.js"
+        ]
+      },
+      "required_groups": ["product_core", "verification", "security"],
+      "cannot_be_exempted": true
+    },
+    {
+      "id": "mcp-authority",
+      "description": "MCP transport, profile, capability, and execution changes require full safety synchronization.",
+      "trigger": {
+        "any_of": [
+          ".mcp.json",
+          "bin/*-mcp.js",
+          "schemas/mcp-*.schema.json",
+          "src/mcp*.js"
+        ]
+      },
+      "required_groups": ["product_core", "verification", "security"],
+      "cannot_be_exempted": true
+    },
+    {
+      "id": "persistent-browser-session",
+      "description": "Persistent browser session changes require full safety synchronization.",
+      "trigger": {
+        "any_of": [
+          "schemas/persistent-session.schema.json",
+          "schemas/session-action.schema.json",
+          "src/browser-session-*.js",
+          "src/sessions.js",
+          "src/supervisor.js"
+        ]
+      },
+      "required_groups": ["product_core", "verification", "security"],
+      "cannot_be_exempted": true
+    },
+    {
+      "id": "evidence-evaluation-and-claim-boundaries",
+      "description": "Evidence, evaluation, and claim logic changes require full product and safety synchronization.",
+      "trigger": {
+        "any_of": [
+          "schemas/*evidence*.schema.json",
+          "schemas/*evaluation*.schema.json",
+          "schemas/*claim*.schema.json",
+          "schemas/finding.schema.json",
+          "schemas/human-review-rubric.schema.json",
+          "schemas/review.schema.json",
+          "src/page-evidence.js",
+          "src/review.js",
+          "src/visual-evidence.js",
+          "src/visual-review-*.js"
+        ]
+      },
+      "required_groups": ["product_core", "verification", "security"],
+      "cannot_be_exempted": true
+    }
+  ]
+}

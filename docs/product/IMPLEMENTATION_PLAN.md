@@ -1826,3 +1826,25 @@ Phase 39 records the external-repository dogfood lesson that Browser Debug CLI c
 - Non-scope: provider/model selection, provider execution, visual review execution, agent execution, cleanup execution, arbitrary command execution, MCP JSON-RPC from the browser, credential input or storage, browser auto-launch, generic artifact writes, raw artifact serving, full source-text serving, chunk-text serving, raw pixel display, raw provider response display, raw JSON-first pages, publication, remote CI, or release-gate mutation.
 - Implementation order: build the read model over existing TraceCue APIs; add the isolated server; add bounded action helpers for source intake and display language; add React/Vite UI and design-system wiring; wire parser/CLI/API/schema/package surfaces; add no-browser tests for read-only dashboard boundaries, bounded POST action behavior, schema export, and architecture isolation; synchronize product/security/verification/workflow docs and manifests; run local CLI, Vite build, no-browser tests, package checks, product checks, and diff checks.
 - Recovery: this slice is additive and local. Existing CLI, MCP, review, visual review, agent, agentic review, resource, artifact-root, language, operation, release, shell, final readiness, and browser runtime behavior remain compatible. Rollback is a standard Git revert and does not require artifact migration, credential cleanup, provider-policy change, MCP-policy change, release-gate change, or remote service changes.
+
+## Document Synchronization Enforcement
+
+- Purpose: add a repository-local omission gate that maps classified change
+  paths to required authority documents over one PR or push range.
+- Implemented scope: add the JSON policy, policy schema, pure evaluator,
+  base/head and worktree CLI, rename/delete parsing, focused rejection tests,
+  optional managed pre-push hook and installer, lightweight
+  `repository-contracts` CI job with full history, manifest/structure/product
+  gate wiring, and synchronized product/workflow/security/verification docs.
+- Non-scope: semantic prose validation, commit-unit enforcement, automatic
+  fetching, global Git configuration, unmanaged hook replacement, runtime CLI
+  or Control Center behavior changes, provider calls, external transfer, MCP
+  expansion, browser-session expansion, FrameCue changes, or parent changes.
+- Implementation order: establish schema/evaluator/CLI; add rejection and range
+  tests; add hook safeguards; wire lightweight CI and manifests; synchronize
+  durable documents and routing; run local gates, TraceCue browser regression,
+  Git synchronization, and clean main CI.
+- Recovery: update policy and rejection tests together for false positives, or
+  revert the additive slice. No artifact migration, credential cleanup,
+  provider policy change, browser cleanup, or external repository change is
+  required.

@@ -13,7 +13,10 @@ for rel in \
   docs/product/SPECIFICATION.md \
   docs/product/IMPLEMENTATION_PLAN.md \
   docs/workflow/TASK_TRACKER.md \
-  docs/workflow/HANDOFF.md; do
+  docs/workflow/HANDOFF.md \
+  docs/workflow/DOCUMENT_SYNC.md \
+  ops/DOCUMENT_SYNC_POLICY.json \
+  schemas/document-sync-policy.schema.json; do
   product_require_nonempty_file "$ROOT" "$rel" || failed=1
 done
 
@@ -32,6 +35,9 @@ require_pattern docs/product/SPECIFICATION.md 'Product Shape|Planned Architectur
 require_pattern docs/product/IMPLEMENTATION_PLAN.md 'Phase 0|Phase 1|Approval Boundaries' 'implementation-plan phases'
 require_pattern docs/workflow/TASK_TRACKER.md 'Current Status|Remaining Work|HANDOFF|TASK_TRACKER' 'workflow pair context'
 require_pattern docs/workflow/HANDOFF.md 'Current State|Next Step|HANDOFF|TASK_TRACKER' 'workflow pair context'
+require_pattern docs/workflow/DOCUMENT_SYNC.md 'Policy|Classifications|CI|Git Hook' 'document sync operating sections'
+
+node "$ROOT/tools/check_document_sync.mjs" --validate-policy || failed=1
 
 [[ ! -e "$ROOT/REQUIREMENTS.md" ]] || failed=1
 [[ ! -e "$ROOT/SPECIFICATION.md" ]] || failed=1

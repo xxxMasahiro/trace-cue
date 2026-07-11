@@ -496,3 +496,24 @@ Optional acceptance checks against local application servers may run only when t
 - MCP remains an adapter over the CLI/core contract, not a separate runtime owner.
 - Model/API review remains opt-in and is not part of deterministic local gates.
 - Target-specific application details remain in manifests, fixtures, or acceptance evidence, not generic runtime code.
+
+## Document Synchronization Verification
+
+- `npm run document-sync:contract-check` covers policy validation, bounded glob
+  semantics, additive rule union, canonical/workflow pairing, sensitive AHR,
+  MCP, session, evidence requirements, ignored memory/settings, rename/delete
+  parsing, complete-range acceptance, invalid-base rejection, and safe hook
+  installer behavior.
+- `npm run document-sync:check` evaluates tracked and untracked worktree
+  changes so local product gates catch missing synchronization before commit.
+- CI checks exact event base/head ranges with full history. PR docs may be in a
+  different commit from implementation; docs outside the integration range do
+  not satisfy it. Missing or zero commits fail closed.
+- `check_product_structure.sh`, `check_product_docs.sh`,
+  `check_product_security.sh`, `check_product_ci.sh`,
+  `check_product_design_system.sh`, and `product-mode check` remain lightweight
+  contract gates in the dedicated job. Runtime/package/browser suites remain in
+  their existing jobs.
+- Browser smoke and a TraceCue self-review are regression evidence only for
+  this non-UI slice; document-sync acceptance is determined by the policy,
+  rejection tests, repository contracts, and product gate.
