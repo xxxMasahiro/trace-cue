@@ -29,6 +29,10 @@ required `any_of` groups require at least one listed alternative.
 - Task tracker and handoff are one workflow-state pair.
 - Document-sync authority and CI-governance changes update their policy,
   manifests, verification, routing, and product authorities.
+- Durable development instructions and their machine policy update the
+  instruction authority, product workflow skill, routing, product authorities,
+  verification, security, policy schema, and manifests together. An
+  `INSTRUCTION_MEMORY.md`-only change is rejected.
 - Agentic Human Review, provider/external-send boundaries, MCP authority,
   persistent browser sessions, evidence contracts, evaluation, and claims
   require product, verification, and security synchronization. These policy
@@ -56,6 +60,12 @@ semantic behavior change. `AGENTS.MD`, review, focused tests, and product gates
 remain authoritative for changes that are not covered by a mechanical path
 classification. Adding meaningless prose only to satisfy the range checker is
 not valid synchronization.
+
+Development workflow semantics remain a separate responsibility from path
+classification. `ops/DEVELOPMENT_WORKFLOW_POLICY.json` maps stable instruction
+rule identifiers to registered checks and required review fields. Its checker
+does not parse prose or claim that conversational approval, design quality, or
+unattested model and effort settings were mechanically proven.
 
 ## CI
 

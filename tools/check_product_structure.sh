@@ -42,6 +42,7 @@ for rel in \
   schemas/agentic-human-review-receipt.schema.json \
   schemas/agentic-human-review-report-quality.schema.json \
   schemas/agentic-human-review-source-text-quality.schema.json \
+	  schemas/development-workflow-policy.schema.json \
 	  schemas/document-sync-policy.schema.json \
 	  schemas/capture-handoff.schema.json \
 	  schemas/capture-plan.schema.json \
@@ -112,6 +113,7 @@ for rel in \
   templates/review-target-manifest.json \
   tests/architecture.test.js \
   tests/cli.test.js \
+	  tests/development-workflow.test.js \
   tests/document-sync.test.js \
   tests/playwright-test.test.js \
   tests/browser-smoke.test.js \
@@ -132,6 +134,7 @@ for rel in \
   ops/STAGE_MANIFEST.tsv \
   ops/TEST_PLAN_MANIFEST.tsv \
   ops/CI_MANIFEST.tsv \
+  ops/DEVELOPMENT_WORKFLOW_POLICY.json \
   ops/DOCUMENT_SYNC_POLICY.json \
   ops/DASHBOARD_SETTINGS.json \
   ops/DESIGN_SYSTEM_MANIFEST.tsv \
@@ -161,9 +164,11 @@ for rel in \
   tools/check_product_security.sh \
   tools/check_product_ci.sh \
   tools/check_product_design_system.sh \
+  tools/check_development_workflow.mjs \
   tools/check_document_sync.mjs \
   tools/install-git-hooks \
   tools/test_product_repository.sh \
+  tools/lib/development-workflow.mjs \
   tools/lib/document-sync.mjs \
   tools/lib/product_common.sh \
   tools/lib/product_gate_evidence.sh; do

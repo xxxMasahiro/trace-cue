@@ -2,6 +2,18 @@
 
 ## Current State
 
+Development workflow enforcement is complete locally. The durable English
+instruction authority now has six stable rule ids backed by a strict
+repository-local policy, schema, dependency-free checker, rejection tests,
+document-sync classification, routing, manifests, and the existing lightweight
+repository-contracts CI job. Development-process subagents inherit the active
+user session's model and reasoning effort when exposed or verifiably inherited;
+the current subagent interface did not expose effective-setting attestation, so
+the evidence makes no specific model or effort claim. Product AHR
+`standard`/`deep`/`xhigh` behavior is unchanged. `npm test` passed 171 tests,
+`npm run test:browser` passed 14 tests, the React/Vite production build passed,
+and `product-gate` passed including package dry-run and packed-install smoke.
+
 The production Control Center implementation and verification loop are complete.
 `npm test` passed 153 tests, `npm run test:browser` passed 14 tests,
 `release:check`, packed install, product repository checks, and `product-gate`
@@ -151,8 +163,11 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
   Pre-Implementation Proposal` and `B. Implementation Plan` gate outputs for
   the current range before any file mutation or state-mutating operation.
   Non-trivial implementation or workflow-authority changes require multiple
-  `xhigh`-class subagent reviews with consolidated accepted, deferred, and
-  rejected findings. This protocol correction is workflow-only and does not
+  independent subagent reviews using the active user session's selected model
+  and reasoning effort when selectable and verifiable, with consolidated
+  accepted, deferred, and rejected findings. When the settings are not exposed,
+  the evidence records that limitation without claiming a specific model or
+  effort. This protocol correction is workflow-only and does not
   change runtime behavior, product features, MCP exposure, provider execution,
   security boundaries, release gates, or existing verification commands.
 - For Control Center, use the Intake page or `/api/source-intake/proposal` only for confirmed local proposal creation from workspace-confined source text; use the Settings page or `/api/settings/display-language` only for Control Center chrome locale. Provider runs still require the normal approved Agentic Human Review plan/run flow outside the browser UI.
@@ -422,6 +437,34 @@ slice resolves the two dirty-worktree exceptions that remained at that time.
 
 Next step: observe the TraceCue-only policy in normal pull requests and adjust
 rules only when concrete false-positive or missed-sync evidence is recorded.
+
+## Development Workflow Enforcement
+
+The current slice adds a TraceCue-only machine contract for the objectively
+decidable part of `INSTRUCTION_MEMORY.md`. Stable instruction anchors map to
+registered tests and required review fields through
+`ops/DEVELOPMENT_WORKFLOW_POLICY.json`; the strict schema and dependency-free
+checker reject fixed model or reasoning-effort overrides, unknown fields,
+missing or duplicate anchors, unregistered tests, missing files, and missing
+scripts. Durable instruction changes now trigger full workflow, product,
+verification, security, routing, schema, and manifest synchronization.
+
+Three independent pre-implementation reviews were consolidated. Accepted
+findings produced the two-layer document-sync plus workflow-policy design,
+dynamic active-session inheritance, strict no-fixed-selection validation,
+existing-job CI reuse, and explicit machine-versus-review boundaries. Runtime
+attestation, conversational approval authentication, signed reviewer receipts,
+remote distributed workers, and semantic proof of reuse or no-regression remain
+deferred until the execution host exposes trustworthy evidence. Markdown prose
+parsing, fixed model names, fabricated effort claims, duplicate heavy CI jobs,
+and changes to product AHR effort contracts were rejected.
+
+Completion evidence: the focused development-workflow and document-sync checks
+passed; 171 no-browser tests passed; the React/Vite build passed; 14 TraceCue
+browser tests passed; and `product-gate` passed structure, docs, security, CI,
+design-system, operation-mode, worktree document sync, rename readiness,
+package dry-run, and packed-install smoke. This slice changes no Control Center,
+CLI runtime, provider, MCP, browser-session, evidence, or release-gate behavior.
 
 ## Local Dashboard Settings Store
 

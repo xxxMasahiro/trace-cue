@@ -38,6 +38,8 @@ jobs:
           ./tools/check_product_ci.sh
           ./tools/check_product_design_system.sh
           ./tools/product-mode check
+          npm run development-workflow:check
+          npm run development-workflow:contract-check
           npm run document-sync:contract-check
 
       - name: Check document synchronization range

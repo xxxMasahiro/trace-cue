@@ -2,4 +2,5 @@
 github_actions_node	optional	all	.github/workflows/ci.yml	node	main	product.ci.github_actions	GitHub Actions no-browser test, rename-readiness, package dry-run, and packed install smoke job.
 github_actions_browser	optional	all	.github/workflows/ci.yml	browser-smoke	main	product.ci.github_actions	GitHub Actions browser smoke job with explicit Chromium installation and Control Center React/Vite build before browser UI smoke tests.
 github_actions_repository_contracts	optional	all	.github/workflows/ci.yml	repository-contracts	main	product.ci.repository_contracts	Lightweight full-history repository contract and PR/push-range document synchronization job without duplicate product or browser tests.
+development_workflow_contract	optional	all	.github/workflows/ci.yml	repository-contracts	main	product.workflow.development_contract	Dependency-free development workflow policy and contract checks in the existing lightweight repository-contracts job.
 product_ci_manifest	optional	all	ops/CI_MANIFEST.tsv	local	local	product.ci.github_actions	Product-local CI manifest validation without remote execution.

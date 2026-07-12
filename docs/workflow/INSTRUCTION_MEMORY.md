@@ -4,6 +4,50 @@ This file records durable implementation instructions for autonomous agent
 work in this repository. Agents must follow this workflow unless a newer
 developer or repository instruction explicitly supersedes it.
 
+## Highest-Priority Engineering Rules
+
+These rules are mandatory for every proposal, plan, implementation,
+verification mechanism, test, automation change, and maintenance task. They
+govern every phase from A through F and take priority over implementation
+convenience.
+
+1. `workflow-rule:changeability` Preserve changeability at all times. Do not
+   embed product names, repository names, URLs, file paths, branch names,
+   provider or model identifiers, environment-specific values, thresholds,
+   limits, timeouts, or other
+   changeable values as fixed implementation assumptions. Resolve them through
+   explicit configuration, manifests, metadata, dependency injection,
+   arguments, environment boundaries, or centralized named definitions, as
+   appropriate. Define true protocol or domain invariants once in an auditable,
+   replaceable location rather than repeating literals.
+2. `workflow-rule:ecosystem-reuse-generality` Preserve refactorability,
+   ecosystem fit, reuse, and generality. Follow the repository's established
+   contracts and ecosystem capabilities, keep
+   responsibilities cohesive and interfaces composable, and prefer reusable
+   mechanisms over task-specific duplication. Add abstractions only when they
+   remove demonstrated complexity or enable verified reuse.
+3. `workflow-rule:no-unrelated-tradeoff` Never trade off unrelated existing
+   functionality. A scoped change must not remove, weaken, regress, or make
+   incompatible any unrelated behavior,
+   contract, safety boundary, supported workflow, or user experience. If such
+   a tradeoff appears necessary, stop before implementation and request
+   developer direction.
+4. `workflow-rule:verification-orchestration` When verification or tests must
+   be added, design their orchestration, execution, assertions, and evidence
+   collection as explicit reusable roles.
+   Structure independent workloads so they can be safely parallelized or
+   distributed with bounded concurrency, isolated mutable state, deterministic
+   results, clear failure attribution, and no unsafe shared or external side
+   effects. Use parallel or distributed execution only where it is useful and
+   more efficient without weakening safety, reproducibility, or diagnostic
+   value; retain an appropriate deterministic execution path.
+5. `workflow-rule:workflow-evidence` Make these rules visible and verifiable
+   throughout the workflow. Proposals and plans must identify changeable
+   inputs, reuse and refactoring boundaries,
+   ecosystem fit, preserved existing behavior, and the verification execution
+   model. Implementation and completion evidence must demonstrate that those
+   constraints remain satisfied.
+
 ## Core Principle
 
 Agents should assume autonomous implementation by default. Developer approval
@@ -40,10 +84,17 @@ newly approved implementation range before the first edit. Prior proposal or
 plan text may be referenced, but it is insufficient unless refreshed against
 the current repository state and current range.
 
-Multiple `xhigh`-class high-reasoning subagent review is mandatory before any
-non-trivial implementation proposal or implementation plan. A change is
-non-trivial if it affects runtime code, product behavior, contracts, schemas,
-tests, security, external transfer, provider behavior, MCP or tool exposure,
+`workflow-rule:session-bound-subagents` Multiple independent subagent reviews
+are mandatory before any non-trivial implementation proposal or implementation
+plan. Use the model and reasoning effort selected by the user for the active
+session when the subagent interface exposes or verifiably inherits those
+settings. Resolve both settings at runtime and never encode a named model or
+effort as a fixed workflow value. If the interface does not expose or attest
+the effective settings, use the available inherited configuration, record that
+selection was not exposed, and do not claim a specific model or effort. A
+change is non-trivial if it affects runtime code, product behavior, contracts,
+schemas, tests, security, external transfer, provider behavior, MCP or tool
+exposure,
 release, CI, GitHub operations, verification gates, or durable workflow
 authority. For typo-only, formatting-only, or mechanical synchronization
 changes that do not alter behavior or authority, the agent may record a brief
@@ -54,6 +105,22 @@ If required subagent tools are unavailable for a non-trivial change, stop and
 report the blocker or ask for direction. Do not silently continue. If any
 existing-feature tradeoff appears necessary, stop before planning or
 implementation and ask the developer.
+
+## Machine Enforcement Boundary
+
+`ops/DEVELOPMENT_WORKFLOW_POLICY.json` is the machine-readable mapping for the
+stable `workflow-rule:*` identifiers in this document. Its checker validates
+the strict policy shape, dynamic session-bound subagent configuration,
+registered verification mechanisms, required repository files, package
+scripts, and instruction anchors without interpreting the surrounding prose.
+
+Machine checks are omission and consistency guards. They do not prove the
+semantic quality of an abstraction, the absence of every possible regression,
+the usefulness of parallel execution, the authenticity of a conversational
+approval, or an effective model or reasoning setting that the subagent runtime
+does not attest. Those matters remain explicit review and runtime-evidence
+responsibilities and must never be reported as mechanically proven when the
+required evidence is unavailable.
 
 ## Start
 
@@ -86,9 +153,10 @@ Before implementation:
    TraceCue work.
 2. Follow the product-development workflow used by this repository.
 3. Apply the mandatory multi-subagent rule from `Mandatory Pre-Implementation
-   Gates`. Use distinct `xhigh`-class high-reasoning subagents to inspect risks,
-   missing requirements, refactoring opportunities, ecosystem fit, reuse,
-   generality, and no-regression concerns for every non-trivial proposal.
+   Gates`. Use distinct subagents with the active user session's selected model
+   and reasoning effort, subject to the capability rule above, to inspect
+   risks, missing requirements, refactoring opportunities, ecosystem fit,
+   reuse, generality, and no-regression concerns for every non-trivial proposal.
 4. Consolidate the subagent findings into one systematic pre-implementation
    proposal with accepted, deferred, and rejected findings.
 5. Keep the proposal focused on the roadmap slice and on preserving existing
@@ -112,8 +180,9 @@ After the proposal:
 2. Produce an implementation plan that maps the roadmap slice to concrete code,
    document, contract, and verification changes.
 3. Apply the mandatory multi-subagent rule from `Mandatory Pre-Implementation
-   Gates`. Use distinct `xhigh`-class high-reasoning subagents to validate every
-   non-trivial plan before implementation starts.
+   Gates`. Use distinct subagents with the active user session's selected model
+   and reasoning effort, subject to the capability rule above, to validate
+   every non-trivial plan before implementation starts.
 4. Keep the plan refactorable, reusable, generic, and compatible with the
    repository ecosystem.
 5. Do not introduce trade-offs against existing features.

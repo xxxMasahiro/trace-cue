@@ -459,6 +459,31 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Mechanical synchronization is an omission guard only. It must not replace
   semantic review, focused tests, security inspection, or existing gates.
 
+## Development Workflow Enforcement
+
+- `docs/workflow/INSTRUCTION_MEMORY.md` remains the English human authority for
+  durable development instructions. Stable `workflow-rule:*` identifiers map
+  its enforceable subset to `ops/DEVELOPMENT_WORKFLOW_POLICY.json`.
+- The policy must be strict, schema-versioned, repository-local, and free of
+  fixed model or reasoning-effort selections. Non-trivial proposal and plan
+  reviews inherit the active user session selection when the runtime exposes or
+  verifiably inherits it.
+- When the runtime does not expose or attest effective subagent settings, the
+  workflow must disclose that limitation and must not claim a specific model or
+  effort. Product Agentic Human Review `standard`, `deep`, and `xhigh` effort
+  contracts remain separate and unchanged.
+- The dependency-free checker must reject unknown policy fields, duplicate rule
+  ids or anchors, missing instruction anchors, unregistered test ids, missing
+  required files, missing package scripts, and fixed selection overrides.
+- Machine enforcement is limited to objective structure, registration,
+  synchronization, and executed checks. It must not claim to prove semantic
+  design quality, approval authenticity, complete no-regression, useful
+  parallelism, or unavailable runtime attestation.
+- The existing `repository-contracts`, Node, and browser jobs retain separate
+  responsibilities. Workflow policy checks must not duplicate product or
+  browser execution and must not change Control Center, CLI, provider, MCP,
+  browser-session, evidence, or release-gate behavior.
+
 ## Local Dashboard Settings Persistence
 
 - `ops/DASHBOARD_SETTINGS.json` is the tracked shared-default authority. Ordinary

@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Development workflow policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "instruction_authority",
+    "subagent_review",
+    "rules",
+    "required_repository_files",
+    "required_package_scripts"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "kind": { "const": "development-workflow-policy" },
+    "instruction_authority": { "$ref": "#/$defs/repositoryPath" },
+    "subagent_review": { "$ref": "#/$defs/subagentReview" },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/rule" }
+    },
+    "required_repository_files": {
+      "$ref": "#/$defs/nonEmptyUniqueStringList"
+    },
+    "required_package_scripts": {
+      "$ref": "#/$defs/nonEmptyUniqueStringList"
+    }
+  },
+  "$defs": {
+    "nonEmptyUniqueStringList": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "uniqueStringList": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "repositoryPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "subagentReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_for",
+        "phases",
+        "minimum_distinct_reviewers",
+        "configuration_source",
+        "model_binding",
+        "effort_binding",
+        "fixed_override_allowed",
+        "configuration_visibility",
+        "unavailable_policy",
+        "required_report_fields"
+      ],
+      "properties": {
+        "required_for": {
+          "type": "array",
+          "const": ["non_trivial"]
+        },
+        "phases": {
+          "type": "array",
+          "const": ["proposal", "plan"]
+        },
+        "minimum_distinct_reviewers": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "configuration_source": { "const": "active_user_session" },
+        "model_binding": { "const": "inherit_current_session" },
+        "effort_binding": { "const": "inherit_current_session" },
+        "fixed_override_allowed": { "const": false },
+        "configuration_visibility": {
+          "const": "runtime_attestation_if_available"
+        },
+        "unavailable_policy": {
+          "const": "use_available_and_disclose_unverified"
+        },
+        "required_report_fields": {
+          "$ref": "#/$defs/nonEmptyUniqueStringList"
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "instruction_anchor",
+        "applicability",
+        "enforcement_mode",
+        "required_test_ids",
+        "required_review_fields",
+        "failure_mode"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "instruction_anchor": {
+          "type": "string",
+          "pattern": "^workflow-rule:[a-z0-9][a-z0-9-]*$"
+        },
+        "applicability": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "non_trivial",
+              "browser_surface",
+              "verification_or_test",
+              "durable_workflow",
+              "completion"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "enforcement_mode": {
+          "enum": ["machine", "hybrid", "review"]
+        },
+        "required_test_ids": {
+          "$ref": "#/$defs/uniqueStringList"
+        },
+        "required_review_fields": {
+          "$ref": "#/$defs/uniqueStringList"
+        },
+        "failure_mode": { "enum": ["block", "record"] }
+      }
+    }
+  }
+}

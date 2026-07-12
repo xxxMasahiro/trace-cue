@@ -24,6 +24,23 @@ const productCore = [
 ];
 const verification = ['docs/workflow/VERIFICATION.md', 'ops/TEST_PLAN_MANIFEST.tsv'];
 const security = ['docs/workflow/SECURITY.md', 'ops/SECURITY_MANIFEST.tsv'];
+const developmentWorkflowGovernance = [
+  'docs/workflow/INSTRUCTION_MEMORY.md',
+  'AGENTS.MD',
+  'skills/product-development-workflow/SKILL.md',
+  'ops/DEVELOPMENT_WORKFLOW_POLICY.json',
+  'schemas/development-workflow-policy.schema.json',
+  'ops/PRODUCT_MANIFEST.tsv',
+  'ops/TEST_PLAN_MANIFEST.tsv'
+];
+const documentSyncGovernance = [
+  'docs/workflow/DOCUMENT_SYNC.md',
+  'AGENTS.MD',
+  'skills/product-doc-sync/SKILL.md',
+  'ops/DOCUMENT_SYNC_POLICY.json',
+  'schemas/document-sync-policy.schema.json',
+  'ops/PRODUCT_MANIFEST.tsv'
+];
 
 test('document sync policy validates and bounded glob matching stays path-aware', () => {
   assert.equal(policy.schema_version, '1.0.0');
@@ -100,6 +117,24 @@ test('workflow state stays paired and canonical product edits require all five a
   assert.equal(productOnly.status, 'fail');
   assert.equal(productOnly.missing_all_of.includes('docs/product/REQUIREMENTS.md'), true);
   assert.equal(evaluateDocumentSync(policy, productCore).status, 'pass');
+});
+
+test('durable instruction changes require synchronized workflow policy and product safety authorities', () => {
+  const instructionOnly = evaluateDocumentSync(policy, ['docs/workflow/INSTRUCTION_MEMORY.md']);
+  assert.equal(instructionOnly.status, 'fail');
+  assert.equal(instructionOnly.matched_rules.some((rule) => rule.id === 'development-workflow-authority'), true);
+  assert.equal(instructionOnly.missing_all_of.includes('ops/DEVELOPMENT_WORKFLOW_POLICY.json'), true);
+  assert.equal(instructionOnly.missing_all_of.includes('docs/workflow/VERIFICATION.md'), true);
+  assert.equal(instructionOnly.missing_all_of.includes('docs/workflow/SECURITY.md'), true);
+
+  const synchronized = evaluateDocumentSync(policy, [
+    ...productCore,
+    ...verification,
+    ...security,
+    ...developmentWorkflowGovernance,
+    ...documentSyncGovernance
+  ]);
+  assert.equal(synchronized.status, 'pass');
 });
 
 test('temporary memory and local settings neither trigger nor satisfy document synchronization', () => {

@@ -1042,3 +1042,35 @@ MCP action, or external evidence transfer.
 The CI `repository-contracts` job alone uses `fetch-depth: 0`. It runs the
 lightweight repository contract checks and evaluates event-specific base/head
 SHAs. Existing Node and browser jobs retain their current responsibility.
+
+## Development Workflow Contract
+
+`ops/DEVELOPMENT_WORKFLOW_POLICY.json` maps stable instruction anchors to an
+enforcement mode, applicability labels, registered test ids, required review
+fields, and block-or-record failure behavior. The strict
+`schemas/development-workflow-policy.schema.json` shape permits only dynamic
+`inherit_current_session` model and reasoning-effort bindings and rejects fixed
+override fields.
+
+`tools/lib/development-workflow.mjs` validates the policy and evaluates its
+links to instruction anchors, `ops/TEST_PLAN_MANIFEST.tsv`, package scripts, and
+required repository files. It reuses repository-relative path normalization
+from the document-sync library rather than defining another path grammar.
+`tools/check_development_workflow.mjs` reads only those repository-local
+authorities, rejects symlinked or escaping required files, and emits a bounded
+pass/fail contract. It performs no Git mutation, model lookup, provider call,
+credential read, browser action, MCP action, network request, or artifact write.
+
+The subagent contract requires at least two distinct reviews for both proposal
+and plan phases of non-trivial work. The selected model and reasoning effort
+come from the active user session at runtime. When the subagent interface does
+not expose or attest effective settings, reports use the available inherited
+configuration, mark visibility as unavailable, and make no named model or
+effort claim. This repository contract verifies the policy and report fields;
+it cannot authenticate conversation events or runtime settings that the host
+does not provide.
+
+The existing `repository-contracts` job runs the current-policy check and its
+focused rejection tests. Existing Node jobs execute no-browser regressions and
+the existing browser job executes browser smoke. The policy maps those checks
+without rerunning them in the lightweight job.

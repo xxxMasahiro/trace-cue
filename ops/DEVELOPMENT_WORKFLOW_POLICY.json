@@ -1,0 +1,129 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "development-workflow-policy",
+  "instruction_authority": "docs/workflow/INSTRUCTION_MEMORY.md",
+  "subagent_review": {
+    "required_for": ["non_trivial"],
+    "phases": ["proposal", "plan"],
+    "minimum_distinct_reviewers": 2,
+    "configuration_source": "active_user_session",
+    "model_binding": "inherit_current_session",
+    "effort_binding": "inherit_current_session",
+    "fixed_override_allowed": false,
+    "configuration_visibility": "runtime_attestation_if_available",
+    "unavailable_policy": "use_available_and_disclose_unverified",
+    "required_report_fields": [
+      "reviewer_count",
+      "review_areas",
+      "configuration_visibility",
+      "accepted_findings",
+      "deferred_findings",
+      "rejected_findings"
+    ]
+  },
+  "rules": [
+    {
+      "id": "changeability",
+      "instruction_anchor": "workflow-rule:changeability",
+      "applicability": ["non_trivial"],
+      "enforcement_mode": "hybrid",
+      "required_test_ids": ["architecture", "rename_readiness"],
+      "required_review_fields": [
+        "changeable_inputs",
+        "configuration_sources",
+        "single_definition_boundaries"
+      ],
+      "failure_mode": "block"
+    },
+    {
+      "id": "ecosystem-reuse-generality",
+      "instruction_anchor": "workflow-rule:ecosystem-reuse-generality",
+      "applicability": ["non_trivial"],
+      "enforcement_mode": "review",
+      "required_test_ids": [],
+      "required_review_fields": [
+        "ecosystem_fit",
+        "reuse_boundaries",
+        "abstraction_justification"
+      ],
+      "failure_mode": "block"
+    },
+    {
+      "id": "no-unrelated-tradeoff",
+      "instruction_anchor": "workflow-rule:no-unrelated-tradeoff",
+      "applicability": ["non_trivial", "browser_surface"],
+      "enforcement_mode": "hybrid",
+      "required_test_ids": ["cli_no_browser", "browser_smoke"],
+      "required_review_fields": [
+        "preserved_behaviors",
+        "compatibility_boundaries",
+        "no_tradeoff_statement"
+      ],
+      "failure_mode": "block"
+    },
+    {
+      "id": "verification-orchestration",
+      "instruction_anchor": "workflow-rule:verification-orchestration",
+      "applicability": ["verification_or_test"],
+      "enforcement_mode": "hybrid",
+      "required_test_ids": ["architecture", "development_workflow_contract"],
+      "required_review_fields": [
+        "role_separation",
+        "parallelism_boundaries",
+        "deterministic_fallback",
+        "state_isolation"
+      ],
+      "failure_mode": "block"
+    },
+    {
+      "id": "workflow-evidence",
+      "instruction_anchor": "workflow-rule:workflow-evidence",
+      "applicability": ["durable_workflow", "completion"],
+      "enforcement_mode": "hybrid",
+      "required_test_ids": [
+        "docs",
+        "ci_manifest",
+        "document_sync_contract",
+        "document_sync_worktree"
+      ],
+      "required_review_fields": [
+        "policy_rule_mapping",
+        "verification_execution_model",
+        "completion_evidence"
+      ],
+      "failure_mode": "block"
+    },
+    {
+      "id": "session-bound-subagents",
+      "instruction_anchor": "workflow-rule:session-bound-subagents",
+      "applicability": ["non_trivial", "durable_workflow"],
+      "enforcement_mode": "hybrid",
+      "required_test_ids": ["development_workflow_contract"],
+      "required_review_fields": [
+        "reviewer_count",
+        "review_areas",
+        "configuration_visibility",
+        "accepted_findings",
+        "deferred_findings",
+        "rejected_findings"
+      ],
+      "failure_mode": "block"
+    }
+  ],
+  "required_repository_files": [
+    "docs/workflow/INSTRUCTION_MEMORY.md",
+    "ops/DEVELOPMENT_WORKFLOW_POLICY.json",
+    "schemas/development-workflow-policy.schema.json",
+    "tools/check_development_workflow.mjs",
+    "tools/lib/development-workflow.mjs",
+    "tests/development-workflow.test.js"
+  ],
+  "required_package_scripts": [
+    "development-workflow:check",
+    "development-workflow:contract-check",
+    "document-sync:check",
+    "document-sync:contract-check",
+    "test",
+    "test:browser"
+  ]
+}

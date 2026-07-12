@@ -27,6 +27,8 @@ Run:
 ./tools/check_product_docs.sh
 npm run document-sync:contract-check
 npm run document-sync:check
+npm run development-workflow:contract-check
+npm run development-workflow:check
 ```
 
 ## Range Enforcement
@@ -44,5 +46,9 @@ npm run document-sync:check
   and claim changes require security and verification synchronization.
 - Dashboard shared defaults and local-settings persistence changes also require
   product, verification, and security synchronization.
+- Durable instruction and development workflow policy changes require the
+  instruction authority, dynamic session-bound subagent policy, routing,
+  product, verification, security, schema, and manifest authorities to move
+  together. An instruction-only change must fail the range check.
 - The mechanical checker detects omissions; semantic correctness still
   requires role-specific document review and focused product tests.

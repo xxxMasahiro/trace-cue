@@ -253,6 +253,25 @@ Security tests block unapproved use of persistent browser profiles, storageState
 - The CI job receives read-only repository contents permission and no secrets.
   Missing comparison history fails closed rather than disabling enforcement.
 
+## Development Workflow Policy Security
+
+- Development workflow checks read only the repository-local JSON policy,
+  instruction authority, test manifest, package scripts, and required-file
+  metadata. Required paths are repository-relative, regular, non-symlink files.
+- The checker performs no model or provider lookup, credential or environment
+  value read, Git mutation, network request, browser launch, MCP action,
+  external transfer, artifact write, approval creation, or runtime execution.
+- Model and reasoning-effort names are runtime inputs outside the repository
+  policy. The policy permits only active-session inheritance and rejects fixed
+  override fields. When runtime attestation is unavailable, output must not
+  claim a specific effective setting.
+- Machine policy output is an omission and consistency signal, not proof of
+  approval authenticity, reviewer identity provenance, semantic design quality,
+  no-regression completeness, or human-equivalent review quality.
+- Development workflow checks must not broaden provider, external-send, MCP,
+  browser-session, persistent credential, evidence, deterministic finding,
+  release-gate, CI permission, or remote-operation authority.
+
 ## Local Dashboard Settings Security
 
 - Tracked `ops/DASHBOARD_SETTINGS.json` is shared defaults and is never written

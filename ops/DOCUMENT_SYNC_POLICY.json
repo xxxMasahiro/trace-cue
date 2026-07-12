@@ -59,6 +59,17 @@
         "schemas/document-sync-policy.schema.json",
         "ops/PRODUCT_MANIFEST.tsv"
       ]
+    },
+    "development_workflow_governance": {
+      "all_of": [
+        "docs/workflow/INSTRUCTION_MEMORY.md",
+        "AGENTS.MD",
+        "skills/product-development-workflow/SKILL.md",
+        "ops/DEVELOPMENT_WORKFLOW_POLICY.json",
+        "schemas/development-workflow-policy.schema.json",
+        "ops/PRODUCT_MANIFEST.tsv",
+        "ops/TEST_PLAN_MANIFEST.tsv"
+      ]
     }
   },
   "rules": [
@@ -103,6 +114,22 @@
         ]
       },
       "required_groups": ["product_core", "verification", "security", "document_sync_governance"],
+      "cannot_be_exempted": true
+    },
+    {
+      "id": "development-workflow-authority",
+      "description": "Durable development instructions and their machine enforcement must update the complete workflow governance and product safety contract.",
+      "trigger": {
+        "any_of": [
+          "docs/workflow/INSTRUCTION_MEMORY.md",
+          "ops/DEVELOPMENT_WORKFLOW_POLICY.json",
+          "schemas/development-workflow-policy.schema.json",
+          "tools/check_development_workflow.mjs",
+          "tools/lib/development-workflow.mjs",
+          "tests/development-workflow.test.js"
+        ]
+      },
+      "required_groups": ["product_core", "verification", "security", "development_workflow_governance"],
       "cannot_be_exempted": true
     },
     {

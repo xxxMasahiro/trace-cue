@@ -527,3 +527,28 @@ Optional acceptance checks against local application servers may run only when t
 - Browser smoke and a TraceCue self-review are regression evidence only for
   this non-UI slice; document-sync acceptance is determined by the policy,
   rejection tests, repository contracts, and product gate.
+
+## Development Workflow Verification
+
+- `npm run development-workflow:check` validates the current strict policy,
+  instruction anchors, required repository files, registered test ids, and
+  package scripts without interpreting instruction prose.
+- `npm run development-workflow:contract-check` covers unknown fields,
+  duplicate or invalid rule mappings, fixed model or effort fields, fixed
+  override attempts, insufficient reviewer count, missing anchors, missing
+  tests, missing scripts, missing files, missing policy references, and the
+  separation between development-process selection and product AHR effort.
+- `npm run document-sync:contract-check` verifies that an
+  `INSTRUCTION_MEMORY.md`-only range fails and that synchronized workflow,
+  product, verification, security, policy, schema, routing, and manifest
+  authorities pass together.
+- The existing `repository-contracts` job owns the dependency-free policy and
+  contract checks. Node jobs own no-browser runtime regression and browser
+  smoke owns React/Vite browser behavior; the lightweight job does not rerun
+  either suite.
+- A passing policy contract proves objective structure and registration only.
+  It does not authenticate chat approvals, semantic review quality, complete
+  no-regression, or effective model and effort settings when the runtime does
+  not provide attestation. Reports must state that limitation explicitly.
+- This workflow-only slice still runs the existing browser smoke as requested
+  regression evidence. No new browser route or visual behavior is introduced.

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added machine-enforced durable development workflow contracts with stable instruction rule ids, a strict JSON policy and schema, dynamic active-session subagent model/effort inheritance, dependency-free checks, focused rejection tests, document-sync enforcement, and existing repository-contract CI integration without changing product AHR effort behavior.
 - Separated tracked dashboard defaults from ignored user settings, migrated existing Japanese preferences without loss, centralized safe layered persistence, and changed the ordinary Control Center save to one atomic write that leaves Git clean.
 - Added repository-range document synchronization enforcement with a versioned JSON policy, Node 20 dependency-free checker, focused rejection tests, optional non-overwriting pre-push hook installer, and a lightweight full-history CI contract job for canonical, workflow, security-sensitive, and verification authority changes.
 - Added the production Control Center agentic-review workflow: real page review, purpose-led standard/deep/xhigh preparation, concrete external AI disclosure, one-time plan-bound confirmation, persistent progress/results, per-finding decisions, linked recheck/deeper operations, simple AI/privacy preferences, pathless public projections, restart-safe unknown dispatch, and no automatic retry or gate mutation.

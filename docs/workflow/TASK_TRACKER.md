@@ -2,6 +2,16 @@
 
 ## Current Status
 
+Development workflow enforcement is complete locally. Six stable durable
+instruction rule ids now map to a strict JSON policy, schema, dependency-free
+checker, focused rejection tests, document-sync classification, routing,
+manifests, and the existing repository-contracts job. Development-process
+subagent selection dynamically inherits the active user session when exposed or
+verifiably inherited; unavailable runtime attestation is disclosed without a
+specific model or effort claim. Product AHR effort behavior is unchanged. The
+final local verification passed 171 no-browser tests, a React/Vite production
+build, 14 TraceCue browser tests, and `product-gate` including package checks.
+
 Final verification passed on 2026-07-11: 153 no-browser tests, 14 Playwright
 browser smoke tests, mock interaction/responsive verification, `release:check`,
 packed-install smoke, all product repository checks, and `product-gate`. TraceCue
@@ -43,8 +53,11 @@ Control Center agentic review execution is complete: persistent operation schema
 The durable autonomous workflow protocol now treats `A. Pre-Implementation
 Proposal` and `B. Implementation Plan` as mandatory pre-implementation
 sequencing and evidence gates. Non-trivial implementation or workflow-authority
-changes require multiple `xhigh`-class subagent reviews before edits, with
-findings consolidated into accepted, deferred, and rejected decisions. This is a
+changes require multiple independent subagent reviews using the active user
+session's selected model and reasoning effort when selectable and verifiable,
+with findings consolidated into accepted, deferred, and rejected decisions.
+When those settings are not exposed, the review records that limitation and
+does not claim a specific model or effort. This is a
 workflow-only correction and does not change runtime behavior, product features,
 MCP exposure, provider execution, security boundaries, release gates, or
 existing verification commands.
@@ -162,7 +175,7 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 - [x] Added Agentic Human Review source-text quality owner-review context for downstream evidence-set, human-baseline claim-readiness, longitudinal-quality, claim-standard-gate, and evidence-regeneration diagnostics, including source-text quality artifact family handling, supported CLI/API wrapper intake, downstream re-sanitization, unsafe authority-flag neutralization, context diagnostics, stale-effort invalidation without raw hash output, no-leak coverage, owner-context schema parity, and preserved no-warning/no-condition/no-blocker/no-pass-state/no-claim-state/no-proof/no-rerun-execution/no-gate-mutation boundaries.
 - [x] Strengthened durable autonomous workflow instructions so A/B
   pre-implementation gates are mandatory before edits, non-trivial proposals and
-  plans require multiple `xhigh`-class subagent reviews, completion reports
+  plans require multiple independent session-bound subagent reviews, completion reports
   include A/B evidence, and the change remains workflow-only with no runtime,
   MCP, provider, security, release-gate, or existing-verification behavior
   change.
@@ -442,6 +455,24 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
 - [x] Confirm final local gates, TraceCue browser regression, pushed commit
   `b2c410f`, main CI run `29160540410`, local/remote SHA equality, and intended
   dirty-worktree exceptions.
+
+## Development Workflow Enforcement
+
+- [x] Add a strict machine-readable development workflow policy and schema with
+  stable instruction rule ids and no fixed model or reasoning-effort values.
+- [x] Replace fixed development-process `xhigh` requirements with dynamic active
+  user session inheritance while preserving product AHR effort contracts.
+- [x] Add a dependency-free checker and rejection tests for unknown fields,
+  fixed overrides, missing anchors, missing registered tests, missing scripts,
+  missing required files, and unavailable-setting disclosure.
+- [x] Register the contract in the existing lightweight repository-contracts
+  job, structure/docs/CI checks, and product/test/security manifests without
+  adding another CI job or duplicating browser execution.
+- [x] Extend document synchronization so durable instruction or workflow-policy
+  changes require product, workflow, verification, security, routing, schema,
+  and manifest synchronization.
+- [x] Complete focused, aggregate, product-gate, React/Vite build, and TraceCue
+  browser verification with 171 no-browser and 14 browser checks passing.
 
 ## Local Dashboard Settings Store
 

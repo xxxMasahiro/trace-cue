@@ -1849,6 +1849,36 @@ Phase 39 records the external-repository dogfood lesson that Browser Debug CLI c
   provider policy change, browser cleanup, or external repository change is
   required.
 
+## Development Workflow Enforcement
+
+- Purpose: make the objectively decidable subset of durable development
+  instructions mechanically consistent without treating Markdown prose or
+  self-reported session state as proof.
+- Implemented scope: add a strict repository-local JSON policy and schema;
+  stable instruction rule anchors; dynamic active-session model and
+  reasoning-effort inheritance with no fixed overrides; a dependency-free pure
+  validator and checker; focused acceptance and rejection tests; registered
+  test, product, security, structure, and CI manifest entries; a dedicated
+  document-sync classification; and reuse of the existing lightweight
+  `repository-contracts` job.
+- Non-scope: parsing instruction prose for semantic quality, authenticating
+  conversational approval, claiming unavailable model or effort attestation,
+  proving every possible regression absent, forcing parallel or distributed
+  execution where it is not useful, changing product AHR
+  `standard`/`deep`/`xhigh`, adding a second CI job, changing Control Center or
+  runtime behavior, contacting providers, expanding MCP, or editing another
+  repository.
+- Implementation order: define policy and schema; implement pure validation and
+  the local checker; replace fixed development-process effort wording with
+  dynamic current-session binding; add rejection tests; register existing check
+  ownership; extend document synchronization; synchronize product, workflow,
+  verification, security, routing, and manifests; run focused checks, complete
+  no-browser and product gates, React/Vite build, and TraceCue browser smoke.
+- Recovery: update policy, schema, instruction anchors, and rejection tests in
+  one change or revert the additive slice. No artifact migration, credential
+  cleanup, provider-policy change, browser cleanup, or external-repository
+  mutation is required.
+
 ## Local Dashboard Settings Store
 
 - Purpose: prevent ordinary non-engineer Control Center settings from making
