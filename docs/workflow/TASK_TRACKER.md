@@ -515,5 +515,9 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
 - [x] Add 26 focused timestamp, migration, idempotence, optional-history,
   empty-store and required-completeness, contextual applicability,
   cached-refusal, detail-parity, integrity, and confinement tests.
-- [ ] Complete aggregate, release, product-gate, TraceCue browser, remote CI,
-  current-HEAD evidence, read-only parent authority, and clean Git sync checks.
+- [x] Complete 226 no-browser checks, 14 TraceCue Playwright checks, the 14-task
+  release profile, product gate, three independent post-implementation reviews,
+  implementation commit `e37d060`, and all eight jobs plus final proof in
+  GitHub CI run `29223656765`; record the ignored current-HEAD evidence after
+  the completion-state commit and confirm read-only parent authority plus clean
+  local/remote synchronization before handoff.
