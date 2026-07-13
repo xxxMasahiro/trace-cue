@@ -18,6 +18,7 @@ import {
   stageControlCenterIntake
 } from '../src/api.js';
 import { captureProcessIdentity, createSafeLocalStore, readStableBoundedFileHandle, withCrashSafeTransition } from '../src/safe-local-store.js';
+import { createControlCenterTestAssetRoot } from './helpers/control-center-test-assets.js';
 
 test('bounded descriptor reads reject a file changed after inspection', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-bounded-read-'));
@@ -973,7 +974,8 @@ test('intake result publication stays private until startup recovery commits its
   assert.equal(beforeRelease.status, 'error');
   assert.equal(beforeRelease.errors[0].code, 'CONTROL_CENTER_INTAKE_QUOTA_EXCEEDED');
 
-  const started = await startControlCenterServer({ port: 0, 'artifact-root': artifactRoot }, { cwd });
+  const assetRoot = await createControlCenterTestAssetRoot(cwd);
+  const started = await startControlCenterServer({ port: 0, assetRoot, 'artifact-root': artifactRoot }, { cwd });
   await new Promise((resolve) => started.server.close(resolve));
   const recovered = await getControlCenterIntakeResult({ id }, { cwd, artifactRoot });
   assert.equal(recovered.status, 'ok');

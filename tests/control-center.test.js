@@ -21,6 +21,7 @@ import { buildControlCenterViewModel } from '../control-center/src/controlCenter
 import { createTranslator } from '../control-center/src/i18n.js';
 import { getNextReviewMethod, reviewMethodCopy } from '../control-center/src/reviewMethods.js';
 import { parseControlCenterRoute } from '../control-center/src/useControlCenterRoute.js';
+import { createControlCenterTestAssetRoot } from './helpers/control-center-test-assets.js';
 
 const fixedNow = '2026-06-17T00:00:00.000Z';
 
@@ -291,9 +292,10 @@ test('control-center appearance is controlled by the product design-system files
 
 test('control-center server keeps dashboard GET-only while exposing bounded local actions', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-server-'));
+  const assetRoot = await createControlCenterTestAssetRoot(cwd);
   await mkdir(path.join(cwd, 'fixtures'), { recursive: true });
   await writeFile(path.join(cwd, 'fixtures', 'transcript.txt'), 'Unique source phrase for the GUI intake test.\nSecond line for chunk stats.\n', 'utf8');
-  const started = await startControlCenterServer({ port: 0 }, { cwd, now: fixedNow });
+  const started = await startControlCenterServer({ port: 0, assetRoot }, { cwd, now: fixedNow });
   try {
     assert.match(started.url, /^http:\/\/127\.0\.0\.1:\d+\/$/);
     assert.equal(started.metadata.local_only, true);
@@ -585,6 +587,7 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
 
 test('control-center server completes Playwright Test external CI success paths through read-only gh', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-ci-'));
+  const assetRoot = await createControlCenterTestAssetRoot(cwd);
   await mkdir(path.join(cwd, '.github', 'workflows'), { recursive: true });
   await writeFile(path.join(cwd, '.github', 'workflows', 'ci.yml'), [
     'name: CI',
@@ -597,7 +600,7 @@ test('control-center server completes Playwright Test external CI success paths 
   ].join('\n'), 'utf8');
 
   const ghCalls = [];
-  const started = await startControlCenterServer({ port: 0 }, {
+  const started = await startControlCenterServer({ port: 0, assetRoot }, {
     cwd,
     now: fixedNow,
     ghRunner: async (command, args) => {
@@ -732,7 +735,8 @@ test('control-center server rejects non-loopback hosts before listening', async 
 
 test('control-center server rejects non-loopback Host headers', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-host-'));
-  const started = await startControlCenterServer({ port: 0 }, { cwd, now: fixedNow });
+  const assetRoot = await createControlCenterTestAssetRoot(cwd);
+  const started = await startControlCenterServer({ port: 0, assetRoot }, { cwd, now: fixedNow });
   try {
     const response = await httpRequest({
       hostname: '127.0.0.1',

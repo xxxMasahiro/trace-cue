@@ -23,6 +23,7 @@ import {
   startControlCenterServer
 } from '../src/api.js';
 import { captureProcessIdentity, createSafeLocalStore } from '../src/safe-local-store.js';
+import { createControlCenterTestAssetRoot } from './helpers/control-center-test-assets.js';
 
 async function runConfirmedExternalReview(harness) {
   const prepared = reviewData(await runControlCenterAgenticReviewPrepare({
@@ -808,8 +809,9 @@ test('Control Center agentic review schema is exported', () => {
 
 test('Control Center server exposes agentic review separately from the original action allowlist', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-agentic-server-'));
+  const assetRoot = await createControlCenterTestAssetRoot(cwd);
   const harness = createHarness(cwd);
-  const started = await startControlCenterServer({ port: 0 }, harness.context);
+  const started = await startControlCenterServer({ port: 0, assetRoot }, harness.context);
   try {
     assert.equal(started.metadata.action_endpoints.length, 8);
     assert.deepEqual(started.metadata.source_intake_endpoints, [
@@ -849,7 +851,8 @@ test('Control Center server exposes agentic review separately from the original 
 
 test('Control Center read endpoints do not create local artifact storage', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-read-only-'));
-  const started = await startControlCenterServer({ port: 0 }, createHarness(cwd).context);
+  const assetRoot = await createControlCenterTestAssetRoot(cwd);
+  const started = await startControlCenterServer({ port: 0, assetRoot }, createHarness(cwd).context);
   try {
     const dashboard = await fetch(new URL('/api/dashboard', started.url));
     assert.equal(dashboard.status, 200);
