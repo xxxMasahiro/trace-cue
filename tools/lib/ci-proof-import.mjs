@@ -98,7 +98,6 @@ async function callBoundedGithubApi({ api, endpoint, options, timeoutMs }) {
       controller.abort();
       reject(new Error('CI proof GitHub API request timed out.'));
     }, timeoutMs);
-    timer.unref?.();
   });
   try {
     return await Promise.race([
