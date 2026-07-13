@@ -550,6 +550,11 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
   turnover, interrupted/invalid publication recovery, same-process task
   recovery, transient history-read coordination, and exact-owner lock-release
   fallback with cross-process rejection tests.
-- [ ] Synchronize the React UI and versioned production mock, then pass focused,
+- [x] Synchronize the React UI and versioned production mock, then pass focused,
   no-browser, package, browser, release, product, independent review, CI, Git
-  sync, and final authority checks.
+  sync, and final authority checks. The implementation through `aa4d16c` passed
+  357 no-browser tests on Node 20 and Node 22, 16 browser tests, every package
+  and repository-contract owner, and the final proof in CI run `29270579455`.
+  Exact clean-HEAD release and authenticated CI evidence is written to the
+  ignored authority store after this completion-state commit so recording it
+  cannot make its own revision stale.

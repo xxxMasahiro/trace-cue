@@ -591,3 +591,16 @@ superseded immutable records move atomically to a non-authoritative inactive
 archive instead of being deleted. The inactive archive remains locally
 inspectable, is excluded from readiness, and has no automatic total-size or
 cleanup claim. Capacity recovery no longer reacquires a held evidence lock.
+
+Implementation closure reached commit `aa4d16c`. Clean GitHub runners exposed
+and closed two test/runtime assumptions that a local build had hidden: server
+tests now use explicit minimal assets instead of an existing
+`dist/control-center`, and the CI-proof and stalled-upload timeout timers remain
+referenced because each timer owns completion of its bounded request. The
+production fail-closed asset contract and intentionally unreferenced background
+maintenance remain unchanged. CI run `29270579455` passed all owners and final
+proof, including 357 no-browser tests on both Node 20 and Node 22 and 16 browser
+tests. The completion-state documentation commit is the final Git revision;
+authenticated CI proof, complete release evidence, and the read-only parent
+authority result are refreshed against that exact clean synchronized HEAD in
+the ignored evidence store rather than causing another tracked-file change.

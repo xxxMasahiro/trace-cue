@@ -771,6 +771,18 @@ overlap, clipping, or horizontal overflow. These are local regression results;
 exact clean-HEAD release evidence and authenticated CI proof are recorded only
 after commit and successful remote execution.
 
+The clean-runner compatibility loop also requires server tests to provide an
+explicit minimal static asset root instead of inheriting a prior local build.
+Timeouts that own completion of CI-proof API calls or stalled intake streams
+must keep the event loop alive until they fire or are cleared; background-only
+retention and lease maintenance may remain unreferenced. Implementation commit
+`aa4d16c` satisfies this contract in GitHub CI run `29270579455`: Node 20 and
+Node 22 each completed all 357 no-browser tests without cancellation, Browser
+smoke completed all 16 checks, and repository contracts, package producer,
+both package consumers, and final proof all passed. Exact closure-HEAD evidence
+is then refreshed in the ignored authority store so evidence recording does not
+invalidate the tracked revision it proves.
+
 Authority refresh requires one complete release profile with clean identical
 before/after full HEAD and tree. Every policy-owned source receipt references
 the same batch digest and exact task result. Partial, focused, dirty, mixed,
