@@ -1329,7 +1329,6 @@ async function* streamWithIdleTimeout(stream, value) {
           'CONTROL_CENTER_INTAKE_STREAM_TIMEOUT',
           'The selected file took too long to arrive.'
         )), timeoutMs);
-        timer.unref?.();
       });
       let item;
       try {
