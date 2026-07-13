@@ -783,6 +783,15 @@ both package consumers, and final proof all passed. Exact closure-HEAD evidence
 is then refreshed in the ignored authority store so evidence recording does not
 invalidate the tracked revision it proves.
 
+History-move verification also amplifies concurrent operation-list reads while
+retention retires a completed record. Internal quarantine names must remain
+outside the operation-id namespace, a directory entry that disappears before
+its safety recheck may be skipped, and every other unsafe entry remains a hard
+failure. Deferred maintenance may retry a transient failure only a bounded
+number of times with unreferenced delays, so it neither loses the request nor
+keeps a completed process alive. This race check passed 30 consecutive local
+runs before the complete 357-test and 16-browser-test suites passed again.
+
 Authority refresh requires one complete release profile with clean identical
 before/after full HEAD and tree. Every policy-owned source receipt references
 the same batch digest and exact task result. Partial, focused, dirty, mixed,

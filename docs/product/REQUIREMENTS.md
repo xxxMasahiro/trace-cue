@@ -631,9 +631,14 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   active copy moves. History maintenance must run outside the committed primary
   transaction: lock contention or archival failure must not delay external
   dispatch, turn a saved decision or completed intake into an error response, or
-  overwrite the primary operation result. Time-based cleanup may remove expired
-  unfinished intake state and released source bytes, but it must not remove a
-  completed receipt before explicit artifact-root cleanup.
+  overwrite the primary operation result. Deferred maintenance must retry a
+  transient failure only within a bounded policy and must not keep an otherwise
+  completed process alive. Internal removal quarantine names must remain outside
+  every product record-id namespace. A directory entry that disappears during
+  an authorized atomic history move may be skipped, while every other listing
+  error must fail closed. Time-based cleanup may remove expired unfinished
+  intake state and released source bytes, but it must not remove a completed
+  receipt before explicit artifact-root cleanup.
 - A private store may create its ownership marker only when it atomically
   creates the store root. A pre-existing markerless root must fail closed and
   its contents must remain untouched. Read-only requests must not create the

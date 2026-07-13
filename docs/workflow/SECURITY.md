@@ -375,7 +375,14 @@ Security tests block unapproved use of persistent browser profiles, storageState
 - History retention is deferred, coalesced maintenance outside the primary
   operation or intake transaction. Retention lock contention and archive errors
   cannot change a durable action result, delay confirmed external dispatch, or
-  rewrite a completed receipt as failed; a later maintenance request may retry.
+  rewrite a completed receipt as failed. Transient maintenance retries are
+  bounded and unreferenced, so they neither become process-liveness authority
+  nor retry forever.
+- Safe-store removal quarantines a selected directory under an internal hidden
+  name that cannot match a product record id. A post-enumeration `ENOENT` may be
+  skipped only as the result of a concurrent authorized move; all other lookup
+  errors propagate. Existing no-follow, ownership, link-count, confinement,
+  entry-count, and replacement checks remain mandatory.
 - Intake expiry cleanup may release source bytes and abandoned unfinished
   receipts, but it never removes a completed receipt. Completed receipt/result
   history remains marker-owned and manual-retention-only.

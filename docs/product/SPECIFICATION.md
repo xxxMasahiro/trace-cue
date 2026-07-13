@@ -1315,7 +1315,15 @@ lock; history then acquires and revalidates a candidate id, preventing lock
 inversion and stale-snapshot data loss. History retention is coalesced and
 deferred outside the primary operation transaction. A retention lock timeout or
 archive error cannot replace a committed action response, consume confirmation
-without scheduling dispatch, or report a persisted decision as failed.
+without scheduling dispatch, or report a persisted decision as failed. A
+transient maintenance failure is retried only under a bounded retry policy with
+unreferenced scheduling, so maintenance can converge while never becoming
+process-liveness authority. Safe-store removal first renames the selected
+directory to a hidden quarantine name that cannot match any product operation
+id, validates and removes that quarantine, and restores it on a failed safety
+check when possible. During a bounded directory scan, only `ENOENT` from the
+post-enumeration safety lookup is treated as an authorized concurrent move;
+every other lookup failure propagates and fails closed.
 
 Status, list, dashboard, and saved-result GET handlers only project stored
 state. `POST /api/agentic-review/recover` owns interrupted-state transitions

@@ -940,6 +940,11 @@ test('Control Center review history retires the oldest completed operations at i
     decision: 'later'
   }, { cwd, now: '2026-01-01T00:01:00.000Z', agenticReviewHistoryEntries: 2 });
   assert.equal(decided.status, 'ok');
+  const concurrentLists = await Promise.all(Array.from(
+    { length: 16 },
+    () => runControlCenterAgenticReviewList({}, { cwd })
+  ));
+  assert.equal(concurrentLists.every((result) => result.status === 'ok'), true);
   let listed;
   await waitUntil(async () => {
     listed = reviewData(await runControlCenterAgenticReviewList({}, { cwd }));

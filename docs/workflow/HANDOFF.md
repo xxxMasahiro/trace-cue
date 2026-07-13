@@ -600,7 +600,13 @@ referenced because each timer owns completion of its bounded request. The
 production fail-closed asset contract and intentionally unreferenced background
 maintenance remain unchanged. CI run `29270579455` passed all owners and final
 proof, including 357 no-browser tests on both Node 20 and Node 22 and 16 browser
-tests. The completion-state documentation commit is the final Git revision;
+tests. A subsequent completion-document CI run exposed a Node 20 history-move
+race: an internal removal quarantine briefly matched the product operation-id
+pattern. Quarantines now use a reserved hidden name, directory listings safely
+skip entries that vanish during an authorized move, and deferred maintenance
+uses bounded unreferenced retries after transient failure. The amplified race
+passed 30 consecutive runs, then all 357 no-browser and 16 browser tests passed
+again. The tracked commit containing this paragraph is the final Git revision;
 authenticated CI proof, complete release evidence, and the read-only parent
 authority result are refreshed against that exact clean synchronized HEAD in
 the ignored evidence store rather than causing another tracked-file change.

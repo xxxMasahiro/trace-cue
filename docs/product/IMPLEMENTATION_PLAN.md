@@ -2045,6 +2045,15 @@ Bounded active-to-history reads tolerate only transient replacement, and the
 safe store has an owner-identity-checked release fallback so a short transition
 window cannot leave a live logical lock permanently held.
 
+Clean-runner closure for Phase 176 reserves hidden quarantine names outside the
+operation-id namespace, tolerates only an entry that vanishes between bounded
+enumeration and its no-follow safety lookup, and keeps every other lookup error
+fail-closed. Deferred operation-history maintenance now uses bounded
+unreferenced retries after transient contention or archival failure. The
+concurrency regression test overlaps multiple list projections with retirement
+and is amplified across independent processes before the complete no-browser
+and browser suites run.
+
 Deferred: PDF/DOCX extraction, OCR, browser-side Playwright execution, remote
 CI trigger/cancel, provider retry or cancellation without a verified contract,
 signed native installers, automatic updates, startup registration, and OS

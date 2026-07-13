@@ -555,6 +555,10 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
   sync, and final authority checks. The implementation through `aa4d16c` passed
   357 no-browser tests on Node 20 and Node 22, 16 browser tests, every package
   and repository-contract owner, and the final proof in CI run `29270579455`.
+  A later clean-runner loop also closed the Node 20 history-move race by
+  reserving internal quarantine names, safely skipping vanished entries, and
+  bounding deferred-maintenance retries; the amplified race passed 30
+  consecutive runs before the 357-test and 16-browser-test suites passed again.
   Exact clean-HEAD release and authenticated CI evidence is written to the
   ignored authority store after this completion-state commit so recording it
   cannot make its own revision stale.

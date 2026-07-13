@@ -80,7 +80,13 @@ export function createSafeLocalStore({
       for (const entry of entries) {
         if (!entry.isDirectory() || entry.isSymbolicLink() || !SAFE_SEGMENT.test(entry.name)) continue;
         const candidate = path.join(prepared.rootReal, entry.name);
-        const info = await lstat(candidate);
+        let info;
+        try {
+          info = await lstat(candidate);
+        } catch (error) {
+          if (error?.code === 'ENOENT') continue;
+          throw error;
+        }
         if (!info.isDirectory() || info.isSymbolicLink()) continue;
         names.push(entry.name);
         if (names.length > maxEntries) {
@@ -122,7 +128,10 @@ export function createSafeLocalStore({
       if (!info.isDirectory() || info.isSymbolicLink()) {
         throw storeError('SAFE_STORE_DIRECTORY_REJECTED', 'The private store directory is unsafe.');
       }
-      const quarantine = `${target}.retired-${randomUUID()}`;
+      const quarantine = path.join(
+        path.dirname(target),
+        `.${path.basename(target)}.retired-${randomUUID()}`
+      );
       await rename(target, quarantine);
       let removable = false;
       try {

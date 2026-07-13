@@ -58,6 +58,8 @@ const MAX_LIST_LIMIT = 100;
 const MAX_OPERATION_STORE_ENTRIES = 4096;
 const DEFAULT_HISTORY_MAINTENANCE_LOCK_TIMEOUT_MS = 100;
 const MAX_HISTORY_MAINTENANCE_LOCK_TIMEOUT_MS = 1000;
+const HISTORY_MAINTENANCE_RETRY_LIMIT = 4;
+const HISTORY_MAINTENANCE_RETRY_DELAY_MS = 25;
 const DEFAULT_OPERATION_LOCK_TIMEOUT_MS = 10_000;
 const MAX_OPERATION_LOCK_TIMEOUT_MS = 120_000;
 const HISTORY_ELIGIBLE_STATES = new Set(['completed', 'failed', 'cancelled']);
@@ -1463,26 +1465,33 @@ function scheduleOperationHistoryRetention(store, context) {
     existing.requested = true;
     existing.store = store;
     existing.context = context;
+    existing.failures = 0;
     return;
   }
-  const state = { requested: true, store, context };
+  const state = { requested: true, store, context, failures: 0 };
   OPERATION_HISTORY_RETENTION.set(key, state);
   scheduleUnrefImmediate(() => { void runScheduledOperationHistoryRetention(key, state); });
 }
 
 async function runScheduledOperationHistoryRetention(key, state) {
   state.requested = false;
+  let completed = false;
   try {
     await state.store.withLock(
       'history-retention',
       async () => pruneOperationHistory(state.store, state.context),
       { timeoutMs: historyMaintenanceLockTimeout(state.context) }
     );
+    completed = true;
+    state.failures = 0;
   } catch {
+    state.failures += 1;
     // Retention is maintenance; it must never change an already committed action result.
   }
-  if (state.requested) {
-    scheduleUnrefImmediate(() => { void runScheduledOperationHistoryRetention(key, state); });
+  if (state.requested || (!completed && state.failures <= HISTORY_MAINTENANCE_RETRY_LIMIT)) {
+    const retry = () => { void runScheduledOperationHistoryRetention(key, state); };
+    if (completed) scheduleUnrefImmediate(retry);
+    else scheduleUnrefTimeout(retry, HISTORY_MAINTENANCE_RETRY_DELAY_MS * state.failures);
     return;
   }
   if (OPERATION_HISTORY_RETENTION.get(key) === state) OPERATION_HISTORY_RETENTION.delete(key);
@@ -1491,6 +1500,11 @@ async function runScheduledOperationHistoryRetention(key, state) {
 function scheduleUnrefImmediate(task) {
   const immediate = setImmediate(task);
   immediate.unref?.();
+}
+
+function scheduleUnrefTimeout(task, delayMs) {
+  const timer = setTimeout(task, delayMs);
+  timer.unref?.();
 }
 
 function historyMaintenanceLockTimeout(context) {
