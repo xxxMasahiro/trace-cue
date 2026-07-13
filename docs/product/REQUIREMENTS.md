@@ -533,3 +533,31 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Remote readiness must be represented by one proof-only final job bound to the
   same workflow run, attempt, full HEAD, policy, and exact owner graph. It must
   not rerun provider suites or reuse local or prior-run PASS results.
+
+## Parent Authority Evidence Projection
+
+- The Dashboard-facing evidence index must remain a derived current-state view,
+  not an append-only history. Historical and superseded evidence must remain
+  locally inspectable without participating in the current readiness decision.
+- The projection must use the parent's fixed 13-column contract, a full product
+  HEAD, and UTC timestamps at whole-second precision. An invalid row must fail
+  closed rather than being normalized into a successful result.
+- A source with one active workflow context must have a matching safe v2 detail
+  projection. A source with multiple active contexts must use a context-neutral
+  detail so Dashboard never attributes one context's event to another.
+- Pre-v2 short-HEAD rows must be archived with an integrity digest before they
+  are removed from the active projection. They must never be promoted to current
+  authority, silently deleted, or re-imported on later rebuilds.
+- Readiness aggregation must consider current required evidence only. Missing,
+  failed, blocked, advisory, stale, dirty, or tampered required evidence must
+  remain non-ready; optional historical evidence must not make a current
+  required result stale.
+- Required-source completeness must come from the evidence detail manifest.
+  Required sources without a current receipt must be projected as `not_run`;
+  contextual sources are not required until a separate operation-specific
+  applicability decision exists.
+- Evidence storage must reject symlinked evidence directories and altered
+  integrity-bound receipt fields before writing or projecting authority.
+- Parent compatibility is verified read-only. TraceCue must not modify the
+  parent repository or weaken the parent's missing-evidence, freshness, HEAD,
+  authority, or malformed-index rejection behavior.

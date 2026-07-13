@@ -610,3 +610,23 @@ policy, and age. A manually recorded PASS is `manual_required`, a dirty executed
 success is advisory, and stale evidence is not authority-ready. Raw logs,
 environment dumps, secrets, URLs, and host-specific absolute paths are forbidden
 from authoritative receipt content.
+
+The active evidence index is verified as exactly 13 tab-separated fields with a
+whole-second UTC `observed_at` value and full product HEAD. Legacy short-HEAD
+rows are copied intact to a digest-named local archive before removal from the
+active view; v2.0 receipts remain historical and stale, and repeated rebuilds
+must not duplicate or re-import them. Tests also prove that every schema v2.1
+field is digest-bound, an empty or partial store exposes manifest-declared
+required evidence as `not_run`, contextual requiredness is never inherited from
+a receipt outside its declared contexts, cached results cannot satisfy
+readiness, optional stale history cannot block current required evidence, while
+required stale, failed, blocked, non-PASS, advisory, dirty, malformed, tampered,
+or symlink-directed evidence remains non-authoritative. A single-context active
+detail must match its row; a multi-context source must expose no context-specific
+event; a synthesized missing row must replace old detail text. Final integration runs
+the parent authority command read-only for the TraceCue free-development
+context and requires `status=ready` against the exact clean synchronized HEAD.
+Because the parent reads a static projection, the TraceCue `status` command
+rebuilds freshness before parent inspection. Immediate detection of arbitrary
+worktree edits without a producer refresh remains a parent-consumer concern and
+is not represented as a TraceCue-only guarantee.

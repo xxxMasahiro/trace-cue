@@ -302,6 +302,18 @@ Security tests block unapproved use of persistent browser profiles, storageState
   settings, and evidence mutation. Timeouts and first failure terminate the
   process group and descendants; a success receipt is not written before the
   command and required cleanup finish.
+- Evidence projection must reject symlinked Git evidence roots, receipt stores,
+  detail stores, or legacy archives before a write. Receipt reads recompute
+  integrity-bound attempt and full-record result digests, and the parent-facing index and
+  active detail contain no raw logs, environment values, URLs, credentials, or
+  host-specific absolute paths.
+- Legacy evidence migration is local and non-destructive: the previous index is
+  archived by content digest, never treated as current PASS, and never used to
+  suppress missing current required evidence. Parent compatibility checks are
+  read-only and cannot edit parent files or weaken parent rejection rules.
+- Cached, v2.0, missing-required, cross-context detail, and manually weakened
+  requirement or expiry fields cannot satisfy v2.1 authority. Contextual rows
+  stay non-required until a dedicated applicability observer proves otherwise.
 - Package work uses marked per-run temporary directories and removes them on
   success and failure. Tar inspection rejects traversal, duplicate paths,
   symlinks, hardlinks, unsupported types, invalid checksums, trailing content,

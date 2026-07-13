@@ -1107,3 +1107,37 @@ locked, deterministic, rebuildable projections. Status recomputes current
 repository and policy state. Manual records are always `manual_required`; dirty
 successful executions are advisory; stale, malformed, symlinked, or
 secret-bearing records fail closed.
+
+The Dashboard-facing `index.tsv` is the active compatibility projection and
+contains only the latest v2 receipt for each exact source and context. Its
+`observed_at` field is normalized to `YYYY-MM-DDTHH:MM:SSZ`, while the immutable
+receipt retains its original high-resolution event time. On the first rebuild
+that encounters pre-v2 short-HEAD rows, TraceCue writes the complete prior index
+to `.git/product-gate-evidence/legacy/` under a content-digest filename and
+writes an atomic migration record. Rebuild then projects only v2 receipts, so
+legacy rows remain history but cannot re-enter current authority.
+
+New receipts use schema version 2.1 and bind every persisted authority,
+freshness, execution, and presentation field into the result digest. Version
+2.0 receipts remain readable as historical records but are always stale and
+cannot satisfy current readiness. Receipt reads recompute the attempt and result
+digests before use. Evidence
+root and receipt directories must be real directories below the repository Git
+directory, never symlinks. Local aggregate status ignores stale optional rows
+but continues to reject stale required rows, failed or blocked required rows,
+required non-PASS states including cached results, and non-authoritative required
+results. Required sources are derived from `required` rows in the evidence
+detail manifest; an absent current receipt is projected as `not_run`, while a
+`contextual` row is not promoted without a separate applicability decision. The parent
+repository consumes only the fixed 13-column projection and independently
+rechecks its grammar, full HEAD, age, authority, required evidence, and current
+workflow context.
+
+Each source also projects a bounded `current-v2.json` under the existing
+source-scoped details directory. For a single active context, it contains only
+the common safe detail fields and uses the same event id, status, whole-second
+time, and full HEAD as the active row. For multiple active contexts, it contains
+no event id and uses a context-neutral explanation because the parent detail
+contract is source-scoped rather than context-scoped. Rebuild also projects a
+safe no-event detail for synthesized required `not_run` rows, preventing an old
+legacy explanation from being attached to missing current evidence.

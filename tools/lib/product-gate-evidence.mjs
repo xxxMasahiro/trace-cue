@@ -17,13 +17,15 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-const RECEIPT_VERSION = '2.0.0';
+const RECEIPT_VERSION = '2.1.0';
+const LEGACY_RECEIPT_VERSION = '2.0.0';
 const MARKER_TEXT = 'product-gate-evidence-v2\n';
 const MAX_METADATA_LENGTH = 4096;
 const MAX_UNTRACKED_FILE_BYTES = 64 * 1024 * 1024;
 const DEFAULT_MAX_AGE_SECONDS = 3600;
 const DEFAULT_LOCK_TIMEOUT_MS = 5000;
 const DEFAULT_STALE_LOCK_MS = 30000;
+const MAX_DERIVED_INDEX_BYTES = 4 * 1024 * 1024;
 const SOURCE_ID_PATTERN = /^(?:repositories\.product|product\.(?:docs|workflow|git|ci|security|approvals|design_system|gates))(?:\.[A-Za-z0-9_.-]+)?$/u;
 const CONTEXTS = new Set(['all', 'free-development', 'product-improvement', 'external-integration', 'lesson-maintenance', 'custom']);
 const STATUSES = new Set(['not_run', 'passed', 'failed', 'blocked', 'unknown', 'optional', 'cached', 'stale', 'not_applicable']);
@@ -78,6 +80,10 @@ function evidenceRoot(repoRoot) {
   return path.join(repoRoot, '.git', 'product-gate-evidence');
 }
 
+function legacyEvidencePath(repoRoot) {
+  return path.join(evidenceRoot(repoRoot), 'legacy');
+}
+
 function indexPath(repoRoot) {
   return path.join(evidenceRoot(repoRoot), 'index.tsv');
 }
@@ -88,6 +94,10 @@ function ledgerPath(repoRoot) {
 
 function receiptsPath(repoRoot) {
   return path.join(evidenceRoot(repoRoot), 'receipts-v2');
+}
+
+function detailsPath(repoRoot) {
+  return path.join(evidenceRoot(repoRoot), 'details');
 }
 
 function markerPath(repoRoot) {
@@ -129,6 +139,37 @@ function validateAge(value) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0) throw new Error(`Invalid product gate evidence max age: ${value}`);
   return number;
+}
+
+function parentCompatibleTimestamp(value) {
+  if (value === 'not_collected') return value;
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) throw new Error(`Invalid product gate evidence timestamp: ${value}`);
+  return parsed.toISOString().replace(/\.\d{3}Z$/u, 'Z');
+}
+
+async function ensureSafeDirectory(directory, mode = 0o700) {
+  await mkdir(directory, { recursive: true, mode });
+  const info = await lstat(directory);
+  if (!info.isDirectory() || info.isSymbolicLink()) {
+    throw new Error(`Product gate evidence directory is unsafe: ${path.basename(directory)}`);
+  }
+}
+
+async function ensureSafeEvidenceRoot(repoRoot) {
+  const gitDirectory = path.join(repoRoot, '.git');
+  const gitInfo = await lstat(gitDirectory);
+  if (!gitInfo.isDirectory() || gitInfo.isSymbolicLink()) throw new Error('Product gate evidence requires a safe Git directory.');
+  await ensureSafeDirectory(evidenceRoot(repoRoot));
+}
+
+async function assertOptionalSafeDirectory(directory, label) {
+  try {
+    const info = await lstat(directory);
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`${label} is unsafe.`);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
 }
 
 function validateSafeMetadata(value, label, { allowEmpty = true } = {}) {
@@ -229,6 +270,7 @@ function commandFingerprint(argv, environmentProfile = 'local') {
 
 function freshnessForReceipt(receipt, snapshot, policyFingerprint, now = Date.now()) {
   if (receipt.status === 'not_run' || receipt.status === 'not_applicable') return 'not_collected';
+  if (receipt.schema_version === LEGACY_RECEIPT_VERSION) return 'stale';
   const observed = Date.parse(receipt.observed_at);
   if (!Number.isFinite(observed) || now - observed > receipt.max_age_seconds * 1000) return 'stale';
   if (
@@ -256,7 +298,8 @@ function buildHumanFields(sourceId, status, sourceArtifacts, blockedBy, nextComm
 
 async function prepareReceiptDirectory(repoRoot) {
   const directory = receiptsPath(repoRoot);
-  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await ensureSafeEvidenceRoot(repoRoot);
+  await ensureSafeDirectory(directory);
   const marker = markerPath(repoRoot);
   try {
     const handle = await open(marker, 'wx', 0o600);
@@ -269,11 +312,12 @@ async function prepareReceiptDirectory(repoRoot) {
   } catch (error) {
     if (error?.code !== 'EEXIST') throw error;
   }
-  const markerInfo = await lstat(marker);
-  if (!markerInfo.isFile() || markerInfo.isSymbolicLink() || await readFile(marker, 'utf8') !== MARKER_TEXT) {
-    throw new Error('Product gate evidence marker is unsafe or invalid.');
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const markerInfo = await lstat(marker);
+    if (markerInfo.isFile() && !markerInfo.isSymbolicLink() && await readFile(marker, 'utf8') === MARKER_TEXT) return directory;
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  return directory;
+  throw new Error('Product gate evidence marker is unsafe or invalid.');
 }
 
 async function syncDirectory(directory) {
@@ -310,7 +354,7 @@ function validateReceipt(receipt) {
   if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) throw new Error('Evidence receipt must be an object.');
   const unknown = Object.keys(receipt).filter((key) => !RECEIPT_FIELDS.has(key));
   if (unknown.length) throw new Error(`Evidence receipt contains forbidden or unknown fields: ${unknown.join(', ')}`);
-  if (receipt.schema_version !== RECEIPT_VERSION || receipt.kind !== 'product-gate-evidence-receipt') throw new Error('Unsupported product gate evidence receipt.');
+  if (![LEGACY_RECEIPT_VERSION, RECEIPT_VERSION].includes(receipt.schema_version) || receipt.kind !== 'product-gate-evidence-receipt') throw new Error('Unsupported product gate evidence receipt.');
   validateSourceId(receipt.source_id);
   validateContext(receipt.context);
   validateStatus(receipt.status);
@@ -327,6 +371,24 @@ function validateReceipt(receipt) {
     validateSafeMetadata(receipt[field], field, { allowEmpty: ['source_artifacts', 'blocked_by', 'next_command'].includes(field) });
   }
   if (!Number.isFinite(Date.parse(receipt.observed_at))) throw new Error('Evidence observed_at is invalid.');
+  const expectedAttemptKey = sha256(stableJson({
+    sourceId: receipt.source_id,
+    context: receipt.context,
+    observedAt: receipt.observed_at,
+    head: receipt.head_sha,
+    tree: receipt.tree_sha,
+    input: receipt.input_fingerprint,
+    policy: receipt.policy_fingerprint,
+    command: receipt.command_fingerprint,
+    eventId: receipt.event_id
+  }));
+  if (receipt.attempt_key !== expectedAttemptKey) throw new Error('Evidence receipt attempt_key integrity check failed.');
+  const expectedResultDigest = receipt.schema_version === LEGACY_RECEIPT_VERSION
+    ? sha256(stableJson({ status: receipt.status, authority: receipt.authority, blockedBy: receipt.blocked_by }))
+    : sha256(stableJson(Object.fromEntries(
+      Object.entries(receipt).filter(([field]) => field !== 'result_digest')
+    )));
+  if (receipt.result_digest !== expectedResultDigest) throw new Error('Evidence receipt result_digest integrity check failed.');
   if (receipt.status === 'passed' && receipt.worktree_state === 'dirty' && receipt.authority === 'authoritative') {
     throw new Error('Dirty successful evidence cannot be authoritative.');
   }
@@ -372,7 +434,7 @@ export async function recordEvidence({
   const commandDigest = commandFingerprint(argv);
   const human = buildHumanFields(sourceId, status, safeArtifacts, safeBlockedBy, safeNextCommand);
   const attemptKey = sha256(stableJson({ sourceId, context, observedAt, head: currentSnapshot.head_sha, tree: currentSnapshot.tree_sha, input: currentSnapshot.input_fingerprint, policy: currentPolicy, command: commandDigest, eventId }));
-  const receipt = validateReceipt({
+  const receiptFields = {
     schema_version: RECEIPT_VERSION,
     kind: 'product-gate-evidence-receipt',
     event_id: eventId,
@@ -391,7 +453,6 @@ export async function recordEvidence({
     input_fingerprint: currentSnapshot.input_fingerprint,
     policy_fingerprint: currentPolicy,
     command_fingerprint: commandDigest,
-    result_digest: sha256(stableJson({ status, authority: effectiveAuthority, blockedBy: safeBlockedBy })),
     execution_mode: executionMode,
     source_artifacts: safeArtifacts,
     blocked_by: safeBlockedBy,
@@ -400,6 +461,10 @@ export async function recordEvidence({
     safe_summary: human.safeSummary,
     reason: human.reason,
     next_action: human.nextAction
+  };
+  const receipt = validateReceipt({
+    ...receiptFields,
+    result_digest: sha256(stableJson(receiptFields))
   });
   const directory = await prepareReceiptDirectory(repoRoot);
   const claim = path.join(directory, safeId(eventId));
@@ -414,6 +479,10 @@ async function readReceipts(repoRoot) {
   const directory = receiptsPath(repoRoot);
   let entries;
   try {
+    const rootInfo = await lstat(evidenceRoot(repoRoot));
+    if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new Error('Product gate evidence root is unsafe.');
+    const directoryInfo = await lstat(directory);
+    if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) throw new Error('Product gate evidence receipt store is unsafe.');
     entries = await readdir(directory, { withFileTypes: true });
   } catch (error) {
     if (error?.code === 'ENOENT') return [];
@@ -434,6 +503,77 @@ async function readReceipts(repoRoot) {
     receipts.push({ receipt: validateReceipt(JSON.parse(await readFile(file, 'utf8'))), file });
   }
   return receipts;
+}
+
+async function readEvidenceRequirements(repoRoot) {
+  const file = path.join(repoRoot, 'ops', 'EVIDENCE_DETAIL_MANIFEST.tsv');
+  const info = await lstat(file);
+  if (!info.isFile() || info.isSymbolicLink() || info.size > 4 * 1024 * 1024) {
+    throw new Error('Evidence detail manifest is unsafe.');
+  }
+  const requirements = new Map();
+  for (const line of (await readFile(file, 'utf8')).split('\n')) {
+    if (!line || line.startsWith('#')) continue;
+    const fields = line.split('\t');
+    if (fields.length !== 18) throw new Error('Evidence detail manifest row must contain exactly 18 fields.');
+    const [sourceId, requiredMode, contextsText] = fields;
+    validateSourceId(sourceId);
+    if (!['required', 'optional', 'contextual'].includes(requiredMode)) throw new Error(`Invalid evidence requirement mode: ${requiredMode}`);
+    if (requirements.has(sourceId)) throw new Error(`Duplicate evidence requirement source: ${sourceId}`);
+    const contexts = contextsText.split('|');
+    if (contexts.length === 0 || contexts.some((context) => !CONTEXTS.has(context))) {
+      throw new Error(`Invalid evidence requirement contexts: ${contextsText}`);
+    }
+    requirements.set(sourceId, { requiredMode, contexts: new Set(contexts) });
+  }
+  return requirements;
+}
+
+function requirementApplies(requirement, context) {
+  return requirement.contexts.has('all') || requirement.contexts.has(context) || context === 'all';
+}
+
+function completeActiveRows(rows, requirements, repoRoot) {
+  const contexts = [...new Set(rows.map((row) => row.context))];
+  if (contexts.length === 0) contexts.push('all');
+  const completed = rows.map((row) => {
+    const requirement = requirements.get(row.source_id);
+    if (!requirement) return row;
+    return {
+      ...row,
+      required_in_context: requirementApplies(requirement, row.context) && requirement.requiredMode === 'required'
+    };
+  });
+  for (const context of contexts) {
+    for (const [sourceId, requirement] of requirements) {
+      const required = requirementApplies(requirement, context)
+        && requirement.requiredMode === 'required';
+      if (!required) continue;
+      const present = completed.some((row) => row.source_id === sourceId && (row.context === context || row.context === 'all'));
+      if (present) continue;
+      completed.push({
+        source_id: sourceId,
+        context,
+        status: 'not_run',
+        freshness_state: 'not_collected',
+        required_in_context: true,
+        authority: 'not_collected',
+        observed_at: 'not_collected',
+        max_age_seconds: 0,
+        product_root: `[external-product-repository]/${path.basename(repoRoot)}`,
+        product_head: 'none',
+        source_artifacts: 'ops/EVIDENCE_DETAIL_MANIFEST.tsv',
+        blocked_by: sourceId,
+        next_command: './tools/product-gate-evidence status',
+        detail_code: `${sourceId}.detail`,
+        safe_summary: `${sourceId} not_run`,
+        reason: 'Required current evidence has not been collected.',
+        next_action: 'Run the source-specific product verification before treating the repository as ready.',
+        synthetic: true
+      });
+    }
+  }
+  return completed.sort((a, b) => `${a.source_id}\0${a.context}`.localeCompare(`${b.source_id}\0${b.context}`));
 }
 
 function parseLegacyIndex(text) {
@@ -466,18 +606,47 @@ function parseLegacyIndex(text) {
   return rows;
 }
 
-async function readLegacyRows(repoRoot) {
+async function migrateLegacyIndex(repoRoot) {
+  let info;
   try {
-    return parseLegacyIndex(await readFile(indexPath(repoRoot), 'utf8'));
+    info = await lstat(indexPath(repoRoot));
   } catch (error) {
-    if (error?.code === 'ENOENT') return [];
+    if (error?.code === 'ENOENT') return { migrated: false, count: 0 };
     throw error;
   }
+  if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_DERIVED_INDEX_BYTES) {
+    throw new Error('Legacy product gate evidence index is unsafe.');
+  }
+  const text = await readFile(indexPath(repoRoot), 'utf8');
+  const legacyRows = parseLegacyIndex(text);
+  if (legacyRows.length === 0) return { migrated: false, count: 0 };
+  await ensureSafeEvidenceRoot(repoRoot);
+  const directory = legacyEvidencePath(repoRoot);
+  await ensureSafeDirectory(directory);
+  const digest = sha256(text);
+  const archive = path.join(directory, `index-v1-${digest}.tsv`);
+  try {
+    const archiveInfo = await lstat(archive);
+    if (!archiveInfo.isFile() || archiveInfo.isSymbolicLink() || sha256(await readFile(archive)) !== digest) {
+      throw new Error('Archived legacy product gate evidence index is unsafe or inconsistent.');
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    await atomicWrite(archive, text);
+  }
+  await atomicWrite(path.join(directory, 'migration-v2.json'), `${stableJson({
+    schema_version: '1.0.0',
+    kind: 'product-gate-evidence-legacy-migration',
+    archive: path.relative(repoRoot, archive).replaceAll('\\', '/'),
+    sha256: digest,
+    row_count: legacyRows.length,
+    migrated_at: parentCompatibleTimestamp(new Date())
+  })}\n`);
+  return { migrated: true, count: legacyRows.length, archive };
 }
 
-function latestRows(receipts, legacyRows, snapshot, policyFingerprint, now) {
+function latestRows(receipts, snapshot, policyFingerprint, now) {
   const latest = new Map();
-  for (const row of legacyRows) latest.set(`${row.source_id}\0${row.context}`, row);
   for (const { receipt, file } of receipts) {
     const row = {
       source_id: receipt.source_id,
@@ -498,16 +667,12 @@ function latestRows(receipts, legacyRows, snapshot, policyFingerprint, now) {
       reason: receipt.reason,
       next_action: receipt.next_action,
       event_id: receipt.event_id,
+      receipt_version: receipt.schema_version,
       file
     };
     const key = `${row.source_id}\0${row.context}`;
     const previous = latest.get(key);
     if (!previous || row.observed_at > previous.observed_at || (row.observed_at === previous.observed_at && row.event_id > (previous.event_id ?? ''))) latest.set(key, row);
-  }
-  for (const row of latest.values()) {
-    if (!row.legacy) continue;
-    const age = Number.isFinite(Date.parse(row.observed_at)) ? now - Date.parse(row.observed_at) : Infinity;
-    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(row.product_head) || row.product_head !== snapshot.head_sha || age > row.max_age_seconds * 1000) row.freshness_state = 'stale';
   }
   return [...latest.values()].sort((a, b) => `${a.source_id}\0${a.context}`.localeCompare(`${b.source_id}\0${b.context}`));
 }
@@ -524,7 +689,7 @@ async function processAlive(pid) {
 
 async function acquireIndexLock(repoRoot, { timeoutMs = DEFAULT_LOCK_TIMEOUT_MS, staleMs = DEFAULT_STALE_LOCK_MS } = {}) {
   const lock = path.join(evidenceRoot(repoRoot), '.index.lock');
-  await mkdir(evidenceRoot(repoRoot), { recursive: true, mode: 0o700 });
+  await ensureSafeEvidenceRoot(repoRoot);
   const started = Date.now();
   const nonce = randomUUID();
   while (true) {
@@ -575,7 +740,7 @@ async function acquireIndexLock(repoRoot, { timeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
 function indexText(rows) {
   const lines = ['# source_id\tcontext\tstatus\tfreshness_state\trequired_in_context\tauthority\tobserved_at\tmax_age_seconds\tproduct_root\tproduct_head\tsource_artifacts\tblocked_by\tnext_command'];
   for (const row of rows) {
-    const fields = [row.source_id, row.context, row.status, row.freshness_state, String(row.required_in_context), row.authority, row.observed_at, String(row.max_age_seconds), row.product_root, row.product_head, row.source_artifacts, row.blocked_by, row.next_command];
+    const fields = [row.source_id, row.context, row.status, row.freshness_state, String(row.required_in_context), row.authority, parentCompatibleTimestamp(row.observed_at), String(row.max_age_seconds), row.product_root, row.product_head, row.source_artifacts, row.blocked_by, row.next_command];
     lines.push(fields.map((field) => String(field ?? '').replace(/[\t\r\n]/gu, ' ')).join('\t'));
   }
   return `${lines.join('\n')}\n`;
@@ -599,18 +764,57 @@ function ledgerText(receipts, repoRoot, snapshot, policyFingerprint, now) {
     .join('\n') + (receipts.length ? '\n' : '');
 }
 
+async function writeActiveDetails(repoRoot, rows) {
+  const directory = detailsPath(repoRoot);
+  await ensureSafeDirectory(directory);
+  const bySource = new Map();
+  for (const row of rows) {
+    const sourceRows = bySource.get(row.source_id) ?? [];
+    sourceRows.push(row);
+    bySource.set(row.source_id, sourceRows);
+  }
+  for (const [sourceId, sourceRows] of bySource) {
+    validateSourceId(sourceId);
+    const sourceDirectory = path.join(directory, sourceId);
+    await ensureSafeDirectory(sourceDirectory);
+    const row = sourceRows.length === 1 ? sourceRows[0] : null;
+    await atomicWrite(path.join(sourceDirectory, 'current-v2.json'), `${stableJson({
+      artifact_schema_version: '1.0.0',
+      event_id: row?.event_id ?? '',
+      source_id: sourceId,
+      context: row?.context ?? 'multiple',
+      status: row?.status ?? 'unknown',
+      freshness_state: row?.freshness_state ?? 'unknown',
+      authority: row?.authority ?? 'not_collected',
+      observed_at: row ? parentCompatibleTimestamp(row.observed_at) : 'not_collected',
+      product_root: row?.product_root ?? `[external-product-repository]/${path.basename(repoRoot)}`,
+      product_head: row?.product_head ?? 'none',
+      detail_code: row?.detail_code ?? `${sourceId}.detail`,
+      safe_summary: row?.safe_summary ?? `${sourceId} has context-specific evidence`,
+      reason: row?.reason ?? 'Use the selected workflow context row for the current status and observation.',
+      next_action: row?.next_action ?? 'Inspect the selected workflow context before making a readiness decision.',
+      source_artifacts: row?.source_artifacts ?? 'context-specific active index rows',
+      blocked_by: row?.blocked_by ?? '',
+      next_command: row?.next_command ?? './tools/product-gate-evidence status'
+    })}\n`);
+  }
+}
+
 export async function rebuildDerivedEvidence(repoRootInput, options = {}) {
   const repoRoot = validateRepoRoot(repoRootInput);
   const release = await acquireIndexLock(repoRoot, options);
   try {
-    const [snapshot, policyFingerprint, receipts, legacyRows] = await Promise.all([
+    await assertOptionalSafeDirectory(legacyEvidencePath(repoRoot), 'Product gate evidence legacy archive');
+    await migrateLegacyIndex(repoRoot);
+    const [snapshot, policyFingerprint, receipts, requirements] = await Promise.all([
       snapshotRepository(repoRoot),
       computePolicyFingerprint(repoRoot),
       readReceipts(repoRoot),
-      readLegacyRows(repoRoot)
+      readEvidenceRequirements(repoRoot)
     ]);
     const now = options.now ?? Date.now();
-    const rows = latestRows(receipts, legacyRows, snapshot, policyFingerprint, now);
+    const rows = completeActiveRows(latestRows(receipts, snapshot, policyFingerprint, now), requirements, repoRoot);
+    await writeActiveDetails(repoRoot, rows);
     await atomicWrite(indexPath(repoRoot), indexText(rows));
     await atomicWrite(ledgerPath(repoRoot), ledgerText(receipts, repoRoot, snapshot, policyFingerprint, now));
     return { rows, receipts };
@@ -621,18 +825,23 @@ export async function rebuildDerivedEvidence(repoRootInput, options = {}) {
 
 export async function evidenceStatus(repoRootInput, { now = Date.now() } = {}) {
   const repoRoot = validateRepoRoot(repoRootInput);
-  const [snapshot, policyFingerprint, receipts, legacyRows] = await Promise.all([
+  await assertOptionalSafeDirectory(evidenceRoot(repoRoot), 'Product gate evidence root');
+  await assertOptionalSafeDirectory(receiptsPath(repoRoot), 'Product gate evidence receipt store');
+  await assertOptionalSafeDirectory(detailsPath(repoRoot), 'Product gate evidence detail store');
+  await assertOptionalSafeDirectory(legacyEvidencePath(repoRoot), 'Product gate evidence legacy archive');
+  const [snapshot, policyFingerprint, receipts, requirements] = await Promise.all([
     snapshotRepository(repoRoot),
     computePolicyFingerprint(repoRoot),
     readReceipts(repoRoot),
-    readLegacyRows(repoRoot)
+    readEvidenceRequirements(repoRoot)
   ]);
-  const rows = latestRows(receipts, legacyRows, snapshot, policyFingerprint, now);
+  const rows = completeActiveRows(latestRows(receipts, snapshot, policyFingerprint, now), requirements, repoRoot);
+  const requiredRows = rows.filter((row) => row.required_in_context);
   let status = 'not_collected';
   if (rows.length) {
-    if (rows.some((row) => row.freshness_state === 'stale')) status = 'stale';
-    else if (rows.some((row) => row.required_in_context && ['failed', 'blocked', 'unknown'].includes(row.status))) status = 'failed';
-    else if (rows.some((row) => row.required_in_context && row.authority !== 'authoritative' && !['failed', 'blocked', 'unknown', 'not_run', 'optional'].includes(row.status))) status = 'blocked';
+    if (requiredRows.some((row) => row.freshness_state === 'stale')) status = 'stale';
+    else if (requiredRows.some((row) => ['failed', 'blocked', 'unknown'].includes(row.status))) status = 'failed';
+    else if (requiredRows.some((row) => row.status !== 'passed' || row.authority !== 'authoritative')) status = 'blocked';
     else status = 'ready';
   }
   const [legacyLedger, legacyDetails] = await Promise.all([
@@ -644,7 +853,7 @@ export async function evidenceStatus(repoRootInput, { now = Date.now() } = {}) {
     rows,
     receipts,
     ledger_status: receipts.length || legacyLedger ? 'ready' : 'not_collected',
-    details_status: receipts.length || legacyDetails ? 'ready' : 'not_collected'
+    details_status: legacyDetails ? 'ready' : 'not_collected'
   };
 }
 
@@ -693,6 +902,7 @@ async function gitStatusEvidence(repoRoot, context, maxAgeSeconds) {
   const branch = String(runGit(repoRoot, ['branch', '--show-current'], { allowFailure: true }).stdout).trim() || 'detached';
   const upstreamResult = runGit(repoRoot, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { allowFailure: true });
   const upstream = upstreamResult.status === 0 ? String(upstreamResult.stdout).trim() : '';
+  let synchronized = false;
   await recordEvidence({
     repoRoot, sourceId: 'product.git.worktree', context,
     status: snapshot.worktree_state === 'clean' ? 'passed' : 'failed',
@@ -720,7 +930,7 @@ async function gitStatusEvidence(repoRoot, context, maxAgeSeconds) {
     });
     const countsResult = runGit(repoRoot, ['rev-list', '--left-right', '--count', 'HEAD...@{u}'], { allowFailure: true });
     const counts = countsResult.status === 0 ? String(countsResult.stdout).trim().split(/\s+/u).map(Number) : [NaN, NaN];
-    const synchronized = counts.length === 2 && counts.every(Number.isSafeInteger) && counts[0] === 0 && counts[1] === 0;
+    synchronized = counts.length === 2 && counts.every(Number.isSafeInteger) && counts[0] === 0 && counts[1] === 0;
     await recordEvidence({
       repoRoot, sourceId: 'product.git.local_remote_sync', context, status: synchronized ? 'passed' : 'failed', authority: 'authoritative', maxAgeSeconds,
       sourceArtifacts: Number.isSafeInteger(counts[0]) ? `git ahead=${counts[0]};behind=${counts[1]};upstream=${upstream}` : 'git ahead/behind unavailable',
@@ -728,6 +938,21 @@ async function gitStatusEvidence(repoRoot, context, maxAgeSeconds) {
       argv: ['git', 'rev-list', '--left-right', '--count', 'HEAD...@{u}'], snapshot, rebuild: false
     });
   }
+  const syncStatus = snapshot.worktree_state !== 'clean' || (upstream && !synchronized) ? 'failed' : upstream ? 'passed' : 'blocked';
+  const syncBlocker = snapshot.worktree_state !== 'clean'
+    ? 'product.git.worktree'
+    : upstream && !synchronized
+      ? 'product.git.local_remote_sync'
+      : upstream
+        ? ''
+        : 'product.git.upstream';
+  await recordEvidence({
+    repoRoot, sourceId: 'product.git.sync', context, status: syncStatus,
+    authority: syncStatus === 'blocked' ? 'manual_required' : 'authoritative', maxAgeSeconds,
+    sourceArtifacts: `git status --short;branch=${branch};upstream=${upstream || 'none'};synchronized=${synchronized}`,
+    blockedBy: syncBlocker, nextCommand: 'git status -sb', executionMode: 'git-observation',
+    argv: ['git', 'status', '-sb'], snapshot, rebuild: false
+  });
   await rebuildDerivedEvidence(repoRoot);
 }
 
@@ -737,6 +962,7 @@ async function main(argv = process.argv.slice(2)) {
   const options = parsed.options;
   const repoRoot = repoRootFrom(options);
   if (command === 'status') {
+    await rebuildDerivedEvidence(repoRoot);
     const result = await evidenceStatus(repoRoot);
     process.stdout.write(`Product gate evidence index: .git/product-gate-evidence/index.tsv\nStatus: ${result.status}\nLedger: ${result.ledger_status}\nDetails: ${result.details_status}\n`);
     return 0;

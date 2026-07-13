@@ -493,3 +493,27 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
   review, release/product gates, implementation commit `6f4ba26`, and main CI
   run `29167956685`; final current-HEAD evidence is recorded after the closure
   commit so the parent authority can evaluate the exact final revision.
+
+## Parent Authority Evidence Compatibility
+
+- [x] Audit the TraceCue v2 index and the parent authority parser without
+  modifying the parent repository.
+- [x] Identify the whole-second timestamp mismatch and self-perpetuating legacy
+  short-HEAD rows as the concrete authority blockers.
+- [x] Add a parent-compatible active 13-column projection while retaining
+  high-resolution immutable v2 receipts.
+- [x] Archive legacy index history by digest and stop historical rows from
+  re-entering current readiness decisions.
+- [x] Project the matching current v2 detail event so old legacy detail text is
+  not attached to a current Dashboard row.
+- [x] Make required evidence fail closed while optional stale history remains
+  non-blocking; reject integrity-field tampering and symlinked evidence roots.
+- [x] Bind all persisted receipt fields in schema v2.1, keep v2.0 historical and
+  stale, and synthesize missing manifest-required sources as `not_run`.
+- [x] Keep multi-context source details context-neutral and replace legacy detail
+  text for synthesized missing current evidence.
+- [x] Add 26 focused timestamp, migration, idempotence, optional-history,
+  empty-store and required-completeness, contextual applicability,
+  cached-refusal, detail-parity, integrity, and confinement tests.
+- [ ] Complete aggregate, release, product-gate, TraceCue browser, remote CI,
+  current-HEAD evidence, read-only parent authority, and clean Git sync checks.

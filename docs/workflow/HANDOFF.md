@@ -2,6 +2,24 @@
 
 ## Current State
 
+Parent authority evidence compatibility Phase 165-167 is in progress. The
+implementation now normalizes the active Dashboard index to the parent's fixed
+13-column and whole-second UTC contract, archives pre-v2 short-HEAD rows by
+content digest instead of re-importing them, evaluates readiness from current
+manifest-required evidence, binds every persisted schema v2.1 receipt field,
+keeps v2.0 receipts historical and stale, projects matching or context-neutral
+current details, and rejects receipt-integrity or symlinked evidence-directory
+violations. Focused evidence tests pass 26 checks, including empty-store
+required completeness and manifest-derived contextual applicability. Complete local, browser,
+remote CI, current-HEAD evidence, read-only parent authority, and clean Git sync
+verification remain before this phase is complete.
+
+The parent consumes a static evidence index and does not inspect TraceCue's
+worktree inputs itself. `tools/product-gate-evidence status` now rebuilds the
+projection before a parent read, but immediate dirty-after-ready detection
+without that producer refresh requires a separately scoped parent-consumer
+change and is not claimed by this TraceCue-only phase.
+
 Verification composition Phase 156-164 is complete. The current implementation
 has an enforced strict repository-local
 execution policy and schema, conservative focused planning, bounded argv-only

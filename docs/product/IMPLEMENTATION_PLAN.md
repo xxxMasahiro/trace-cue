@@ -1927,3 +1927,24 @@ Rollback keeps existing npm and product-gate entrypoints available. Reverting
 the policy adapters returns execution to the prior serial wrappers without
 changing runtime product behavior, artifact roots, provider boundaries, MCP,
 or Control Center user workflows.
+
+## Phase 165-167: Parent Authority Evidence Compatibility
+
+1. Phase 165: normalize the derived evidence index to the fixed 13-column
+   parent contract and whole-second UTC timestamps while retaining full event
+   precision in immutable v2 receipts.
+2. Phase 166: archive pre-v2 short-HEAD index rows with a content digest, stop
+   importing historical rows into the active projection, evaluate readiness
+   from manifest-declared current required rows, project matching or
+   context-neutral safe v2 detail records, bind every receipt field in schema
+   v2.1, and reject receipt-integrity or evidence-directory symlink violations.
+3. Phase 167: add acceptance and refusal tests for timestamp grammar, legacy
+   retention and idempotence, optional stale history, receipt tampering, safe
+   directory confinement, required-source completeness, cached-result refusal,
+   multi-context detail safety, and read-only parent authority integration; then run
+   complete local, browser, Git, remote CI, and current-HEAD evidence checks.
+
+Rollback restores the prior projector without changing runtime review behavior,
+Control Center settings, provider boundaries, MCP permissions, package identity,
+or parent files. Archived legacy evidence remains local and can be inspected
+independently of the active index.
