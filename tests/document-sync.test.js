@@ -41,6 +41,22 @@ const documentSyncGovernance = [
   'schemas/document-sync-policy.schema.json',
   'ops/PRODUCT_MANIFEST.tsv'
 ];
+const ciGovernance = [
+  'docs/product/IMPLEMENTATION_PLAN.md',
+  'docs/workflow/TASK_TRACKER.md',
+  'docs/workflow/HANDOFF.md',
+  'docs/workflow/VERIFICATION.md',
+  'ops/CI_MANIFEST.tsv'
+];
+const verificationGovernance = [
+  'docs/workflow/VERIFICATION.md',
+  'docs/workflow/SECURITY.md',
+  'ops/VERIFICATION_EXECUTION_POLICY.json',
+  'schemas/verification-execution-policy.schema.json',
+  'ops/TEST_PLAN_MANIFEST.tsv',
+  'ops/CI_MANIFEST.tsv',
+  'ops/SECURITY_MANIFEST.tsv'
+];
 
 test('document sync policy validates and bounded glob matching stays path-aware', () => {
   assert.equal(policy.schema_version, '1.0.0');
@@ -133,6 +149,26 @@ test('durable instruction changes require synchronized workflow policy and produ
     ...security,
     ...developmentWorkflowGovernance,
     ...documentSyncGovernance
+  ]);
+  assert.equal(synchronized.status, 'pass');
+});
+
+test('verification orchestration changes require complete product, CI, verification, and security authorities', () => {
+  const runnerOnly = evaluateDocumentSync(policy, ['tools/verification.mjs']);
+  assert.equal(runnerOnly.status, 'fail');
+  assert.equal(runnerOnly.matched_rules.some((rule) => rule.id === 'verification-orchestration-authority'), true);
+  assert.equal(runnerOnly.missing_all_of.includes('docs/product/REQUIREMENTS.md'), true);
+  assert.equal(runnerOnly.missing_all_of.includes('docs/workflow/VERIFICATION.md'), true);
+  assert.equal(runnerOnly.missing_all_of.includes('docs/workflow/SECURITY.md'), true);
+  assert.equal(runnerOnly.missing_all_of.includes('ops/CI_MANIFEST.tsv'), true);
+
+  const synchronized = evaluateDocumentSync(policy, [
+    'tools/verification.mjs',
+    ...productCore,
+    ...verification,
+    ...security,
+    ...ciGovernance,
+    ...verificationGovernance
   ]);
   assert.equal(synchronized.status, 'pass');
 });

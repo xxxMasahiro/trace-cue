@@ -1,0 +1,208 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "verification-execution-policy",
+  "activation_mode": "enforce",
+  "command_execution": "argv",
+  "unknown_state_policy": "fail-closed",
+  "cross_run_result_reuse": "disabled",
+  "persistent_result_cache": "disabled",
+  "limits": {
+    "default_timeout_ms": 900000,
+    "cancellation_grace_ms": 5000,
+    "max_log_bytes": 8388608,
+    "parallel_jobs": "auto",
+    "max_parallel_jobs": 2
+  },
+  "tasks": [
+    {
+      "id": "structure",
+      "label": "Repository structure",
+      "argv": ["./tools/check_product_structure.sh"],
+      "kind": "parallel",
+      "locks": [],
+      "depends_on": [],
+      "provides": ["product.gates.structure"]
+    },
+    {
+      "id": "docs",
+      "label": "Product documents",
+      "argv": ["./tools/check_product_docs.sh"],
+      "kind": "parallel",
+      "locks": [],
+      "depends_on": [],
+      "provides": ["product.docs.sync"]
+    },
+    {
+      "id": "security",
+      "label": "Security boundaries",
+      "argv": ["./tools/check_product_security.sh"],
+      "kind": "serial",
+      "locks": ["repository-scan"],
+      "depends_on": [],
+      "provides": ["product.security.secrets"]
+    },
+    {
+      "id": "ci_contract",
+      "label": "CI structure",
+      "argv": ["./tools/check_product_ci.sh"],
+      "kind": "parallel",
+      "locks": [],
+      "depends_on": [],
+      "provides": ["product.ci.github_actions"]
+    },
+    {
+      "id": "design_system",
+      "label": "Design system",
+      "argv": ["./tools/check_product_design_system.sh"],
+      "kind": "parallel",
+      "locks": [],
+      "depends_on": [],
+      "provides": ["product.design_system.sources"]
+    },
+    {
+      "id": "product_mode",
+      "label": "Product operation mode",
+      "argv": ["./tools/product-mode", "check"],
+      "kind": "parallel",
+      "locks": [],
+      "depends_on": [],
+      "provides": ["product.workflow.operation_mode"]
+    },
+    {
+      "id": "development_workflow",
+      "label": "Development workflow",
+      "argv": ["npm", "run", "development-workflow:check"],
+      "kind": "parallel",
+      "locks": [],
+      "depends_on": [],
+      "provides": ["product.workflow.development_policy"]
+    },
+    {
+      "id": "document_sync",
+      "label": "Document synchronization",
+      "argv": ["npm", "run", "document-sync:check"],
+      "kind": "parallel",
+      "locks": [],
+      "depends_on": [],
+      "provides": ["product.docs.range_sync"]
+    },
+    {
+      "id": "test_no_browser",
+      "label": "No-browser product tests",
+      "argv": ["npm", "test"],
+      "kind": "heavy",
+      "locks": ["node-test-runtime"],
+      "depends_on": [],
+      "provides": [
+        "product.runtime.architecture",
+        "product.runtime.no_browser",
+        "product.runtime.agentic_human_review",
+        "product.runtime.control_center",
+        "product.runtime.dashboard_settings",
+        "product.workflow.development_contract",
+        "product.docs.range_sync_contract",
+        "product.runtime.playwright_test",
+        "product.ci.verification_contract"
+      ]
+    },
+    {
+      "id": "rename_readiness",
+      "label": "Rename readiness",
+      "argv": ["npm", "run", "test:rename-readiness"],
+      "kind": "parallel",
+      "locks": [],
+      "depends_on": [],
+      "provides": ["product.release.rename_readiness"]
+    },
+    {
+      "id": "package_dry_run",
+      "label": "Package file set",
+      "argv": ["npm", "run", "test:pack"],
+      "kind": "serial",
+      "locks": ["npm-pack"],
+      "depends_on": [],
+      "provides": ["product.runtime.package_dry_run"]
+    },
+    {
+      "id": "package_install",
+      "label": "Packed install",
+      "argv": ["npm", "run", "test:pack-install"],
+      "kind": "serial",
+      "locks": ["npm-pack"],
+      "depends_on": ["package_dry_run"],
+      "provides": ["product.runtime.package_install_smoke"]
+    },
+    {
+      "id": "control_center_build",
+      "label": "Control Center build",
+      "argv": ["npm", "run", "control-center:build"],
+      "kind": "heavy",
+      "locks": ["control-center-dist"],
+      "depends_on": [],
+      "provides": ["product.runtime.control_center_build"]
+    },
+    {
+      "id": "browser_smoke",
+      "label": "Browser interaction tests",
+      "argv": ["npm", "run", "test:browser:run"],
+      "kind": "heavy",
+      "locks": ["browser-runtime", "control-center-dist"],
+      "depends_on": ["control_center_build"],
+      "provides": ["product.runtime.browser_smoke"]
+    }
+  ],
+  "profiles": {
+    "contracts": ["structure", "docs", "security", "ci_contract", "design_system", "product_mode", "development_workflow", "document_sync"],
+    "core": ["structure", "docs", "security", "ci_contract", "design_system", "product_mode", "development_workflow", "document_sync", "test_no_browser"],
+    "browser": ["control_center_build", "browser_smoke"],
+    "package": ["rename_readiness", "package_dry_run", "package_install"],
+    "release": ["structure", "docs", "security", "ci_contract", "design_system", "product_mode", "development_workflow", "document_sync", "test_no_browser", "rename_readiness", "package_dry_run", "package_install", "control_center_build", "browser_smoke"],
+    "focused": []
+  },
+  "focused_selectors": [
+    {
+      "id": "ignore_temporary_memory",
+      "patterns": ["docs/memory/SESSION_MEMORY.md", "docs/memory/DEVELOPER_MEMORY.md"],
+      "profiles": []
+    },
+    {
+      "id": "browser_surface",
+      "patterns": ["control-center/**", "src/control-center-*.js", "docs/design-system/**", "tests/browser-smoke.test.js", "tests/helpers/browser-test-workspace.js"],
+      "profiles": ["core", "browser"]
+    },
+    {
+      "id": "package_surface",
+      "patterns": ["package.json", "package-lock.json", "bin/**", "schemas/**", ".codex-plugin/**", ".mcp.json", "tools/pack-*.mjs", "tools/lib/package-artifact.mjs", "tests/package-artifact.test.js"],
+      "profiles": ["core", "package"]
+    },
+    {
+      "id": "runtime_surface",
+      "patterns": ["src/**", "tests/**", "templates/**"],
+      "profiles": ["core"]
+    },
+    {
+      "id": "workflow_surface",
+      "patterns": ["tools/**", "ops/**", "docs/**", ".github/**", ".githooks/**", "AGENTS.MD"],
+      "profiles": ["contracts", "core"]
+    }
+  ],
+  "focused_fallback_profiles": ["core"],
+  "ci_graph": {
+    "owners": [
+      {"job_id": "repository-contracts", "execution_instance_ids": ["repository-contracts"]},
+      {"job_id": "node", "execution_instance_ids": ["node-20", "node-22"]},
+      {"job_id": "package-producer", "execution_instance_ids": ["package-producer"]},
+      {"job_id": "package-consumer", "execution_instance_ids": ["package-consumer-20", "package-consumer-22"]},
+      {"job_id": "browser-smoke", "execution_instance_ids": ["browser-smoke"]}
+    ],
+    "final_job_id": "final-gate",
+    "required_jobs": ["repository-contracts", "node", "package-producer", "package-consumer", "browser-smoke"]
+  },
+  "cache_policy": {
+    "playwright_binary_only": true,
+    "exact_key_required": true,
+    "restore_prefix_allowed": false,
+    "test_results_allowed": false,
+    "receipts_allowed": false
+  }
+}

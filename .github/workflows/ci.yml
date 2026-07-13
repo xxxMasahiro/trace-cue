@@ -15,10 +15,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   repository-contracts:
     name: Repository contracts
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check out repository history
         uses: actions/checkout@v5
@@ -30,6 +35,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: Check verification policy
+        run: npm run verification:check
+
       - name: Check repository contracts
         run: |
           ./tools/check_product_structure.sh
@@ -39,8 +47,6 @@ jobs:
           ./tools/check_product_design_system.sh
           ./tools/product-mode check
           npm run development-workflow:check
-          npm run development-workflow:contract-check
-          npm run document-sync:contract-check
 
       - name: Check document synchronization range
         env:
@@ -78,6 +84,7 @@ jobs:
   node:
     name: Node ${{ matrix.node-version }}
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -97,21 +104,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run no-browser tests
+      - name: Run no-browser compatibility tests
         run: npm test
 
-      - name: Check rename readiness
-        run: npm run test:rename-readiness
-
-      - name: Verify package file set
-        run: npm run test:pack
-
-      - name: Run packed install smoke
-        run: npm run test:pack-install
-
-  browser-smoke:
-    name: Browser smoke
+  package-producer:
+    name: Package producer
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      manifest-digest: ${{ steps.package.outputs.manifest-digest }}
+      producer-toolchain-digest: ${{ steps.package.outputs.producer-toolchain-digest }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -125,11 +127,154 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Check rename readiness
+        run: npm run test:rename-readiness
+
+      - name: Verify package file set
+        run: npm run test:pack
+
+      - name: Produce same-run package artifact
+        id: package
+        run: |
+          node ./tools/pack-install-smoke.mjs produce \
+            --artifact-dir "$RUNNER_TEMP/package-artifact" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --job-id package-producer \
+            > "$RUNNER_TEMP/package-producer-output.json"
+          node --input-type=module -e \
+            "import { appendFileSync, readFileSync } from 'node:fs'; const value = JSON.parse(readFileSync(process.argv[1], 'utf8')); appendFileSync(process.env.GITHUB_OUTPUT, 'manifest-digest=' + value.manifest_digest + '\\nproducer-toolchain-digest=' + value.producer_toolchain_digest + '\\n');" \
+            "$RUNNER_TEMP/package-producer-output.json"
+
+      - name: Upload same-run package artifact
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: package-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/package-artifact
+          if-no-files-found: error
+          retention-days: 1
+
+  package-consumer:
+    name: Package consumer Node ${{ matrix.node-version }}
+    needs: package-producer
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - 20
+          - 22
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download same-run package artifact
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: package-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/package-artifact
+
+      - name: Verify and test the producer tarball
+        run: |
+          node ./tools/pack-install-smoke.mjs consume \
+            --artifact-dir "$RUNNER_TEMP/package-artifact" \
+            --manifest-digest "${{ needs.package-producer.outputs.manifest-digest }}" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --job-id "package-consumer-${{ matrix.node-version }}" \
+            --producer-job-id package-producer \
+            --producer-toolchain-digest "${{ needs.package-producer.outputs.producer-toolchain-digest }}"
+
+  browser-smoke:
+    name: Browser smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browser binaries
+        id: playwright-cache
+        uses: actions/cache@v5.0.5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ hashFiles('package-lock.json', 'node_modules/playwright-core/browsers.json') }}
+
+      - name: Install Chromium system dependencies
+        run: ./node_modules/.bin/playwright install-deps chromium
+
+      - name: Verify or install exact Chromium binary
+        env:
+          PLAYWRIGHT_CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
+        run: |
+          executable="$(node --input-type=module -e "import { chromium } from 'playwright'; process.stdout.write(chromium.executablePath());")"
+          if [[ "$PLAYWRIGHT_CACHE_HIT" != "true" ]] || ! "$executable" --version >/dev/null 2>&1; then
+            ./node_modules/.bin/playwright install --force chromium
+          fi
+          "$executable" --version
 
       - name: Build browser UI
         run: npm run control-center:build
 
-      - name: Run browser smoke tests
-        run: npm run test:browser
+      - name: Run browser smoke tests without rebuilding
+        run: npm run test:browser:run
+
+  final-gate:
+    name: Final gate
+    if: ${{ always() }}
+    needs:
+      - repository-contracts
+      - node
+      - package-producer
+      - package-consumer
+      - browser-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Prove all owners for this run and revision
+        env:
+          CI_OWNER_RESULTS_JSON: >-
+            {"repository-contracts":"${{ needs.repository-contracts.result }}","node":"${{ needs.node.result }}","package-producer":"${{ needs.package-producer.result }}","package-consumer":"${{ needs.package-consumer.result }}","browser-smoke":"${{ needs.browser-smoke.result }}"}
+        run: |
+          node ./tools/verification.mjs ci-proof \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --head "$GITHUB_SHA" \
+            --source-job final-gate \
+            --output "$RUNNER_TEMP/verification-proof.json"
+
+      - name: Upload final proof
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: verification-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verification-proof.json
+          if-no-files-found: error
+          retention-days: 1

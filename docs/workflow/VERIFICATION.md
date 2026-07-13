@@ -552,3 +552,61 @@ Optional acceptance checks against local application servers may run only when t
   not provide attestation. Reports must state that limitation explicitly.
 - This workflow-only slice still runs the existing browser smoke as requested
   regression evidence. No new browser route or visual behavior is introduced.
+
+## Composed Local And Remote Verification
+
+The verification policy is checked with:
+
+```bash
+npm run verification:check
+npm run verification:plan -- --profile focused --worktree
+```
+
+The supported local execution profiles are:
+
+- `npm run verification:focused`: changed-surface checks only. This is partial
+  evidence and never a release-ready result.
+- `npm run verification:core`: repository contracts and every no-browser test
+  owner, including verification infrastructure.
+- `npm run verification:browser`: one Control Center build followed by the 14
+  browser smoke tests without rebuilding.
+- `npm run verification:release`: the exact union of core, package, build, and
+  browser owners. This is the only profile allowed to claim complete local
+  release verification.
+
+The runner uses policy-owned argv, bounded rolling parallelism, declared locks,
+per-task timeout and output limits, first-failure process-group cancellation,
+deterministic policy-order reporting, and a one-worker fallback. The tracked and
+untracked non-ignored worktree snapshot must be unchanged after execution.
+Unknown changed paths select core checks; temporary memory-only changes are
+reported as ignored rather than converted into a new PASS receipt.
+Credential-bearing environment variables and live-provider opt-in flags are
+removed before every verification child process starts.
+Successful command output is summarized by default; failed task diagnostics are
+shown immediately, and `--json` returns the complete bounded machine result.
+
+`npm test`, `npm run test:browser`, `npm run release:check`, and
+`./tools/product-gate` remain compatibility entrypoints. `test:browser` builds
+then calls `test:browser:run`; CI owns the build separately and invokes only the
+build-free command. The split CLI and Agentic Human Review files must retain the
+same combined test names and assertions.
+
+CI distributes Node runtime and package-consumer compatibility while keeping
+repository contracts, package production, and browser execution single-owner.
+Playwright caching is binary-only and exact-key; all tests still execute.
+Package consumers validate one same-run tarball and cannot repack. `final-gate`
+runs with `always()`, rejects any failed, skipped, or cancelled owner, binds the
+result to the run, attempt, full HEAD, policy, and graph, and does not rerun
+provider suites.
+
+Exact-commit remote verification is:
+
+```bash
+./tools/check_ci_status.sh --required --commit "$(git rev-parse HEAD)"
+```
+
+Product-gate receipt status recalculates full HEAD, tree, worktree, input,
+policy, and age. A manually recorded PASS is `manual_required`, a dirty executed
+success is advisory, and stale evidence is not authority-ready. Raw logs,
+environment dumps, secrets, URLs, and host-specific absolute paths are forbidden
+from authoritative receipt content.

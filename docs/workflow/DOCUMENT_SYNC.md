@@ -105,3 +105,11 @@ unreviewed exception file. Recovery is a normal Git revert of the policy,
 checker, hook, or CI wiring; no artifact migration, credential cleanup,
 provider call, external transfer, browser execution, or parent/FrameCue change
 is required.
+
+Verification orchestration authorities are a dedicated non-exemptible class.
+Changes to the execution policy or schema, runner, CI composition, package
+artifact transport, Playwright cache boundary, product-gate evidence, or their
+contract tests require synchronized product requirements, specification,
+implementation plan, workflow state, verification, security, CI, test, and
+security manifests. Temporary memory and generated evidence cannot satisfy this
+class.

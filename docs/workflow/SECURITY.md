@@ -290,3 +290,36 @@ Security tests block unapproved use of persistent browser profiles, storageState
 - Saving settings performs no browser launch, provider/API call, network or
   `gh` operation, shell/process execution, MCP execution, artifact upload,
   deterministic finding mutation, or release-gate change.
+
+## Verification Execution And Evidence Security
+
+- Verification commands are fixed argv arrays from the repository policy.
+  Shell evaluation, absolute executable paths, unknown commands, unbounded
+  concurrency, missing limits, and persistent PASS reuse fail closed.
+- Verification child processes do not inherit credential-bearing environment
+  variables or live-provider opt-in flags from the caller.
+- Resource locks isolate Control Center output, browser runtime, package work,
+  settings, and evidence mutation. Timeouts and first failure terminate the
+  process group and descendants; a success receipt is not written before the
+  command and required cleanup finish.
+- Package work uses marked per-run temporary directories and removes them on
+  success and failure. Tar inspection rejects traversal, duplicate paths,
+  symlinks, hardlinks, unsupported types, invalid checksums, trailing content,
+  manifest changes, digest changes, wrong run, wrong revision, wrong package,
+  or wrong producer toolchain.
+- Playwright cross-run cache scope is browser binaries only. Its key is an exact
+  OS, architecture, lockfile, and browser-revision identity with no prefix
+  restore. Cache hit never skips browser execution and never stores profiles,
+  cookies, storage state, traces, screenshots, reports, receipts, or PASS state.
+- Product-gate receipt directories are marked, non-symlink, and repository-local
+  below `.git`. Per-attempt receipts are atomic authorities; derived indexes are
+  rebuilt under an owner/nonce lock. A live owner lock is never broken by age
+  alone. Manual and dirty success cannot be authoritative.
+- CI artifacts are same-run transport only, short-lived, revision-bound, and
+  content-digest verified. They are not external publication, cannot cross
+  workflow runs, and cannot replace consumer tests. The final proof contains
+  public run metadata and digests only, never raw logs, environment dumps,
+  credentials, URLs, or absolute paths.
+- Remote status inspection derives repository identity from `origin`, requires
+  an exact full commit, reads GitHub Actions status through authenticated `gh`,
+  and performs no rerun, cancel, dispatch, comment, upload, or repository write.

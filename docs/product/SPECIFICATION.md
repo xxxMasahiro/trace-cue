@@ -1074,3 +1074,36 @@ The existing `repository-contracts` job runs the current-policy check and its
 focused rejection tests. Existing Node jobs execute no-browser regressions and
 the existing browser job executes browser smoke. The policy maps those checks
 without rerunning them in the lightweight job.
+
+## Verification Orchestration Specification
+
+`ops/VERIFICATION_EXECUTION_POLICY.json` and its strict schema define local task
+argv, `contracts`, `core`, `browser`, `package`, `release`, and `focused`
+profiles, selectors, resource locks, limits, cache invariants, CI owners, and
+execution-instance identities. `tools/lib/verification-orchestration.mjs`
+validates that authority, expands dependencies, rejects duplicate providers and
+unsafe argv, evaluates conservative changed-path unions, schedules bounded work,
+terminates process groups, compares tracked worktree state, and creates CI proof
+metadata. `tools/verification.mjs` is the plan, run, and proof adapter.
+
+The CI graph has `repository-contracts`, Node 20/22 runtime instances, one
+package producer, Node 20/22 package consumers, one browser owner, and
+`final-gate`. The producer artifact contains a manifest and tarball bound to the
+workflow run and attempt, full HEAD and tree, repository input, policy, command,
+producer toolchain, package identity, file-list digest, tarball digest, and size.
+Consumers validate these fields and then run the existing install smoke against
+the downloaded tarball without invoking `npm pack`.
+
+The browser owner installs dependencies, restores only the exact Playwright
+browser-binary cache key derived from OS, architecture, lockfile, and browser
+revision metadata, verifies or force-installs Chromium, builds the Control
+Center once, and invokes the build-free browser test command once. The final job
+uses `needs` results and emits a proof for the current run and checkout without
+executing product tests.
+
+Product-gate evidence version 2 stores atomic per-attempt receipts below `.git`.
+Individual receipts are authoritative; the TSV index and JSONL ledger are
+locked, deterministic, rebuildable projections. Status recomputes current
+repository and policy state. Manual records are always `manual_required`; dirty
+successful executions are advisory; stale, malformed, symlinked, or
+secret-bearing records fail closed.

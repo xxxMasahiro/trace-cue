@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "verification-execution-policy.schema.json",
+  "title": "Verification Execution Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "activation_mode",
+    "command_execution",
+    "unknown_state_policy",
+    "cross_run_result_reuse",
+    "persistent_result_cache",
+    "limits",
+    "tasks",
+    "profiles",
+    "focused_selectors",
+    "focused_fallback_profiles",
+    "ci_graph",
+    "cache_policy"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "kind": {"const": "verification-execution-policy"},
+    "activation_mode": {"enum": ["shadow", "enforce"]},
+    "command_execution": {"const": "argv"},
+    "unknown_state_policy": {"const": "fail-closed"},
+    "cross_run_result_reuse": {"const": "disabled"},
+    "persistent_result_cache": {"const": "disabled"},
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_timeout_ms", "cancellation_grace_ms", "max_log_bytes", "parallel_jobs", "max_parallel_jobs"],
+      "properties": {
+        "default_timeout_ms": {"type": "integer", "minimum": 1},
+        "cancellation_grace_ms": {"type": "integer", "minimum": 1},
+        "max_log_bytes": {"type": "integer", "minimum": 1024},
+        "parallel_jobs": {"oneOf": [{"const": "auto"}, {"type": "integer", "minimum": 1}]},
+        "max_parallel_jobs": {"type": "integer", "minimum": 1}
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/task"}
+    },
+    "profiles": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "array",
+        "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+        "uniqueItems": true
+      }
+    },
+    "focused_selectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/selector"}
+    },
+    "focused_fallback_profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+    "ci_graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owners", "final_job_id", "required_jobs"],
+      "properties": {
+        "owners": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["job_id", "execution_instance_ids"],
+            "properties": {
+              "job_id": {"type": "string", "minLength": 1},
+              "execution_instance_ids": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              }
+            }
+          }
+        },
+        "final_job_id": {"type": "string", "minLength": 1},
+        "required_jobs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        }
+      }
+    },
+    "cache_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["playwright_binary_only", "exact_key_required", "restore_prefix_allowed", "test_results_allowed", "receipts_allowed"],
+      "properties": {
+        "playwright_binary_only": {"const": true},
+        "exact_key_required": {"const": true},
+        "restore_prefix_allowed": {"const": false},
+        "test_results_allowed": {"const": false},
+        "receipts_allowed": {"const": false}
+      }
+    }
+  },
+  "$defs": {
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "argv", "kind", "locks", "depends_on", "provides"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+        "label": {"type": "string", "minLength": 1},
+        "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "kind": {"enum": ["parallel", "serial", "heavy"]},
+        "locks": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "depends_on": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "provides": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "patterns", "profiles"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+        "patterns": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "profiles": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
+    }
+  }
+}

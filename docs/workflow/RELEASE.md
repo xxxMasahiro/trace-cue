@@ -81,3 +81,16 @@ npm run test:pack-install
 - No socket MCP transport, remote HTTP MCP listener, HTTP `full` or `admin`, MCP execution tool, or MCP shell tool.
 - No plugin marketplace registration or installation-state mutation.
 - No host memory-cache mutation, swap configuration, cleanup outside the configured artifact root, privileged helper execution, arbitrary process control, or MCP cleanup execution.
+
+## Verification Readiness
+
+- `npm run verification:release` is the complete local composed gate and must
+  pass before release readiness is reported.
+- `npm run release:check` remains the compatibility no-browser/package entrypoint;
+  it does not replace the composed browser owner.
+- The remote `final-gate` result must match the exact release commit and every
+  owner job must be successful in the same run.
+- Playwright browser binaries may be cached, but test results and PASS receipts
+  must not be reused across runs or commits.
+- Package publication remains disabled. The same-run package artifact is test
+  input only and does not authorize npm publication or external distribution.

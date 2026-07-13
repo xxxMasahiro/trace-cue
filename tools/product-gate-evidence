@@ -14,18 +14,25 @@ usage() {
   cat <<'USAGE'
 Usage:
   tools/product-gate-evidence status
+  tools/product-gate-evidence rebuild
   tools/product-gate-evidence record <source-id> <context> <status> <source-artifacts> <next-command> [max-age-seconds]
   tools/product-gate-evidence run <source-id> <context> <source-artifacts> <next-command> [max-age-seconds] -- <command> [args...]
   tools/product-gate-evidence git-status <context> [max-age-seconds]
 
 Records Dashboard-readable product gate evidence in:
   .git/product-gate-evidence/index.tsv
+
+The record command creates manual-required evidence. Authoritative evidence is
+created only by run or direct Git observation against the bound repository state.
 USAGE
 }
 
 case "$COMMAND" in
   status)
     product_gate_evidence_status
+    ;;
+  rebuild)
+    product_gate_evidence_rebuild
     ;;
   record)
     if [[ "$#" -lt 5 ]]; then

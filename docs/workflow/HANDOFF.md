@@ -2,6 +2,20 @@
 
 ## Current State
 
+Verification composition Phase 156-164 is implemented locally and the local
+gate loop is complete. The current implementation has an enforced strict repository-local
+execution policy and schema, conservative focused planning, bounded argv-only
+parallel execution, resource locks, timeout/output/process-group controls,
+deterministic fallback, split CLI and Agentic Human Review tests, run-isolated
+package tools, same-run package producer/consumer contracts, exact Playwright
+binary caching, one browser build, proof-only final CI, exact-commit remote CI
+inspection, and full-revision atomic product-gate evidence. Cross-run PASS reuse
+and persistent result caching remain disabled. The no-browser suite passed with
+213 tests, the actual Playwright browser suite passed with 14 tests, focused
+composition selected and passed core/package/browser, and the compatibility
+release check and product gate passed. Exact-commit remote CI, final clean-tree
+evidence, and local/remote synchronization are still pending for this phase.
+
 Development workflow enforcement is complete locally. The durable English
 instruction authority now has six stable rule ids backed by a strict
 repository-local policy, schema, dependency-free checker, rejection tests,

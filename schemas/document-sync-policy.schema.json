@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Excluded paths may contain ignored user overrides; tracked shared defaults and durable development workflow authorities remain repository content.",
+  "$comment": "Excluded paths may contain ignored user overrides; tracked shared defaults, durable development workflow authorities, and verification orchestration authorities remain synchronized repository content.",
   "title": "TraceCue document sync policy",
   "type": "object",
   "additionalProperties": false,

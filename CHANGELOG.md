@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added policy-composed local and remote verification with conservative focused planning, bounded parallel execution, resource locks, deterministic fallback, split CLI/AHR tests, run-isolated package tooling, same-run Node 20/22 package consumers, exact Playwright binary caching, one browser build, proof-only final CI, exact-commit remote status, and full-revision atomic product-gate evidence while keeping cross-run PASS reuse disabled.
 - Added machine-enforced durable development workflow contracts with stable instruction rule ids, a strict JSON policy and schema, dynamic active-session subagent model/effort inheritance, dependency-free checks, focused rejection tests, document-sync enforcement, and existing repository-contract CI integration without changing product AHR effort behavior.
 - Separated tracked dashboard defaults from ignored user settings, migrated existing Japanese preferences without loss, centralized safe layered persistence, and changed the ordinary Control Center save to one atomic write that leaves Git clean.
 - Added repository-range document synchronization enforcement with a versioned JSON policy, Node 20 dependency-free checker, focused rejection tests, optional non-overwriting pre-push hook installer, and a lightweight full-history CI contract job for canonical, workflow, security-sensitive, and verification authority changes.

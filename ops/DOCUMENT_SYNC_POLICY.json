@@ -70,6 +70,17 @@
         "ops/PRODUCT_MANIFEST.tsv",
         "ops/TEST_PLAN_MANIFEST.tsv"
       ]
+    },
+    "verification_governance": {
+      "all_of": [
+        "docs/workflow/VERIFICATION.md",
+        "docs/workflow/SECURITY.md",
+        "ops/VERIFICATION_EXECUTION_POLICY.json",
+        "schemas/verification-execution-policy.schema.json",
+        "ops/TEST_PLAN_MANIFEST.tsv",
+        "ops/CI_MANIFEST.tsv",
+        "ops/SECURITY_MANIFEST.tsv"
+      ]
     }
   },
   "rules": [
@@ -143,6 +154,28 @@
         ]
       },
       "required_groups": ["ci_governance"]
+    },
+    {
+      "id": "verification-orchestration-authority",
+      "description": "Verification ownership, execution, evidence, cache, package, and CI proof changes must update the complete product, workflow, verification, and security contract.",
+      "trigger": {
+        "any_of": [
+          "ops/VERIFICATION_EXECUTION_POLICY.json",
+          "schemas/verification-execution-policy.schema.json",
+          "tools/verification.mjs",
+          "tools/check_verification_ci.mjs",
+          "tools/check_ci_status.sh",
+          "tools/lib/verification-*.mjs",
+          "tools/lib/product-gate-evidence.mjs",
+          "tools/lib/product_gate_evidence.sh",
+          "tools/lib/package-artifact.mjs",
+          "tools/pack-*.mjs",
+          "tests/verification-*.test.js",
+          "tests/package-artifact.test.js"
+        ]
+      },
+      "required_groups": ["product_core", "verification", "security", "ci_governance", "verification_governance"],
+      "cannot_be_exempted": true
     },
     {
       "id": "dashboard-settings-persistence",

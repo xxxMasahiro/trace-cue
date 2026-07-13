@@ -500,3 +500,36 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Existing display-language, preference, Playwright mode, and approved external-CI
   compatibility endpoints must use the same local store and preserve unrelated
   settings branches. Saving user preferences must not make Git dirty.
+
+## Verification Orchestration Requirements
+
+- TraceCue must provide one repository-local, versioned verification authority
+  for task argv, profiles, dependencies, execution kinds, resource locks,
+  bounded limits, changed-path selection, CI execution instances, cache
+  boundaries, and the proof-only final owner.
+- Commands must be spawned as argv without shell evaluation. Unknown tasks,
+  profiles, fields, dependencies, owners, cache states, or proof inputs must fail
+  closed. A deterministic one-worker path must remain available.
+- Independent local checks may run with bounded rolling parallelism. Package,
+  browser, build, settings, and evidence mutation must be isolated or locked;
+  timeout, output limit, cancellation, or cleanup failure must fail the gate.
+- `focused` is a partial local result. It must explain why checks were selected,
+  use a conservative full-core fallback for unknown paths, and must never claim
+  release readiness. CI and complete release verification must execute every
+  required owner regardless of changed-path selection.
+- The no-browser suite must remain compatible through `npm test` while its large
+  CLI regression surface is split by product responsibility into independently
+  runnable files. Test names, assertions, and pre-split coverage must remain.
+- Node 20 and Node 22 runtime compatibility must remain separate execution
+  instances. Package production must occur once per CI run, and every configured
+  consumer must verify and test the same revision-bound tarball without repacking.
+- Cross-run Playwright caching may contain exact-version browser binaries only.
+  A cache hit cannot satisfy a test and must not contain results, receipts,
+  profiles, storage state, traces, screenshots, or reports.
+- Authoritative local evidence must come from an executed clean result and bind
+  full HEAD, tree, worktree, inputs, policy, command, and result. Manual PASS,
+  dirty success, expired or mismatched receipts, and raw secret-bearing evidence
+  cannot satisfy readiness.
+- Remote readiness must be represented by one proof-only final job bound to the
+  same workflow run, attempt, full HEAD, policy, and exact owner graph. It must
+  not rerun provider suites or reuse local or prior-run PASS results.

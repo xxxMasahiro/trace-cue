@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { executeCli } from '../src/cli.js';
 import { startControlCenterServer } from '../src/api.js';
+import { createBrowserTestWorkspace } from './helpers/browser-test-workspace.js';
 
 const runBrowserSmoke = process.env.TRACE_CUE_BROWSER_SMOKE === '1' || process.env.BROWSER_DEBUG_BROWSER_SMOKE === '1';
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -97,8 +97,10 @@ function controlCenterReviewContext(cwd) {
   };
 }
 
-test('observe captures a local file page with Playwright', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-smoke-'));
+test('observe captures a local file page with Playwright', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('browser-debug-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const fixture = path.join(cwd, 'fixture.html');
   await writeFile(fixture, [
@@ -158,15 +160,19 @@ test('observe captures a local file page with Playwright', { skip: !runBrowserSm
   assert.match(observationJson, /\[REDACTED\]/);
 });
 
-test('review center completes prepare, consent, review, decision, repeat, and settings flows', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-review-center-smoke-'));
+test('review center completes prepare, consent, review, decision, repeat, and settings flows', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-review-center-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   const builtAssets = path.join(repoRoot, 'dist', 'control-center');
   await access(builtAssets);
   await cp(builtAssets, path.join(cwd, 'dist', 'control-center'), { recursive: true });
   const started = await startControlCenterServer({ port: 0 }, controlCenterReviewContext(cwd));
+  testWorkspace.trackServer(started.server);
   let browser = null;
   try {
     browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const consoleErrors = [];
     page.on('console', (message) => {
@@ -272,8 +278,10 @@ test('review center completes prepare, consent, review, decision, repeat, and se
   }
 });
 
-test('session action can click and observe the changed page', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-session-smoke-'));
+test('session action can click and observe the changed page', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('browser-debug-session-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const fixture = path.join(cwd, 'fixture.html');
   await writeFile(fixture, [
@@ -297,6 +305,7 @@ test('session action can click and observe the changed page', { skip: !runBrowse
   ], { cwd });
   assert.equal(started.exitCode, 0);
   const sessionId = JSON.parse(started.stdout).data.session.id;
+  testWorkspace.trackSession(sessionId, (id) => stopBrowserSession(cwd, id));
 
   const acted = await executeCli([
     'act',
@@ -318,8 +327,10 @@ test('session action can click and observe the changed page', { skip: !runBrowse
   assert.match(observed.page.visible_text, /Clicked/);
 });
 
-test('persistent session keeps one browser context across act observe checkpoint review and stop', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-persistent-session-smoke-'));
+test('persistent session keeps one browser context across act observe checkpoint review and stop', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-persistent-session-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const fixture = path.join(cwd, 'fixture.html');
   await writeFile(fixture, [
@@ -352,6 +363,7 @@ test('persistent session keeps one browser context across act observe checkpoint
     assert.equal(started.exitCode, 0);
     const startedBody = JSON.parse(started.stdout);
     sessionId = startedBody.data.session.id;
+    testWorkspace.trackSession(() => sessionId, (id) => stopBrowserSession(cwd, id));
     assert.equal(startedBody.command, 'session start');
     assert.equal(startedBody.data.session.mode, 'persistent_browser_session');
     assert.equal(startedBody.data.session.browser.retained_context, true);
@@ -442,12 +454,15 @@ test('persistent session keeps one browser context across act observe checkpoint
   } finally {
     if (sessionId) {
       await executeCli(['session', 'stop', '--session', sessionId, '--timeout', '10000', '--json'], { cwd }).catch(() => {});
+      sessionId = null;
     }
   }
 });
 
-test('session actions cover form controls and exported evidence', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-actions-smoke-'));
+test('session actions cover form controls and exported evidence', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('browser-debug-actions-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const fixture = path.join(cwd, 'fixture.html');
   await writeFile(fixture, [
@@ -477,6 +492,7 @@ test('session actions cover form controls and exported evidence', { skip: !runBr
   ], { cwd });
   assert.equal(started.exitCode, 0);
   const sessionId = JSON.parse(started.stdout).data.session.id;
+  testWorkspace.trackSession(sessionId, (id) => stopBrowserSession(cwd, id));
 
   const filled = await runAction(cwd, sessionId, { type: 'fill', selector: '#name', value: 'Example User' });
   assert.match(await observationText(cwd, filled), /Filled Example User/);
@@ -519,8 +535,10 @@ test('session actions cover form controls and exported evidence', { skip: !runBr
   await access(path.join(cwd, specArtifact.path));
 });
 
-test('supervise keeps one ephemeral context for ordered actions', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-supervise-smoke-'));
+test('supervise keeps one ephemeral context for ordered actions', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('browser-debug-supervise-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const fixture = path.join(cwd, 'fixture.html');
   await writeFile(fixture, [
@@ -578,8 +596,10 @@ test('supervise keeps one ephemeral context for ordered actions', { skip: !runBr
   await access(path.join(cwd, supervision.path));
 });
 
-test('daemon start status and stop keep a local ephemeral browser process', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-daemon-smoke-'));
+test('daemon start status and stop keep a local ephemeral browser process', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('browser-debug-daemon-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const fixture = path.join(cwd, 'fixture.html');
   await writeFile(fixture, [
@@ -606,6 +626,7 @@ test('daemon start status and stop keep a local ephemeral browser process', { sk
     assert.equal(started.exitCode, 0);
     const startedBody = JSON.parse(started.stdout);
     daemonId = startedBody.data.daemon.id;
+    testWorkspace.trackDaemon(() => daemonId, (id) => stopBrowserDaemon(cwd, id));
     assert.equal(startedBody.command, 'daemon start');
     assert.equal(startedBody.data.daemon.status, 'running');
     assert.equal(startedBody.data.daemon.browser.ephemeral_context, true);
@@ -629,15 +650,19 @@ test('daemon start status and stop keep a local ephemeral browser process', { sk
     const stoppedBody = JSON.parse(stopped.stdout);
     assert.match(stoppedBody.data.daemon.status, /^(stopped|exited)$/);
     assert.equal(stoppedBody.data.daemon.process_status, 'not_alive');
+    daemonId = null;
   } finally {
     if (daemonId) {
       await executeCli(['daemon', 'stop', '--daemon', daemonId, '--json'], { cwd }).catch(() => {});
+      daemonId = null;
     }
   }
 });
 
-test('review reports deterministic layout and browser-health findings', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-review-smoke-'));
+test('review reports deterministic layout and browser-health findings', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('browser-debug-review-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const fixture = path.join(cwd, 'review.html');
   const mock = path.join(cwd, 'mock.png');
@@ -712,8 +737,10 @@ test('review reports deterministic layout and browser-health findings', { skip: 
   assert.equal(body.data.visual_evidence[0].boundary.raw_pixels_in_json, false);
 });
 
-test('review reports rendered-state evidence for media loading and empty data UI', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-rendered-state-smoke-'));
+test('review reports rendered-state evidence for media loading and empty data UI', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('browser-debug-rendered-state-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const fixture = path.join(cwd, 'rendered-state.html');
   await writeFile(fixture, [
@@ -761,8 +788,10 @@ test('review reports rendered-state evidence for media loading and empty data UI
   assert.match(reportText, /Rendered state: needs_attention/);
 });
 
-test('review does not treat ready and progress business text as lingering loading UI', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-ready-state-smoke-'));
+test('review does not treat ready and progress business text as lingering loading UI', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('browser-debug-ready-state-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const fixture = path.join(cwd, 'ready-state.html');
   await writeFile(fixture, [
@@ -803,8 +832,10 @@ test('review does not treat ready and progress business text as lingering loadin
   assert.equal(body.data.findings.some((finding) => /loading indicator/.test(finding.message)), false);
 });
 
-test('target review discovers same-origin routes and records coverage', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-target-review-smoke-'));
+test('target review discovers same-origin routes and records coverage', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('browser-debug-target-review-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const first = path.join(cwd, 'first.html');
   const second = path.join(cwd, 'second.html');
@@ -883,8 +914,10 @@ test('target review discovers same-origin routes and records coverage', { skip: 
   assert.match(reportText, /Manifest Suggestions/);
 });
 
-test('target review records route budget skips for unvisited discovered routes', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-target-budget-smoke-'));
+test('target review records route budget skips for unvisited discovered routes', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('browser-debug-target-budget-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const first = path.join(cwd, 'first.html');
   const expected = path.join(cwd, 'expected.html');
@@ -936,8 +969,10 @@ test('target review records route budget skips for unvisited discovered routes',
   assert.equal(body.data.quality_signals.route_coverage.route_budget_exceeded_routes, 1);
 });
 
-test('target review checks manifest page expectations and writes an artifact index', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-page-expectation-smoke-'));
+test('target review checks manifest page expectations and writes an artifact index', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('browser-debug-page-expectation-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const page = path.join(cwd, 'state.html');
   const mock = path.join(cwd, 'mock.png');
@@ -1017,8 +1052,10 @@ test('target review checks manifest page expectations and writes an artifact ind
   assert.match(reportText, /Page expectations/);
 });
 
-test('target content UX advisory is opt-in and does not alter review gates', { skip: !runBrowserSmoke }, async () => {
-  const cwd = await mkdtemp(path.join(tmpdir(), 'browser-debug-content-ux-smoke-'));
+test('target content UX advisory is opt-in and does not alter review gates', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('browser-debug-content-ux-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
   await writeFile(path.join(cwd, '.gitignore'), '.browser-debug/\n', 'utf8');
   const page = path.join(cwd, 'overview.html');
   const disabledManifest = path.join(cwd, 'disabled.json');
@@ -1225,6 +1262,14 @@ async function observationText(cwd, result) {
   assert.ok(observation);
   const observed = JSON.parse(await readFile(path.join(cwd, observation.path), 'utf8'));
   return observed.page.visible_text;
+}
+
+async function stopBrowserSession(cwd, sessionId) {
+  await executeCli(['session', 'stop', '--session', sessionId, '--timeout', '10000', '--json'], { cwd });
+}
+
+async function stopBrowserDaemon(cwd, daemonId) {
+  await executeCli(['daemon', 'stop', '--daemon', daemonId, '--json'], { cwd });
 }
 
 function closeServer(server) {

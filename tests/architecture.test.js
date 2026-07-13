@@ -141,10 +141,13 @@ test('package keeps a standard local Node CLI surface', async () => {
   }
   assert.ok(pkg.scripts.test);
   assert.ok(pkg.scripts['test:browser']);
+  assert.ok(pkg.scripts['test:browser:run']);
   assert.ok(pkg.scripts['test:rename-readiness']);
   assert.ok(pkg.scripts['test:pack']);
   assert.ok(pkg.scripts['test:pack-install']);
   assert.ok(pkg.scripts['ahr:responses-adapter']);
+  assert.ok(pkg.scripts['verification:check']);
+  assert.ok(pkg.scripts['verification:run']);
   assert.ok(pkg.scripts['release:check']);
   assert.match(pkg.scripts['release:check'], /npm run test:rename-readiness/);
   assert.match(pkg.scripts['release:check'], /npm run test:pack-install/);
@@ -1091,15 +1094,30 @@ test('CI workflow stays generic and release-safe', async () => {
   assert.match(workflow, /run: npm test/);
   assert.match(workflow, /run: npm run test:rename-readiness/);
   assert.match(workflow, /run: npm run test:pack/);
-  assert.match(workflow, /run: npm run test:pack-install/);
+  assert.match(workflow, /pack-install-smoke\.mjs produce/);
+  assert.match(workflow, /pack-install-smoke\.mjs consume/);
   assert.match(workflow, /run: npm run control-center:build/);
-  assert.match(workflow, /run: npm run test:browser/);
+  assert.match(workflow, /run: npm run test:browser:run/);
+  assert.match(workflow, /actions\/cache@v5/);
+  assert.match(workflow, /actions\/upload-artifact@v7/);
+  assert.match(workflow, /actions\/download-artifact@v8/);
+  assert.match(workflow, /cancel-in-progress: true/);
+  assert.match(workflow, /^  final-gate:/m);
   const browserJob = workflow.slice(workflow.indexOf('browser-smoke:'));
   const browserJobBuildIndex = browserJob.indexOf('run: npm run control-center:build');
-  const browserJobTestIndex = browserJob.indexOf('run: npm run test:browser');
+  const browserJobTestIndex = browserJob.indexOf('run: npm run test:browser:run');
   assert.ok(browserJobBuildIndex >= 0);
   assert.ok(browserJobTestIndex > browserJobBuildIndex);
+  assert.equal(workflow.match(/run: npm run control-center:build/g)?.length, 1);
+  assert.doesNotMatch(workflow, /restore-keys:/);
   assert.doesNotMatch(workflow, /npm publish|gh repo|secrets\.|curl |wget /i);
+});
+
+test('verification security scans use run-isolated temporary state', async () => {
+  const securityCheck = await readText('tools/check_product_security.sh');
+  assert.match(securityCheck, /mktemp -d/);
+  assert.match(securityCheck, /trap cleanup_security_temp EXIT/);
+  assert.doesNotMatch(securityCheck, /\/tmp\/trace-cue-[^\n]*\$\$/);
 });
 
 test('background daemon uses local process boundaries only', async () => {

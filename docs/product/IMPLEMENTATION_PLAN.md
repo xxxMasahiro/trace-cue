@@ -1897,3 +1897,33 @@ Phase 39 records the external-repository dogfood lesson that Browser Debug CLI c
   shared defaults. Reverting the store restores the prior tracked-file behavior
   without artifact migration, credential cleanup, provider changes, or parent
   repository mutation.
+
+## Phase 156-164: Verification Composition And Acceleration
+
+1. Phase 156: add the strict verification execution policy, schema, semantic
+   validator, exact execution-instance ownership, and refusal tests.
+2. Phase 157: add policy-only planning, conservative focused selection,
+   complete profiles, bounded rolling execution, resource locks, timeout,
+   output limits, process-group cancellation, and serial fallback.
+3. Phase 158: split the large CLI regression by product responsibility while
+   preserving every test name, assertion, and aggregate `npm test` entrypoint.
+4. Phase 159: isolate package dry-run and install smoke temporary state and add
+   a revision-, input-, policy-, command-, toolchain-, and digest-bound
+   producer/consumer artifact contract.
+5. Phase 160: harden product-gate evidence with atomic per-receipt authority,
+   concurrent derived-index rebuilds, executed-result authority, full revision
+   binding, and live freshness evaluation.
+6. Phase 161: split CI into repository, runtime, package, and browser owners;
+   distribute runtime and package consumers over supported Node versions.
+7. Phase 162: add exact Playwright binary caching, one Control Center build,
+   one browser execution, bounded job timeouts, and stale-run cancellation.
+8. Phase 163: add the proof-only final gate and exact-commit read-only remote CI
+   status command. Keep cross-run result reuse and persistent PASS caching off.
+9. Phase 164: synchronize product, workflow, verification, security, CI,
+   document-sync, routing, and manifest authorities; run focused, aggregate,
+   package, browser, release, product, remote CI, and clean-sync gates.
+
+Rollback keeps existing npm and product-gate entrypoints available. Reverting
+the policy adapters returns execution to the prior serial wrappers without
+changing runtime product behavior, artifact roots, provider boundaries, MCP,
+or Control Center user workflows.

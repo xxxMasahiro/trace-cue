@@ -6,6 +6,8 @@ REMOTE_NAME="${1:-origin}"
 ZERO_SHA="0000000000000000000000000000000000000000"
 checked=0
 
+node "$ROOT/tools/verification.mjs" check
+
 while read -r local_ref local_sha remote_ref remote_sha; do
   [[ -n "${local_ref:-}" ]] || continue
   [[ "$local_sha" != "$ZERO_SHA" ]] || continue
@@ -23,6 +25,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   fi
 
   node "$ROOT/tools/check_document_sync.mjs" --repo "$ROOT" --base "$base_sha" --head "$local_sha"
+  node "$ROOT/tools/verification.mjs" plan --profile focused --base "$base_sha" --head "$local_sha" >/dev/null
   checked=$((checked + 1))
 done
 

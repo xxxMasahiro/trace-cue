@@ -207,6 +207,12 @@ npm run test:browser
 npm run test:pack
 npm run test:pack-install
 npm run release:check
+npm run verification:check
+npm run verification:focused
+npm run verification:core
+npm run verification:browser
+npm run verification:release
+./tools/check_ci_status.sh --required --commit "$(git rev-parse HEAD)"
 ```
 
 MCP profiles are launch-time adapter profiles:
@@ -243,7 +249,14 @@ Artifacts are written under ignored `.browser-debug/` directories and are retain
 
 `visual review plan --capture-handoff <workspace-json|-> --json` creates a read-only desktop review provider-preparation plan from capture handoff metadata only. It rereads no image bytes, writes no artifacts, exposes no MCP tool, calls no providers, transfers no evidence, and changes no gates.
 
-`npm run test:pack`, `npm run test:rename-readiness`, and `npm run test:pack-install` use identity-derived `/tmp` paths and local metadata checks. They validate the packed tarball and rename-readiness boundaries without publishing or registry install, and `npm run release:check` includes these checks alongside no-browser tests.
+`npm run test:pack`, `npm run test:rename-readiness`, and `npm run test:pack-install` use unique marked temporary workspaces and local metadata checks. They clean temporary package and cache state on success or failure, validate the packed tarball and rename-readiness boundaries without publishing or registry install, and `npm run release:check` includes these checks alongside no-browser tests.
+
+The policy-composed verification commands provide changed-surface, no-browser,
+browser, and complete local scopes. A focused PASS is partial and never claims
+release readiness. CI retains Node 20/22 compatibility, produces one
+revision-bound package for both Node consumers, caches only exact Playwright
+browser binaries, and uses a proof-only final gate without reusing PASS results
+across runs.
 
 Phase 29 agent execution stays separate from the current advisory workflow. It adds dry-run execution plans, explicit `--execute` plus `--execution` run gating, isolated provider adapters, deterministic fake provider execution, configured local runner callbacks, env-only generic API execution, execution status/list records, schema/API parity, dashboard handoff metadata, local receipts, and normalized advisory results without changing deterministic review findings, metrics, existing action plans, release readiness, resource guard output, artifact cleanup behavior, or existing workflow status meanings. API execution remains limited to bounded package/prompt disclosure through the generic adapter; stdio `admin` MCP exposure reuses this same bounded path, while provider SDK expansion, persistent credentials, raw provider response storage, MCP execution beyond approved agent execution plan/run, and broader external evidence transfer remain approval-bound.
 

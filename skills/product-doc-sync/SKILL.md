@@ -52,3 +52,8 @@ npm run development-workflow:check
   together. An instruction-only change must fail the range check.
 - The mechanical checker detects omissions; semantic correctness still
   requires role-specific document review and focused product tests.
+- Verification policy, runner, CI owner graph, package artifact, Playwright
+  cache, or product-gate evidence changes must synchronize the five canonical
+  product/workflow authorities plus verification, security, CI, test, security,
+  policy, and schema authorities. Generated receipts and cached artifacts never
+  satisfy that synchronization requirement.
