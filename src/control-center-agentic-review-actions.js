@@ -60,6 +60,8 @@ const DEFAULT_HISTORY_MAINTENANCE_LOCK_TIMEOUT_MS = 100;
 const MAX_HISTORY_MAINTENANCE_LOCK_TIMEOUT_MS = 1000;
 const HISTORY_MAINTENANCE_RETRY_LIMIT = 4;
 const HISTORY_MAINTENANCE_RETRY_DELAY_MS = 25;
+const LIST_READ_RETRY_LIMIT = 4;
+const LIST_READ_RETRY_DELAY_MS = 10;
 const DEFAULT_OPERATION_LOCK_TIMEOUT_MS = 10_000;
 const MAX_OPERATION_LOCK_TIMEOUT_MS = 120_000;
 const HISTORY_ELIGIBLE_STATES = new Set(['completed', 'failed', 'cancelled']);
@@ -419,10 +421,12 @@ export async function runControlCenterAgenticReviewList(input = {}, context = {}
 
 async function loadListedOperationResult(id, context) {
   let loaded;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    loaded = await loadOperationResult(id, context, { suppressNotFound: true });
+  for (let attempt = 0; attempt < LIST_READ_RETRY_LIMIT; attempt += 1) {
+    loaded = await loadOperationResult(id, context, { suppressTransientRead: true });
     if (loaded.ok || !loaded.suppressed) return loaded;
-    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 10));
+    if (attempt + 1 < LIST_READ_RETRY_LIMIT) {
+      await new Promise((resolve) => setTimeout(resolve, LIST_READ_RETRY_DELAY_MS));
+    }
   }
   return loaded;
 }
@@ -1166,7 +1170,10 @@ async function loadOperationResult(id, context, options = {}) {
     }
     return { ok: true, operation };
   } catch (error) {
-    if (options.suppressNotFound && error?.code === 'ENOENT') return { ok: false, suppressed: true };
+    if (options.suppressTransientRead
+      && ['ENOENT', 'SAFE_STORE_FILE_CHANGED'].includes(error?.code)) {
+      return { ok: false, suppressed: true };
+    }
     return {
       ok: false,
       result: actionError(
@@ -1392,13 +1399,17 @@ function operationsRoot(context) {
 }
 
 function operationStore(context) {
-  return createSafeLocalStore({
+  const options = {
     workspaceRoot: path.resolve(context.cwd ?? process.cwd()),
     relativeRoot: path.join(artifactRoot(context), CONTROL_CENTER_AGENTIC_REVIEW_ARTIFACT_DIR),
     namespace: 'control-center-agentic-review-operations',
     maxRecordBytes: MAX_OPERATION_BYTES,
     maxEntries: MAX_OPERATION_STORE_ENTRIES
-  });
+  };
+  const factory = typeof context.createControlCenterAgenticReviewStore === 'function'
+    ? context.createControlCenterAgenticReviewStore
+    : createSafeLocalStore;
+  return factory(options);
 }
 
 function workspaceFile(relativePath, context) {

@@ -1323,7 +1323,13 @@ directory to a hidden quarantine name that cannot match any product operation
 id, validates and removes that quarantine, and restores it on a failed safety
 check when possible. During a bounded directory scan, only `ENOENT` from the
 post-enumeration safety lookup is treated as an authorized concurrent move;
-every other lookup failure propagates and fails closed.
+every other lookup failure propagates and fails closed. Operation-list loading
+performs a bounded delayed retry when an active-to-history move returns
+`ENOENT`, or when an authorized atomic record replacement returns
+`SAFE_STORE_FILE_CHANGED` between inspection and descriptor opening. The retry
+does not apply to malformed JSON, record identity mismatch, unsafe file type,
+permissions, links, confinement failures, or any other error. Exhausting the
+bound returns the normal fail-closed list error.
 
 Status, list, dashboard, and saved-result GET handlers only project stored
 state. `POST /api/agentic-review/recover` owns interrupted-state transitions

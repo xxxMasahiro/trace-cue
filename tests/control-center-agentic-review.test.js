@@ -912,6 +912,67 @@ test('Control Center review listing sorts the bounded store before applying the 
   assert.equal(refreshed.operations[0].id, 'control-center-agentic-review-list-000');
 });
 
+test('Control Center list retries only classified transient operation reads', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-list-retry-'));
+  const id = 'control-center-agentic-review-list-retry';
+  const store = createSafeLocalStore({
+    workspaceRoot: cwd,
+    relativeRoot: '.browser-debug/control-center-agentic-reviews',
+    namespace: 'control-center-agentic-review-operations',
+    maxRecordBytes: 1024 * 1024,
+    maxEntries: 4096
+  });
+  await store.writeJson(`${id}/operation.json`, {
+    schema_version: '1.0.0', type: 'control_center_agentic_review_operation', id,
+    state: 'completed', stage: 'complete', created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z', started_at: '2026-01-01T00:00:00.000Z',
+    completed_at: '2026-01-01T00:00:00.000Z',
+    request: { purpose: 'Retry a safe list read', effort: 'standard', viewport: 'desktop', ai_suggestions: false },
+    service: { name: 'Local review', external_ai: false }, dispatch: { attempt: 0 },
+    decisions: [], result: { findings: [] }, error: null,
+    internal: { target_url: 'https://example.test/list-retry' }
+  });
+
+  function injectedContext(code, failureCount) {
+    let attempts = 0;
+    return {
+      context: {
+        cwd,
+        createControlCenterAgenticReviewStore: () => ({
+          ...store,
+          async readJson(relativePath, options) {
+            if (relativePath === `${id}/operation.json`) {
+              attempts += 1;
+              if (attempts <= failureCount) {
+                const error = new Error('Injected safe-store read failure.');
+                error.code = code;
+                throw error;
+              }
+            }
+            return store.readJson(relativePath, options);
+          }
+        })
+      },
+      attempts: () => attempts
+    };
+  }
+
+  const recovered = injectedContext('SAFE_STORE_FILE_CHANGED', 1);
+  const recoveredResult = await runControlCenterAgenticReviewList({}, recovered.context);
+  assert.equal(recoveredResult.status, 'ok');
+  assert.equal(recovered.attempts(), 2);
+
+  const exhausted = injectedContext('SAFE_STORE_FILE_CHANGED', 4);
+  const exhaustedResult = await runControlCenterAgenticReviewList({}, exhausted.context);
+  assert.equal(exhaustedResult.status, 'error');
+  assert.equal(exhausted.attempts(), 4);
+
+  const unclassified = injectedContext('SAFE_STORE_JSON_INVALID', 4);
+  const unclassifiedResult = await runControlCenterAgenticReviewList({}, unclassified.context);
+  assert.equal(unclassifiedResult.status, 'error');
+  assert.equal(unclassified.attempts(), 1);
+});
+
 test('Control Center review history retires the oldest completed operations at its configured bound', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-history-'));
   const store = createSafeLocalStore({

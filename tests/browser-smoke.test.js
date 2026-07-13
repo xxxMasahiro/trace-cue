@@ -775,13 +775,25 @@ test('review center keeps one intake and redirects to truthful status after resp
     assert.equal(new URL(page.url()).searchParams.get('item'), acceptedOperationId);
     assert.equal(await page.locator('[data-testid="tc-cc-new-review"]').count(), 0);
 
-    await page.goto(`${started.url}?view=new`, { waitUntil: 'networkidle' });
-    await page.getByLabel('URL to review').fill('https://example.jp/changed-destination');
-    await page.getByLabel('What do you want to make easier?').fill('Check a changed AI destination safely.');
-    await page.getByRole('button', { name: 'Prepare review' }).click();
-    const rejectedDialog = page.getByRole('dialog', { name: 'Start this review?' });
+    const freshPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const dashboardResponseAfterLoss = freshPage.waitForResponse((response) => (
+      new URL(response.url()).pathname === '/api/dashboard'
+      && response.request().method() === 'GET'
+    ));
+    await freshPage.goto(`${started.url}?view=new`, { waitUntil: 'networkidle' });
+    const dashboardResponse = await dashboardResponseAfterLoss;
+    assert.equal(
+      dashboardResponse.status(),
+      200,
+      `Dashboard reload after response loss failed: ${await dashboardResponse.text()}`
+    );
+    await freshPage.locator('[data-testid="tc-cc-new-review"]').waitFor({ timeout: 10_000 });
+    await freshPage.getByLabel('URL to review').fill('https://example.jp/changed-destination');
+    await freshPage.getByLabel('What do you want to make easier?').fill('Check a changed AI destination safely.');
+    await freshPage.getByRole('button', { name: 'Prepare review' }).click();
+    const rejectedDialog = freshPage.getByRole('dialog', { name: 'Start this review?' });
     await rejectedDialog.waitFor({ timeout: 10_000 });
-    await page.route('**/api/agentic-review/start', async (route) => route.fulfill({
+    await freshPage.route('**/api/agentic-review/start', async (route) => route.fulfill({
       status: 400,
       contentType: 'application/json',
       body: JSON.stringify({
@@ -794,9 +806,9 @@ test('review center keeps one intake and redirects to truthful status after resp
       })
     }), { times: 1 });
     await rejectedDialog.getByRole('button', { name: 'Start review', exact: true }).click();
-    await page.getByText('The AI review connection changed. Start a new review.').waitFor();
-    assert.equal(await page.locator('[data-testid="tc-cc-new-review"]').count(), 1);
-    assert.equal(new URL(page.url()).searchParams.get('view'), 'new');
+    await freshPage.getByText('The AI review connection changed. Start a new review.').waitFor();
+    assert.equal(await freshPage.locator('[data-testid="tc-cc-new-review"]').count(), 1);
+    assert.equal(new URL(freshPage.url()).searchParams.get('view'), 'new');
   } finally {
     if (browser) await browser.close();
     await closeServer(started.server);

@@ -2052,7 +2052,15 @@ fail-closed. Deferred operation-history maintenance now uses bounded
 unreferenced retries after transient contention or archival failure. The
 concurrency regression test overlaps multiple list projections with retirement
 and is amplified across independent processes before the complete no-browser
-and browser suites run.
+and browser suites run. A subsequent clean-runner browser pass also overlaps a
+lost start response, background operation replacement, and a fresh Dashboard
+load. Operation-list projection now retries only transient `ENOENT` and
+`SAFE_STORE_FILE_CHANGED` signals within a bounded delay, while the browser
+contract requires the fresh Dashboard request to return HTTP 200 before the new
+review form is used. A store-factory test boundary injects classified and
+unclassified read failures without changing production storage selection; it
+proves successful retry, bounded exhaustion, and immediate fail-closed refusal
+deterministically.
 
 Deferred: PDF/DOCX extraction, OCR, browser-side Playwright execution, remote
 CI trigger/cancel, provider retry or cancellation without a verified contract,

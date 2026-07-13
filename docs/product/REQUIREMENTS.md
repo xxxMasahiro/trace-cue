@@ -636,7 +636,11 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   completed process alive. Internal removal quarantine names must remain outside
   every product record-id namespace. A directory entry that disappears during
   an authorized atomic history move may be skipped, while every other listing
-  error must fail closed. Time-based cleanup may remove expired unfinished
+  error must fail closed. A read-only list projection may also retry a bounded
+  transient not-found or stable-read-change signal caused by an authorized
+  atomic record replacement. Invalid content, identity mismatch, unsafe type,
+  permissions, links, confinement failure, and every unclassified read error
+  must remain hard failures. Time-based cleanup may remove expired unfinished
   intake state and released source bytes, but it must not remove a completed
   receipt before explicit artifact-root cleanup.
 - A private store may create its ownership marker only when it atomically

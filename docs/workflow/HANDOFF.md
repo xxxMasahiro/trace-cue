@@ -606,7 +606,18 @@ pattern. Quarantines now use a reserved hidden name, directory listings safely
 skip entries that vanish during an authorized move, and deferred maintenance
 uses bounded unreferenced retries after transient failure. The amplified race
 passed 30 consecutive runs, then all 357 no-browser and 16 browser tests passed
-again. The tracked commit containing this paragraph is the final Git revision;
+again. CI run `29271951752` subsequently exposed a second form of the same
+read-side race: a Dashboard list read could observe an authorized atomic file
+replacement as `SAFE_STORE_FILE_CHANGED` after a lost start response. List
+projection now retries only bounded transient not-found and stable-read-change
+signals with full safe revalidation, and the browser scenario asserts the
+Dashboard HTTP 200 response directly. Its focused four-way stress run passed
+20/20 locally. Independent review then required deterministic fault injection:
+the internal context-only store factory now proves one classified retry can
+recover, four classified failures exhaust the bound, and an unclassified error
+fails after one attempt. The Dashboard assertion uses a fresh browser page so
+an older status poll cannot satisfy it. The tracked commit containing this
+paragraph is the final Git revision;
 authenticated CI proof, complete release evidence, and the read-only parent
 authority result are refreshed against that exact clean synchronized HEAD in
 the ignored evidence store rather than causing another tracked-file change.

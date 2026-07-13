@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Kept Control Center list projection available during an authorized atomic record replacement by retrying only transient not-found and stable-read change signals within a fixed bound, with deterministic retry/refusal tests and a fresh-page browser assertion for the dashboard reload after a lost start response.
 - Hardened safe-store history moves so internal quarantine directories cannot be mistaken for product record ids, vanished directory entries are skipped safely, and bounded unreferenced maintenance retries converge without delaying primary actions or process exit.
 - Added bounded single-owner Control Center result publication with renewed cross-process leases, completed-result admission bypass, one-slot history turnover, interrupted/invalid pending recovery, same-process task recovery, bounded history-transition reads, and exact-owner lock-release fallback.
 - Added strict policy-resolved release authority operations, configurable GitHub remote/workflow/host identity, bounded active evidence retention with non-authoritative inactive history, deadlock-free release-batch capacity recovery, bounded CI proof API calls, and package stdout/stderr plus untracked-content binding.

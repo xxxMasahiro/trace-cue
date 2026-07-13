@@ -383,6 +383,15 @@ Security tests block unapproved use of persistent browser profiles, storageState
   skipped only as the result of a concurrent authorized move; all other lookup
   errors propagate. Existing no-follow, ownership, link-count, confinement,
   entry-count, and replacement checks remain mandatory.
+- Read-only operation-list projection may retry only bounded transient `ENOENT`
+  and `SAFE_STORE_FILE_CHANGED` signals produced by an authorized atomic move
+  or replacement. It re-runs the complete safe read and record validation each
+  time. Malformed data, identity mismatch, unsafe type, permission, link,
+  confinement, and unclassified errors are never converted into retries.
+- The internal store-factory test boundary is context-injected only and is not
+  derived from HTTP, CLI, settings, environment, provider, or persisted data.
+  Production uses the safe local store directly; tests may replace the factory
+  only to prove classified retry and fail-closed exhaustion deterministically.
 - Intake expiry cleanup may release source bytes and abandoned unfinished
   receipts, but it never removes a completed receipt. Completed receipt/result
   history remains marker-owned and manual-retention-only.

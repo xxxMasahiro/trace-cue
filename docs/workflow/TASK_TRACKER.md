@@ -559,6 +559,14 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
   reserving internal quarantine names, safely skipping vanished entries, and
   bounding deferred-maintenance retries; the amplified race passed 30
   consecutive runs before the 357-test and 16-browser-test suites passed again.
+  CI run `29271951752` then exposed the corresponding atomic-file replacement
+  race during a Dashboard reload after a lost start response. List projection
+  now retries only bounded transient `ENOENT` and `SAFE_STORE_FILE_CHANGED`
+  signals with full revalidation; the focused browser flow passed 20/20 local
+  stress runs before the full gates were repeated. Deterministic injected-store
+  tests additionally prove retry success, four-attempt exhaustion, and
+  immediate refusal of an unclassified error; the browser assertion is bound to
+  a fresh page rather than an existing status poll.
   Exact clean-HEAD release and authenticated CI evidence is written to the
   ignored authority store after this completion-state commit so recording it
   cannot make its own revision stale.

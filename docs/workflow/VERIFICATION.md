@@ -792,6 +792,22 @@ number of times with unreferenced delays, so it neither loses the request nor
 keeps a completed process alive. This race check passed 30 consecutive local
 runs before the complete 357-test and 16-browser-test suites passed again.
 
+GitHub CI run `29271951752` passed Node 20, Node 22, repository contracts,
+package production, and both package consumers, but its browser job failed the
+Dashboard reload immediately after an accepted start response was deliberately
+lost. Safe atomic replacement can correctly raise `SAFE_STORE_FILE_CHANGED`
+when inspection sees the old record and descriptor opening sees the new one.
+The list projection now retries that signal and transient move `ENOENT` only,
+within the existing bounded read window and with complete validation on every
+attempt. The browser flow now asserts the Dashboard response is HTTP 200 before
+using the new-review form; four concurrent workers passed five rounds, 20/20 in
+total, before complete gate repetition. An internal context-only store factory
+now deterministically injects `SAFE_STORE_FILE_CHANGED`: one failure must
+recover on the next complete safe read, four failures must exhaust the bound,
+and an unclassified safe-store error must fail after its first attempt. The
+browser check opens a fresh page for the Dashboard assertion, preventing the
+existing work-page status poll from satisfying the response predicate.
+
 Authority refresh requires one complete release profile with clean identical
 before/after full HEAD and tree. Every policy-owned source receipt references
 the same batch digest and exact task result. Partial, focused, dirty, mixed,
