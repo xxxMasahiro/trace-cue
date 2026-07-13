@@ -392,6 +392,9 @@ Security tests block unapproved use of persistent browser profiles, storageState
   derived from HTTP, CLI, settings, environment, provider, or persisted data.
   Production uses the safe local store directly; tests may replace the factory
   only to prove classified retry and fail-closed exhaustion deterministically.
+- Intake has an equivalent context-only store-factory test boundary for
+  deterministic lock ordering. It is not selectable through any external
+  input, and production still resolves the safe local store directly.
 - Intake expiry cleanup may release source bytes and abandoned unfinished
   receipts, but it never removes a completed receipt. Completed receipt/result
   history remains marker-owned and manual-retention-only.
@@ -407,6 +410,14 @@ Security tests block unapproved use of persistent browser profiles, storageState
   only wait for or read the owner's result. It cannot invoke the engine or free
   the slot. A different id remains closed at the configured bound, including
   while the bound is one; safe turnover archives the previous result first.
+- A same-id waiter that reaches the per-id lock before its reservation owner
+  records `processing` treats the staged receipt only as a bounded wait signal.
+  It releases and retries under the remaining completion deadline only after
+  revalidating the exact reservation token and live process identity. It cannot
+  take ownership, execute the engine, publish a second result, or convert the
+  owner's valid handoff into a failure. An invalid, changed, or dead owner ends
+  the wait with a retryable owner-lost response; takeover is permitted only to
+  a subsequent explicit request through normal admission.
 - Completed active or archived ids bypass new-result admission. Publication is
   committed only when result digest, source release, and completed receipt agree.
   Once the per-id lock proves no worker remains, processing without a valid

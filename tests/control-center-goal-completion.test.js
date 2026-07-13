@@ -20,6 +20,10 @@ import {
 import { captureProcessIdentity, createSafeLocalStore, readStableBoundedFileHandle, withCrashSafeTransition } from '../src/safe-local-store.js';
 import { createControlCenterTestAssetRoot } from './helpers/control-center-test-assets.js';
 
+const WORKER_COORDINATION_TIMEOUT_MS = 15_000;
+const WORKER_TERMINATION_GRACE_MS = 1000;
+const WORKER_KILL_GRACE_MS = 1000;
+
 test('bounded descriptor reads reject a file changed after inspection', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-bounded-read-'));
   const file = path.join(cwd, 'record.json');
@@ -634,16 +638,116 @@ test('intake completion runs only once across separate processes', async () => {
     contentLength: body.length
   }, Readable.from([body]), { cwd });
   const id = staged.data.control_center_intake.intake.id;
-  const worker = path.resolve('tests/fixtures/intake-complete-worker.mjs');
-  const workers = [
-    spawn(process.execPath, [worker, cwd, id]),
-    spawn(process.execPath, [worker, cwd, id])
-  ];
-  const outputs = await Promise.all(workers.map(collectProcess));
-  assert.equal(workers.filter((workerProcess) => workerProcess.exitCode === 0).length, 2);
-  assert.equal(outputs.every((output) => /ok/u.test(output)), true);
+  const executionMarker = path.join(cwd, 'engine-executed');
+  const { owner, waiter, outputs } = await runCoordinatedIntakePair({ cwd, id, executionMarker });
+  assert.equal(owner.exitCode, 0, outputs[0]);
+  assert.equal(waiter.exitCode, 0, outputs[1]);
+  assert.equal(outputs[0].trim(), `ok:${id}:owner`);
+  assert.equal(outputs[1].trim(), `ok:${id}:existing`);
+  assert.equal(await readFile(executionMarker, 'utf8'), 'pause-before-completion\n');
   const results = await listControlCenterIntakeResults({}, { cwd });
   assert.equal(results.data.control_center_intake.results.length, 1);
+});
+
+test('intake waiter stops when its reserved owner rejects before processing', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-intake-owner-rejected-'));
+  const body = Buffer.from('Keep the staged source retryable.', 'utf8');
+  const staged = await stageControlCenterIntake({
+    sourceKind: 'document_text', originalName: 'notes.txt', contentType: 'text/plain', contentLength: body.length
+  }, Readable.from([body]), { cwd });
+  const id = staged.data.control_center_intake.intake.id;
+  const executionMarker = path.join(cwd, 'engine-executed');
+  const { owner, waiter, outputs } = await runCoordinatedIntakePair({
+    cwd,
+    id,
+    ownerMode: 'pause-before-invalid-completion',
+    executionMarker
+  });
+  assert.equal(owner.exitCode, 3, outputs[0]);
+  assert.equal(waiter.exitCode, 3, outputs[1]);
+  assert.match(outputs[0], /CONTROL_CENTER_INTAKE_REQUEST_INVALID/u);
+  assert.equal(
+    outputs[1].trim(),
+    'CONTROL_CENTER_INTAKE_PUBLICATION_OWNER_LOST:retryable'
+  );
+  await assert.rejects(access(executionMarker));
+  const retried = await completeControlCenterIntake({
+    intake_id: id,
+    purpose: 'Confirm the next improvement.',
+    effort: 'standard'
+  }, { cwd });
+  assert.equal(retried.status, 'ok');
+});
+
+test('intake waiter rejects a replacement reservation owned by a different live token', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-intake-owner-replaced-'));
+  const body = Buffer.from('Bind a waiter to the exact reservation it observed.', 'utf8');
+  const staged = await stageControlCenterIntake({
+    sourceKind: 'document_text', originalName: 'notes.txt', contentType: 'text/plain', contentLength: body.length
+  }, Readable.from([body]), { cwd });
+  const id = staged.data.control_center_intake.intake.id;
+  const executionMarker = path.join(cwd, 'engine-executed');
+  const store = createSafeLocalStore({
+    workspaceRoot: cwd,
+    relativeRoot: path.join('.browser-debug', 'control-center-intake'),
+    namespace: 'control-center-intake',
+    maxRecordBytes: 32 * 1024,
+    maxEntries: 100
+  });
+  const { owner, waiter, outputs } = await runCoordinatedIntakePair({
+    cwd,
+    id,
+    waiterMode: 'pause-at-completion-entry',
+    executionMarker,
+    completionTimeoutMs: 750,
+    async onWaiterReady() {
+      const reservationPath = `publication-reservations/${id}.json`;
+      const reservation = await store.readJson(reservationPath, { maxBytes: 8 * 1024 });
+      reservation.token = reservation.token === 'f'.repeat(32) ? 'e'.repeat(32) : 'f'.repeat(32);
+      reservation.owner = {
+        pid: process.pid,
+        process_identity: await captureProcessIdentity(process.pid)
+      };
+      reservation.expires_at = new Date(Date.now() + 60_000).toISOString();
+      await store.writeJson(reservationPath, reservation, { maxBytes: 8 * 1024 });
+    }
+  });
+  assert.equal(owner.exitCode, 3, outputs[0]);
+  assert.equal(waiter.exitCode, 3, outputs[1]);
+  assert.equal(
+    outputs[1].trim(),
+    'CONTROL_CENTER_INTAKE_PUBLICATION_OWNER_LOST:retryable'
+  );
+  await assert.rejects(access(executionMarker));
+});
+
+test('intake waiter stops when its reserved owner exits before processing', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-intake-owner-exited-'));
+  const body = Buffer.from('Recover after the reservation owner exits.', 'utf8');
+  const staged = await stageControlCenterIntake({
+    sourceKind: 'document_text', originalName: 'notes.txt', contentType: 'text/plain', contentLength: body.length
+  }, Readable.from([body]), { cwd });
+  const id = staged.data.control_center_intake.intake.id;
+  const executionMarker = path.join(cwd, 'engine-executed');
+  const { owner, waiter, outputs } = await runCoordinatedIntakePair({
+    cwd,
+    id,
+    executionMarker,
+    terminateOwner: true
+  });
+  assert.equal(owner.signalCode, 'SIGTERM', outputs[0]);
+  assert.equal(waiter.exitCode, 3, outputs[1]);
+  assert.equal(
+    outputs[1].trim(),
+    'CONTROL_CENTER_INTAKE_PUBLICATION_OWNER_LOST:retryable'
+  );
+  await assert.rejects(access(executionMarker));
+  const retried = await completeControlCenterIntake({
+    intake_id: id,
+    purpose: 'Confirm the next improvement.',
+    effort: 'standard'
+  }, { cwd });
+  assert.equal(retried.status, 'ok');
 });
 
 test('intake publication lease keeps one cross-process owner and blocks another result at capacity', async () => {
@@ -681,15 +785,24 @@ test('intake publication lease keeps one cross-process owner and blocks another 
     );
     const firstLease = JSON.parse(await readFile(reservationPath, 'utf8'));
     retry = spawn(process.execPath, [worker, cwd, ownerId, 'retry', retryReady, release, unexpected]);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const renewedLease = JSON.parse(await readFile(reservationPath, 'utf8'));
+    let renewedLease;
+    await waitUntil(async () => {
+      try {
+        renewedLease = JSON.parse(await readFile(reservationPath, 'utf8'));
+        return Date.parse(renewedLease.expires_at) > Date.parse(firstLease.expires_at);
+      } catch {
+        return false;
+      }
+    }, 5000, 'Publication lease was not renewed while its owner remained active.');
     assert.equal(Date.parse(renewedLease.expires_at) > Date.parse(firstLease.expires_at), true);
+    assert.equal(renewedLease.token, firstLease.token);
+    assert.deepEqual(renewedLease.owner, firstLease.owner);
 
     const blocked = await settleWithin(completeControlCenterIntake({
       intake_id: blockedId,
       purpose: 'Check the other document.',
       effort: 'standard'
-    }, { cwd, intakeActiveResultEntries: 1, intakeHistoryEntries: 1 }), 1500);
+    }, { cwd, intakeActiveResultEntries: 1, intakeHistoryEntries: 1 }), 5000);
     assert.equal(blocked.status, 'error');
     assert.equal(blocked.errors[0].code, 'CONTROL_CENTER_INTAKE_RESULT_CAPACITY_REACHED');
   } finally {
@@ -729,7 +842,7 @@ test('intake history maintenance does not keep a completed child process alive',
   await historyAcquired;
   const worker = spawn(process.execPath, [path.resolve('tests/fixtures/intake-complete-worker.mjs'), cwd, id]);
   try {
-    const output = await settleWithin(collectProcess(worker), 1500);
+    const output = await settleWithin(collectProcess(worker), 5000);
     assert.match(output, /ok/u);
     assert.equal(worker.exitCode, 0);
   } finally {
@@ -1363,6 +1476,122 @@ function makeWebpLossless(width, height) {
   return body;
 }
 
+async function runCoordinatedIntakePair({
+  cwd,
+  id,
+  ownerMode = 'pause-before-completion',
+  waiterMode = 'signal-completion-entry',
+  executionMarker,
+  terminateOwner = false,
+  completionTimeoutMs = null,
+  onWaiterReady = null
+}) {
+  const worker = path.resolve('tests/fixtures/intake-complete-worker.mjs');
+  const ownerReady = path.join(cwd, 'owner-reserved');
+  const waiterReady = path.join(cwd, 'waiter-entered');
+  const releaseOwner = path.join(cwd, 'release-owner');
+  const releaseWaiter = path.join(cwd, 'release-waiter');
+  const workers = [];
+  const outputPromises = [];
+  const track = (child) => {
+    workers.push(child);
+    outputPromises.push(collectProcess(child));
+    return child;
+  };
+  const sharedArgs = [
+    executionMarker ?? '',
+    String(WORKER_COORDINATION_TIMEOUT_MS),
+    Number.isInteger(completionTimeoutMs) ? String(completionTimeoutMs) : ''
+  ];
+  const owner = track(spawn(process.execPath, [
+    worker, cwd, id, ownerMode, ownerReady, releaseOwner, ...sharedArgs
+  ]));
+  let waiter = null;
+  let coordinationError = null;
+  try {
+    await waitUntil(async () => {
+      try { await access(ownerReady); return true; } catch { return false; }
+    }, WORKER_COORDINATION_TIMEOUT_MS, 'Owner did not reserve the intake before the completion lock.');
+    waiter = track(spawn(process.execPath, [
+      worker, cwd, id, waiterMode, waiterReady, releaseWaiter, ...sharedArgs
+    ]));
+    await waitUntil(async () => {
+      try { await access(waiterReady); return true; } catch { return false; }
+    }, WORKER_COORDINATION_TIMEOUT_MS, 'Waiter did not observe the reserved intake before owner admission.');
+    if (typeof onWaiterReady === 'function') await onWaiterReady();
+    await writeFile(releaseWaiter, 'release\n', 'utf8');
+    if (terminateOwner) {
+      await terminateWorkersWithin([owner], [outputPromises[0]]);
+    }
+  } catch (error) {
+    coordinationError = error;
+  } finally {
+    for (const barrier of [releaseWaiter, releaseOwner]) {
+      try {
+        await writeFile(barrier, 'release\n', 'utf8');
+      } catch (error) {
+        coordinationError ??= error;
+      }
+    }
+  }
+  const outputs = await collectWorkersWithin(workers, outputPromises, WORKER_COORDINATION_TIMEOUT_MS);
+  if (coordinationError) {
+    throw new Error(
+      `${coordinationError.message}\n${outputs.filter(Boolean).join('\n')}`,
+      { cause: coordinationError }
+    );
+  }
+  return { owner, waiter, outputs };
+}
+
+async function collectWorkersWithin(workers, outputPromises, timeoutMs) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.all(outputPromises),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Worker processes did not exit within the bounded test window.')), timeoutMs);
+      })
+    ]);
+  } catch (error) {
+    await terminateWorkersWithin(workers, outputPromises);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function terminateWorkersWithin(workers, outputPromises) {
+  for (const worker of workers) {
+    if (worker.exitCode === null && worker.signalCode === null) worker.kill('SIGTERM');
+  }
+  if (await outputsSettleWithin(outputPromises, WORKER_TERMINATION_GRACE_MS)) return;
+  for (const worker of workers) {
+    if (worker.exitCode === null && worker.signalCode === null) worker.kill('SIGKILL');
+  }
+  if (await outputsSettleWithin(outputPromises, WORKER_KILL_GRACE_MS)) return;
+  for (const worker of workers) {
+    worker.stdin?.destroy();
+    worker.stdout?.destroy();
+    worker.stderr?.destroy();
+    worker.unref();
+  }
+}
+
+async function outputsSettleWithin(outputPromises, timeoutMs) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.allSettled(outputPromises).then(() => true),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function waitForOutput(stream, expected) {
   return new Promise((resolve, reject) => {
     let output = '';
@@ -1385,7 +1614,7 @@ async function waitForOutput(stream, expected) {
   });
 }
 
-async function settleWithin(promise, timeoutMs = 1000) {
+async function settleWithin(promise, timeoutMs = 5000) {
   let timer;
   try {
     return await Promise.race([
@@ -1399,13 +1628,13 @@ async function settleWithin(promise, timeoutMs = 1000) {
   }
 }
 
-async function waitUntil(predicate, timeoutMs = 3000) {
+async function waitUntil(predicate, timeoutMs = 5000, timeoutMessage = 'Timed out waiting for the expected state transition.') {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  throw new Error('Timed out waiting for deferred history maintenance.');
+  throw new Error(timeoutMessage);
 }
 
 async function collectProcess(child) {

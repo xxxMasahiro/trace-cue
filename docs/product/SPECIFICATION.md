@@ -1245,9 +1245,18 @@ a global cross-process lock, a configurable active-result hard bound, and an
 owner/token reservation for the opaque id. The owner renews a bounded lease
 during processing and is the only request allowed to invoke the intake engine;
 another request for the same id waits on the per-id lock and may only return or
-finalize the same result. Another id cannot be admitted while reservations and
-active results fill the bound. A completed active or inactive-history id is an
-idempotent read and bypasses admission even when history is locked.
+finalize the same result. A waiter can acquire that lock during the narrow
+reservation-to-processing handoff before the owner has entered it. In that
+case, the staged receipt is a bounded wait signal: the waiter releases the lock,
+uses the configured poll interval and remaining completion deadline, and
+retries without taking the reservation or invoking the engine. Each staged
+cycle revalidates the exact reservation token observed at admission and its
+process identity. A changed, invalid, or dead owner ends the wait with the
+retryable `CONTROL_CENTER_INTAKE_PUBLICATION_OWNER_LOST` result; the waiter
+does not adopt or release that reservation. Another id cannot be admitted while
+reservations and active results fill the bound. A completed active or inactive-
+history id is an idempotent read and bypasses admission even when history is
+locked.
 
 The private schema-v1.1 receipt enters `processing` before engine execution but
 is not consumed at that point. The pathless result is written with its canonical

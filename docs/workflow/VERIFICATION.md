@@ -808,6 +808,36 @@ and an unclassified safe-store error must fail after its first attempt. The
 browser check opens a fresh page for the Dashboard assertion, preventing the
 existing work-page status poll from satisfying the response predicate.
 
+GitHub CI run `29273554351` passed Node 22, repository contracts, package
+production, both package consumers, and all 16 browser checks, but Node 20
+exposed a same-id intake waiter reaching the completion lock between owner
+reservation and owner processing-state publication. Verification now forces
+that exact order with separate processes and filesystem barriers: the owner is
+paused immediately before its first per-id lock, the waiter signals after it
+enters that lock and observes the staged receipt, and only then is the owner
+released. Both processes must return the same successful result and the stored
+result count must remain one; an exclusive marker additionally rejects a second
+engine invocation and output roles distinguish the owner from the existing-
+result waiter. The waiter uses the remaining configured completion deadline and
+bounded poll interval, revalidates the originally observed reservation token
+and live process identity on every staged cycle, and never becomes the executor.
+Separate cases make the owner fail validation or exit before processing: the
+waiter must return owner-lost promptly, the engine marker must remain absent,
+and a later explicit completion must succeed. Worker barriers and collection
+have fixed deadlines and terminate live children on failure. The focused race
+and renewal checks passed in eight concurrent Node 20 runs, and the initial
+complete Node 20 suite passed 358/358. Lease verification polls for an actual
+later expiry and requires unchanged token and owner. History verification
+blocks the injected maintenance dependency, requires primary actions to return
+before release, and waits for deferred work to become quiet; these assertions
+no longer depend on a 300 ms sleep or one-second host timing. The expanded
+owner-loss and cleanup cases also replace the reservation with a valid different
+token owned by a live process, assert the retryable detail, bound TERM/KILL and
+stream detachment, and require 150 ms of continuous quiet beyond the current
+100 ms maximum maintenance retry delay. Independent focused stress passed. The
+complete expanded suite then passed 361/361 on exact Node 20.20.2 and 361/361
+on the current Node runtime.
+
 Authority refresh requires one complete release profile with clean identical
 before/after full HEAD and tree. Every policy-owned source receipt references
 the same batch digest and exact task result. Partial, focused, dirty, mixed,

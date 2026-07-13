@@ -616,8 +616,28 @@ Dashboard HTTP 200 response directly. Its focused four-way stress run passed
 the internal context-only store factory now proves one classified retry can
 recover, four classified failures exhaust the bound, and an unclassified error
 fails after one attempt. The Dashboard assertion uses a fresh browser page so
-an older status poll cannot satisfy it. The tracked commit containing this
-paragraph is the final Git revision;
+an older status poll cannot satisfy it. The tracked commit containing that
+change entered CI run `29273554351`, where every owner except Node 20 passed.
+Node 20 exposed a distinct same-id intake handoff: after one process reserved
+publication but before it entered the completion lock, the waiter could observe
+the still-staged receipt and return pending instead of the shared result. The
+waiter now releases that lock and retries within the existing completion
+deadline while revalidating the exact reservation token and live process owner;
+owner rejection or exit returns a prompt retryable owner-lost result without
+implicit takeover. The cross-process tests use bounded owner/waiter barriers and
+an exclusive engine marker to force this order, prove one executor plus one
+shared result, and terminate workers on every failed coordination path. Lease
+verification waits for an observed expiry increase while requiring the token
+and owner to remain unchanged. History tests block an injected maintenance
+dependency until each primary action returns and then await all deferred work
+until quiet. Eight concurrent Node 20 stress runs and all 358 Node 20 tests
+passed for the initial fix; the expanded owner-loss contract is included in the
+current release profile. It directly replaces the reservation with a different
+valid token owned by a live process, asserts the retryable response, bounds
+TERM/KILL/detach cleanup, and waits beyond every deferred-maintenance retry
+delay. Independent focused stress passed, followed by all 361 tests on exact
+Node 20.20.2 and all 361 tests on the current Node runtime. The tracked commit
+containing this paragraph is the final Git revision;
 authenticated CI proof, complete release evidence, and the read-only parent
 authority result are refreshed against that exact clean synchronized HEAD in
 the ignored evidence store rather than causing another tracked-file change.

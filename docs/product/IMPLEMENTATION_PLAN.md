@@ -2062,6 +2062,20 @@ unclassified read failures without changing production storage selection; it
 proves successful retry, bounded exhaustion, and immediate fail-closed refusal
 deterministically.
 
+The final Node 20 contention closure makes the same-id intake waiter explicit
+during the reservation-to-processing handoff. The existing completion deadline
+and a bounded configurable poll interval govern retry; the original token owner
+remains the only engine executor. Every staged retry revalidates that exact
+token and its process identity; owner rejection or exit produces a prompt
+retryable owner-lost result without implicit takeover. A context-only intake-
+store factory provides deterministic cross-process test ordering without
+changing production storage. Test workers use bounded barriers, unconditional
+cleanup, and an exclusive execution marker to prove owner/waiter roles and one
+engine invocation. History-maintenance tests block the injected maintenance
+dependency itself, prove primary actions finish before its release, and await
+the deferred work until quiet, while lease tests observe an actual later expiry
+with unchanged token and owner instead of assuming a fixed scheduler delay.
+
 Deferred: PDF/DOCX extraction, OCR, browser-side Playwright execution, remote
 CI trigger/cancel, provider retry or cancellation without a verified contract,
 signed native installers, automatic updates, startup registration, and OS

@@ -1042,16 +1042,7 @@ test('Control Center history coordination preserves concurrent successful decisi
       internal: { target_url: `https://example.test/race-${index}` }
     });
   }
-
-  let releaseRetention;
-  const retentionHeld = new Promise((resolve) => { releaseRetention = resolve; });
-  let signalRetention;
-  const retentionAcquired = new Promise((resolve) => { signalRetention = resolve; });
-  const holder = store.withLock('history-retention', async () => {
-    signalRetention();
-    await retentionHeld;
-  });
-  await retentionAcquired;
+  const deferredRetention = deferStoreLock(store, 'history-retention');
   const decisions = ids.map((id, index) => runControlCenterAgenticReviewDecision({
     operation_id: id,
     finding_id: 'finding-1',
@@ -1059,14 +1050,16 @@ test('Control Center history coordination preserves concurrent successful decisi
   }, {
     cwd,
     now: `2026-01-01T00:01:0${index}.000Z`,
-    agenticReviewHistoryEntries: 1
+    agenticReviewHistoryEntries: 1,
+    createControlCenterAgenticReviewStore: () => deferredRetention.store
   }));
   let results;
   try {
-    results = await settleWithin(Promise.all(decisions));
+    results = await settleWithin(Promise.all(decisions), 5000);
+    await settleWithin(deferredRetention.entered, 5000);
   } finally {
-    releaseRetention();
-    await holder;
+    deferredRetention.release();
+    await deferredRetention.settle();
   }
   assert.equal(results.every((result) => result.status === 'ok'), true);
   for (const id of ids) {
@@ -1078,7 +1071,17 @@ test('Control Center history coordination preserves concurrent successful decisi
 
 test('Control Center history maintenance cannot block a confirmed external review dispatch', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-history-dispatch-'));
-  const harness = createHarness(cwd);
+  const store = createSafeLocalStore({
+    workspaceRoot: cwd,
+    relativeRoot: '.browser-debug/control-center-agentic-reviews',
+    namespace: 'control-center-agentic-review-operations',
+    maxRecordBytes: 1024 * 1024,
+    maxEntries: 4096
+  });
+  const deferredRetention = deferStoreLock(store, 'history-retention');
+  const harness = createHarness(cwd, {
+    createControlCenterAgenticReviewStore: () => deferredRetention.store
+  });
   const prepared = reviewData(await runControlCenterAgenticReviewPrepare({
     url: 'https://example.jp/', purpose: 'Check the next action.', effort: 'standard',
     viewport: 'desktop', ai_suggestions: true
@@ -1087,39 +1090,24 @@ test('Control Center history maintenance cannot block a confirmed external revie
   const confirmation = reviewData(await runControlCenterAgenticReviewConfirmation({
     operation_id: prepared.operation.id
   }, harness.context)).confirmation;
-  const store = createSafeLocalStore({
-    workspaceRoot: cwd,
-    relativeRoot: '.browser-debug/control-center-agentic-reviews',
-    namespace: 'control-center-agentic-review-operations',
-    maxRecordBytes: 1024 * 1024,
-    maxEntries: 4096
-  });
-  let releaseRetention;
-  const retentionReleased = new Promise((resolve) => { releaseRetention = resolve; });
-  let signalRetention;
-  const retentionAcquired = new Promise((resolve) => { signalRetention = resolve; });
-  const holder = store.withLock('history-retention', async () => {
-    signalRetention();
-    await retentionReleased;
-  });
-  await retentionAcquired;
+  await settleWithin(deferredRetention.entered, 5000);
   try {
     const started = await settleWithin(runControlCenterAgenticReviewStart({
       operation_id: prepared.operation.id,
       nonce: confirmation.nonce,
       revision: confirmation.revision,
       execute_confirmed: true
-    }, harness.context));
+    }, harness.context), 5000);
     assert.equal(started.status, 'ok');
-    await settleWithin(harness.drain());
+    await settleWithin(harness.drain(), 5000);
     assert.equal(harness.calls.run, 1);
     const completed = reviewData(await runControlCenterAgenticReviewStatus({
       id: prepared.operation.id
     }, harness.context)).operation;
     assert.equal(completed.state, 'completed');
   } finally {
-    releaseRetention();
-    await holder;
+    deferredRetention.release();
+    await deferredRetention.settle();
   }
 });
 
@@ -1153,7 +1141,7 @@ test('Control Center history maintenance does not keep a completed child process
   await retentionAcquired;
   const worker = spawn(process.execPath, [path.resolve('tests/fixtures/control-center-decision-worker.mjs'), cwd, id]);
   try {
-    const output = await settleWithin(collectProcess(worker), 1500);
+    const output = await settleWithin(collectProcess(worker), 5000);
     assert.match(output, /ok/u);
     assert.equal(worker.exitCode, 0);
   } finally {
@@ -1162,7 +1150,7 @@ test('Control Center history maintenance does not keep a completed child process
   }
 });
 
-async function settleWithin(promise, timeoutMs = 1000) {
+async function settleWithin(promise, timeoutMs = 5000) {
   let timer;
   try {
     return await Promise.race([
@@ -1191,4 +1179,61 @@ async function collectProcess(child) {
   child.stderr.on('data', (chunk) => { output += chunk.toString('utf8'); });
   if (child.exitCode === null) await once(child, 'close');
   return output;
+}
+
+function deferStoreLock(store, lockName) {
+  const quietWindowMs = 150;
+  let signalEntered;
+  const entered = new Promise((resolve) => { signalEntered = resolve; });
+  let releaseLock;
+  const released = new Promise((resolve) => { releaseLock = resolve; });
+  let signaled = false;
+  let releasedOnce = false;
+  let active = 0;
+  let invocations = 0;
+  return {
+    entered,
+    release() {
+      if (releasedOnce) return;
+      releasedOnce = true;
+      releaseLock();
+    },
+    async settle(timeoutMs = 5000) {
+      const deadline = Date.now() + timeoutMs;
+      let quietSince = null;
+      let quietInvocationCount = -1;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setImmediate(resolve));
+        if (active === 0 && invocations === quietInvocationCount) {
+          if (quietSince !== null && Date.now() - quietSince >= quietWindowMs) return;
+        } else if (active === 0) {
+          quietInvocationCount = invocations;
+          quietSince = Date.now();
+        } else {
+          quietInvocationCount = -1;
+          quietSince = null;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error('Deferred store maintenance did not settle within the bounded test window.');
+    },
+    store: {
+      ...store,
+      async withLock(name, task, options) {
+        if (name !== lockName) return store.withLock(name, task, options);
+        if (!signaled) {
+          signaled = true;
+          signalEntered();
+        }
+        invocations += 1;
+        active += 1;
+        try {
+          await released;
+          return await store.withLock(name, task, options);
+        } finally {
+          active -= 1;
+        }
+      }
+    }
+  };
 }

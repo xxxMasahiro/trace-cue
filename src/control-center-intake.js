@@ -43,6 +43,8 @@ const DEFAULT_HISTORY_MAINTENANCE_LOCK_TIMEOUT_MS = 100;
 const MAX_HISTORY_MAINTENANCE_LOCK_TIMEOUT_MS = 1000;
 const DEFAULT_RECOVERY_MAINTENANCE_LOCK_TIMEOUT_MS = 100;
 const MAX_RECOVERY_MAINTENANCE_LOCK_TIMEOUT_MS = 1000;
+const DEFAULT_PUBLICATION_WAIT_POLL_MS = 20;
+const MAX_PUBLICATION_WAIT_POLL_MS = 1000;
 const ID_PATTERN = /^[a-f0-9]{32}$/u;
 const RECEIPT_PATTERN = /^([a-f0-9]{32})\.json$/u;
 const RESERVATION_PATTERN = /^([a-f0-9]{32})\.json$/u;
@@ -69,6 +71,7 @@ const KIND_CONFIG = Object.freeze({
   }
 });
 const INTAKE_HISTORY_RETENTION = new Map();
+const WAIT_FOR_PUBLICATION_OWNER = Symbol('wait-for-publication-owner');
 
 export async function stageControlCenterIntake(input = {}, stream, context = {}) {
   const validation = validateUploadInput(input);
@@ -208,7 +211,7 @@ export async function completeControlCenterIntake(input = {}, context = {}) {
       );
     }
     if (!publicationReservation.owned) {
-      return await waitForExistingIntakeCompletion(store, id, context);
+      return await waitForExistingIntakeCompletion(store, id, context, publicationReservation.token);
     }
     stopPublicationLease = startIntakePublicationLease(
       store,
@@ -703,7 +706,7 @@ async function reserveIntakeResultPublication(store, id, context) {
     const existing = await readOptionalStoreJson(store, `publication-reservations/${id}.json`, 8 * 1024);
     if (isIntakePublicationReservation(existing, id)
       && await isProcessIdentityAlive(existing.owner)) {
-      return { ok: true, owned: false, token: null };
+      return { ok: true, owned: false, token: existing.token };
     }
     let usage = await inspectIntakePublicationUsage(store);
     if (!usage.has(id) && usage.size >= limits.activeResultEntries) {
@@ -801,37 +804,64 @@ async function renewIntakePublicationLease(store, id, token, context) {
   }, { timeoutMs: limits.completionLockTimeoutMs });
 }
 
-async function waitForExistingIntakeCompletion(store, id, context) {
-  let abandonedReservationToken = null;
-  try {
-    const completion = await store.withLock(`intake-complete-${id}`, async () => {
-      const receipt = await readIntakeReceipt(store, id);
-      if (receipt?.state === 'completed') {
-        const result = await readIntakeResult(store, id);
-        if (!isCommittedIntakeResult(receipt, result)) {
-          throw intakeCodedError('CONTROL_CENTER_INTAKE_RESULT_NOT_COMMITTED', 'The saved result is not complete.');
+async function waitForExistingIntakeCompletion(store, id, context, expectedReservationToken = null) {
+  const limits = intakeLimits(context);
+  const deadline = Date.now() + limits.completionLockTimeoutMs;
+  while (true) {
+    let abandonedReservationToken = null;
+    try {
+      const completion = await store.withLock(`intake-complete-${id}`, async () => {
+        const receipt = await readIntakeReceipt(store, id);
+        if (receipt?.state === 'completed') {
+          const result = await readIntakeResult(store, id);
+          if (!isCommittedIntakeResult(receipt, result)) {
+            throw intakeCodedError('CONTROL_CENTER_INTAKE_RESULT_NOT_COMMITTED', 'The saved result is not complete.');
+          }
+          return intakeOk({ result, already_completed: true });
         }
-        return intakeOk({ result, already_completed: true });
-      }
-      if (receipt?.state === 'processing' && receipt?.pending_result_sha256) {
-        let pendingResult = null;
-        try {
-          pendingResult = await readIntakeResult(store, id);
-        } catch (error) {
-          if (!['ENOENT', 'SAFE_STORE_JSON_INVALID'].includes(error?.code)) throw error;
+        if (receipt?.state === 'processing' && receipt?.pending_result_sha256) {
+          let pendingResult = null;
+          try {
+            pendingResult = await readIntakeResult(store, id);
+          } catch (error) {
+            if (!['ENOENT', 'SAFE_STORE_JSON_INVALID'].includes(error?.code)) throw error;
+          }
+          if (!pendingResult || !isPendingIntakeResult(receipt, pendingResult)) {
+            abandonedReservationToken = typeof receipt.publication_reservation_token === 'string'
+              ? receipt.publication_reservation_token
+              : null;
+            await removeStoreFile(store, `results/${id}.json`, 32 * 1024);
+            receipt.state = 'failed';
+            receipt.failure_code = 'CONTROL_CENTER_INTAKE_PUBLICATION_INVALID';
+            receipt.finished_at = materializeNow(context.now).toISOString();
+            delete receipt.processing_owner;
+            delete receipt.publication_reservation_token;
+            delete receipt.pending_result_sha256;
+            delete receipt.pending_completed_at;
+            await store.writeJson(`receipts/${id}.json`, receipt, { maxBytes: 32 * 1024 });
+            return intakeError(
+              receipt.failure_code,
+              'Choose the file again before retrying.',
+              { same_intake_retry_available: false }
+            );
+          }
+          try {
+            const finalized = await finalizePendingIntakePublication(store, id, context);
+            return intakeOk({ result: finalized.result });
+          } catch (error) {
+            if (await hasCurrentValidPendingIntakeResult(store, id)) throw pendingPublicationError();
+            throw error;
+          }
         }
-        if (!pendingResult || !isPendingIntakeResult(receipt, pendingResult)) {
+        if (receipt?.state === 'processing') {
           abandonedReservationToken = typeof receipt.publication_reservation_token === 'string'
             ? receipt.publication_reservation_token
             : null;
-          await removeStoreFile(store, `results/${id}.json`, 32 * 1024);
           receipt.state = 'failed';
-          receipt.failure_code = 'CONTROL_CENTER_INTAKE_PUBLICATION_INVALID';
+          receipt.failure_code = 'CONTROL_CENTER_INTAKE_PROCESS_INTERRUPTED';
           receipt.finished_at = materializeNow(context.now).toISOString();
           delete receipt.processing_owner;
           delete receipt.publication_reservation_token;
-          delete receipt.pending_result_sha256;
-          delete receipt.pending_completed_at;
           await store.writeJson(`receipts/${id}.json`, receipt, { maxBytes: 32 * 1024 });
           return intakeError(
             receipt.failure_code,
@@ -839,52 +869,63 @@ async function waitForExistingIntakeCompletion(store, id, context) {
             { same_intake_retry_available: false }
           );
         }
-        try {
-          const finalized = await finalizePendingIntakePublication(store, id, context);
-          return intakeOk({ result: finalized.result });
-        } catch (error) {
-          if (await hasCurrentValidPendingIntakeResult(store, id)) throw pendingPublicationError();
-          throw error;
+        if (receipt?.state === 'failed') {
+          return intakeError(
+            receipt.failure_code ?? 'CONTROL_CENTER_INTAKE_PROCESS_FAILED',
+            'Choose the file again before retrying.',
+            {}
+          );
         }
+        if (receipt?.state === 'staged') {
+          let reservation;
+          try {
+            reservation = await readOptionalStoreJson(
+              store,
+              `publication-reservations/${id}.json`,
+              8 * 1024
+            );
+          } catch (error) {
+            if (error?.code === 'SAFE_STORE_FILE_CHANGED') return WAIT_FOR_PUBLICATION_OWNER;
+            throw error;
+          }
+          if (!isIntakePublicationReservation(reservation, id)
+            || reservation.token !== expectedReservationToken
+            || !await isProcessIdentityAlive(reservation.owner)) {
+            throw intakeCodedError(
+              'CONTROL_CENTER_INTAKE_PUBLICATION_OWNER_LOST',
+              'The saved result is no longer being completed.'
+            );
+          }
+          return WAIT_FOR_PUBLICATION_OWNER;
+        }
+        throw pendingPublicationError();
+      }, { timeoutMs: Math.max(1, deadline - Date.now()) });
+      if (completion === WAIT_FOR_PUBLICATION_OWNER) {
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) throw pendingPublicationError();
+        await new Promise((resolve) => setTimeout(
+          resolve,
+          Math.min(limits.publicationWaitPollMs, remainingMs)
+        ));
+        continue;
       }
-      if (receipt?.state === 'processing') {
-        abandonedReservationToken = typeof receipt.publication_reservation_token === 'string'
-          ? receipt.publication_reservation_token
-          : null;
-        receipt.state = 'failed';
-        receipt.failure_code = 'CONTROL_CENTER_INTAKE_PROCESS_INTERRUPTED';
-        receipt.finished_at = materializeNow(context.now).toISOString();
-        delete receipt.processing_owner;
-        delete receipt.publication_reservation_token;
-        await store.writeJson(`receipts/${id}.json`, receipt, { maxBytes: 32 * 1024 });
-        return intakeError(
-          receipt.failure_code,
-          'Choose the file again before retrying.',
-          { same_intake_retry_available: false }
-        );
+      if (abandonedReservationToken) {
+        await releaseIntakeResultPublication(store, id, abandonedReservationToken, context);
       }
-      if (receipt?.state === 'failed') {
-        return intakeError(
-          receipt.failure_code ?? 'CONTROL_CENTER_INTAKE_PROCESS_FAILED',
-          'Choose the file again before retrying.',
-          {}
-        );
-      }
-      throw pendingPublicationError();
-    }, { timeoutMs: intakeLimits(context).completionLockTimeoutMs });
-    if (abandonedReservationToken) {
-      await releaseIntakeResultPublication(store, id, abandonedReservationToken, context);
+      if (completion.status === 'ok') scheduleIntakeHistoryRetention(store, context);
+      return completion;
+    } catch (error) {
+      const ownerLost = error?.code === 'CONTROL_CENTER_INTAKE_PUBLICATION_OWNER_LOST';
+      const pending = error?.code === 'CONTROL_CENTER_INTAKE_PUBLICATION_PENDING'
+        || error?.code === 'SAFE_STORE_LOCK_TIMEOUT';
+      return intakeError(
+        pending ? 'CONTROL_CENTER_INTAKE_PUBLICATION_PENDING' : (error?.code ?? 'CONTROL_CENTER_INTAKE_NOT_AVAILABLE'),
+        pending
+          ? 'The saved result is still being completed. Check it again shortly.'
+          : (ownerLost ? 'The check did not start. Try again.' : 'Choose the file again and retry.'),
+        { same_intake_retry_available: pending || ownerLost }
+      );
     }
-    if (completion.status === 'ok') scheduleIntakeHistoryRetention(store, context);
-    return completion;
-  } catch (error) {
-    const pending = error?.code === 'CONTROL_CENTER_INTAKE_PUBLICATION_PENDING'
-      || error?.code === 'SAFE_STORE_LOCK_TIMEOUT';
-    return intakeError(
-      pending ? 'CONTROL_CENTER_INTAKE_PUBLICATION_PENDING' : (error?.code ?? 'CONTROL_CENTER_INTAKE_NOT_AVAILABLE'),
-      pending ? 'The saved result is still being completed. Check it again shortly.' : 'Choose the file again and retry.',
-      { same_intake_retry_available: pending }
-    );
   }
 }
 
@@ -1244,13 +1285,17 @@ function intakeStore(context) {
   const cwd = path.resolve(context.cwd ?? process.cwd());
   const artifactRoot = resolveRelativeArtifactRoot(cwd, context.artifactRoot);
   const relativeRoot = path.join(artifactRoot, INTAKE_DIRECTORY);
-  return { store: createSafeLocalStore({
+  const options = {
     workspaceRoot: cwd,
     relativeRoot,
     namespace: 'control-center-intake',
     maxRecordBytes: 32 * 1024,
     maxEntries: CONTROL_CENTER_INTAKE_MAX_ENTRIES
-  }), relativeRoot };
+  };
+  const factory = typeof context.createControlCenterIntakeStore === 'function'
+    ? context.createControlCenterIntakeStore
+    : createSafeLocalStore;
+  return { store: factory(options), relativeRoot };
 }
 
 function intakeLimits(context) {
@@ -1299,6 +1344,11 @@ function intakeLimits(context) {
       context.intakePublicationLeaseRenewIntervalMs,
       RESERVATION_RENEW_INTERVAL_MS,
       MAX_RESERVATION_RENEW_INTERVAL_MS
+    ),
+    publicationWaitPollMs: normalizeBoundedPositiveInteger(
+      context.intakePublicationWaitPollMs,
+      DEFAULT_PUBLICATION_WAIT_POLL_MS,
+      MAX_PUBLICATION_WAIT_POLL_MS
     )
   };
 }

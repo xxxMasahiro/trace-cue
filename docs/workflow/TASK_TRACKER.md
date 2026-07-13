@@ -567,6 +567,24 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
   tests additionally prove retry success, four-attempt exhaustion, and
   immediate refusal of an unclassified error; the browser assertion is bound to
   a fresh page rather than an existing status poll.
+  CI run `29273554351` then exposed the separate same-id intake handoff in which
+  a waiter could reach the completion lock after owner reservation but before
+  owner processing state. The waiter now releases and retries within the
+  configured completion deadline while revalidating the exact token and live
+  owner, without taking ownership or executing the engine. Owner validation
+  failure and owner process exit both end promptly with a retryable owner-lost
+  result, and a later explicit request can recover. Bounded cross-process
+  barriers and an exclusive marker deterministically prove one executor and one
+  shared result; cleanup terminates workers on every failure path. Maintenance
+  tests block and fully settle the injected dependency rather than relying on a
+  one-second host deadline, and lease verification waits for a later expiry
+  while requiring unchanged token and owner instead of sleeping 300 ms. Eight
+  concurrent Node 20 stress runs and the full 358-test Node 20 suite passed for
+  the initial fix. The expanded contract adds a live different-token owner,
+  explicit retryable-detail assertions, bounded TERM/KILL/detach cleanup, and a
+  quiet window beyond every deferred-maintenance retry delay. Its independent
+  focused stress passed, followed by all 361 tests on exact Node 20.20.2 and all
+  361 tests on the current Node runtime before authority refresh.
   Exact clean-HEAD release and authenticated CI evidence is written to the
   ignored authority store after this completion-state commit so recording it
   cannot make its own revision stale.

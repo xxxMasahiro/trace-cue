@@ -654,6 +654,14 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   Admission must reserve one opaque id under a cross-process lock, bind that
   reservation to exactly one completion owner, renew its lease during long
   processing, and permit non-owners only to wait for or read the same result.
+  If a non-owner reaches the per-id lock after reservation but before the owner
+  records processing state, it must release that lock and retry within the
+  bounded completion deadline only while the original reservation token and
+  its process owner remain valid. It must not change ownership, execute the
+  engine, or treat a live staged handoff window as a completed failure. If that
+  exact owner rejects the request or exits before processing, the waiter must
+  stop promptly with a retryable owner-lost result and leave takeover to a new
+  explicit request.
   A second request must never run the intake engine for an id already owned by
   another request, and a different id must remain blocked while the bound is
   full.
