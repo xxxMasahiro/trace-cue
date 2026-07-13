@@ -542,10 +542,11 @@ Optional acceptance checks against local application servers may run only when t
   `INSTRUCTION_MEMORY.md`-only range fails and that synchronized workflow,
   product, verification, security, policy, schema, routing, and manifest
   authorities pass together.
-- The existing `repository-contracts` job owns the dependency-free policy and
-  contract checks. Node jobs own no-browser runtime regression and browser
-  smoke owns React/Vite browser behavior; the lightweight job does not rerun
-  either suite.
+- The existing `repository-contracts` job installs the pinned repository parser
+  dependency and owns policy, document-sync, structure, security, design-system,
+  and structured CI contract checks. Node jobs own no-browser runtime regression
+  and browser smoke owns React/Vite browser behavior; the contract-only job does
+  not rerun either suite.
 - A passing policy contract proves objective structure and registration only.
   It does not authenticate chat approvals, semantic review quality, complete
   no-regression, or effective model and effort settings when the runtime does
@@ -568,28 +569,50 @@ The supported local execution profiles are:
   evidence and never a release-ready result.
 - `npm run verification:core`: repository contracts and every no-browser test
   owner, including verification infrastructure.
-- `npm run verification:browser`: one Control Center build followed by the 14
+- `npm run verification:browser`: one Control Center build followed by the 15
   browser smoke tests without rebuilding.
 - `npm run verification:release`: the exact union of core, package, build, and
   browser owners. This is the only profile allowed to claim complete local
-  release verification.
+  release verification, but by itself it records no product authority.
+- `npm run verification:release:evidence`: resolves the configured release
+  profile, reruns it on one clean synchronized revision, and records one complete
+  exact-HEAD local authority batch.
+- `npm run verification:ci-proof:import`: after remote CI passes, authenticates
+  the policy-selected repository/workflow/run/artifact and records separate CI
+  proof evidence without replacing the local batch.
 
 The runner uses policy-owned argv, bounded rolling parallelism, declared locks,
 per-task timeout and output limits, first-failure process-group cancellation,
 deterministic policy-order reporting, and a one-worker fallback. The tracked and
 untracked non-ignored worktree snapshot must be unchanged after execution.
+An already-aborted signal is covered explicitly: no child process may start,
+every pending task is reported cancelled, the overall result fails, and an
+external side-effect marker remains absent.
+Dependency execution is topological rather than declaration-order dependent:
+an earlier serial consumer waiting for a later producer is skipped during that
+scheduling pass so the producer can start, after which the consumer runs under
+its lock. A focused runner regression freezes this case.
 Unknown changed paths select core checks; temporary memory-only changes are
 reported as ignored rather than converted into a new PASS receipt.
 Credential-bearing environment variables and live-provider opt-in flags are
 removed before every verification child process starts.
 Successful command output is summarized by default; failed task diagnostics are
 shown immediately, and `--json` returns the complete bounded machine result.
+The CLI parser rejects unknown, repeated, missing-value, conflicting, and
+command-inapplicable arguments before task execution. A misspelled evidence
+operation therefore cannot silently fall back to a proof-free release run.
 
 `npm test`, `npm run test:browser`, `npm run release:check`, and
 `./tools/product-gate` remain compatibility entrypoints. `test:browser` builds
 then calls `test:browser:run`; CI owns the build separately and invokes only the
 build-free command. The split CLI and Agentic Human Review files must retain the
 same combined test names and assertions.
+
+The package profile builds Control Center before packing and captures both npm
+11 dry-run and real producer JSON through one fixed-argv helper into a
+run-isolated exclusive mode-0600 file because a piped child stdout may otherwise
+yield an empty successful response. Empty, oversized, short-read, changed,
+malformed, or non-single-manifest output fails the package gate.
 
 CI distributes Node runtime and package-consumer compatibility while keeping
 repository contracts, package production, and browser execution single-owner.
@@ -598,6 +621,12 @@ Package consumers validate one same-run tarball and cannot repack. `final-gate`
 runs with `always()`, rejects any failed, skipped, or cancelled owner, binds the
 result to the run, attempt, full HEAD, policy, and graph, and does not rerun
 provider suites.
+
+The CI contract parses workflow YAML structurally. Mutation tests remove a
+required command, append `|| :`, add spaced or ordinary `continue-on-error`,
+add job/step conditions, exclude Node 22 from the matrix, alter artifact
+bindings, restore cache prefixes, duplicate builds, omit materialization, and
+rerun product suites in the proof-only final job; every mutation must fail.
 
 Exact-commit remote verification is:
 
@@ -611,12 +640,25 @@ success is advisory, and stale evidence is not authority-ready. Raw logs,
 environment dumps, secrets, URLs, and host-specific absolute paths are forbidden
 from authoritative receipt content.
 
+Concurrent-writer tests start twelve independent receipt writers and require
+every admitted receipt and derived row to survive within the active lock and
+ingress bounds. A
+writer may observe its exact event in the stable bounded ledger and coalesce a
+redundant rebuild, but corrupt, missing, oversized, replaced, or incomplete
+ledger state must force the normal locked rebuild path. Capacity tests prefill
+the receipt store and require a multi-source release batch to recover retention,
+write every receipt, and commit without reacquiring its own index lock.
+The order-sensitive case places an older authoritative failure on the first
+lexical release source and requires bounded whole-batch admission to preserve
+all pending receipts until commit replaces that semantic winner.
+
 The active evidence index is verified as exactly 13 tab-separated fields with a
 whole-second UTC `observed_at` value and full product HEAD. Legacy short-HEAD
 rows are copied intact to a digest-named local archive before removal from the
 active view; v2.0 receipts remain historical and stale, and repeated rebuilds
-must not duplicate or re-import them. Tests also prove that every schema v2.1
-field is digest-bound, an empty or partial store exposes manifest-declared
+must not duplicate or re-import them. Tests also prove that every schema v2.2
+field and committed release-batch membership is digest-bound, an empty or
+partial store exposes manifest-declared
 required evidence as `not_run`, contextual requiredness is never inherited from
 a receipt outside its declared contexts, cached results cannot satisfy
 readiness, optional stale history cannot block current required evidence, while
@@ -630,3 +672,112 @@ Because the parent reads a static projection, the TraceCue `status` command
 rebuilds freshness before parent inspection. Immediate detection of arbitrary
 worktree edits without a producer refresh remains a parent-consumer concern and
 is not represented as a TraceCue-only guarantee.
+
+The active v2.2 receipt and release-batch stores are bounded by policy-owned
+count and byte limits. Locked retention preserves the semantic current rows and
+their complete batches first, then atomically moves superseded and expired
+directories into a marker-owned inactive archive. Replacement races, copied
+receipt identities, unsafe file sets, crashed archive initialization, future
+timestamps, and capacity exhaustion fail closed. Inactive records remain local
+and inspectable but are excluded from readiness scans. Their aggregate disk use
+is not automatically bounded or deleted; explicit export/compaction remains
+deferred.
+
+## Control Center Goal Completion Verification
+
+Focused contract tests must reject symlinked or hardlinked store, lock, intake,
+static, and evidence paths; replacement races; oversized or slow streams;
+quota exhaustion; abandoned input; traversal and header injection; MIME/magic
+mismatch; invalid UTF-8 and binary text; oversized image dimensions; expired
+opaque ids; missing/foreign/stale Origin or CSRF; concurrent launch/start/
+confirm/cancel; nonce, input, service, destination, disclosure, and revision
+drift; duplicate provider dispatch; and credential/path/raw-input leakage.
+They also require an existing markerless store to remain untouched, live
+processing receipts to consume quota, projection-only GETs to leave a fresh
+workspace unchanged, runner exceptions and incomplete transfer boundaries to
+be dispatch-unknown, and an explicit all-false boundary to remain the only
+retryable no-send failure.
+History tests hold publication/update locks while another completion requests
+retention, require both public operations to succeed, verify inactive hash
+shards retain old records, and require direct opaque-id status/result lookup and
+one-use semantics after active-list retirement. Additional contention tests hold
+the global history-maintenance lock while a decision, confirmed external-review
+start, and intake completion return; each primary action must complete before
+the lock is released, the provider dispatch must still be scheduled, and the
+persisted result must remain successful. Expiry coverage advances beyond the
+intake TTL, triggers cleanup with a later upload, and requires the completed
+result, receipt, direct lookup, and one-use rejection to remain intact.
+Publication-admission tests use separate Node processes to hold one long-running
+owner, start a same-id retry, and attempt a different id at the active-result
+bound. They require one engine execution, renewed owner lease, a capacity error
+for the different id, and the same result for both owner and waiter. Bound-one
+turnover must archive the previous result, admit the next, and preserve both
+direct opaque-id reads. A full active store plus a held history lock must still
+return an already completed archived id without new admission. Dead-owner and
+same-process-idle processing receipts without a pending result must become
+non-retryable failures; a missing or invalid pending result must remove its safe
+result and reservation so a later upload and publication can succeed. A valid
+pending pair must still finalize without running the engine again.
+
+Safe-store lock tests deliberately occupy the release-transition prefix past a
+short owner window. The exact nonce/pid/process-identity owner must remove its
+unchanged logical lock and allow a later acquisition after the transition
+finishes; a changed owner remains rejected. Result and operation list tests race
+active-to-history movement and permit only bounded transient re-reads while
+persistent missing, malformed, or digest-invalid matching records fail closed.
+
+Package verification builds the Control Center once, includes the built assets
+in the tarball, installs it into a clean external directory, launches it from an
+unrelated cwd with an injected opener, verifies a second launcher reuses the
+healthy instance, and verifies browser-open failure still returns the safe
+loopback URL. No CI test may open the desktop browser.
+
+Recovery tests cover crash before send, during send, after response, and during
+validation. `dispatching` and unverifiable `validating` may not execute another
+provider request. A recovered validation must prove the persisted result and
+execution identity before local normalization. A persisted owner equal to the
+current server process is also covered: once the in-memory background task is
+absent, dispatch becomes unknown and preparation exposes explicit resume,
+without waiting for a server restart or treating another live process as idle.
+
+Browser verification divides coverage instead of multiplying every locale and
+viewport combination. The primary Japanese flow runs at 390, 768, and 1440
+pixels; representative English and RTL flows verify labels, direction, focus,
+keyboard operation, overflow, dialogs centered in the work area, and no
+overlap. Existing eight actions, three top-level destinations, five stages,
+effort values, external-send confirmation, CLI/MCP compatibility, and browser/
+CI execution prohibitions remain regression checks.
+The 768-pixel check also requires a one-column readable side navigation; the
+file-intake flow dispatches a real browser drop event and proves submission
+reaches upload without relying on a native file input value. Settings checks
+compare the approved labels and green enabled toggle with the active mock.
+The production/mock comparison also freezes the one-line purpose control and
+right-aligned action footers. Saved-result coverage imports mixed, timed-out,
+and empty Playwright results; requires visible total/pass/fail/timeout/skipped
+facts and truthful danger/warning styling; proves a successful file cannot be
+submitted again without an explicit prepare-another action; proves a failed
+list refresh retains existing work with retry; keeps visible status text on
+mobile; checks current-step and decision accessibility state; and verifies the
+saved-result page plus mirrored directional symbols in the representative RTL
+locale. Intake-only results must have no website-review completion stepper.
+
+Final 2026-07-13 local evidence for this slice is 357/357 no-browser tests,
+16/16 Playwright browser tests, a passing production build and versioned mock
+check, 285-file package dry-run, packed-install smoke, and `product-gate`.
+TraceCue self-review ids `review-2026-07-13T17-09-09-599Z-64cab64b` (desktop
+New Review) and `review-2026-07-13T17-09-30-837Z-d8997383` (mobile
+Confirmation list) each report zero findings, failed requests, console errors,
+overlap, clipping, or horizontal overflow. These are local regression results;
+exact clean-HEAD release evidence and authenticated CI proof are recorded only
+after commit and successful remote execution.
+
+Authority refresh requires one complete release profile with clean identical
+before/after full HEAD and tree. Every policy-owned source receipt references
+the same batch digest and exact task result. Partial, focused, dirty, mixed,
+cached, manually labeled, or changed-policy runs cannot become ready. Remote CI
+proof import separately rejects wrong repository, HEAD/tree, run/attempt, final
+job, owner jobs, policy/graph, or artifact digest and performs no network action
+from dashboard reads. The downloaded proof container is parsed with explicit
+entry, compressed-size, expanded-size, total-size, duplicate-name, path,
+encryption, link, and CRC limits before the single expected JSON proof is
+accepted.

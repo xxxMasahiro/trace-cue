@@ -885,7 +885,9 @@ test('control-center browser surface keeps read dashboard and bounded local acti
   assert.match(server, /\/api\/source-intake\/proposal/);
   assert.match(server, /\/api\/settings\/display-language/);
   assert.match(server, /isAllowedMcpHttpHost/);
-  assert.match(server, /isAllowedMcpHttpOrigin/);
+  assert.match(server, /suppliedOrigin\s*!==\s*expectedOrigin/);
+  assert.match(server, /CONTROL_CENTER_CSRF_HEADER/);
+  assert.match(server, /timingSafeEqual/);
   assert.match(server, /Cache-Control/);
   assert.doesNotMatch(server, /WebSocket|EventSource|node:child_process|execFile|spawn\(|provider_execute|cleanup_execute|agent_execution_run/);
 
@@ -1104,10 +1106,15 @@ test('CI workflow stays generic and release-safe', async () => {
   assert.match(workflow, /cancel-in-progress: true/);
   assert.match(workflow, /^  final-gate:/m);
   const browserJob = workflow.slice(workflow.indexOf('browser-smoke:'));
-  const browserJobBuildIndex = browserJob.indexOf('run: npm run control-center:build');
+  const browserJobMaterializeIndex = browserJob.indexOf('node ./tools/pack-install-smoke.mjs materialize');
   const browserJobTestIndex = browserJob.indexOf('run: npm run test:browser:run');
-  assert.ok(browserJobBuildIndex >= 0);
-  assert.ok(browserJobTestIndex > browserJobBuildIndex);
+  assert.match(browserJob, /needs: package-producer/);
+  assert.ok(browserJobMaterializeIndex >= 0);
+  assert.ok(browserJobTestIndex > browserJobMaterializeIndex);
+  assert.match(browserJob, /--archive-subtree dist\/control-center/);
+  assert.match(browserJob, /--destination dist\/control-center/);
+  assert.match(browserJob, /--required-file index\.html/);
+  assert.doesNotMatch(browserJob, /run: npm run control-center:build/);
   assert.equal(workflow.match(/run: npm run control-center:build/g)?.length, 1);
   assert.doesNotMatch(workflow, /restore-keys:/);
   assert.doesNotMatch(workflow, /npm publish|gh repo|secrets\.|curl |wget /i);

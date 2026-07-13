@@ -3,12 +3,13 @@ const main = document.querySelector("#main-content");
 const dialog = document.querySelector("#send-dialog");
 const toast = document.querySelector("#toast");
 
-const validScreens = new Set(["home", "new", "progress", "result", "finding", "running", "settings"]);
+const validScreens = new Set(["home", "new", "progress", "recovery", "result", "intake-result", "finding", "running", "settings"]);
 const query = new URLSearchParams(window.location.search);
 
 const state = {
   screen: validScreens.has(query.get("screen")) ? query.get("screen") : "home",
   method: "standard",
+  source: query.get("source") || "website",
   decision: null,
   aiSuggestions: true,
   settingsSaved: query.get("saved") === "1",
@@ -30,6 +31,13 @@ const methods = {
   },
 };
 
+const sources = {
+  website: { icon: "◎", title: "Webサイト", description: "ブラウザでページを確認します。" },
+  image: { icon: "▣", title: "画像", description: "画像の証拠を準備します。" },
+  document_text: { icon: "≡", title: "資料", description: "文章から確認案を準備します。" },
+  playwright_result: { icon: "✓", title: "テスト結果", description: "保存済みの確認結果を整理します。" },
+};
+
 function pageHeader(title, action = "") {
   return `<header class="page-header"><h1>${title}</h1>${action}</header>`;
 }
@@ -41,7 +49,7 @@ function stepper(current) {
       const number = index + 1;
       const className = number < current ? "step is-done" : number === current ? "step is-current" : "step";
       const mark = number < current ? "✓" : number;
-      return `<li class="${className}"><span class="step-number">${mark}</span><span class="step-label">${label}</span></li>`;
+      return `<li class="${className}" ${number === current ? 'aria-current="step"' : ''}><span class="step-number">${mark}</span><span class="step-label">${label}</span></li>`;
     }).join("")}
   </ol>`;
 }
@@ -77,28 +85,41 @@ function renderHome() {
           <span class="review-copy"><strong>申込み画面</strong><span>安心して手続きを完了できるか</span></span>
           <span class="status green">完了</span>
         </button>
+        <button class="review-row" type="button" data-action="open-intake-result">
+          <span class="review-copy"><strong>自動テスト結果</strong><span>時間切れになった確認があります</span></span>
+          <span class="status red">対応が必要</span>
+        </button>
       </div>
     </section>
   </section>`;
 }
 
 function renderNew() {
+  const needsReviewGoal = state.source === "website" || state.source === "document_text";
   screen.innerHTML = `<section class="screen narrow" data-mock-screen="new" data-testid="mock-new-review">
     ${pageHeader("新しく確認", `<button class="button text" type="button" data-action="home">閉じる</button>`)}
-    ${stepper(1)}
+    ${state.source === "website" ? stepper(1) : ""}
     <form id="review-form">
       <section class="form-section" aria-labelledby="target-title">
         <h2 id="target-title">何を確認しますか</h2>
-        <label class="field">WebサイトのURL
+        <div class="source-options">
+          ${Object.entries(sources).map(([id, source]) => `<label class="source-option${state.source === id ? " is-selected" : ""}">
+            <input type="radio" name="source" value="${id}" ${state.source === id ? "checked" : ""} />
+            <span class="source-mark" aria-hidden="true">${source.icon}</span>
+            <span><strong>${source.title}</strong><small>${source.description}</small></span>
+          </label>`).join("")}
+        </div>
+        ${state.source === "website" ? `<label class="field">WebサイトのURL
           <small>確認したいページを入力します。</small>
           <input class="text-control" name="url" type="url" value="https://www.digital.go.jp/" aria-label="WebサイトのURL" required />
-        </label>
-        <label class="field">特に何を確かめますか
+        </label>` : `<label class="file-drop">＋ <span><strong>ファイルを選ぶ</strong><small>ここへ置くこともできます。</small></span><input class="visually-hidden" type="file" aria-label="確認するファイル" required /></label><p class="field-note">ファイルはこのパソコン内に保たれ、保存場所は画面に表示されません。</p>`}
+        ${needsReviewGoal ? `<label class="field">特に何を確かめますか
           <small>知りたいことを普段の言葉で入力できます。</small>
           <input class="text-control" name="purpose" value="初めての人が迷わず使えるか" aria-label="特に何を確かめますか" required />
-        </label>
+        </label>` : ""}
       </section>
-      <section class="form-section" aria-labelledby="method-title">
+      ${state.source === "website" ? '<p class="ai-ready">✓ AIからの改善提案を利用できます</p>' : ''}
+      ${needsReviewGoal ? `<section class="form-section" aria-labelledby="method-title">
         <h2 id="method-title">どんな結果が必要ですか</h2>
         <div class="method-options">
           ${Object.entries(methods).map(([id, method]) => `<label class="method-option${state.method === id ? " is-selected" : ""}">
@@ -107,7 +128,7 @@ function renderNew() {
             <span class="method-copy"><strong>${method.title}${method.recommended ? `<span class="recommend">おすすめ</span>` : ""}</strong><span>${method.description}</span></span>
           </label>`).join("")}
         </div>
-      </section>
+      </section>` : ""}
       <div class="form-footer">
         <button class="button secondary" type="button" data-action="home">戻る</button>
         <button class="button primary" type="submit">確認を始める</button>
@@ -118,6 +139,19 @@ function renderNew() {
   if (query.get("dialog") === "send") {
     window.requestAnimationFrame(() => dialog.showModal());
   }
+}
+
+function renderRecovery() {
+  screen.innerHTML = `<section class="screen narrow" data-mock-screen="recovery" data-testid="mock-recovery">
+    ${pageHeader("準備を再開", `<button class="button text" type="button" data-action="home">一覧へ戻る</button>`)}
+    ${stepper(1)}
+    <section class="recovery-panel">
+      <p class="eyebrow">次にすること</p>
+      <h2>確認の準備が中断しました</h2>
+      <p>確認内容は保存されています。このパソコン内の準備だけを安全に再開できます。</p>
+      <button class="button primary" type="button" data-action="open-progress">準備を再開</button>
+    </section>
+  </section>`;
 }
 
 function renderProgress() {
@@ -159,6 +193,26 @@ function renderResult() {
   </section>`;
 }
 
+function renderIntakeResult() {
+  screen.innerHTML = `<section class="screen narrow" data-mock-screen="intake-result" data-testid="mock-intake-result">
+    <button class="button text back-action" type="button" data-action="home"><span aria-hidden="true">←</span>一覧へ戻る</button>
+    <header class="page-header result-page-header"><div><p class="eyebrow">結果の内容</p><h1>保存した結果</h1></div></header>
+    <section class="inline-notice danger" role="alert">
+      <strong>通らなかった自動確認があります</strong>
+      <p>1件中、失敗が0件、時間切れが1件です。0件は通りました。</p>
+    </section>
+    <dl class="result-facts">
+      <div><dt>確認したもの</dt><dd>テスト結果</dd></div>
+      <div><dt>保存日時</dt><dd>2026年7月13日 10:30</dd></div>
+      <div><dt>確認した件数</dt><dd>1</dd></div>
+      <div><dt>通った件数</dt><dd>0</dd></div>
+      <div><dt>失敗した件数</dt><dd>0</dd></div>
+      <div><dt>時間切れの件数</dt><dd>1</dd></div>
+      <div><dt>実行しなかった件数</dt><dd>0</dd></div>
+    </dl>
+  </section>`;
+}
+
 function renderFinding() {
   screen.innerHTML = `<section class="screen narrow" data-mock-screen="finding" data-testid="mock-finding">
     ${pageHeader("改善点を確認", `<button class="button text" type="button" data-action="open-result">結果へ戻る</button>`)}
@@ -174,9 +228,9 @@ function renderFinding() {
       <aside class="decision-panel" aria-labelledby="decision-title">
         <h3 id="decision-title">どうしますか</h3>
         <div class="decision-actions">
-          <button class="decision-choice${state.decision === "fix" ? " is-selected" : ""}" type="button" data-decision="fix">修正する</button>
-          <button class="decision-choice${state.decision === "later" ? " is-selected" : ""}" type="button" data-decision="later">今回は見送る</button>
-          <button class="decision-choice${state.decision === "ask" ? " is-selected" : ""}" type="button" data-decision="ask">相談して決める</button>
+          <button class="decision-choice${state.decision === "fix" ? " is-selected" : ""}" type="button" aria-pressed="${state.decision === "fix"}" data-decision="fix">修正する</button>
+          <button class="decision-choice${state.decision === "later" ? " is-selected" : ""}" type="button" aria-pressed="${state.decision === "later"}" data-decision="later">今回は見送る</button>
+          <button class="decision-choice${state.decision === "ask" ? " is-selected" : ""}" type="button" aria-pressed="${state.decision === "ask"}" data-decision="ask">相談して決める</button>
         </div>
       </aside>
     </div>
@@ -204,11 +258,11 @@ function renderSettings() {
         <h2 id="everyday-settings">普段の使い方</h2>
         ${settingSelect("表示する言葉", "画面で使う言語です。", "日本語", ["日本語", "English"])}
         ${settingSelect("いつも確認する画面", "新しい確認で最初に選ばれます。", "両方", ["両方", "パソコン", "スマートフォン"])}
-        ${settingSelect("Playwright Testモード", "自動テスト結果の使い方を選びます。", "今は使わない", ["今は使わない", "保存済みの結果を使う", "このパソコンの結果を使う", "CIの結果を使う"])}
+        ${settingSelect("自動確認", "保存した確認結果の使い方を選びます。", "今は使わない", ["今は使わない", "保存済みの結果を使う", "このパソコンの結果を使う", "承認済みの共有結果を使う"])}
       </section>
       <section class="settings-group" aria-labelledby="ai-settings">
         <h2 id="ai-settings">AIとプライバシー</h2>
-        ${settingToggle("AIの提案を使う", "改善案を分かりやすく整理します。", "ai-suggestions", state.aiSuggestions, false)}
+        ${settingToggle("AIの提案を使う", "利用できます。改善案を分かりやすく整理します。", "ai-suggestions", state.aiSuggestions, false)}
         ${settingToggle("外部へ送る前に確認する", "送信先と内容を毎回表示します。この保護はオフにできません。", "send-confirmation", true, true)}
       </section>
       ${state.settingsSaved ? '<div class="inline-notice success" role="status"><strong>設定を保存しました</strong></div>' : ''}
@@ -235,7 +289,9 @@ function render() {
     home: renderHome,
     new: renderNew,
     progress: renderProgress,
+    recovery: renderRecovery,
     result: renderResult,
+    "intake-result": renderIntakeResult,
     finding: renderFinding,
     running: renderRunning,
     settings: renderSettings,
@@ -276,6 +332,13 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  const source = event.target.closest(".source-option");
+  if (source) {
+    state.source = source.querySelector("input").value;
+    renderNew();
+    return;
+  }
+
   const decision = event.target.closest("[data-decision]");
   if (decision) {
     state.decision = decision.dataset.decision;
@@ -289,6 +352,7 @@ document.addEventListener("click", (event) => {
   if (action === "home") navigate("home");
   if (action === "open-progress") navigate("progress");
   if (action === "open-result") navigate("result");
+  if (action === "open-intake-result") navigate("intake-result");
   if (action === "open-finding") navigate("finding");
   if (action === "close-send") dialog.close();
   if (action === "confirm-send") {
@@ -304,7 +368,10 @@ document.addEventListener("click", (event) => {
 
 document.addEventListener("submit", (event) => {
   event.preventDefault();
-  if (event.target.id === "review-form") dialog.showModal();
+  if (event.target.id === "review-form") {
+    if (state.source === "website") dialog.showModal();
+    else showToast(state.source === "image" ? "画像の証拠を準備しました" : state.source === "document_text" ? "確認案を準備しました" : "テスト結果を整理しました");
+  }
   if (event.target.id === "settings-form") {
     state.settingsSaved = true;
     const url = new URL(window.location.href);

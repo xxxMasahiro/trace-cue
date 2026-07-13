@@ -6,6 +6,32 @@
   "unknown_state_policy": "fail-closed",
   "cross_run_result_reuse": "disabled",
   "persistent_result_cache": "disabled",
+  "evidence_policy": {
+    "release_batch_required": true,
+    "release_profile": "release",
+    "default_context": "free-development",
+    "release_artifact_paths": ["dist/control-center"],
+    "ci_proof_source_id": "product.ci.final_proof",
+    "ci_proof_workflow_path": ".github/workflows/ci.yml",
+    "ci_proof_artifact_prefix": "verification-proof",
+    "ci_proof_filename": "verification-proof.json",
+    "ci_proof_repository_remote": "origin",
+    "ci_proof_repository_hosts": ["github.com"],
+    "ci_proof_default_context": "free-development",
+    "remote_ci_replaces_local_release": false,
+    "max_future_observation_skew_ms": 300000,
+    "ci_proof_api_timeout_ms": 30000,
+    "store_limits": {
+      "lock_timeout_ms": 15000,
+      "stale_lock_ms": 60000,
+      "receipt_retention_count": 2048,
+      "receipt_retention_bytes": 16777216,
+      "release_batch_retention_count": 64,
+      "release_batch_retention_bytes": 33554432,
+      "ingress_overflow_count": 128,
+      "ingress_overflow_bytes": 8388608
+    }
+  },
   "limits": {
     "default_timeout_ms": 900000,
     "cancellation_grace_ms": 5000,
@@ -39,7 +65,7 @@
       "kind": "serial",
       "locks": ["repository-scan"],
       "depends_on": [],
-      "provides": ["product.security.secrets"]
+      "provides": ["product.security.secrets", "product.security.local_artifacts", "product.security.blockers"]
     },
     {
       "id": "ci_contract",
@@ -48,7 +74,7 @@
       "kind": "parallel",
       "locks": [],
       "depends_on": [],
-      "provides": ["product.ci.github_actions"]
+      "provides": ["product.ci.verification_contract"]
     },
     {
       "id": "design_system",
@@ -87,6 +113,15 @@
       "provides": ["product.docs.range_sync"]
     },
     {
+      "id": "git_sync",
+      "label": "Git synchronization",
+      "argv": ["node", "./tools/check_git_sync.mjs"],
+      "kind": "parallel",
+      "locks": [],
+      "depends_on": [],
+      "provides": ["product.git.sync", "product.git.worktree", "product.git.upstream", "product.git.local_remote_sync"]
+    },
+    {
       "id": "test_no_browser",
       "label": "No-browser product tests",
       "argv": ["npm", "test"],
@@ -99,10 +134,10 @@
         "product.runtime.agentic_human_review",
         "product.runtime.control_center",
         "product.runtime.dashboard_settings",
+        "product.gates.tests",
         "product.workflow.development_contract",
         "product.docs.range_sync_contract",
         "product.runtime.playwright_test",
-        "product.ci.verification_contract",
         "product.gates.evidence_contract"
       ]
     },
@@ -121,7 +156,7 @@
       "argv": ["npm", "run", "test:pack"],
       "kind": "serial",
       "locks": ["npm-pack"],
-      "depends_on": [],
+      "depends_on": ["control_center_build"],
       "provides": ["product.runtime.package_dry_run"]
     },
     {
@@ -157,7 +192,7 @@
     "core": ["structure", "docs", "security", "ci_contract", "design_system", "product_mode", "development_workflow", "document_sync", "test_no_browser"],
     "browser": ["control_center_build", "browser_smoke"],
     "package": ["rename_readiness", "package_dry_run", "package_install"],
-    "release": ["structure", "docs", "security", "ci_contract", "design_system", "product_mode", "development_workflow", "document_sync", "test_no_browser", "rename_readiness", "package_dry_run", "package_install", "control_center_build", "browser_smoke"],
+    "release": ["structure", "docs", "security", "ci_contract", "design_system", "product_mode", "development_workflow", "document_sync", "git_sync", "test_no_browser", "rename_readiness", "package_dry_run", "package_install", "control_center_build", "browser_smoke"],
     "focused": []
   },
   "focused_selectors": [
@@ -189,14 +224,144 @@
   ],
   "focused_fallback_profiles": ["core"],
   "ci_graph": {
+    "workflow_contract": {
+      "name": "CI",
+      "triggers": {
+        "pull_request": null,
+        "push": {"branches": ["main"]},
+        "workflow_dispatch": {
+          "inputs": {
+            "base_sha": {
+              "description": "Optional base commit for repository contract range checks",
+              "required": false,
+              "type": "string"
+            }
+          }
+        }
+      },
+      "permissions": {"contents": "read"},
+      "concurrency": {
+        "group": "ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}",
+        "cancel-in-progress": true
+      }
+    },
     "owners": [
-      {"job_id": "repository-contracts", "execution_instance_ids": ["repository-contracts"]},
-      {"job_id": "node", "execution_instance_ids": ["node-20", "node-22"]},
-      {"job_id": "package-producer", "execution_instance_ids": ["package-producer"]},
-      {"job_id": "package-consumer", "execution_instance_ids": ["package-consumer-20", "package-consumer-22"]},
-      {"job_id": "browser-smoke", "execution_instance_ids": ["browser-smoke"]}
+      {
+        "job_id": "repository-contracts",
+        "name": "Repository contracts",
+        "execution_instance_ids": ["repository-contracts"],
+        "runs_on": "ubuntu-latest",
+        "timeout_minutes": 15,
+        "required_needs": [],
+        "required_strategy": {},
+        "required_outputs": {},
+        "required_actions": [
+          {"uses": "actions/checkout@v5", "with": {"fetch-depth": 0, "persist-credentials": false}},
+          {"uses": "actions/setup-node@v5", "with": {"node-version": 20, "cache": "npm"}}
+        ],
+        "required_run_metadata": [
+          {"env": {}},
+          {"env": {}},
+          {"env": {}},
+          {"env": {"EVENT_NAME": "${{ github.event_name }}", "PR_BASE_SHA": "${{ github.event.pull_request.base.sha }}", "PR_HEAD_SHA": "${{ github.event.pull_request.head.sha }}", "PUSH_BASE_SHA": "${{ github.event.before }}", "PUSH_HEAD_SHA": "${{ github.sha }}", "INPUT_BASE_SHA": "${{ inputs.base_sha }}"}}
+        ],
+        "required_step_order": ["action:0", "action:1", "run:0", "run:1", "run:2", "run:3"],
+        "required_commands": ["npm ci","npm run verification:check","./tools/check_product_structure.sh\n./tools/check_product_docs.sh\n./tools/check_product_security.sh\n./tools/check_product_ci.sh\n./tools/check_product_design_system.sh\n./tools/product-mode check\nnpm run development-workflow:check","case \"$EVENT_NAME\" in\n  pull_request)\n    base=\"$PR_BASE_SHA\"\n    head=\"$PR_HEAD_SHA\"\n    ;;\n  push)\n    base=\"$PUSH_BASE_SHA\"\n    head=\"$PUSH_HEAD_SHA\"\n    ;;\n  workflow_dispatch)\n    base=\"${INPUT_BASE_SHA:-$(git rev-parse HEAD^)}\"\n    head=\"$PUSH_HEAD_SHA\"\n    ;;\n  *)\n    printf 'Unsupported repository contract event: %s\\n' \"$EVENT_NAME\" >&2\n    exit 1\n    ;;\nesac\nif [[ -z \"$base\" || -z \"$head\" || \"$base\" =~ ^0+$ ]]; then\n  printf 'Document sync range requires available non-zero base and head commits.\\n' >&2\n  exit 1\nfi\nnode ./tools/check_document_sync.mjs --base \"$base\" --head \"$head\""]
+      },
+      {
+        "job_id": "node",
+        "name": "Node ${{ matrix.node-version }}",
+        "execution_instance_ids": ["node-20", "node-22"],
+        "runs_on": "ubuntu-latest",
+        "timeout_minutes": 35,
+        "required_needs": [],
+        "required_strategy": {"fail-fast": false, "matrix": {"node-version": [20, 22]}},
+        "required_outputs": {},
+        "required_actions": [
+          {"uses": "actions/checkout@v5", "with": {"persist-credentials": false}},
+          {"uses": "actions/setup-node@v5", "with": {"node-version": "${{ matrix.node-version }}", "cache": "npm"}}
+        ],
+        "required_run_metadata": [{"env": {}}, {"env": {}}],
+        "required_step_order": ["action:0", "action:1", "run:0", "run:1"],
+        "required_commands": ["npm ci", "npm test"]
+      },
+      {
+        "job_id": "package-producer",
+        "name": "Package producer",
+        "execution_instance_ids": ["package-producer"],
+        "runs_on": "ubuntu-latest",
+        "timeout_minutes": 20,
+        "required_needs": [],
+        "required_strategy": {},
+        "required_outputs": {"manifest-digest": "${{ steps.package.outputs.manifest-digest }}", "producer-toolchain-digest": "${{ steps.package.outputs.producer-toolchain-digest }}"},
+        "required_actions": [
+          {"uses": "actions/checkout@v5", "with": {"persist-credentials": false}},
+          {"uses": "actions/setup-node@v5", "with": {"node-version": 20, "cache": "npm"}},
+          {"uses": "actions/upload-artifact@v7.0.1", "with": {"name": "package-${{ github.run_id }}-${{ github.run_attempt }}", "path": "${{ runner.temp }}/package-artifact", "if-no-files-found": "error", "retention-days": 1}}
+        ],
+        "required_run_metadata": [{"env": {}}, {"env": {}}, {"env": {}}, {"env": {}}, {"id": "package", "env": {}}],
+        "required_step_order": ["action:0", "action:1", "run:0", "run:1", "run:2", "run:3", "run:4", "action:2"],
+        "required_commands": ["npm ci","npm run test:rename-readiness","npm run control-center:build","npm run test:pack","node ./tools/pack-install-smoke.mjs produce \\\n  --artifact-dir \"$RUNNER_TEMP/package-artifact\" \\\n  --run-id \"$GITHUB_RUN_ID\" \\\n  --run-attempt \"$GITHUB_RUN_ATTEMPT\" \\\n  --job-id package-producer \\\n  > \"$RUNNER_TEMP/package-producer-output.json\"\nnode --input-type=module -e \\\n  \"import { appendFileSync, readFileSync } from 'node:fs'; const value = JSON.parse(readFileSync(process.argv[1], 'utf8')); appendFileSync(process.env.GITHUB_OUTPUT, 'manifest-digest=' + value.manifest_digest + '\\\\nproducer-toolchain-digest=' + value.producer_toolchain_digest + '\\\\n');\" \\\n  \"$RUNNER_TEMP/package-producer-output.json\""]
+      },
+      {
+        "job_id": "package-consumer",
+        "name": "Package consumer Node ${{ matrix.node-version }}",
+        "execution_instance_ids": ["package-consumer-20", "package-consumer-22"],
+        "runs_on": "ubuntu-latest",
+        "timeout_minutes": 30,
+        "required_needs": ["package-producer"],
+        "required_strategy": {"fail-fast": false, "matrix": {"node-version": [20, 22]}},
+        "required_outputs": {},
+        "required_actions": [
+          {"uses": "actions/checkout@v5", "with": {"persist-credentials": false}},
+          {"uses": "actions/setup-node@v5", "with": {"node-version": "${{ matrix.node-version }}", "cache": "npm"}},
+          {"uses": "actions/download-artifact@v8.0.1", "with": {"name": "package-${{ github.run_id }}-${{ github.run_attempt }}", "path": "${{ runner.temp }}/package-artifact"}}
+        ],
+        "required_run_metadata": [{"env": {}}, {"env": {}}],
+        "required_step_order": ["action:0", "action:1", "run:0", "action:2", "run:1"],
+        "required_commands": ["npm ci","node ./tools/pack-install-smoke.mjs consume \\\n  --artifact-dir \"$RUNNER_TEMP/package-artifact\" \\\n  --manifest-digest \"${{ needs.package-producer.outputs.manifest-digest }}\" \\\n  --run-id \"$GITHUB_RUN_ID\" \\\n  --run-attempt \"$GITHUB_RUN_ATTEMPT\" \\\n  --job-id \"package-consumer-${{ matrix.node-version }}\" \\\n  --producer-job-id package-producer \\\n  --producer-toolchain-digest \"${{ needs.package-producer.outputs.producer-toolchain-digest }}\""]
+      },
+      {
+        "job_id": "browser-smoke",
+        "name": "Browser smoke",
+        "execution_instance_ids": ["browser-smoke"],
+        "runs_on": "ubuntu-latest",
+        "timeout_minutes": 35,
+        "required_needs": ["package-producer"],
+        "required_strategy": {},
+        "required_outputs": {},
+        "required_actions": [
+          {"uses": "actions/checkout@v5", "with": {"persist-credentials": false}},
+          {"uses": "actions/setup-node@v5", "with": {"node-version": 20, "cache": "npm"}},
+          {"uses": "actions/cache@v5.0.5", "id": "playwright-cache", "with": {"path": "~/.cache/ms-playwright", "key": "${{ runner.os }}-${{ runner.arch }}-playwright-${{ hashFiles('package-lock.json', 'node_modules/playwright-core/browsers.json') }}"}},
+          {"uses": "actions/download-artifact@v8.0.1", "with": {"name": "package-${{ github.run_id }}-${{ github.run_attempt }}", "path": "${{ runner.temp }}/package-artifact"}}
+        ],
+        "required_run_metadata": [
+          {"env": {}},
+          {"env": {}},
+          {"env": {"PLAYWRIGHT_CACHE_HIT": "${{ steps.playwright-cache.outputs.cache-hit }}"}},
+          {"env": {}},
+          {"env": {}}
+        ],
+        "required_step_order": ["action:0", "action:1", "run:0", "action:2", "run:1", "run:2", "action:3", "run:3", "run:4"],
+        "required_commands": ["npm ci","./node_modules/.bin/playwright install-deps chromium","executable=\"$(node --input-type=module -e \"import { chromium } from 'playwright'; process.stdout.write(chromium.executablePath());\")\"\nif [[ \"$PLAYWRIGHT_CACHE_HIT\" != \"true\" ]] || ! \"$executable\" --version >/dev/null 2>&1; then\n  ./node_modules/.bin/playwright install --force chromium\nfi\n\"$executable\" --version","node ./tools/pack-install-smoke.mjs materialize \\\n  --artifact-dir \"$RUNNER_TEMP/package-artifact\" \\\n  --manifest-digest \"${{ needs.package-producer.outputs.manifest-digest }}\" \\\n  --run-id \"$GITHUB_RUN_ID\" \\\n  --run-attempt \"$GITHUB_RUN_ATTEMPT\" \\\n  --job-id browser-smoke \\\n  --producer-job-id package-producer \\\n  --producer-toolchain-digest \"${{ needs.package-producer.outputs.producer-toolchain-digest }}\" \\\n  --archive-subtree dist/control-center \\\n  --destination dist/control-center \\\n  --required-file index.html","npm run test:browser:run"]
+      }
     ],
     "final_job_id": "final-gate",
+    "final_name": "Final gate",
+    "final_if": "${{ always() }}",
+    "final_runs_on": "ubuntu-latest",
+    "final_timeout_minutes": 10,
+    "final_required_actions": [
+      {"uses": "actions/checkout@v5", "with": {"persist-credentials": false}},
+      {"uses": "actions/setup-node@v5", "with": {"node-version": 20}},
+      {"uses": "actions/upload-artifact@v7.0.1", "if": "${{ success() }}", "with": {"name": "verification-proof-${{ github.run_id }}-${{ github.run_attempt }}", "path": "${{ runner.temp }}/verification-proof.json", "if-no-files-found": "error", "retention-days": 1}}
+    ],
+    "final_required_run": {
+      "run": "node ./tools/verification.mjs ci-proof \\\n  --run-id \"$GITHUB_RUN_ID\" \\\n  --run-attempt \"$GITHUB_RUN_ATTEMPT\" \\\n  --head \"$GITHUB_SHA\" \\\n  --source-job final-gate \\\n  --output \"$RUNNER_TEMP/verification-proof.json\"",
+      "env": {"CI_OWNER_RESULTS_JSON": "{\"repository-contracts\":\"${{ needs.repository-contracts.result }}\",\"node\":\"${{ needs.node.result }}\",\"package-producer\":\"${{ needs.package-producer.result }}\",\"package-consumer\":\"${{ needs.package-consumer.result }}\",\"browser-smoke\":\"${{ needs.browser-smoke.result }}\"}"}
+    },
+    "final_required_step_order": ["action:0", "action:1", "run:0", "action:2"],
     "required_jobs": ["repository-contracts", "node", "package-producer", "package-consumer", "browser-smoke"]
   },
   "cache_policy": {

@@ -87,21 +87,38 @@ Before browser review, run the target app's full local stack needed for the revi
 
 ### Local Review Center
 
-Build and start the loopback-only React/Vite review center:
+Start the packaged loopback-only React/Vite review center from the workspace you
+want to review. No frontend build step is required:
 
 ```bash
-npm run control-center:build
+cd /path/to/workspace
 TRACE_CUE_CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NAME="Review AI" \
 TRACE_CUE_CONTROL_CENTER_AGENTIC_REVIEW_PROVIDER="generic-api-provider" \
-node ./bin/trace-cue.js control-center serve --port 4174
+trace-cue-control-center
 ```
+
+The launcher reuses a healthy local instance. If the operating system cannot
+open a browser, it prints the safe loopback URL. Repository development may
+still use `npm run control-center:build` and `control-center serve` directly.
 
 When AI suggestions are enabled, configure the existing Agentic Human Review
 provider boundary separately with its environment variables. The browser UI
 does not accept credentials, provider ids, model ids, endpoints, paths, hashes,
 or transfer flags. It displays the configured service and transferable evidence
-before issuing a single-use confirmation. Disabling AI suggestions keeps the
-page review local.
+before issuing a single-use confirmation. Choosing to continue without AI keeps
+the page review local. New review accepts a website URL, a local image, a UTF-8
+text/Markdown/JSON document, or a saved Playwright JSON/JUnit result through the
+browser picker; it never accepts an arbitrary local file path.
+Purpose and standard/deep/xhigh choices appear only for inputs whose review
+engine uses them. Prepared image, document, and Playwright-result outcomes are
+stored as pathless safe summaries, so they remain available from the review
+list after navigation, reload, or restart without being called completed
+reviews. The saved result shows the safe facts needed for a decision, including
+image dimensions, document size, or automated-check totals, passes, failures,
+timeouts, and checks not run. Empty or adverse results are never shown as a
+pass, and the same file cannot be submitted again until another intake is
+explicitly started. A failed refresh keeps the results already on screen and
+offers a retry instead of making saved work appear missing.
 
 ## Local CLI
 
@@ -212,8 +229,17 @@ npm run verification:focused
 npm run verification:core
 npm run verification:browser
 npm run verification:release
+npm run verification:release:evidence
+npm run verification:ci-proof:import
 ./tools/check_ci_status.sh --required --commit "$(git rev-parse HEAD)"
 ```
+
+`verification:release` runs the complete configured local gate but does not
+change Dashboard authority. On a clean synchronized commit,
+`verification:release:evidence` runs that same configured profile and records
+one exact-revision local evidence batch. After the matching GitHub Actions run
+passes, `verification:ci-proof:import` separately authenticates and imports its
+proof. Neither command triggers CI or publishes a package.
 
 MCP profiles are launch-time adapter profiles:
 

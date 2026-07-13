@@ -606,6 +606,9 @@ export function classifyPlaywrightTestSummary(summary = {}) {
   if ((summary.failed_count ?? 0) > 0 || (summary.timed_out_count ?? 0) > 0) {
     return 'failed';
   }
+  if ((summary.total_count ?? 0) > 0 && (summary.passed_count ?? 0) === 0) {
+    return 'empty';
+  }
   if ((summary.total_count ?? 0) > 0) {
     return 'passed';
   }

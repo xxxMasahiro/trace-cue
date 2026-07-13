@@ -311,14 +311,19 @@ Security tests block unapproved use of persistent browser profiles, storageState
   archived by content digest, never treated as current PASS, and never used to
   suppress missing current required evidence. Parent compatibility checks are
   read-only and cannot edit parent files or weaken parent rejection rules.
-- Cached, v2.0, missing-required, cross-context detail, and manually weakened
-  requirement or expiry fields cannot satisfy v2.1 authority. Contextual rows
-  stay non-required until a dedicated applicability observer proves otherwise.
+- Cached, v2.0, v2.1, missing-required, cross-context detail, standalone,
+  partial, mixed-batch, and manually weakened requirement or expiry fields
+  cannot satisfy v2.2 authority. Contextual rows stay non-required until a
+  dedicated applicability observer proves otherwise.
 - Package work uses marked per-run temporary directories and removes them on
   success and failure. Tar inspection rejects traversal, duplicate paths,
   symlinks, hardlinks, unsupported types, invalid checksums, trailing content,
   manifest changes, digest changes, wrong run, wrong revision, wrong package,
   or wrong producer toolchain.
+- Dry-run and real npm pack JSON use the same fixed-argv, shell-free, bounded
+  file capture. Empty, replaced, short-read, changed, multiply linked, or
+  oversized output fails before JSON is trusted; child stdout is not accumulated
+  without a bound.
 - Playwright cross-run cache scope is browser binaries only. Its key is an exact
   OS, architecture, lockfile, and browser-revision identity with no prefix
   restore. Cache hit never skips browser execution and never stores profiles,
@@ -327,11 +332,111 @@ Security tests block unapproved use of persistent browser profiles, storageState
   below `.git`. Per-attempt receipts are atomic authorities; derived indexes are
   rebuilt under an owner/nonce lock. A live owner lock is never broken by age
   alone. Manual and dirty success cannot be authoritative.
+- Active receipt and release-batch count/byte ingress is policy bounded.
+  Retention validates directory identity and exact file sets before atomically
+  moving superseded records to a separately marked inactive archive. Archived
+  history is non-authoritative and not automatically deleted; its total disk
+  usage is not represented as bounded authority storage.
+- Concurrent evidence writers may skip a redundant locked rebuild only after a
+  bounded, no-follow, stable-descriptor ledger read proves the exact receipt
+  event is already projected. Ledger presence is only a coalescing signal and
+  never replaces receipt integrity or full deterministic rebuild authority.
 - CI artifacts are same-run transport only, short-lived, revision-bound, and
   content-digest verified. They are not external publication, cannot cross
   workflow runs, and cannot replace consumer tests. The final proof contains
   public run metadata and digests only, never raw logs, environment dumps,
   credentials, URLs, or absolute paths.
-- Remote status inspection derives repository identity from `origin`, requires
-  an exact full commit, reads GitHub Actions status through authenticated `gh`,
+- Remote status inspection derives repository identity from the policy-selected
+  remote, rejects hosts outside the policy allowlist, requires an exact full
+  commit, reads GitHub Actions status through authenticated `gh`,
   and performs no rerun, cancel, dispatch, comment, upload, or repository write.
+
+## Control Center Goal Completion Security
+
+- Control Center private stores are fixed namespaces beneath the selected
+  workspace. They reject symlinked components, non-regular or multiply linked
+  records, realpath escape, oversized pre-read state, replacement races, and
+  unowned directories. Directories use 0700 and files use 0600.
+- A store ownership marker may be created only by the process that atomically
+  created the root. Existing markerless or foreign roots are never adopted or
+  cleaned, and projection-only reads never create a root, marker, or child
+  directory.
+- Read-transition-write state changes hold an owner/nonce cross-process lock
+  and enforce an operation revision. Process liveness and owner identity are
+  checked before recovery; elapsed time alone never breaks a live lock. If a
+  coordinated release transition exhausts its bounded window, only the same
+  unchanged nonce, pid, and process identity may remove the logical lock;
+  changed or unsafe ownership fails closed.
+- Completed Control Center history is never automatically deleted. A bounded
+  active set may move older records into private deterministic hash shards, but
+  direct id reads continue through inactive history. Archival holds the same
+  per-record lock as publication/update and revalidates state, id, revision, and
+  timestamp before moving an active copy, preventing stale-snapshot deletion.
+- History retention is deferred, coalesced maintenance outside the primary
+  operation or intake transaction. Retention lock contention and archive errors
+  cannot change a durable action result, delay confirmed external dispatch, or
+  rewrite a completed receipt as failed; a later maintenance request may retry.
+- Intake expiry cleanup may release source bytes and abandoned unfinished
+  receipts, but it never removes a completed receipt. Completed receipt/result
+  history remains marker-owned and manual-retention-only.
+- File intake uses unpredictable opaque ids, exclusive streaming temporary
+  files, per-kind and total quotas, request timeout, media signature and image
+  dimension checks, strict UTF-8/NUL rejection, content digests, expiry, and
+  marker-owned cleanup. There is no raw-file read API or browser path input.
+- Intake capacity includes unexpired staged and live processing receipts plus
+  active reservations; moving a receipt into processing does not release quota.
+- Active result capacity includes both published results and live publication
+  reservations. A token identifies one completion owner, its lease is renewed
+  during long processing, and another process requesting the same opaque id may
+  only wait for or read the owner's result. It cannot invoke the engine or free
+  the slot. A different id remains closed at the configured bound, including
+  while the bound is one; safe turnover archives the previous result first.
+- Completed active or archived ids bypass new-result admission. Publication is
+  committed only when result digest, source release, and completed receipt agree.
+  Once the per-id lock proves no worker remains, processing without a valid
+  pending pair is failed closed, its safe invalid result and owner reservation
+  are removed, and the UI is told not to repeat that engine execution.
+- Intake result projection retains source classification plus bounded failure,
+  timeout, and skipped counts so the UI cannot convert missing or adverse
+  evidence into a successful review. A completed opaque receipt remains
+  one-use even if a client attempts to repeat submission; the React surface also
+  removes the original submit action until the user explicitly starts another
+  intake.
+- Every mutation, including upload, requires the exact active Control Center
+  Origin and a random per-server CSRF token held only in memory. Missing,
+  foreign, stale, or mismatched tokens and Origins fail closed. Vite and
+  production share this route contract.
+- Static files are package-relative, size bounded, regular, non-symlink, and
+  realpath confined. Responses use no-store, CSP, frame denial, MIME sniffing
+  denial, and strict referrer policy.
+- Static assets, stored records, and advisory results are inspected and read
+  through the same no-follow descriptor with a strict byte bound and final
+  identity/size/time recheck. Path validation followed by an unrelated path
+  read is not sufficient authority.
+- The ordinary AI projection never exposes provider/model/endpoint details,
+  credential names or values, fingerprints, hashes, raw provider responses,
+  absolute paths, or raw uploaded content. Readiness performs no network call.
+- Confirmation binds immutable input, disclosure classes, service identity,
+  and a non-secret destination fingerprint. Dispatch rechecks the fingerprint.
+  Only an explicit structured all-false transfer boundary proves a pre-send
+  failure. A runner exception, missing/partial boundary, or possible
+  post-transmission failure is `dispatch_unknown` unless verified provider
+  idempotency proves a safe retry.
+- Dashboard, status, list, and saved-result GET requests are projection-only.
+  Interrupted-state recovery is an exact-Origin and CSRF-protected POST, and a
+  verified pre-send failure cannot be mislabeled as an uncertain dispatch.
+- In-process background-task membership, not pid liveness alone, determines
+  whether locally owned preparing or dispatching work is still active. A task
+  that ended before its final save may be recovered without a server restart;
+  a different live process owner remains protected.
+- The launcher accepts no caller-defined executable or command. Platform
+  adapters use fixed argv and `shell: false`; tests inject an opener and CI
+  never starts a desktop application.
+- Release evidence is authoritative only as a clean unchanged exact-HEAD batch.
+  Source receipts cannot be combined across batches. Remote CI proof is a
+  separate validated artifact and never substitutes for local release checks.
+- CI proof download is authenticated and read-only. The importer requires an
+  exact repository, workflow, run, attempt, successful conclusion, unique
+  unexpired artifact, and clean local HEAD/tree match, then parses only a
+  bounded non-encrypted regular-file ZIP entry with safe path, size, duplicate,
+  and CRC checks before rebuilding the expected proof locally.

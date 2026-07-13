@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/control-center-intake.schema.json",
+  "title": "TraceCue Control Center Intake Projection",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["schema_version", "type", "id", "source_kind", "label", "bytes", "expires_at", "storage_path_included", "original_file_name_included"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" },
+        "type": { "const": "control_center_intake_receipt" },
+        "id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "source_kind": { "enum": ["image", "document_text", "playwright_result"] },
+        "label": { "type": "string" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "storage_path_included": { "const": false },
+        "original_file_name_included": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["schema_version", "type", "id", "label", "source_kind", "outcome", "completed_at", "external_ai_review_completed", "summary"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" },
+        "type": { "const": "control_center_intake_result" },
+        "id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "label": { "type": "string", "minLength": 1 },
+        "source_kind": { "enum": ["image", "document_text", "playwright_result"] },
+        "outcome": { "enum": ["image_evidence_ready", "review_proposal_ready", "test_evidence_ready"] },
+        "completed_at": { "type": "string", "format": "date-time" },
+        "external_ai_review_completed": { "const": false },
+        "review_goal": { "type": "string", "minLength": 1 },
+        "review_method": { "enum": ["standard", "deep", "xhigh"] },
+        "summary": { "type": "object" }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

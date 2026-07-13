@@ -7,6 +7,11 @@ source "$SCRIPT_DIR/lib/product_common.sh"
 
 ROOT="$(product_repo_root)"
 failed=0
+workflow_path="$(node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(p.evidence_policy.ci_proof_workflow_path);' "$ROOT/ops/VERIFICATION_EXECUTION_POLICY.json")"
+[[ "$workflow_path" =~ ^[A-Za-z0-9._/-]+\.ya?ml$ && "$workflow_path" != /* && "/$workflow_path/" != *"/../"* ]] || {
+  printf 'Configured workflow path is unsafe: %s\n' "$workflow_path" >&2
+  exit 1
+}
 
 require_nonempty() {
   product_require_nonempty_file "$ROOT" "$1" || failed=1
@@ -26,10 +31,10 @@ for rel in \
   .codex-plugin/plugin.json \
   .githooks/pre-push \
   .mcp.json \
-  .github/workflows/ci.yml \
   package.json \
   package-lock.json \
   bin/trace-cue.js \
+  bin/trace-cue-control-center.js \
   bin/trace-cue-mcp.js \
   bin/browser-debug.js \
   bin/browser-debug-mcp.js \
@@ -64,6 +69,8 @@ for rel in \
   schemas/playwright-test-local-run-plan.schema.json \
   schemas/playwright-test-result.schema.json \
   schemas/e2e-result-review-material.schema.json \
+  schemas/control-center-intake.schema.json \
+  schemas/verification-release-evidence-batch.schema.json \
   schemas/mcp-tool.schema.json \
   schemas/review.schema.json \
   schemas/target-manifest.schema.json \
@@ -72,6 +79,12 @@ for rel in \
   schemas/visual-review-execution.schema.json \
   schemas/visual-review-result.schema.json \
   src/api.js \
+  src/safe-local-store.js \
+  src/control-center-agentic-review-config.js \
+  src/control-center-ai-readiness.js \
+  src/control-center-intake.js \
+  src/control-center-launcher.js \
+  src/control-center-server.js \
   src/agentic-human-review.js \
   src/agentic-human-review-providers.js \
   src/capture-handoff.js \
@@ -118,6 +131,9 @@ for rel in \
 	  tests/development-workflow.test.js \
   tests/document-sync.test.js \
 	  tests/package-artifact.test.js \
+	  tests/ci-proof-import.test.js \
+	  tests/control-center-goal-completion.test.js \
+	  tests/fixtures/safe-store-lock-worker.mjs \
 	  tests/verification-ci.test.js \
 	  tests/verification-evidence.test.js \
 	  tests/verification-orchestration.test.js \
@@ -173,6 +189,7 @@ for rel in \
   tools/check_product_design_system.sh \
   tools/check_development_workflow.mjs \
   tools/check_document_sync.mjs \
+	  tools/check_git_sync.mjs \
 	  tools/check_verification_ci.mjs \
 	  tools/check_ci_status.sh \
   tools/install-git-hooks \
@@ -180,14 +197,19 @@ for rel in \
 	  tools/verification.mjs \
 	  tools/lib/development-workflow.mjs \
 	  tools/lib/document-sync.mjs \
+	  tools/lib/ci-proof-import.mjs \
+	  tools/lib/github-repository-identity.mjs \
 	  tools/lib/package-artifact.mjs \
 	  tools/lib/product-gate-evidence.mjs \
+	  tools/lib/safe-zip.mjs \
 	  tools/lib/verification-ci.mjs \
 	  tools/lib/verification-orchestration.mjs \
   tools/lib/product_common.sh \
   tools/lib/product_gate_evidence.sh; do
   require_nonempty "$rel"
 done
+
+require_nonempty "$workflow_path"
 
 for rel in .codex-plugin .githooks .github .github/workflows bin schemas src templates tests docs/product docs/workflow docs/design-system docs/memory ops skills tools; do
   require_dir "$rel"

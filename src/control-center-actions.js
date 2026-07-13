@@ -282,7 +282,8 @@ export async function runControlCenterSourceIntakeProposal(input = {}, context =
     'content-evidence': validation.value.content_evidence_file,
     'review-index': validation.value.review_index_file,
     'target-audience': validation.value.target_audience,
-    'expected-impression': validation.value.expected_impression
+    'expected-impression': validation.value.expected_impression,
+    'artifact-root': input.artifact_root ?? input.artifactRoot
   };
   const result = await runAgenticHumanReviewPropose(compactObject(options), context);
   if (result.status !== 'ok') {

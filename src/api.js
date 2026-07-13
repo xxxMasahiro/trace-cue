@@ -310,6 +310,9 @@ export {
   runControlCenterAgenticReviewDecision,
   runControlCenterAgenticReviewList,
   runControlCenterAgenticReviewPrepare,
+  runControlCenterAgenticReviewRecover,
+  runControlCenterAgenticReviewResume,
+  runControlCenterAgenticReviewCancel,
   runControlCenterAgenticReviewRepeat,
   runControlCenterAgenticReviewStart,
   runControlCenterAgenticReviewStatus
@@ -327,10 +330,34 @@ export {
 } from './control-center-settings.js';
 export {
   createControlCenterServer,
+  handleControlCenterRequest,
   resolveControlCenterServerConfig,
   runControlCenterServe,
   startControlCenterServer
 } from './control-center-server.js';
+export {
+  openControlCenterUrl,
+  runControlCenterLaunch
+} from './control-center-launcher.js';
+export {
+  buildControlCenterAiReadiness,
+  buildControlCenterAiDestinationFingerprint
+} from './control-center-ai-readiness.js';
+export {
+  CONTROL_CENTER_INTAKE_KINDS,
+  CONTROL_CENTER_INTAKE_TTL_MS,
+  CONTROL_CENTER_INTAKE_TOTAL_BYTES,
+  CONTROL_CENTER_INTAKE_MAX_ENTRIES,
+  CONTROL_CENTER_INTAKE_UPLOAD_ENDPOINT,
+  CONTROL_CENTER_INTAKE_COMPLETE_ENDPOINT,
+  CONTROL_CENTER_INTAKE_RESULTS_ENDPOINT,
+  CONTROL_CENTER_INTAKE_RESULT_ENDPOINT,
+  stageControlCenterIntake,
+  completeControlCenterIntake,
+  listControlCenterIntakeResults,
+  getControlCenterIntakeResult,
+  recoverPendingControlCenterIntakePublications
+} from './control-center-intake.js';
 export {
   DASHBOARD_SETTINGS_PATH,
   IMPLEMENTED_TRANSLATION_MODES,

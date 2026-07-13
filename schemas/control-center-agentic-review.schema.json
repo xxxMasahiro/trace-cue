@@ -29,7 +29,8 @@
         "validating",
         "completed",
         "failed",
-        "dispatch_unknown"
+        "dispatch_unknown",
+        "cancelled"
       ]
     },
     "stage": { "enum": ["prepare", "review", "decide", "recheck", "complete"] },
@@ -45,6 +46,7 @@
     "result": { "type": ["object", "null"] },
     "decisions": { "type": "array" },
     "dispatch": { "type": "object" },
+    "recovery": { "type": "object" },
     "error": { "type": ["object", "null"] },
     "created_at": { "type": "string" },
     "updated_at": { "type": "string" },

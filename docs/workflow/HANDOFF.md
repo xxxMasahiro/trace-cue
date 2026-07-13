@@ -393,7 +393,7 @@ This file is paired with `docs/workflow/TASK_TRACKER.md`. Keep the HANDOFF and T
 - Phase 34 keeps packaged `.mcp.json` as stdio compatibility and keeps HTTP `full` or `admin`, socket transport, remote HTTP listeners, package generation, ingest, report writing, workflow creation, cleanup execution, shell tools, external upload, profile reuse, credential handling, and gate mutation unimplemented; approved execution remains stdio `admin` agent execution plan/run only.
 - No arbitrary source-data file or URL loader was added; external references remain ignored advisory signals until a separately approved loader design exists.
 - Model/API review outside the Phase 29 agent execution adapter boundary, evidence leaving the local process beyond the bounded package/prompt disclosure policy, socket MCP transport, remote HTTP MCP listener, HTTP `full` or `admin`, persistent browser profile reuse, authentication automation, external upload, arbitrary shell execution, automatic cleanup, cleanup outside the configured artifact root, host memory-cache mutation, swap configuration, MCP cleanup execution, privileged helper execution, arbitrary process control, npm publication, package naming, and license changes remain approval-bound.
-- The control-center browser surface is implemented as a React + Vite app under `control-center/`, with `control-center status --json` as the read model and `control-center serve` as the loopback built-asset/API server. The UI imports `docs/design-system/tokens.json` and `docs/design-system/components.json` for presentation control. The ordinary Settings page now matches the accepted prototype with a 760px narrow layout, system/Noto Sans JP typography, divider-based display-language and concise Playwright Test mode rows, and one save action; technical locale/persistence/diagnostic/regression/CI/trust displays are omitted there. The dashboard API remains GET-only, Host/Origin validated, and no-store. The approved browser actions are confirmed local source-intake proposal creation, fixed-path display-language persistence, Playwright Test mode selection, workspace-confined Playwright Test result import, approved external-CI settings, and explicitly confirmed read-only existing CI artifact fetch; there is still no MCP JSON-RPC, provider execution, browser auto-launch, Control Center local-run button, shell execution, raw artifact serving, external upload, CI trigger/rerun/cancel, or gate mutation.
+- The control-center browser surface is implemented as a React + Vite app under `control-center/`, with `control-center status --json` as the read model and `control-center serve` as the loopback built-asset/API server. The UI imports `docs/design-system/tokens.json` and `docs/design-system/components.json` for presentation control. The ordinary Settings page now matches the accepted prototype with a 760px narrow layout, system/Noto Sans JP typography, divider-based display-language and plain-language automated-check rows, and one save action; Playwright/CI implementation names and technical locale/persistence/diagnostic/regression/trust displays are omitted there. The dashboard API remains GET-only, Host/Origin validated, and no-store. The approved browser actions are confirmed local source-intake proposal creation, fixed-path display-language persistence, Playwright Test mode selection, workspace-confined Playwright Test result import, approved external-CI settings, and explicitly confirmed read-only existing CI artifact fetch; there is still no MCP JSON-RPC, provider execution, browser auto-launch, Control Center local-run button, shell execution, raw artifact serving, external upload, CI trigger/rerun/cancel, or gate mutation.
 
 ## Next Step
 
@@ -531,3 +531,63 @@ Node 22, Browser smoke, and Repository contracts.
 
 Next step: record product evidence for the final closure revision and confirm
 the parent read-only authority result. No parent or FrameCue edit is required.
+
+## Active Work: Control Center Goal Completion
+
+The user approved autonomous TraceCue-only implementation of Phase 168-176.
+Gate A and Gate B were reviewed independently for architecture, security, and
+UI/verification. The consolidated plan adds package-relative one-action launch,
+one typed New Review entry, redacted AI readiness, truthful state recovery, and
+one-batch exact-HEAD evidence refresh. Approval stops are waived for this run;
+all safety, documentation, verification, and final review obligations remain.
+
+Input outcomes are intentionally distinct. URL retains full browser review;
+image retains metadata/evidence review; UTF-8 text prepares a local proposal;
+Playwright JSON/JUnit imports and summarizes test evidence. Raw PDF/DOCX, OCR,
+browser execution, remote CI control, uncertain provider retry/cancellation,
+native signed installers, auto-update, and OS keychain integration remain
+deferred. Arbitrary paths, generic command execution, browser credential
+fields, technical provider controls, raw upload serving, and edits to FrameCue
+or the parent repository are prohibited.
+
+The original approved production mock was archived under
+`docs/design-system/mockups/control-center/archive/phase-155/`, and the complete
+pre-closure Phase 168 mock is preserved under `archive/phase-168/`. The active
+mock and React UI now distinguish prepared, passing, failed, timed-out, and empty
+saved results; prevent same-form duplicate file submission; retain visible
+mobile status text; and expose current/selected/RTL semantics. Completion still
+requires the current mock and React production UI to agree,
+all rejection and browser checks to pass, an independent post-implementation
+review, a clean committed/pushed exact HEAD, successful main CI, synchronized
+local/remote refs, and fresh authority evidence for that final revision.
+
+The final local concurrency pass now bounds active intake-result publication
+and operation admission. One token-owning request renews the intake lease and is
+the only request that may execute the engine; same-id requests only wait for or
+read its result, completed active/history ids bypass new admission, and a
+one-slot configuration archives the prior result before accepting the next.
+Valid pending publication finalizes once after interruption, while missing or
+invalid pending state becomes non-retryable and releases its safe result,
+source quota, and publication reservation. Same-process operation work is
+recoverable when its in-memory task ended, transient history moves use bounded
+re-read, and the safe store releases only its exact unchanged owner lock after
+a transition-release timeout. Focused Control Center tests and the 356-test
+repository suite passed before final browser, package, release, CI, and
+authority closure. The final synchronized state then passed 357 no-browser
+tests, 16 Playwright browser tests, production build, mock verification, package
+dry-run (285 files), packed-install smoke, and `product-gate`. TraceCue self-
+review found zero findings, failed requests, console errors, overlap, clipping,
+or horizontal overflow on desktop New Review
+`review-2026-07-13T17-09-09-599Z-64cab64b` and mobile Confirmation
+`review-2026-07-13T17-09-30-837Z-d8997383`.
+
+Post-review authority hardening is implemented in TraceCue only. Verification
+arguments now fail closed by command; `npm run verification:release:evidence`
+resolves and records the configured complete local profile, while
+`npm run verification:ci-proof:import` separately authenticates remote proof.
+Remote, workflow, profile, and GitHub hostname allowlists are policy-owned.
+Active receipt and batch storage is bounded and keeps semantic current evidence;
+superseded immutable records move atomically to a non-authoritative inactive
+archive instead of being deleted. The inactive archive remains locally
+inspectable, is excluded from readiness, and has no automatic total-size or
+cleanup claim. Capacity recovery no longer reacquires a held evidence lock.

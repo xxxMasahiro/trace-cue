@@ -25,7 +25,7 @@
     {
       "id": "control-center-work-stage",
       "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "warning"],
-      "contract": ["Summarize 準備 (prepare), 確認 (review), 判断 (decide), 再確認 (recheck), and 完了 (complete) from current read-model truth only; never simulate progress, findings, recheck results, or completion."]
+      "contract": ["Summarize 準備 (prepare), 確認 (review), 判断 (decide), 再確認 (recheck), and 完了 (complete) from current website-review truth only; never attach the completion stepper to intake-only preparation, simulate progress, findings, recheck results, or completion, and expose the current stage with aria-current=step."]
     },
     {
       "id": "control-center-purpose-effort",
@@ -55,7 +55,7 @@
     {
       "id": "control-center-preference-settings",
       "tokens": ["background", "surface", "line", "foreground", "muted", "accent", "success"],
-      "contract": ["Use one continuous prototype-style form for display language, default review screen, concise Playwright Test mode, AI suggestions, and mandatory external-send confirmation, with one 設定を保存 action."]
+      "contract": ["Use one continuous prototype-style form for display language, default review screen, plain-language automated checks, AI suggestions, and mandatory external-send confirmation, with one 設定を保存 action."]
     },
     {
       "id": "control-center-success-feedback",
@@ -65,7 +65,27 @@
     {
       "id": "source-intake-form",
       "tokens": ["background", "surface", "line", "foreground", "muted", "accent"],
-      "contract": ["Collect only the source text path, source type, review goal, review depth, optional context, and explicit local-write confirmation."]
+      "contract": ["Offer one New review form for website, image, document, and saved browser-check result; use the prototype one-line purpose input, keep desktop footer actions grouped at the inline end, use URL input or the browser file picker/drag-and-drop, hide original file names after selection, and never accept arbitrary local paths."]
+    },
+    {
+      "id": "control-center-saved-result",
+      "tokens": ["surface", "line", "foreground", "muted", "success", "warning", "danger"],
+      "contract": ["Show safe source-specific image, document, or automated-check facts; distinguish prepared evidence from completed review; retain total, pass, fail, timeout, and skipped counts; use danger for failure or timeout, warning for missing or empty evidence, and success only for a nonempty passing result; prevent same-form resubmission after success; retain existing results with one retry action when refresh fails; keep text status visible on mobile; sort all review types newest first; format dates in the selected locale; and mirror directional symbols in RTL."]
+    },
+    {
+      "id": "control-center-ai-readiness",
+      "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "warning"],
+      "contract": ["Show only AI suggestions available, setup needed, or unavailable with a user-facing service name and next action; keep provider, model, endpoint, credentials, hashes, and fingerprints out of ordinary UI, and offer a clear continue-without-AI choice."]
+    },
+    {
+      "id": "control-center-recovery",
+      "tokens": ["surface", "line", "foreground", "muted", "accent", "warning", "danger"],
+      "contract": ["Explain the truthful saved state and expose only the recovery action that is safe for that state; uncertain external dispatch offers status checking and never an automatic or duplicate retry."]
+    },
+    {
+      "id": "control-center-launch",
+      "tokens": ["background", "surface", "foreground", "muted", "accent"],
+      "contract": ["Open the packaged local Control Center with no build step, reuse one healthy workspace instance, and show the loopback URL when the operating system cannot open a browser."]
     },
     {
       "id": "source-validation-message",

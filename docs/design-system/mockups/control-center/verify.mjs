@@ -14,8 +14,27 @@ try {
   await assert.doesNotReject(() => page.getByRole('heading', { name: '新しく確認' }).waitFor());
   assert.equal(await page.getByRole('textbox', { name: 'WebサイトのURL' }).count(), 1);
   assert.equal(await page.getByRole('textbox', { name: '特に何を確かめますか' }).count(), 1);
+  assert.equal(await page.locator('input[name="source"]').count(), 4);
+  assert.equal(await page.locator('input[name="source"]:checked').getAttribute('value'), 'website');
   assert.equal(await page.locator('input[name="method"]').count(), 3);
   assert.equal(await page.locator('input[name="method"]:checked').getAttribute('value'), 'standard');
+
+  await page.locator('input[name="source"][value="document_text"]').check();
+  assert.equal(await page.locator('input[name="source"]:checked').getAttribute('value'), 'document_text');
+  assert.equal(await page.getByRole('textbox', { name: 'WebサイトのURL' }).count(), 0);
+  assert.equal(await page.getByLabel('確認するファイル').count(), 1);
+  assert.equal(await page.getByRole('textbox', { name: '特に何を確かめますか' }).count(), 1);
+  assert.equal(await page.locator('input[name="method"]').count(), 3);
+  assert.equal(await page.locator('.stepper').count(), 0);
+  await page.locator('input[name="source"][value="image"]').check();
+  assert.equal(await page.getByRole('textbox', { name: '特に何を確かめますか' }).count(), 0);
+  assert.equal(await page.locator('input[name="method"]').count(), 0);
+  await page.locator('input[name="source"][value="playwright_result"]').check();
+  assert.equal(await page.getByRole('textbox', { name: '特に何を確かめますか' }).count(), 0);
+  assert.equal(await page.locator('input[name="method"]').count(), 0);
+  await page.locator('input[name="source"][value="website"]').check();
+  assert.equal(await page.locator('input[name="source"]:checked').getAttribute('value'), 'website');
+  assert.equal(await page.locator('.stepper .is-current').getAttribute('aria-current'), 'step');
 
   await page.getByText('改善点を詳しく洗い出したい', { exact: true }).click();
   assert.equal(await page.locator('input[name="method"]:checked').getAttribute('value'), 'deep');
@@ -66,6 +85,29 @@ try {
   assert.equal(hasHorizontalOverflow, false);
   assert.equal(await mobile.locator('.mobile-nav').isVisible(), true);
   await mobile.close();
+
+  const recovery = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  await recovery.goto(`${entry}?screen=recovery`);
+  await recovery.getByTestId('mock-recovery').waitFor();
+  assert.equal(await recovery.getByRole('heading', { name: '確認の準備が中断しました' }).count(), 1);
+  assert.equal(await recovery.getByRole('button', { name: '準備を再開' }).count(), 1);
+  await recovery.close();
+
+  const intakeResult = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  await intakeResult.goto(`${entry}?screen=intake-result`);
+  await intakeResult.getByTestId('mock-intake-result').waitFor();
+  await intakeResult.getByRole('alert').getByText('通らなかった自動確認があります').waitFor();
+  assert.match(await intakeResult.locator('.result-facts').innerText(), /時間切れの件数\s*1/);
+  assert.equal(await intakeResult.locator('.stepper').count(), 0);
+  await intakeResult.close();
+
+  const mobileHome = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await mobileHome.goto(`${entry}?screen=home`);
+  const mobileAttention = mobileHome.locator('.review-row').filter({ hasText: '自動テスト結果' }).locator('.status');
+  await mobileAttention.waitFor();
+  assert.equal(await mobileAttention.isVisible(), true);
+  assert.equal(await mobileAttention.innerText(), '対応が必要');
+  await mobileHome.close();
 
   console.log('Control Center mock interaction and responsive checks passed.');
 } finally {

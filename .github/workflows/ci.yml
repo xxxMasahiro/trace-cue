@@ -29,11 +29,16 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 20
+          cache: npm
+
+      - name: Install contract dependencies
+        run: npm ci
 
       - name: Check verification policy
         run: npm run verification:check
@@ -94,6 +99,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -117,6 +124,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -129,6 +138,9 @@ jobs:
 
       - name: Check rename readiness
         run: npm run test:rename-readiness
+
+      - name: Build browser UI once for the package artifact
+        run: npm run control-center:build
 
       - name: Verify package file set
         run: npm run test:pack
@@ -168,6 +180,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -197,11 +211,14 @@ jobs:
 
   browser-smoke:
     name: Browser smoke
+    needs: package-producer
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -232,8 +249,25 @@ jobs:
           fi
           "$executable" --version
 
-      - name: Build browser UI
-        run: npm run control-center:build
+      - name: Download same-run package artifact
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: package-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/package-artifact
+
+      - name: Materialize the verified browser UI from the package
+        run: |
+          node ./tools/pack-install-smoke.mjs materialize \
+            --artifact-dir "$RUNNER_TEMP/package-artifact" \
+            --manifest-digest "${{ needs.package-producer.outputs.manifest-digest }}" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --job-id browser-smoke \
+            --producer-job-id package-producer \
+            --producer-toolchain-digest "${{ needs.package-producer.outputs.producer-toolchain-digest }}" \
+            --archive-subtree dist/control-center \
+            --destination dist/control-center \
+            --required-file index.html
 
       - name: Run browser smoke tests without rebuilding
         run: npm run test:browser:run
@@ -252,6 +286,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v5

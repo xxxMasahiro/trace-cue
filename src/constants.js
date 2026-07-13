@@ -30,6 +30,7 @@ export const PLANNED_COMMANDS = Object.freeze([
   'resource artifacts cleanup',
   'control-center status',
   'control-center serve',
+  'control-center launch',
   'agent surfaces list',
   'agent requests list',
   'agent requests show',

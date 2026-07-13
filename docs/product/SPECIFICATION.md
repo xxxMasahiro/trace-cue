@@ -933,13 +933,13 @@ then pins all safety fields to their non-executing values. Writes are serialized
 per workspace, size bounded, confined to a regular non-symlink file, written to
 a mode-0600 temporary file, and atomically renamed into place.
 
-Display language, ordinary Control Center preferences, Playwright Test mode,
+Display language, ordinary Control Center preferences, automated-check mode,
 and approved external-CI fetch policy all use this store. The React Settings
 form submits one combined payload so validation completes before one file
 replacement. Legacy dedicated setting endpoints remain compatible and use
 serialized read-modify-write updates so unrelated local branches survive.
 
-The React surface lives under `control-center/`. It imports the product-local design-system JSON from `docs/design-system/`, maps those tokens to CSS custom properties, and uses the same read model that the CLI emits. The ordinary UI has three destinations: Confirm, In progress, and Settings. New review accepts a web URL, a plain-language purpose, and one of three purpose-led review choices. Settings combines display language, default viewport, Playwright Test mode, AI suggestions, and mandatory send confirmation behind one save action. Provider/model/credential and technical artifact controls are not ordinary UI.
+The React surface lives under `control-center/`. It imports the product-local design-system JSON from `docs/design-system/`, maps those tokens to CSS custom properties, and uses the same read model that the CLI emits. The ordinary UI has three destinations: Confirm, In progress, and Settings. New review accepts a web URL, a plain-language purpose, and one of three purpose-led review choices. Settings combines display language, default viewport, a plain-language automated-check choice, AI suggestions, and mandatory send confirmation behind one save action. Playwright and CI remain implementation details rather than ordinary setting labels; provider/model/credential and technical artifact controls are not ordinary UI.
 
 The browser surface is intentionally not a landing page, generic command launcher, schema browser, provider console, artifact browser, or raw JSON viewer. It is an execution plane only for its dedicated page-review operation contract. Shell, cleanup, MCP write/execute, credential entry, arbitrary provider authority, raw artifact serving, CI mutation, and gate-affecting authority remain excluded.
 
@@ -1039,9 +1039,10 @@ configuration, and uninstalls only its own setting. It performs no fetch,
 network call, credential read, artifact write, browser action, provider call,
 MCP action, or external evidence transfer.
 
-The CI `repository-contracts` job alone uses `fetch-depth: 0`. It runs the
-lightweight repository contract checks and evaluates event-specific base/head
-SHAs. Existing Node and browser jobs retain their current responsibility.
+The CI `repository-contracts` job alone uses `fetch-depth: 0`. It installs the
+lockfile-pinned parser dependency, runs bounded contract-only checks, and
+evaluates event-specific base/head SHAs. Existing Node and browser jobs retain
+their current responsibility.
 
 ## Development Workflow Contract
 
@@ -1070,10 +1071,11 @@ effort claim. This repository contract verifies the policy and report fields;
 it cannot authenticate conversation events or runtime settings that the host
 does not provide.
 
-The existing `repository-contracts` job runs the current-policy check and its
-focused rejection tests. Existing Node jobs execute no-browser regressions and
-the existing browser job executes browser smoke. The policy maps those checks
-without rerunning them in the lightweight job.
+The existing `repository-contracts` job runs the current-policy check, focused
+rejection tests, and parsed-YAML CI composition checks after `npm ci`. Existing
+Node jobs execute no-browser regressions and the existing browser job executes
+browser smoke. The policy maps those checks without rerunning them in the
+contract-only job.
 
 ## Verification Orchestration Specification
 
@@ -1084,7 +1086,14 @@ execution-instance identities. `tools/lib/verification-orchestration.mjs`
 validates that authority, expands dependencies, rejects duplicate providers and
 unsafe argv, evaluates conservative changed-path unions, schedules bounded work,
 terminates process groups, compares tracked worktree state, and creates CI proof
-metadata. `tools/verification.mjs` is the plan, run, and proof adapter.
+metadata. Scheduling scans past declaration-order consumers whose dependencies
+are still pending, so a later producer can run before an earlier serial
+consumer. `tools/verification.mjs` is the plan, run, and proof adapter.
+Its parser uses a command-specific allowlist, rejects unknown, duplicate,
+missing-value, conflicting, and inapplicable arguments before execution, and
+provides stable `release`, `release-evidence`, and `import-ci-proof` operations.
+The npm entrypoints resolve the release profile from policy, so renaming a
+profile does not require a script change.
 
 The CI graph has `repository-contracts`, Node 20/22 runtime instances, one
 package producer, Node 20/22 package consumers, one browser owner, and
@@ -1094,22 +1103,58 @@ producer toolchain, package identity, file-list digest, tarball digest, and size
 Consumers validate these fields and then run the existing install smoke against
 the downloaded tarball without invoking `npm pack`.
 
-The browser owner installs dependencies, restores only the exact Playwright
-browser-binary cache key derived from OS, architecture, lockfile, and browser
-revision metadata, verifies or force-installs Chromium, builds the Control
-Center once, and invokes the build-free browser test command once. The final job
-uses `needs` results and emits a proof for the current run and checkout without
-executing product tests.
+The local npm dry-run and real package producer capture npm JSON through one
+shared fixed-argv helper into an exclusive mode-0600 regular file in the
+run-isolated package workspace. This keeps npm 11 output reliable under
+non-interactive parent pipes without shell redirection or unbounded in-memory
+stdout. The file must be nonempty, bounded, read completely through the same
+descriptor, unchanged after reading, and valid as exactly one package manifest
+before its file set can pass.
+The helper applies one combined byte budget to stdout and stderr, drains both
+streams, terminates the process group on overflow or timeout, and excludes raw
+child output from authority artifacts. Package input identity also includes a
+bounded digest of ignored-excluded untracked file contents, so changing a new
+source file without changing its path invalidates the producer manifest.
+
+The package producer builds the Control Center once before packing. The browser
+owner installs dependencies, restores only the exact Playwright browser-binary
+cache key derived from OS, architecture, lockfile, and browser revision
+metadata, verifies or force-installs Chromium, verifies the downloaded producer
+manifest and tarball, and materializes only the declared Control Center subtree
+before invoking the build-free browser test command once. Materialization is
+bounded and accepts regular files only; traversal, duplicates, links, special
+types, checksum failure, trailing content, and expansion excess fail closed.
+The final job uses `needs` results and emits a proof for the current run and
+checkout without executing product tests.
+
+CI verification parses the workflow with the repository-pinned YAML parser and
+validates required jobs, matrices, steps, and commands as structured data.
+Required owners reject job or step conditions, `continue-on-error`, job
+defaults, matrix include/exclude changes, uncontracted matrix dimensions,
+alternate shells, working-directory overrides, and shell control operators on
+policy-owned commands. Node 20 and 22 must remain actual execution instances,
+not merely strings elsewhere in the workflow source.
 
 Product-gate evidence version 2 stores atomic per-attempt receipts below `.git`.
-Individual receipts are authoritative; the TSV index and JSONL ledger are
-locked, deterministic, rebuildable projections. Status recomputes current
-repository and policy state. Manual records are always `manual_required`; dirty
-successful executions are advisory; stale, malformed, symlinked, or
+Schema v2.2 local authority is committed only through one complete release
+batch whose policy-owned tasks all passed against an unchanged clean full HEAD
+and tree. The batch binds the exact task/source receipt set, policy, graph,
+configuration, tools, inputs, commands, task results, and release artifact
+digest. Standalone, partial, focused, mixed-batch, manual, or dirty successes
+are not release authority. The TSV index and JSONL ledger remain locked,
+deterministic, rebuildable projections. Stale, malformed, symlinked, or
 secret-bearing records fail closed.
 
+After a receipt is committed, its writer acquires the derived-index lock. It
+may skip a redundant rebuild only when a bounded, no-follow, stable-descriptor
+read of the current ledger already contains that exact event id, which means a
+preceding locked rebuild incorporated the receipt. Otherwise it performs the
+full deterministic receipt-to-detail/index/ledger rebuild. This coalesces
+concurrent writers without turning a derived view into receipt authority.
+
 The Dashboard-facing `index.tsv` is the active compatibility projection and
-contains only the latest v2 receipt for each exact source and context. Its
+contains only the latest valid v2.2 batch receipt for each exact source and
+context. Its
 `observed_at` field is normalized to `YYYY-MM-DDTHH:MM:SSZ`, while the immutable
 receipt retains its original high-resolution event time. On the first rebuild
 that encounters pre-v2 short-HEAD rows, TraceCue writes the complete prior index
@@ -1117,11 +1162,12 @@ to `.git/product-gate-evidence/legacy/` under a content-digest filename and
 writes an atomic migration record. Rebuild then projects only v2 receipts, so
 legacy rows remain history but cannot re-enter current authority.
 
-New receipts use schema version 2.1 and bind every persisted authority,
-freshness, execution, and presentation field into the result digest. Version
-2.0 receipts remain readable as historical records but are always stale and
-cannot satisfy current readiness. Receipt reads recompute the attempt and result
-digests before use. Evidence
+New receipts use schema version 2.2 and bind every persisted authority,
+freshness, execution, presentation, and release-batch field into the result
+digest. Version 2.0 and 2.1 receipts remain readable as historical records but
+are always stale and cannot satisfy current readiness. Receipt reads recompute
+the attempt and result digests and validate committed batch membership before
+use. Evidence
 root and receipt directories must be real directories below the repository Git
 directory, never symlinks. Local aggregate status ignores stale optional rows
 but continues to reject stale required rows, failed or blocked required rows,
@@ -1133,6 +1179,19 @@ repository consumes only the fixed 13-column projection and independently
 rechecks its grammar, full HEAD, age, authority, required evidence, and current
 workflow context.
 
+The policy bounds only the active authority stores. During a locked rebuild,
+semantic winner receipts and their complete release batches are retained first;
+newer non-authoritative history fills remaining count and byte capacity.
+Superseded or expired complete/incomplete directories are identity-checked and
+atomically renamed into the marker-owned
+`.git/product-gate-evidence/inactive-archive-v1/` tree. Archived records are not
+scanned for readiness and cannot become authority, but remain locally
+inspectable. The inactive archive is intentionally not auto-deleted and has no
+claimed total-size guarantee; a future explicit export/compaction operation is
+separate work. Receipt admission and a complete release batch use one bounded
+transition while the batch holds the derived-index lock, so capacity recovery
+uses the already-held lock and cannot self-deadlock.
+
 Each source also projects a bounded `current-v2.json` under the existing
 source-scoped details directory. For a single active context, it contains only
 the common safe detail fields and uses the same event id, status, whole-second
@@ -1141,3 +1200,182 @@ no event id and uses a context-neutral explanation because the parent detail
 contract is source-scoped rather than context-scoped. Rebuild also projects a
 safe no-event detail for synthesized required `not_run` rows, preventing an old
 legacy explanation from being attached to missing current evidence.
+
+## Control Center Goal Completion Contract
+
+The production server accepts separate `workspaceRoot` and `assetRoot` values.
+The default asset root is resolved relative to the installed TraceCue module;
+it is never derived from the caller's current directory. A dedicated launcher
+owns browser opening with a fixed platform adapter, fixed argv, and
+`shell: false`. A workspace-scoped runtime receipt and lock permit reuse of a
+healthy instance while preventing concurrent ownership. The opener is
+replaceable only through an injected test dependency, not browser input. The
+runtime receipt and health response bind a protocol version, package version,
+and SHA-256 packaged-asset tree identity; a live incompatible server is never
+silently reused.
+
+Production and Vite use one API router. Every mutation requires an exact Origin
+matching the active loopback scheme, host, and port plus a random per-server
+CSRF token obtained from the same-origin dashboard bootstrap. The token exists
+only in memory and a request header. It is absent from URLs, bundles, files,
+logs, operation projections, and evidence. Static and stored-file access rejects
+symlinks, hardlinks where the platform reports multiple links, non-regular
+files, realpath escape, replacement races, and oversized reads. Inspection,
+bounded reading, digesting, and parsing use the same no-follow file descriptor;
+identity, size, and timestamps are rechecked before accepting the buffer.
+
+The intake contract has four source kinds: `url`, `image`, `document_text`, and
+`playwright_result`. URL is validated JSON and is not staged. File bodies are
+streamed to exclusive private temporary files and atomically committed beneath
+the approved intake namespace. Public receipts contain only an opaque id,
+source kind, safe display label, byte count, and expiry. Private receipts bind
+the content digest, validated media kind, byte count, disclosure classes, and
+operation revision. Execution rehashes the file and invalidates confirmation
+on any drift. Images are limited to PNG/JPEG/GIF/WebP with matching signatures
+and bounded dimensions; documents are NUL-free valid UTF-8 TXT/Markdown/JSON;
+Playwright input is JSON or JUnit XML accepted by the existing importer.
+
+File staging reserves item count and bytes under a cross-process quota lock
+before streaming and commits the file plus private receipt transactionally.
+The reservation calculation includes unexpired staged receipts, live
+processing receipts, and active reservations.
+Completion first resolves completed or pending state without consuming a new
+result slot. Only a staged source enters publication admission. Admission uses
+a global cross-process lock, a configurable active-result hard bound, and an
+owner/token reservation for the opaque id. The owner renews a bounded lease
+during processing and is the only request allowed to invoke the intake engine;
+another request for the same id waits on the per-id lock and may only return or
+finalize the same result. Another id cannot be admitted while reservations and
+active results fill the bound. A completed active or inactive-history id is an
+idempotent read and bypasses admission even when history is locked.
+
+The private schema-v1.1 receipt enters `processing` before engine execution but
+is not consumed at that point. The pathless result is written with its canonical
+digest, the private source is safely released, and only then does the receipt
+atomically publish `completed`, `result_sha256`, `source_released_at`, and the
+matching completion time. A valid pending receipt/result pair can be finalized
+without engine re-execution after response loss or restart. Once a waiter owns
+the free per-id lock, `processing` without a valid pending pair is no longer
+live work: it becomes non-retryable `failed`, its safe invalid result and
+publication reservation are removed, and later source/result admission may
+recover. Safe pathless result projections remain available through bounded
+list/open GET endpoints. Reads retry only a bounded transient active-to-history
+replacement window; persistent absence, corruption, or digest mismatch fails
+closed. Cleanup removes expired reservations, expired unfinished receipts,
+owned temporary files, and old unreferenced regular files without following
+links.
+
+Completed result history is not automatically deleted. The active list keeps a
+bounded newest-first set, while older immutable result and receipt records move
+under deterministic private hash shards in the same owned store. Direct lookup
+by opaque id checks active storage first and then inactive history. Publication
+releases its per-intake lock before history selection; history reacquires that
+same id lock, re-reads the result and completed receipt, and only then archives
+the active copies. A processing or changed record is skipped.
+Intake history maintenance is requested only after the result and completed
+receipt transaction is durable, then runs as coalesced best-effort maintenance.
+Its lock wait or failure is not part of the completion response and cannot
+rewrite a committed receipt as failed. Expiry cleanup removes abandoned staged,
+failed, or dead processing receipts and released source bytes, but a completed
+receipt remains with its result in active or inactive history until explicit
+artifact-root cleanup.
+
+Each private store atomically creates its own root before it may create the
+namespace/version ownership marker. An existing root without that valid marker
+is never adopted, chmodded, cleaned, or populated. Read operations validate an
+existing private marked root but do not create directories, markers, or result
+folders; an absent store projects an empty list.
+
+The operation store uses revisioned read-transition-write transactions under a
+cross-process owner/nonce lock. Locks have bounded acquisition and use process
+liveness plus ownership identity; age alone never breaks a live lock. If the
+coordinated release transition exhausts its window, a nonce-, pid-, and process-
+identity-matched owner may remove only its own unchanged logical lock. A changed
+owner or unsafe record is rejected. Existing schema-v1 records remain readable.
+Active operation admission is count bounded; a new or reactivated operation may
+make room only by moving a terminal revision-revalidated record to inactive
+history. Recovery states are fixed as follows:
+`preparing` allows an explicit local restart; `confirmation_required` retains a
+current confirmation or issues a fresh one; `dispatching` becomes
+`dispatch_unknown`; `validating` resumes only from hash-bound persisted result
+evidence; `failed` creates a new linked attempt and fresh confirmation when a
+send is required; `completed` restores the stored result; and `cancelled` is
+available only before external dispatch. In-memory active-task identity takes
+precedence over a same-process persisted owner: when the local task has ended,
+`preparing` or `dispatching` is recoverable immediately, while an owner in a
+different live process remains active.
+
+Completed operation history follows the same manual-retention rule. The active
+operation directories are bounded for safe scans; older active history is
+copied into deterministic private hash shards and then removed from the active
+set without deleting the retained JSON record. Direct id lookup falls back to
+inactive history, while an update reactivates the record and removes its
+inactive duplicate. Mutation releases the id lock before requesting the history
+lock; history then acquires and revalidates a candidate id, preventing lock
+inversion and stale-snapshot data loss. History retention is coalesced and
+deferred outside the primary operation transaction. A retention lock timeout or
+archive error cannot replace a committed action response, consume confirmation
+without scheduling dispatch, or report a persisted decision as failed.
+
+Status, list, dashboard, and saved-result GET handlers only project stored
+state. `POST /api/agentic-review/recover` owns interrupted-state transitions
+behind exact Origin and CSRF validation. Recovery and normal validation hash,
+parse, validate, and project one immutable advisory buffer; the result must
+match the canonical advisory contract and its execution/plan identity. A
+verified pre-send failure becomes `failed` only when the structured runner
+boundary explicitly attests false for provider call, API call, and external
+evidence transfer. A thrown runner, missing boundary, partial boundary, any
+true transfer flag, or unverifiable result becomes `dispatch_unknown`.
+
+AI readiness performs no network request and exposes only
+`available`, `setup_required`, or `unavailable`, a configured service display
+name, and a safe next action. The confirmation digest also binds a non-secret
+destination fingerprint. Dispatch recalculates that fingerprint immediately
+before the provider request. A failure after request transmission starts is
+uncertain unless a provider contract both declares and honors stable
+idempotency.
+
+The React New Review surface derives its controls from source kind. Website and
+document inputs retain meaningful purpose and effort choices; image and
+Playwright-result inputs omit choices their engines do not consume. Persisted
+results join the confirmation list and open by opaque id after reload. Agentic
+and intake items are sorted together by their newest available timestamp before
+the next action and recent list are derived. A failed result-list refresh keeps
+the already displayed items and shows a retryable warning rather than replacing
+  them with an empty list. Saved results render safe source-specific facts:
+  image format/dimensions/finding count, document method/character/section counts,
+  or automated-check total/pass/fail/timeout/skipped counts. Stored Playwright
+  classification and all decision-relevant counts survive projection. Failed,
+  timed-out, blocked, stale, or unreadable results use danger; empty or missing
+  evidence uses warning; only a nonempty passing result uses success. Image and
+  document preparation and imported evidence use prepared/result-ready states,
+  not review-complete state or the website-review completion stepper. The saved
+  timestamp uses the active display locale.
+  A successful file submission replaces its submit action with an explicit
+  prepare-another action, while the server's one-use receipt transaction remains
+  the authoritative duplicate-execution guard.
+  The purpose field remains the mock's one-line control, and new-review and
+settings footer actions remain right aligned at desktop widths. The
+five-stage header, close/back actions, method-card geometry, grouped settings,
+mandatory send confirmation, typography, spacing, focus treatment, safe error
+copy, Japanese/English/Arabic resources, and responsive behavior are checked
+  against the versioned production mock and product design tokens.
+  Mobile lists retain a compact visible text badge in addition to color. Current
+  steps use `aria-current="step"`, decision buttons use `aria-pressed`, and
+  directional symbols mirror under RTL without changing content order.
+
+Release evidence refresh consumes one complete release-profile result with
+clean, unchanged before/after HEAD and tree snapshots. The batch binds policy,
+graph, input, configuration, tool, task-result, and artifact digests. Only
+policy-declared `task -> source` ownership is projected and every source
+receipt references the batch digest. A separately imported CI proof validates
+repository identity, full HEAD/tree, run and attempt, final job, all required
+owner jobs, policy/graph identity, and artifact digest against the local clean
+checkout. Neither dashboard reads nor release refresh silently contact GitHub.
+Repository identity is parsed once from the policy-selected Git remote and must
+match a policy allowlist of GitHub hostnames; the same host and repository value
+drive proof creation, authenticated import, and remote status inspection.
+Remote status accepts no workflow, workflow-path, or remote override outside
+that policy. Release recording temporarily reserves bounded receipt admission
+for the complete source set, verifies it fits active count and byte limits, and
+performs semantic retention after the batch is committed.

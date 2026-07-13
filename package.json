@@ -6,6 +6,7 @@
   "type": "module",
   "bin": {
     "trace-cue": "./bin/trace-cue.js",
+    "trace-cue-control-center": "./bin/trace-cue-control-center.js",
     "trace-cue-mcp": "./bin/trace-cue-mcp.js",
     "browser-debug": "./bin/browser-debug.js",
     "browser-debug-mcp": "./bin/browser-debug-mcp.js"
@@ -26,9 +27,9 @@
     "document-sync:check": "node ./tools/check_document_sync.mjs --worktree",
     "document-sync:contract-check": "node --test tests/document-sync.test.js",
     "doctor": "node ./bin/trace-cue.js doctor --json",
-    "test": "node --test tests/architecture.test.js tests/cli.test.js tests/agentic-human-review.test.js tests/control-center.test.js tests/control-center-agentic-review.test.js tests/dashboard-settings-store.test.js tests/development-workflow.test.js tests/document-sync.test.js tests/package-artifact.test.js tests/playwright-test.test.js tests/verification-ci.test.js tests/verification-evidence.test.js tests/verification-orchestration.test.js",
-    "test:contracts": "node --test tests/development-workflow.test.js tests/document-sync.test.js tests/package-artifact.test.js tests/verification-ci.test.js tests/verification-evidence.test.js tests/verification-orchestration.test.js",
-    "test:runtime": "node --test tests/architecture.test.js tests/cli.test.js tests/agentic-human-review.test.js tests/control-center.test.js tests/control-center-agentic-review.test.js tests/dashboard-settings-store.test.js tests/playwright-test.test.js",
+    "test": "node --test --test-concurrency=2 tests/architecture.test.js tests/cli.test.js tests/agentic-human-review.test.js tests/ci-proof-import.test.js tests/control-center.test.js tests/control-center-agentic-review.test.js tests/control-center-goal-completion.test.js tests/dashboard-settings-store.test.js tests/development-workflow.test.js tests/document-sync.test.js tests/git-sync.test.js tests/package-artifact.test.js tests/playwright-test.test.js tests/verification-ci.test.js tests/verification-evidence.test.js tests/verification-orchestration.test.js",
+    "test:contracts": "node --test --test-concurrency=2 tests/ci-proof-import.test.js tests/development-workflow.test.js tests/document-sync.test.js tests/git-sync.test.js tests/package-artifact.test.js tests/verification-ci.test.js tests/verification-evidence.test.js tests/verification-orchestration.test.js",
+    "test:runtime": "node --test --test-concurrency=2 tests/architecture.test.js tests/cli.test.js tests/agentic-human-review.test.js tests/control-center.test.js tests/control-center-agentic-review.test.js tests/control-center-goal-completion.test.js tests/dashboard-settings-store.test.js tests/playwright-test.test.js",
     "test:browser": "npm run control-center:build && npm run test:browser:run",
     "test:browser:run": "TRACE_CUE_BROWSER_SMOKE=1 node --test tests/browser-smoke.test.js",
     "test:rename-readiness": "node ./tools/check_rename_readiness.mjs",
@@ -40,7 +41,9 @@
     "verification:focused": "node ./tools/verification.mjs run --profile focused --worktree",
     "verification:core": "node ./tools/verification.mjs run --profile core",
     "verification:browser": "node ./tools/verification.mjs run --profile browser",
-    "verification:release": "node ./tools/verification.mjs run --profile release",
+    "verification:release": "node ./tools/verification.mjs release",
+    "verification:release:evidence": "node ./tools/verification.mjs release-evidence",
+    "verification:ci-proof:import": "node ./tools/verification.mjs import-ci-proof",
     "release:check": "npm test && npm run control-center:build && npm run test:rename-readiness && npm run test:pack && npm run test:pack-install"
   },
   "files": [
@@ -48,6 +51,7 @@
     ".mcp.json",
     "bin/",
     "control-center/",
+    "dist/control-center/",
     "src/",
     "schemas/",
     "templates/",
@@ -79,6 +83,7 @@
   "devDependencies": {
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "vite": "^8.1.3"
+    "vite": "^8.1.3",
+    "yaml": "^2.9.0"
   }
 }

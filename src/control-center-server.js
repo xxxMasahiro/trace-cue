@@ -1,6 +1,9 @@
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { readFile } from 'node:fs/promises';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { constants as fsConstants } from 'node:fs';
+import { lstat, open, readdir, realpath } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createEnvelope } from './envelope.js';
 import { runControlCenterStatus, controlCenterBoundary } from './control-center-read-model.js';
@@ -17,20 +20,42 @@ import {
 } from './control-center-actions.js';
 import { runControlCenterSetPreferences } from './control-center-preferences.js';
 import { runControlCenterSaveSettings } from './control-center-settings.js';
+import { buildControlCenterAiReadiness } from './control-center-ai-readiness.js';
+import {
+  completeControlCenterIntake,
+  getControlCenterIntakeResult,
+  listControlCenterIntakeResults,
+  recoverPendingControlCenterIntakePublications,
+  stageControlCenterIntake
+} from './control-center-intake.js';
 import {
   CONTROL_CENTER_AGENTIC_REVIEW_ENDPOINTS,
   runControlCenterAgenticReviewConfirmation,
   runControlCenterAgenticReviewDecision,
   runControlCenterAgenticReviewList,
   runControlCenterAgenticReviewPrepare,
+  runControlCenterAgenticReviewRecover,
+  runControlCenterAgenticReviewResume,
+  runControlCenterAgenticReviewCancel,
   runControlCenterAgenticReviewRepeat,
   runControlCenterAgenticReviewStart,
   runControlCenterAgenticReviewStatus
 } from './control-center-agentic-review-actions.js';
-import { isAllowedMcpHttpHost, isAllowedMcpHttpOrigin, isLoopbackHost } from './mcp-transport-policy.js';
+import { isAllowedMcpHttpHost, isLoopbackHost } from './mcp-transport-policy.js';
+import { PRODUCT_IDENTITY } from './product-identity.js';
+import { readStableBoundedFileHandle } from './safe-local-store.js';
 
 const DEFAULT_CONTROL_CENTER_HOST = '127.0.0.1';
 const DEFAULT_CONTROL_CENTER_PORT = 0;
+const DEFAULT_CONTROL_CENTER_ASSET_ROOT = path.join(
+  fileURLToPath(new URL('..', import.meta.url)),
+  PRODUCT_IDENTITY.controlCenterDistPath
+);
+const CONTROL_CENTER_CSRF_HEADER = 'x-trace-cue-action-token';
+const MAX_STATIC_ASSET_BYTES = 8 * 1024 * 1024;
+const MAX_STATIC_ASSET_TOTAL_BYTES = 64 * 1024 * 1024;
+const MAX_STATIC_ASSET_ENTRIES = 1000;
+export const CONTROL_CENTER_RUNTIME_PROTOCOL_VERSION = '1.0.0';
 
 const MIME_TYPES = Object.freeze({
   '.html': 'text/html; charset=utf-8',
@@ -45,6 +70,12 @@ export async function startControlCenterServer(options = {}, context = {}) {
   if (!config.ok) {
     throw new Error(config.message);
   }
+  config.config.runtimeCompatibility = await buildControlCenterRuntimeCompatibility(config.config.staticRoot);
+  await recoverPendingControlCenterIntakePublications({
+    ...context,
+    cwd: config.config.cwd,
+    artifactRoot: config.config.readModelOptions['artifact-root']
+  });
   const server = createControlCenterServer(config.config, context);
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -56,11 +87,13 @@ export async function startControlCenterServer(options = {}, context = {}) {
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : config.config.port;
   const url = `http://${formatUrlHost(config.config.host)}:${port}/`;
+  config.config.port = port;
+  config.config.origin = url.slice(0, -1);
   return {
     server,
     url,
-    config: { ...config.config, port },
-    metadata: controlCenterServerMetadata({ ...config.config, port }, url)
+    config: { host: config.config.host, port },
+    metadata: controlCenterServerMetadata(config.config, url)
   };
 }
 
@@ -131,13 +164,19 @@ export function resolveControlCenterServerConfig(options = {}, context = {}) {
     return port;
   }
   const cwd = path.resolve(context.cwd ?? process.cwd());
+  const staticRoot = options.assetRoot
+    ? path.resolve(String(options.assetRoot))
+    : DEFAULT_CONTROL_CENTER_ASSET_ROOT;
   return {
     ok: true,
     config: {
       host,
       port: port.value,
       cwd,
-      staticRoot: path.resolve(cwd, 'dist', 'control-center'),
+      staticRoot,
+      origin: null,
+      csrfToken: randomBytes(32).toString('base64url'),
+      instanceId: randomBytes(24).toString('base64url'),
       readModelOptions: {
         'artifact-root': options['artifact-root'],
         limit: options.limit,
@@ -149,8 +188,8 @@ export function resolveControlCenterServerConfig(options = {}, context = {}) {
   };
 }
 
-async function handleControlCenterRequest(request, response, config, context) {
-  const validation = validateCommonRequest(request);
+export async function handleControlCenterRequest(request, response, config, context = {}) {
+  const validation = validateCommonRequest(request, config);
   if (!validation.ok) {
     sendJson(response, validation.status, { error: { code: validation.code, message: validation.message } });
     return;
@@ -163,6 +202,10 @@ async function handleControlCenterRequest(request, response, config, context) {
     }
     sendJson(response, 200, {
       status: 'ok',
+      instance_id: config.instanceId,
+      protocol_version: config.runtimeCompatibility?.protocol_version ?? null,
+      package_version: config.runtimeCompatibility?.package_version ?? null,
+      asset_fingerprint: config.runtimeCompatibility?.asset_fingerprint ?? null,
       local_only: true,
       read_only: true,
       boundary: controlCenterBoundary()
@@ -175,10 +218,22 @@ async function handleControlCenterRequest(request, response, config, context) {
       return;
     }
     const result = await runControlCenterStatus(config.readModelOptions, { ...context, cwd: config.cwd });
+    const dashboardData = {
+      ...result.data,
+      control_center: {
+        ...(result.data?.control_center ?? {}),
+        action_security: {
+          token: config.csrfToken,
+          header: CONTROL_CENTER_CSRF_HEADER,
+          expires_on_restart: true
+        },
+        ai_readiness: buildControlCenterAiReadiness(context)
+      }
+    };
     const envelope = createEnvelope({
       command: 'control-center status',
       status: result.status,
-      data: result.data,
+      data: dashboardData,
       warnings: result.warnings,
       errors: result.errors,
       artifacts: result.artifacts,
@@ -213,12 +268,80 @@ async function handleControlCenterRequest(request, response, config, context) {
     sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
     return;
   }
+  if (url.pathname === '/api/review-intake/upload') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_INTAKE_UPLOAD_POST_ONLY', 'File intake only accepts POST requests.');
+      return;
+    }
+    const result = await stageControlCenterIntake({
+      sourceKind: String(request.headers['x-trace-cue-source-kind'] ?? ''),
+      originalName: decodeHeaderValue(request.headers['x-trace-cue-file-name']),
+      contentType: String(request.headers['content-type'] ?? ''),
+      contentLength: request.headers['content-length']
+    }, request, {
+      ...context,
+      cwd: config.cwd,
+      artifactRoot: config.readModelOptions['artifact-root']
+    });
+    sendActionEnvelope(response, 'control-center review-intake upload', result, context, 201);
+    return;
+  }
+  if (url.pathname === '/api/review-intake/results' || url.pathname === '/api/review-intake/result') {
+    if (request.method !== 'GET') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_INTAKE_RESULTS_GET_ONLY', 'Saved confirmation results only accept GET requests.');
+      return;
+    }
+    const isList = url.pathname.endsWith('/results');
+    const result = isList
+      ? await listControlCenterIntakeResults({ limit: url.searchParams.get('limit') }, {
+        ...context,
+        cwd: config.cwd,
+        artifactRoot: config.readModelOptions['artifact-root']
+      })
+      : await getControlCenterIntakeResult({ id: url.searchParams.get('id') }, {
+        ...context,
+        cwd: config.cwd,
+        artifactRoot: config.readModelOptions['artifact-root']
+      });
+    const envelope = createEnvelope({
+      command: isList ? 'control-center review-intake results' : 'control-center review-intake result',
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    sendJson(response, result.status === 'ok' ? 200 : 404, envelope);
+    return;
+  }
+  if (url.pathname === '/api/review-intake/complete') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_INTAKE_COMPLETE_POST_ONLY', 'File review preparation only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const result = await completeControlCenterIntake(body.value, {
+      ...context,
+      cwd: config.cwd,
+      artifactRoot: config.readModelOptions['artifact-root']
+    });
+    sendActionEnvelope(response, 'control-center review-intake complete', result, context, 200);
+    return;
+  }
   const agenticReviewPostActions = {
     '/api/agentic-review/prepare': ['prepare', runControlCenterAgenticReviewPrepare, 202],
     '/api/agentic-review/confirmation': ['confirmation', runControlCenterAgenticReviewConfirmation, 200],
     '/api/agentic-review/start': ['start', runControlCenterAgenticReviewStart, 202],
     '/api/agentic-review/decision': ['decision', runControlCenterAgenticReviewDecision, 200],
-    '/api/agentic-review/repeat': ['repeat', runControlCenterAgenticReviewRepeat, 202]
+    '/api/agentic-review/repeat': ['repeat', runControlCenterAgenticReviewRepeat, 202],
+    '/api/agentic-review/recover': ['recover', runControlCenterAgenticReviewRecover, 200],
+    '/api/agentic-review/resume': ['resume', runControlCenterAgenticReviewResume, 202],
+    '/api/agentic-review/cancel': ['cancel', runControlCenterAgenticReviewCancel, 200]
   };
   const agenticReviewAction = agenticReviewPostActions[url.pathname];
   if (agenticReviewAction) {
@@ -459,6 +582,15 @@ async function handleControlCenterRequest(request, response, config, context) {
     sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
     return;
   }
+  if (url.pathname.startsWith('/api/')) {
+    sendJson(response, 404, {
+      error: {
+        code: 'CONTROL_CENTER_API_NOT_FOUND',
+        message: 'The requested Control Center action does not exist.'
+      }
+    });
+    return;
+  }
   if (request.method !== 'GET') {
     sendMethodNotAllowed(response, 'CONTROL_CENTER_ASSET_GET_ONLY', 'control-center assets only accept GET requests.');
     return;
@@ -466,7 +598,64 @@ async function handleControlCenterRequest(request, response, config, context) {
   await serveBuiltAsset(request, response, config);
 }
 
-function validateCommonRequest(request) {
+export async function buildControlCenterRuntimeCompatibility(assetRoot = DEFAULT_CONTROL_CENTER_ASSET_ROOT) {
+  return Object.freeze({
+    protocol_version: CONTROL_CENTER_RUNTIME_PROTOCOL_VERSION,
+    package_version: PRODUCT_IDENTITY.packageVersion,
+    asset_fingerprint: await fingerprintControlCenterAssets(path.resolve(assetRoot))
+  });
+}
+
+async function fingerprintControlCenterAssets(root) {
+  const rootInfo = await lstat(root);
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw unsafeAssetError();
+  const rootReal = await realpath(root);
+  const pending = [''];
+  const files = [];
+  let entryCount = 0;
+  while (pending.length > 0) {
+    const relativeDirectory = pending.pop();
+    const directory = path.join(rootReal, relativeDirectory);
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      entryCount += 1;
+      if (entryCount > MAX_STATIC_ASSET_ENTRIES || entry.isSymbolicLink()) throw unsafeAssetError();
+      const relative = path.join(relativeDirectory, entry.name);
+      if (entry.isDirectory()) pending.push(relative);
+      else if (entry.isFile()) files.push(relative);
+      else throw unsafeAssetError();
+    }
+  }
+  files.sort();
+  const digest = createHash('sha256');
+  let totalBytes = 0;
+  for (const relative of files) {
+    const target = path.join(rootReal, relative);
+    const info = await lstat(target);
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > MAX_STATIC_ASSET_BYTES) {
+      throw unsafeAssetError();
+    }
+    totalBytes += info.size;
+    if (totalBytes > MAX_STATIC_ASSET_TOTAL_BYTES) throw unsafeAssetError();
+    const handle = await open(target, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+    try {
+      const body = await readStableBoundedFileHandle(handle, {
+        expected: info,
+        maxBytes: MAX_STATIC_ASSET_BYTES,
+        changedError: unsafeAssetError
+      });
+      const normalized = relative.split(path.sep).join('/');
+      digest.update(`${Buffer.byteLength(normalized, 'utf8')}:${normalized}:${body.length}:`);
+      digest.update(body);
+    } finally {
+      await handle.close();
+    }
+  }
+  if (files.length === 0) throw unsafeAssetError();
+  return `sha256:${digest.digest('hex')}`;
+}
+
+function validateCommonRequest(request, config) {
   if (!isAllowedMcpHttpHost(request.headers.host)) {
     return {
       ok: false,
@@ -475,13 +664,34 @@ function validateCommonRequest(request) {
       message: 'control-center Host header must be loopback.'
     };
   }
-  if (!isAllowedMcpHttpOrigin(request.headers.origin)) {
+  const expectedOrigin = config.origin ?? `http://${request.headers.host}`;
+  const suppliedOrigin = String(request.headers.origin ?? '');
+  if (suppliedOrigin && suppliedOrigin !== expectedOrigin) {
     return {
       ok: false,
       status: 403,
       code: 'CONTROL_CENTER_ORIGIN_REJECTED',
-      message: 'control-center Origin header must be loopback when present.'
+      message: 'control-center Origin must match the active local Control Center.'
     };
+  }
+  if (!['GET', 'HEAD'].includes(String(request.method ?? '').toUpperCase())) {
+    if (!suppliedOrigin || suppliedOrigin !== expectedOrigin) {
+      return {
+        ok: false,
+        status: 403,
+        code: 'CONTROL_CENTER_ORIGIN_REQUIRED',
+        message: 'Control Center changes require the active local Origin.'
+      };
+    }
+    const suppliedToken = String(request.headers[CONTROL_CENTER_CSRF_HEADER] ?? '');
+    if (!constantTimeEqual(suppliedToken, config.csrfToken)) {
+      return {
+        ok: false,
+        status: 403,
+        code: 'CONTROL_CENTER_ACTION_TOKEN_REJECTED',
+        message: 'Refresh the Control Center before making this change.'
+      };
+    }
   }
   return { ok: true };
 }
@@ -512,9 +722,18 @@ async function readJsonRequestBody(request) {
     chunks.push(chunk);
   }
   try {
+    const value = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'CONTROL_CENTER_JSON_OBJECT_REQUIRED',
+        message: 'control-center action request body must be a JSON object.'
+      };
+    }
     return {
       ok: true,
-      value: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+      value
     };
   } catch (error) {
     return {
@@ -533,7 +752,13 @@ function sendMethodNotAllowed(response, code, message) {
 
 async function serveBuiltAsset(request, response, config) {
   const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
-  const pathname = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname);
+  let pathname;
+  try {
+    pathname = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname);
+  } catch {
+    sendJson(response, 400, { error: { code: 'CONTROL_CENTER_ASSET_PATH_INVALID', message: 'The asset path is invalid.' } });
+    return;
+  }
   const target = path.resolve(config.staticRoot, `.${pathname}`);
   if (!isInside(config.staticRoot, target)) {
     sendJson(response, 403, {
@@ -545,17 +770,46 @@ async function serveBuiltAsset(request, response, config) {
     return;
   }
   try {
-    const body = await readFile(target);
+    const rootInfo = await lstat(config.staticRoot);
+    if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw unsafeAssetError();
+    const rootReal = await realpath(config.staticRoot);
+    await rejectAssetSymlinkComponents(config.staticRoot, target);
+    const info = await lstat(target);
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > MAX_STATIC_ASSET_BYTES) {
+      throw unsafeAssetError();
+    }
+    const targetReal = await realpath(target);
+    if (!isInside(rootReal, targetReal)) throw unsafeAssetError();
+    const handle = await open(target, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+    let body;
+    try {
+      body = await readStableBoundedFileHandle(handle, {
+        expected: info,
+        maxBytes: MAX_STATIC_ASSET_BYTES,
+        changedError: unsafeAssetError
+      });
+    } finally {
+      await handle.close();
+    }
     response.writeHead(200, {
       'Content-Type': MIME_TYPES[path.extname(target)] ?? 'application/octet-stream',
-      'Cache-Control': 'no-store'
+      ...securityHeaders()
     });
     response.end(body);
-  } catch {
+  } catch (error) {
+    if (error?.code === 'CONTROL_CENTER_ASSET_UNSAFE') {
+      sendJson(response, 403, {
+        error: {
+          code: error.code,
+          message: 'The requested Control Center asset is unsafe.'
+        }
+      });
+      return;
+    }
     sendJson(response, 503, {
       error: {
         code: 'CONTROL_CENTER_ASSETS_NOT_BUILT',
-        message: 'Run npm run control-center:build before using control-center serve, or use npm run control-center:dev for Vite development.'
+        message: 'The installed Control Center assets are unavailable.'
       }
     });
   }
@@ -566,6 +820,7 @@ function controlCenterServerMetadata(config, url) {
     url,
     host: config.host,
     port: config.port,
+    runtime_compatibility: config.runtimeCompatibility,
     local_only: true,
     read_only_dashboard: true,
     dashboard_get_only: true,
@@ -581,13 +836,18 @@ function controlCenterServerMetadata(config, url) {
       '/api/playwright-test/external-ci/approve-settings',
       '/api/playwright-test/external-ci/fetch-approved'
     ],
+    source_intake_endpoints: [
+      '/api/review-intake/upload',
+      '/api/review-intake/complete',
+      '/api/review-intake/results',
+      '/api/review-intake/result'
+    ],
     control_center_preference_endpoints: ['/api/settings/control-center'],
     agentic_review_endpoints: Object.values(CONTROL_CENTER_AGENTIC_REVIEW_ENDPOINTS),
     agentic_review_execution_requires_explicit_external_send_confirmation: true,
     mcp_json_rpc_exposed: false,
     cors_wildcard: false,
     cache_policy: 'no-store',
-    static_root: config.staticRoot,
     boundary: controlCenterBoundary()
   };
 }
@@ -595,9 +855,64 @@ function controlCenterServerMetadata(config, url) {
 function sendJson(response, status, body) {
   response.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store'
+    ...securityHeaders()
   });
   response.end(`${JSON.stringify(body)}\n`);
+}
+
+function sendActionEnvelope(response, command, result, context, acceptedStatus) {
+  const envelope = createEnvelope({
+    command,
+    status: result.status,
+    data: result.data,
+    warnings: result.warnings,
+    errors: result.errors,
+    artifacts: result.artifacts,
+    now: context.now
+  });
+  sendJson(response, result.status === 'ok' ? acceptedStatus : 400, envelope);
+}
+
+function decodeHeaderValue(value) {
+  try {
+    return decodeURIComponent(String(value ?? ''));
+  } catch {
+    return '';
+  }
+}
+
+function securityHeaders() {
+  return {
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY'
+  };
+}
+
+async function rejectAssetSymlinkComponents(root, target) {
+  const relative = path.relative(root, target);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) throw unsafeAssetError();
+  let current = root;
+  for (const segment of relative.split(path.sep)) {
+    if (!segment) continue;
+    current = path.join(current, segment);
+    const info = await lstat(current);
+    if (info.isSymbolicLink()) throw unsafeAssetError();
+  }
+}
+
+function unsafeAssetError() {
+  const error = new Error('Unsafe Control Center asset.');
+  error.code = 'CONTROL_CENTER_ASSET_UNSAFE';
+  return error;
+}
+
+function constantTimeEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
 
 function parsePort(value) {

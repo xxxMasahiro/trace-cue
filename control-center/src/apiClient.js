@@ -1,9 +1,15 @@
+const ACTION_TOKEN_HEADER = 'x-trace-cue-action-token';
+let actionToken = null;
+
 export async function fetchDashboard() {
   const envelope = await requestJson('/api/dashboard', {
     method: 'GET',
     cache: 'no-store'
   });
-  return envelope.data?.control_center ?? envelope.control_center ?? envelope.data ?? envelope;
+  const dashboard = envelope.data?.control_center ?? envelope.control_center ?? envelope.data ?? envelope;
+  const token = dashboard?.action_security?.token;
+  if (typeof token === 'string' && token.length >= 32) actionToken = token;
+  return dashboard;
 }
 
 export async function prepareAgenticReview(payload) {
@@ -38,6 +44,19 @@ export async function fetchAgenticReviewStatus(reviewId) {
   return data.operation ?? data;
 }
 
+export async function recoverAgenticReview(reviewId) {
+  const data = reviewData(await requestJson('/api/agentic-review/recover', postOptions({ id: reviewId })));
+  return data.operation ?? data;
+}
+
+export async function resumeAgenticReview(reviewId) {
+  return reviewData(await requestJson('/api/agentic-review/resume', postOptions({ id: reviewId })));
+}
+
+export async function cancelAgenticReview(reviewId) {
+  return reviewData(await requestJson('/api/agentic-review/cancel', postOptions({ id: reviewId })));
+}
+
 export async function saveAgenticReviewDecision(payload) {
   const id = payload.review_id ?? payload.operation_id ?? payload.id;
   return reviewData(await requestJson('/api/agentic-review/decision', postOptions({
@@ -69,6 +88,35 @@ export async function createSourceIntakeProposal(payload) {
     throw new Error(body.message);
   }
   return body.envelope.data.source_intake;
+}
+
+export async function uploadReviewIntake(file, sourceKind) {
+  const envelope = await requestJson('/api/review-intake/upload', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Trace-Cue-Source-Kind': sourceKind,
+      'X-Trace-Cue-File-Name': encodeURIComponent(file.name)
+    },
+    body: file
+  });
+  return envelope.data?.control_center_intake?.intake;
+}
+
+export async function completeReviewIntake(payload) {
+  const envelope = await requestJson('/api/review-intake/complete', postOptions(payload));
+  return envelope.data?.control_center_intake?.result;
+}
+
+export async function listReviewIntakeResults(limit = 50) {
+  const envelope = await requestJson(`/api/review-intake/results?limit=${encodeURIComponent(limit)}`);
+  return envelope.data?.control_center_intake?.results ?? [];
+}
+
+export async function getReviewIntakeResult(id) {
+  const envelope = await requestJson(`/api/review-intake/result?id=${encodeURIComponent(id)}`);
+  return envelope.data?.control_center_intake?.result;
 }
 
 export async function setDisplayLanguage(payload) {
@@ -147,11 +195,10 @@ function postOptions(payload) {
   };
 }
 
-async function requestJson(url, options) {
-  const response = await fetch(url, {
-    headers: { Accept: 'application/json', ...(options.headers ?? {}) },
-    ...options
-  });
+async function requestJson(url, options = {}) {
+  const mutation = !['GET', 'HEAD'].includes(String(options.method ?? 'GET').toUpperCase());
+  if (mutation && !actionToken) await bootstrapActionToken();
+  const response = await fetch(url, requestOptions(options, mutation));
   let envelope;
   try {
     envelope = await response.json();
@@ -167,6 +214,31 @@ async function requestJson(url, options) {
     throw error;
   }
   return envelope;
+}
+
+async function bootstrapActionToken() {
+  const response = await fetch('/api/dashboard', {
+    method: 'GET',
+    cache: 'no-store',
+    headers: { Accept: 'application/json' }
+  });
+  const envelope = await response.json();
+  const token = envelope?.data?.control_center?.action_security?.token;
+  if (!response.ok || typeof token !== 'string' || token.length < 32) {
+    throw new Error('Refresh the Control Center before making this change.');
+  }
+  actionToken = token;
+}
+
+function requestOptions(options, mutation) {
+  return {
+    ...options,
+    headers: {
+      Accept: 'application/json',
+      ...(options.headers ?? {}),
+      ...(mutation ? { [ACTION_TOKEN_HEADER]: actionToken } : {})
+    }
+  };
 }
 
 function reviewData(envelope) {

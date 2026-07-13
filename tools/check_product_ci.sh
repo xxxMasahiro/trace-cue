@@ -6,7 +6,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/product_common.sh"
 
 ROOT="$(product_repo_root)"
-WORKFLOW="$ROOT/.github/workflows/ci.yml"
+POLICY="$ROOT/ops/VERIFICATION_EXECUTION_POLICY.json"
+WORKFLOW_REL="$(node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(p.evidence_policy.ci_proof_workflow_path);' "$POLICY")"
+WORKFLOW_NAME="$(node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(p.ci_graph.workflow_contract.name);' "$POLICY")"
+[[ "$WORKFLOW_REL" =~ ^[A-Za-z0-9._/-]+\.ya?ml$ && "$WORKFLOW_REL" != /* && "$WORKFLOW_REL" != *..* ]] || {
+  printf 'invalid configured CI workflow path\n' >&2
+  exit 1
+}
+[[ "$WORKFLOW_NAME" =~ ^[A-Za-z0-9._[:space:]-]+$ ]] || { printf 'invalid configured CI workflow name\n' >&2; exit 1; }
+WORKFLOW="$ROOT/$WORKFLOW_REL"
 MANIFEST="$ROOT/ops/CI_MANIFEST.tsv"
 failed=0
 
@@ -30,11 +38,12 @@ reject_pattern() {
   fi
 }
 
-product_require_nonempty_file "$ROOT" .github/workflows/ci.yml || failed=1
+product_require_nonempty_file "$ROOT" "$WORKFLOW_REL" || failed=1
 product_require_nonempty_file "$ROOT" ops/CI_MANIFEST.tsv || failed=1
 
 if [[ -s "$WORKFLOW" ]]; then
-  require_pattern "$WORKFLOW" '^name: CI$' 'workflow name'
+  actual_workflow_name="$(sed -n 's/^name: //p' "$WORKFLOW" | head -n 1)"
+  [[ "$actual_workflow_name" == "$WORKFLOW_NAME" ]] || { printf 'workflow name does not match verification policy\n' >&2; failed=1; }
   require_pattern "$WORKFLOW" '^on:$' 'workflow triggers'
   require_pattern "$WORKFLOW" 'pull_request:' 'pull request trigger'
   require_pattern "$WORKFLOW" 'workflow_dispatch:' 'manual trigger'

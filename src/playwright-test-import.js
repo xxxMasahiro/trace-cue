@@ -381,8 +381,8 @@ function normalizeStatus(status) {
   if (value === 'passed' || value === 'expected') return 'passed';
   if (value === 'skipped') return 'skipped';
   if (value === 'timedOut' || value === 'timed_out' || value === 'timeout') return 'timedOut';
-  if (value === 'failed' || value === 'unexpected') return 'failed';
-  return value || 'unknown';
+  if (value === 'failed' || value === 'unexpected' || value === 'interrupted') return 'failed';
+  return 'failed';
 }
 
 function countTests(tests) {

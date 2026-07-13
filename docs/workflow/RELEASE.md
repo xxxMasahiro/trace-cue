@@ -86,6 +86,13 @@ npm run test:pack-install
 
 - `npm run verification:release` is the complete local composed gate and must
   pass before release readiness is reported.
+- `npm run verification:release` does not refresh product authority. On the
+  clean synchronized release commit, run `npm run verification:release:evidence`
+  to execute the policy-selected release profile and record one exact-HEAD
+  local batch.
+- After the matching remote workflow succeeds, run
+  `npm run verification:ci-proof:import` to authenticate and import its proof as
+  separate remote evidence. The import never replaces the local release batch.
 - `npm run release:check` remains the compatibility no-browser/package entrypoint;
   it does not replace the composed browser owner.
 - The remote `final-gate` result must match the exact release commit and every

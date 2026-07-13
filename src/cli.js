@@ -135,6 +135,7 @@ import {
 } from './playwright-test-regression.js';
 import { runControlCenterServe } from './control-center-server.js';
 import { runControlCenterStatus } from './control-center-read-model.js';
+import { runControlCenterLaunch } from './control-center-launcher.js';
 import { buildMcpClientConfig } from './mcp-client-config.js';
 import { mcpProfileMetadata } from './mcp-profiles.js';
 import { mcpServerInfo } from './mcp.js';
@@ -270,6 +271,10 @@ export async function executeCli(argv, context = {}) {
 
     if (parsed.command === 'control-center serve') {
       return runtimeResult(parsed.command, await (context.controlCenterServeRunner ?? runControlCenterServe)(parsed.options, context), parsed.json, now);
+    }
+
+    if (parsed.command === 'control-center launch') {
+      return runtimeResult(parsed.command, await (context.controlCenterLaunchRunner ?? runControlCenterLaunch)(parsed.options, context), parsed.json, now);
     }
 
     if (parsed.command === 'agent surfaces list') {
@@ -964,12 +969,13 @@ function usageText(topic) {
     ].join('\n');
   }
 
-  if (topic === 'control-center' || topic === 'control-center status' || topic === 'control-center serve') {
+  if (topic === 'control-center' || topic === 'control-center status' || topic === 'control-center serve' || topic === 'control-center launch') {
     return [
       `Usage: ${CLI_NAME} control-center status [--artifact-root <path>] [--limit <n>] [--max-bytes <bytes>] [--evidence-set <workspace-json>] [--json]`,
       `       ${CLI_NAME} control-center serve [--host 127.0.0.1] [--port <port>] [--artifact-root <path>] [--limit <n>] [--max-bytes <bytes>] [--evidence-set <workspace-json>] [--json]`,
+      `       ${CLI_NAME} control-center launch [--host 127.0.0.1] [--port <port>] [--artifact-root <path>] [--json]`,
       '',
-      'Reports and serves read-only local review status plus bounded POST actions for approved local settings/artifact workflows. The dashboard read endpoint is GET-only, the server is loopback-only, performs no provider call, launches no browser, and mutates no gates.'
+      'Launch opens the installed local review screen and reuses a healthy instance. Status and serve remain available for technical integration.'
     ].join('\n');
   }
 

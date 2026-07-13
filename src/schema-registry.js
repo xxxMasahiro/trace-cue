@@ -281,7 +281,7 @@ const schemas = Object.freeze({
       schema_version: { type: 'string' },
       type: { const: 'control_center_agentic_review' },
       id: { type: 'string' },
-      state: { enum: ['preparing', 'confirmation_required', 'dispatching', 'validating', 'completed', 'failed', 'dispatch_unknown'] },
+      state: { enum: ['preparing', 'confirmation_required', 'dispatching', 'validating', 'completed', 'failed', 'dispatch_unknown', 'cancelled'] },
       stage: { enum: ['prepare', 'review', 'decide', 'recheck', 'complete'] },
       purpose: { type: 'string' },
       target: { type: ['string', 'null'] },
@@ -295,6 +295,7 @@ const schemas = Object.freeze({
       result: { type: ['object', 'null'] },
       decisions: { type: 'array' },
       dispatch: { type: 'object' },
+      recovery: { type: 'object' },
       error: { type: ['object', 'null'] },
       created_at: { type: 'string' },
       updated_at: { type: 'string' },
@@ -305,6 +306,47 @@ const schemas = Object.freeze({
       boundary: { type: 'object' }
     },
     additionalProperties: false
+  }),
+  control_center_intake: Object.freeze({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://trace-cue.local/schemas/control-center-intake.schema.json',
+    title: 'TraceCue Control Center Intake Projection',
+    oneOf: [
+      {
+        type: 'object',
+        required: ['schema_version', 'type', 'id', 'source_kind', 'label', 'bytes', 'expires_at', 'storage_path_included', 'original_file_name_included'],
+        properties: {
+          schema_version: { const: '1.0.0' },
+          type: { const: 'control_center_intake_receipt' },
+          id: { type: 'string', pattern: '^[a-f0-9]{32}$' },
+          source_kind: { enum: ['image', 'document_text', 'playwright_result'] },
+          label: { type: 'string' },
+          bytes: { type: 'integer', minimum: 1 },
+          expires_at: { type: 'string', format: 'date-time' },
+          storage_path_included: { const: false },
+          original_file_name_included: { const: false }
+        },
+        additionalProperties: false
+      },
+      {
+        type: 'object',
+        required: ['schema_version', 'type', 'id', 'label', 'source_kind', 'outcome', 'completed_at', 'external_ai_review_completed', 'summary'],
+        properties: {
+          schema_version: { const: '1.0.0' },
+          type: { const: 'control_center_intake_result' },
+          id: { type: 'string', pattern: '^[a-f0-9]{32}$' },
+          label: { type: 'string', minLength: 1 },
+          source_kind: { enum: ['image', 'document_text', 'playwright_result'] },
+          outcome: { enum: ['image_evidence_ready', 'review_proposal_ready', 'test_evidence_ready'] },
+          completed_at: { type: 'string', format: 'date-time' },
+          external_ai_review_completed: { const: false },
+          review_goal: { type: 'string', minLength: 1 },
+          review_method: { enum: ['standard', 'deep', 'xhigh'] },
+          summary: { type: 'object' }
+        },
+        additionalProperties: false
+      }
+    ]
   }),
   playwright_test_integration: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',

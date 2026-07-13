@@ -8,12 +8,17 @@ const entry = pathToFileURL(path.join(root, 'index.html')).href;
 const captures = [
   { name: 'mock-home-desktop.png', screen: 'home', viewport: { width: 1440, height: 1000 } },
   { name: 'mock-new-review-desktop.png', screen: 'new', viewport: { width: 1440, height: 1000 } },
+  { name: 'mock-new-review-file-desktop.png', screen: 'new', source: 'document_text', viewport: { width: 1440, height: 1000 } },
   { name: 'mock-send-confirmation-desktop.png', screen: 'new', dialog: 'send', viewport: { width: 1440, height: 1000 } },
   { name: 'mock-progress-desktop.png', screen: 'progress', viewport: { width: 1440, height: 1000 } },
+  { name: 'mock-recovery-desktop.png', screen: 'recovery', viewport: { width: 1440, height: 1000 } },
   { name: 'mock-result-desktop.png', screen: 'result', viewport: { width: 1440, height: 1000 } },
+  { name: 'mock-intake-result-desktop.png', screen: 'intake-result', viewport: { width: 1440, height: 1000 } },
   { name: 'mock-settings-desktop.png', screen: 'settings', viewport: { width: 1440, height: 1000 } },
   { name: 'mock-settings-saved-desktop.png', screen: 'settings', saved: true, viewport: { width: 1440, height: 1000 } },
   { name: 'mock-new-review-mobile.png', screen: 'new', viewport: { width: 390, height: 844 } },
+  { name: 'mock-home-mobile.png', screen: 'home', viewport: { width: 390, height: 844 } },
+  { name: 'mock-intake-result-mobile.png', screen: 'intake-result', viewport: { width: 390, height: 844 } },
   { name: 'mock-settings-mobile.png', screen: 'settings', viewport: { width: 390, height: 844 } },
 ];
 
@@ -28,6 +33,7 @@ try {
     });
     const url = new URL(entry);
     url.searchParams.set('screen', capture.screen);
+    if (capture.source) url.searchParams.set('source', capture.source);
     if (capture.dialog) url.searchParams.set('dialog', capture.dialog);
     if (capture.saved) url.searchParams.set('saved', '1');
     await page.goto(url.href, { waitUntil: 'load' });

@@ -419,7 +419,7 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - The server may expose only approved bounded local POST actions for Control Center workflows. The existing eight action endpoint paths remain unchanged. Separate namespaced endpoints may persist ordinary Control Center preferences and prepare, confirm, start, decide, or repeat one dedicated page review. External AI execution requires a fresh one-time confirmation bound to the prepared disclosure and plan.
 - Source intake must create only local non-executing proposal artifacts from workspace-confined source text; it must not run providers, call APIs, use shell commands, expose MCP execution, transfer evidence externally, store full source text, store chunk text, mutate review gates, or execute plans.
 - Display-language settings must write only the ignored TraceCue-local user override and must not mutate tracked shared defaults, translate source evidence, provider output, generated review text, or artifact output language.
-- The UI must stay minimal and follow the accepted prototype typography, spacing, and narrow settings layout. The ordinary Settings page contains display language, default review screen size, a concise Playwright Test mode choice, AI suggestions, immutable send-before-confirmation, and one save action. Technical locale state, providers, models, credentials, storage paths, diagnostics, regression import/CI forms, and boundary badges must not appear there.
+- The UI must stay minimal and follow the accepted prototype typography, spacing, and narrow settings layout. The ordinary Settings page contains display language, default review screen size, a plain-language automated-check choice, AI suggestions, immutable send-before-confirmation, and one save action. Implementation names such as Playwright or CI, technical locale state, providers, models, credentials, storage paths, diagnostics, regression import forms, and boundary badges must not appear there.
 
 ### Purpose-Led Production Navigation Criteria
 
@@ -510,9 +510,20 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Commands must be spawned as argv without shell evaluation. Unknown tasks,
   profiles, fields, dependencies, owners, cache states, or proof inputs must fail
   closed. A deterministic one-worker path must remain available.
+- Verification CLI arguments must be command-specific and strict. Unknown,
+  repeated, valueless, conflicting, or inapplicable options must fail before a
+  task runs. The configured release profile, remote name, workflow path, and
+  allowed GitHub hosts must come from policy rather than command literals.
 - Independent local checks may run with bounded rolling parallelism. Package,
   browser, build, settings, and evidence mutation must be isolated or locked;
   timeout, output limit, cancellation, or cleanup failure must fail the gate.
+- A verification request that is already cancelled must not start a child task.
+  Cancellation observed before or during orchestration must cancel active and
+  pending work, remain non-passing, and preserve the repository snapshot.
+- Dependency scheduling must be independent of task declaration order. A
+  serial consumer waiting on a later-declared producer must not block that
+  producer from running, and unresolved dependencies must never be reported as
+  a successful or skipped check.
 - `focused` is a partial local result. It must explain why checks were selected,
   use a conservative full-core fallback for unknown paths, and must never claim
   release readiness. CI and complete release verification must execute every
@@ -523,6 +534,12 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Node 20 and Node 22 runtime compatibility must remain separate execution
   instances. Package production must occur once per CI run, and every configured
   consumer must verify and test the same revision-bound tarball without repacking.
+- Package manifest inspection must work in non-interactive CI with piped parent
+  output. Empty, incomplete, oversized, or invalid npm JSON output must fail
+  closed from a run-isolated private file rather than being inferred as PASS.
+- Both dry-run inspection and the real package producer must capture npm JSON
+  through the same bounded, mode-0600, same-descriptor file helper. Neither
+  path may accumulate unbounded child stdout in memory.
 - Cross-run Playwright caching may contain exact-version browser binaries only.
   A cache hit cannot satisfy a test and must not contain results, receipts,
   profiles, storage state, traces, screenshots, or reports.
@@ -533,12 +550,22 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Remote readiness must be represented by one proof-only final job bound to the
   same workflow run, attempt, full HEAD, policy, and exact owner graph. It must
   not rerun provider suites or reuse local or prior-run PASS results.
+- CI ownership must be validated from parsed YAML structure. Required jobs and
+  steps may not use conditions, failure-ignoring controls, shell masking, matrix
+  include/exclude changes, alternate shells, or working-directory overrides to
+  bypass a policy-owned command or execution instance.
 
 ## Parent Authority Evidence Projection
 
 - The Dashboard-facing evidence index must remain a derived current-state view,
   not an append-only history. Historical and superseded evidence must remain
   locally inspectable without participating in the current readiness decision.
+- The active receipt and release-batch stores must enforce policy-owned count,
+  byte, lock, stale-owner, and ingress limits. Superseded immutable records must
+  move atomically to a marker-owned inactive archive rather than be deleted.
+  The inactive archive is non-authoritative local history and is not claimed to
+  have an automatic total-size bound; export or compaction requires a separate
+  explicit design.
 - The projection must use the parent's fixed 13-column contract, a full product
   HEAD, and UTC timestamps at whole-second precision. An invalid row must fail
   closed rather than being normalized into a successful result.
@@ -558,6 +585,131 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   applicability decision exists.
 - Evidence storage must reject symlinked evidence directories and altered
   integrity-bound receipt fields before writing or projecting authority.
+- Concurrent receipt writers may coalesce a derived-view rebuild only after the
+  locked, bounded ledger proves that the exact new event is already projected.
+  Coalescing must not drop receipts or weaken deterministic rebuilds.
+- A complete release batch must reserve bounded temporary receipt admission for
+  all policy-owned sources before sequential publication. Interim retention
+  must not discard an earlier batch receipt while an older authoritative failure
+  remains the semantic winner before commit; the committed batch must fit the
+  configured active count and byte capacities.
 - Parent compatibility is verified read-only. TraceCue must not modify the
   parent repository or weaken the parent's missing-evidence, freshness, HEAD,
   authority, or malformed-index rejection behavior.
+
+## Control Center Goal Completion
+
+- A non-engineer must be able to start the installed Control Center without
+  building the React application or entering an implementation command. The
+  launcher must use package-relative assets, keep the selected workspace as a
+  separate data boundary, reuse a healthy existing loopback instance, and
+  present the local URL when the operating system cannot open it. Reuse must
+  also match the runtime protocol, package version, and packaged asset identity.
+- `New review` must provide one purpose-led entry for a website URL, a local
+  image, a UTF-8 text document, or a Playwright JSON/JUnit result. File input
+  must use the browser picker or drag and drop; arbitrary local path entry is
+  forbidden.
+- The destination for each input must remain truthful: URL runs the existing
+  browser review; image runs the existing metadata/evidence review; text
+  prepares a local review proposal; Playwright imports and summarizes test
+  evidence. Raw PDF/DOCX, OCR, browser execution, and remote CI execution are
+  not supported by this entry point.
+- Uploaded input must be streamed to a workspace-confined private intake store
+  under an unpredictable opaque id. Per-file, per-operation, total-capacity,
+  type, signature, dimension, UTF-8, retention, and cleanup limits must fail
+  closed. Public state must not expose storage paths or original filenames.
+- Intake quota checks and completion must be cross-process transactions. One
+  source can execute at most once, abandoned reservations and orphaned files
+  must be cleaned safely, and completed safe results must remain listable and
+  openable after navigation, reload, or restart.
+- Active Control Center history may be count bounded for predictable listing,
+  but completed operation and intake-result records must not be automatically
+  deleted. Older records must move to a private sharded inactive history and
+  remain directly readable by opaque id until the user explicitly cleans the
+  configured artifact root. History movement must acquire the same per-record
+  lock as publication or update and revalidate the selected revision before the
+  active copy moves. History maintenance must run outside the committed primary
+  transaction: lock contention or archival failure must not delay external
+  dispatch, turn a saved decision or completed intake into an error response, or
+  overwrite the primary operation result. Time-based cleanup may remove expired
+  unfinished intake state and released source bytes, but it must not remove a
+  completed receipt before explicit artifact-root cleanup.
+- A private store may create its ownership marker only when it atomically
+  creates the store root. A pre-existing markerless root must fail closed and
+  its contents must remain untouched. Read-only requests must not create the
+  store, marker, result directory, or any other artifact state.
+- Quota accounting must include every unexpired staged source, live processing
+  source, and active reservation so concurrent completion cannot free capacity
+  before its private source is actually released.
+- Active intake-result publication must have a configurable hard count bound.
+  Admission must reserve one opaque id under a cross-process lock, bind that
+  reservation to exactly one completion owner, renew its lease during long
+  processing, and permit non-owners only to wait for or read the same result.
+  A second request must never run the intake engine for an id already owned by
+  another request, and a different id must remain blocked while the bound is
+  full.
+- Reading an already completed active or archived result must not require a new
+  publication slot. A completed same-id retry must remain available while the
+  active result store is full or history maintenance is temporarily busy.
+- Intake publication must remain private until the result digest, completed
+  receipt, and source-release marker are durably consistent. A valid pending
+  pair may be finalized once after interruption. Processing state without a
+  valid pending pair must become a non-retryable interrupted or invalid result,
+  release its reservation and safe result file, and allow later intake and
+  result admission to recover without running the engine again.
+- A private-store lock owner must not leave its logical lock permanently held
+  when the coordinated release window expires. A nonce- and process-identity-
+  matched owner may remove only its own unchanged lock; changed ownership or
+  unsafe state must fail closed.
+- Ordinary AI state must say only whether suggestions are available, need
+  setup, or are unavailable, together with a user-facing service name and a
+  safe next step. Provider, model, endpoint, credential name/value, destination
+  fingerprint, and configuration hash are not ordinary UI content.
+- External AI execution continues to require a fresh concrete disclosure and
+  one-time confirmation. Input identity, evidence classes, service identity,
+  and a non-secret destination configuration fingerprint must remain unchanged
+  through dispatch.
+- Interrupted work must expose only truthful recovery actions. Local preparing
+  may restart explicitly, expired confirmation requires a new disclosure,
+  dispatch uncertainty must never retry automatically, validation may resume
+  only from verified persisted execution evidence, and cancellation may be
+  claimed only before external dispatch or for a genuinely abortable local
+  task.
+- A same-server operation whose background task is no longer active must be
+  recoverable even when its persisted owner process is still alive. Another
+  live process remains authoritative while it owns the work. Active operation
+  admission must be bounded and may retire only revision-revalidated terminal
+  records to inactive history.
+- Read-only status, list, dashboard, and saved-result GET requests must not
+  recover or otherwise mutate state. Recovery must be an explicit protected
+  action. A known no-send failure must remain retryable as failed, while a
+  possible transmission remains dispatch-unknown and cannot auto-retry.
+- A failure is known to be pre-send only when the runner returns an explicit
+  structured boundary attesting false for provider call, API call, and external
+  evidence transfer. A thrown runner or a missing/partial boundary is uncertain
+  and must remain `dispatch_unknown`.
+- The UI must show purpose and standard/deep/xhigh only when the selected engine
+  uses them. It must follow the approved production mock and design tokens,
+  preserve visible keyboard focus, show safe actionable errors, translate the
+  representative RTL flow, and avoid overlap or horizontal overflow at the
+  verified mobile, tablet, and desktop widths.
+- Saved image, document, and test results must show the safe source-specific
+  facts needed for a decision. Prepared evidence or a proposal must never be
+  counted or presented as a completed review. Failed, timed-out, empty, missing,
+  blocked, stale, or unreadable automated checks must never use a passing state;
+  timeout, skipped, and failure counts must survive the safe projection.
+  Agentic and intake items must share one newest-first order, dates must use the
+  selected locale, and a result-list read failure must retain already displayed
+  results with a clear retry action.
+- After one file intake succeeds, the same form must not submit that file again.
+  The user must explicitly choose to prepare another item or open the saved
+  result. Intake-only results must not show the website-review five-stage
+  completion sequence.
+- Status meaning must remain visible as text on mobile instead of relying on
+  color alone. Current workflow stages and selected finding decisions must
+  expose standard accessibility state, and directional symbols must follow the
+  active text direction.
+- A complete local release verification may refresh product authority only as
+  one exact-HEAD evidence batch. All projected source receipts must reference
+  the same batch. Verified remote CI proof remains a distinct exact-run
+  authority and cannot replace local release evidence.

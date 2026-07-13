@@ -1948,3 +1948,111 @@ Rollback restores the prior projector without changing runtime review behavior,
 Control Center settings, provider boundaries, MCP permissions, package identity,
 or parent files. Archived legacy evidence remains local and can be inspected
 independently of the active index.
+
+## Phase 168-176: Control Center Goal Completion
+
+1. Phase 168: synchronize the five canonical documents, security,
+   verification, design system, schemas, manifests, and versioned production
+   mock. Preserve the prior approved mock under its phase archive.
+2. Phase 169: add an approved-namespace safe local store with realpath and
+   component checks, private modes, bounded reads, exclusive temporary files,
+   atomic durable replacement, revision conflicts, and owner/nonce
+   cross-process locks; migrate the Control Center operation store without
+   breaking schema-v1 reads.
+3. Phase 170: replace production/Vite API duplication with one router; add
+   exact active-Origin and in-memory CSRF protection to every mutation; add
+   bounded streaming timeouts and hardened static-file delivery.
+4. Phase 171: package the prebuilt Control Center assets and add a dedicated
+   one-action launcher with workspace/asset separation, healthy singleton
+   reuse, fixed platform openers, `shell: false`, URL fallback, and packed
+   external-cwd verification.
+5. Phase 172: add opaque streaming intake for PNG/JPEG/GIF/WebP images, UTF-8
+   TXT/Markdown/JSON documents, and Playwright JSON/JUnit results; apply per
+   item, per operation, total quota, expiry, immutable digest, and incomplete
+   upload cleanup contracts.
+6. Phase 173: connect each source to its existing truthful engine: browser
+   review for URL, metadata/evidence review for image, proposal preparation for
+   text, and evidence import/summary for Playwright. Do not claim equivalent AI
+   review execution for capabilities the engine does not provide.
+7. Phase 174: add redacted AI readiness, destination-fingerprint consent,
+   dispatch-time revalidation, revisioned state recovery, verified local-only
+   validation resumption, and no retry for uncertain external transfer.
+8. Phase 175: add one-batch exact-HEAD release evidence refresh and separately
+   verified CI-proof import with policy-owned task/source mappings. Authority
+   is emitted only from a clean committed checkout after the complete run.
+9. Phase 176: synchronize the React UI with the production mock and design
+   tokens; run focused refusal/concurrency/pack tests, the complete release and
+   product gates, 390/768/1440 browser coverage across Japanese, English, and
+   RTL representative flows, independent post-implementation reviews, commit,
+   push, exact main CI, local/remote sync, and final authority refresh.
+
+Independent review hardening within Phase 176 structurally parses CI YAML to
+reject skipped or masked owners, coalesces concurrent derived evidence rebuilds,
+bounds both dry-run and real npm pack JSON through one helper, refuses
+markerless-store adoption, counts live processing intake against quota, treats
+runner exceptions or incomplete no-send attestations as dispatch-unknown, and
+keeps projection-only GETs free of writes. The React closure shows safe
+source-specific saved-result facts, danger styling for failed checks, retained
+results with retry after list failure, one newest-first mixed review list,
+locale-aware dates, and exact mock parity for the purpose input and desktop
+action alignment.
+
+Post-review closure also serializes dead-lock recovery transitions, scans the
+bounded store before sorting and limiting, rejects JSON primitives as client
+errors, validates exact CI owner step sequences with the pinned YAML parser,
+kills oversized package-output producers while streaming, preserves Playwright
+timeout/skipped counts, distinguishes prepared/pass/fail/empty result states,
+blocks same-form file resubmission, keeps status text visible on mobile, exposes
+current and selected accessibility state, and mirrors directional symbols in
+RTL. The pre-change Phase 168 mock is archived intact before the active mock is
+extended with saved-result and mobile-status references.
+
+Final independent-review closure replaces automatic Control Center history
+deletion with sharded inactive history under the same private store, preserves
+direct opaque-id lookup, and coordinates publication/update and archival with a
+single per-record lock order plus revision revalidation. It also removes native
+file-input validation that blocked the advertised drop path while retaining
+React-side submission guards, restores the approved tablet navigation and
+settings mock copy/colors, reserves a complete release batch during bounded
+receipt admission, and removes CI workflow/remote override paths outside policy.
+The final contention pass separates coalesced operation and intake history
+maintenance from primary transactions so a retention timeout cannot reverse a
+durable decision, completion, or confirmed dispatch response. Verification
+orchestration now rejects a pre-aborted signal before spawning any task and
+projects pending work as cancelled. Expiry cleanup retains completed intake
+receipts so the one-use and audit record survives until explicit cleanup.
+
+Final authority hardening makes verification arguments fail closed, adds stable
+policy-resolved release-evidence and CI-proof-import entrypoints, derives remote,
+workflow, profile, and allowed GitHub hosts from the verification policy, and
+shares repository identity parsing across proof and status paths. Active
+evidence receipt/batch storage is count/byte bounded; semantic current evidence
+is retained and superseded immutable history is atomically moved to a
+non-authoritative inactive archive. Archive history remains inspectable and is
+not automatically deleted or represented as globally size bounded. Package
+capture applies one stdout/stderr budget and binds bounded untracked content.
+
+Final concurrency hardening gives intake results a configurable active
+publication bound, single-owner token and renewed lease, completed-id admission
+bypass, and non-executing same-id waiters. Publication commits a digest-bound
+result only after source release and recovers valid pending state without engine
+re-execution; interrupted or invalid pending state becomes non-retryable and
+releases safe capacity. A one-slot configuration archives its prior result
+before admitting the next while preserving direct opaque-id lookup. Operation
+admission is bounded, archived mutations reactivate under the global lock order,
+and same-process background work is recoverable as soon as its active task ends.
+Bounded active-to-history reads tolerate only transient replacement, and the
+safe store has an owner-identity-checked release fallback so a short transition
+window cannot leave a live logical lock permanently held.
+
+Deferred: PDF/DOCX extraction, OCR, browser-side Playwright execution, remote
+CI trigger/cancel, provider retry or cancellation without a verified contract,
+signed native installers, automatic updates, startup registration, and OS
+credential-store integration. Rejected: arbitrary paths, generic commands,
+browser credentials, provider/model/endpoint selectors, raw uploads or HTML,
+automatic uncertain retry, CI branch writeback, and parent or FrameCue edits.
+
+Rollback is a TraceCue-only Git revert. Intake artifacts are private ignored
+local data and may be cleaned only through their owned marker and retention
+contract. Existing CLI, MCP, browser review, image review, Playwright import,
+Agentic Human Review, settings, and evidence-v2 interfaces remain compatible.

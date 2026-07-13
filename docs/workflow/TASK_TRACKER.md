@@ -168,7 +168,7 @@ This file is paired with `docs/workflow/HANDOFF.md`. Keep the TASK_TRACKER and H
 
 ## Completed Work
 
-- [x] Aligned the production Control Center settings page with the accepted prototype typography, 760px narrow layout, divider-based rows, display-language choice, concise Playwright Test mode choice, and one save action; removed technical locale, persistence, diagnostics, regression-import, CI-policy, and trust-boundary displays from ordinary settings while preserving backend, CLI, API, read-model, endpoint, and security contracts.
+- [x] Aligned the production Control Center settings page with the accepted prototype typography, 760px narrow layout, divider-based rows, display-language choice, plain-language automated-check choice, and one save action; removed Playwright/CI implementation names, technical locale, persistence, diagnostics, regression-import, CI-policy, and trust-boundary displays from ordinary settings while preserving backend, CLI, API, read-model, endpoint, and security contracts.
 - [x] Approved the durable Control Center production mock with standalone HTML, stable screen states, desktop/mobile PNGs, capture and interaction checks, and design-system contracts; production now uses it as the visual baseline.
 - [x] Implemented dedicated Control Center agentic review execution with persistent operations, real browser evidence, AHR propose/plan/run reuse, concrete one-time send confirmation, normalized pathless results, per-finding decisions, linked recheck/deeper, simple AI/privacy preferences, restart-safe unknown dispatch, Playwright browser coverage, and no automatic retry or gate mutation.
 - [x] Added bounded TraceCue Control Center source intake and display-language settings with React/Vite Intake and Settings views, confirmed local source-text proposal generation, fixed-path display-locale persistence, design-system component metadata, no-browser action/server tests, and preserved no-provider/no-shell/no-MCP/no-browser/no-external-transfer/no-gate-mutation boundaries.
@@ -521,3 +521,35 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
   GitHub CI run `29223656765`; record the ignored current-HEAD evidence after
   the completion-state commit and confirm read-only parent authority plus clean
   local/remote synchronization before handoff.
+
+## Control Center Goal Completion
+
+- [x] Complete Gate A proposal review and Gate B plan review with independent
+  architecture, security, and UI/verification reviewers.
+- [x] Synchronize Phase 168-176 product, workflow, safety, verification,
+  design-system, mock, schema, and manifest authorities.
+- [x] Implement the private safe store, cross-process transactions, shared API
+  router, exact Origin/CSRF contract, and hardened static delivery.
+- [x] Implement package-relative one-action launch and packed external-cwd
+  lifecycle verification.
+- [x] Implement bounded opaque intake and truthful URL/image/text/Playwright
+  engine adapters.
+- [x] Implement redacted AI readiness, destination-bound consent, and
+  state-specific recovery without uncertain retry.
+- [x] Implement exact-HEAD release evidence batches and separate verified CI
+  proof import.
+- [x] Add strict command-specific verification arguments and stable,
+  policy-resolved local evidence and CI-proof import entrypoints.
+- [x] Bound active evidence admission and retention, preserve semantic winners,
+  archive superseded immutable history without authority, and cover capacity,
+  crash, replacement, copied-identity, and self-deadlock refusal paths.
+- [x] Derive the release profile, remote, workflow, and allowed GitHub hosts from
+  policy and share repository identity parsing across proof and status checks.
+- [x] Bound intake-result and operation admission; add single-owner renewed
+  publication leases, idempotent completed-result reads, one-slot history
+  turnover, interrupted/invalid publication recovery, same-process task
+  recovery, transient history-read coordination, and exact-owner lock-release
+  fallback with cross-process rejection tests.
+- [ ] Synchronize the React UI and versioned production mock, then pass focused,
+  no-browser, package, browser, release, product, independent review, CI, Git
+  sync, and final authority checks.

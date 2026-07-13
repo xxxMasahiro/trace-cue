@@ -529,11 +529,11 @@ function parseControlCenter(args, globals) {
     return { ok: true, command: 'help', json: globals.json, options: { topic: args[0] ? `control-center ${args[0]}` : 'control-center' } };
   }
   const subcommand = args[0];
-  if (subcommand !== 'status' && subcommand !== 'serve') {
+  if (!['status', 'serve', 'launch'].includes(subcommand)) {
     return parseError('control-center', globals.json, {
       code: subcommand ? 'UNKNOWN_CONTROL_CENTER_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
       message: subcommand ? `Unknown control-center subcommand: ${subcommand}` : 'control-center requires a subcommand.',
-      details: { subcommands: ['status', 'serve'] }
+      details: { subcommands: ['status', 'serve', 'launch'] }
     });
   }
   const command = `control-center ${subcommand}`;
@@ -550,7 +550,9 @@ function parseControlCenter(args, globals) {
   }
   const allowed = new Set(subcommand === 'serve'
     ? ['artifact-root', 'limit', 'max-bytes', 'evidence-set', 'input', 'host', 'port']
-    : ['artifact-root', 'limit', 'max-bytes', 'evidence-set', 'input']);
+    : subcommand === 'launch'
+      ? ['artifact-root', 'host', 'port']
+      : ['artifact-root', 'limit', 'max-bytes', 'evidence-set', 'input']);
   for (const option of Object.keys(parsed.options)) {
     if (!allowed.has(option)) {
       return parseError(command, globals.json, {

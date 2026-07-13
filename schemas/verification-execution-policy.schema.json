@@ -13,6 +13,7 @@
     "unknown_state_policy",
     "cross_run_result_reuse",
     "persistent_result_cache",
+    "evidence_policy",
     "limits",
     "tasks",
     "profiles",
@@ -29,6 +30,47 @@
     "unknown_state_policy": {"const": "fail-closed"},
     "cross_run_result_reuse": {"const": "disabled"},
     "persistent_result_cache": {"const": "disabled"},
+    "evidence_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release_batch_required", "release_profile", "default_context", "release_artifact_paths", "ci_proof_source_id", "ci_proof_workflow_path", "ci_proof_artifact_prefix", "ci_proof_filename", "ci_proof_repository_remote", "ci_proof_repository_hosts", "ci_proof_default_context", "remote_ci_replaces_local_release", "max_future_observation_skew_ms", "ci_proof_api_timeout_ms", "store_limits"],
+      "properties": {
+        "release_batch_required": {"const": true},
+        "release_profile": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*$"},
+        "default_context": {"enum": ["all", "free-development", "product-improvement", "external-integration", "lesson-maintenance", "custom"]},
+        "release_artifact_paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"}
+        },
+        "ci_proof_source_id": {"const": "product.ci.final_proof"},
+        "ci_proof_workflow_path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.ya?ml$"},
+        "ci_proof_artifact_prefix": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "ci_proof_filename": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.json$"},
+        "ci_proof_repository_remote": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "ci_proof_repository_hosts": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"type": "string", "pattern": "^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$"}},
+        "ci_proof_default_context": {"enum": ["all", "free-development", "product-improvement", "external-integration", "lesson-maintenance", "custom"]},
+        "remote_ci_replaces_local_release": {"const": false},
+        "max_future_observation_skew_ms": {"type": "integer", "minimum": 0},
+        "ci_proof_api_timeout_ms": {"type": "integer", "minimum": 1},
+        "store_limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["lock_timeout_ms", "stale_lock_ms", "receipt_retention_count", "receipt_retention_bytes", "release_batch_retention_count", "release_batch_retention_bytes", "ingress_overflow_count", "ingress_overflow_bytes"],
+          "properties": {
+            "lock_timeout_ms": {"type": "integer", "minimum": 1},
+            "stale_lock_ms": {"type": "integer", "minimum": 1},
+            "receipt_retention_count": {"type": "integer", "minimum": 1},
+            "receipt_retention_bytes": {"type": "integer", "minimum": 1024},
+            "release_batch_retention_count": {"type": "integer", "minimum": 1},
+            "release_batch_retention_bytes": {"type": "integer", "minimum": 1024},
+            "ingress_overflow_count": {"type": "integer", "minimum": 1},
+            "ingress_overflow_bytes": {"type": "integer", "minimum": 1024}
+          }
+        }
+      }
+    },
     "limits": {
       "type": "object",
       "additionalProperties": false,
@@ -69,18 +111,74 @@
     "ci_graph": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["owners", "final_job_id", "required_jobs"],
+      "required": ["workflow_contract", "owners", "final_job_id", "final_name", "final_if", "final_runs_on", "final_timeout_minutes", "final_required_actions", "final_required_run", "final_required_step_order", "required_jobs"],
       "properties": {
+        "workflow_contract": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "triggers", "permissions", "concurrency"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "triggers": {"$ref": "#/$defs/ciTriggers"},
+            "permissions": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["contents"],
+              "properties": {"contents": {"const": "read"}}
+            },
+            "concurrency": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["group", "cancel-in-progress"],
+              "properties": {
+                "group": {"type": "string", "minLength": 1},
+                "cancel-in-progress": {"const": true}
+              }
+            }
+          }
+        },
         "owners": {
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["job_id", "execution_instance_ids"],
+            "required": ["job_id", "name", "execution_instance_ids", "runs_on", "timeout_minutes", "required_needs", "required_strategy", "required_outputs", "required_actions", "required_run_metadata", "required_step_order", "required_commands"],
             "properties": {
               "job_id": {"type": "string", "minLength": 1},
+              "name": {"type": "string", "minLength": 1},
               "execution_instance_ids": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              },
+              "runs_on": {"type": "string", "minLength": 1},
+              "timeout_minutes": {"type": "integer", "minimum": 1},
+              "required_needs": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              },
+              "required_strategy": {
+                "type": "object"
+              },
+              "required_outputs": {
+                "type": "object",
+                "additionalProperties": {"type": "string", "minLength": 1}
+              },
+              "required_actions": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"$ref": "#/$defs/ciAction"}
+              },
+              "required_run_metadata": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"$ref": "#/$defs/ciRunMetadata"}
+              },
+              "required_step_order": {"$ref": "#/$defs/ciStepOrder"},
+              "required_commands": {
                 "type": "array",
                 "minItems": 1,
                 "items": {"type": "string", "minLength": 1},
@@ -90,6 +188,17 @@
           }
         },
         "final_job_id": {"type": "string", "minLength": 1},
+        "final_name": {"type": "string", "minLength": 1},
+        "final_if": {"type": "string", "minLength": 1},
+        "final_runs_on": {"type": "string", "minLength": 1},
+        "final_timeout_minutes": {"type": "integer", "minimum": 1},
+        "final_required_actions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/ciAction"}
+        },
+        "final_required_run": {"$ref": "#/$defs/ciRun"},
+        "final_required_step_order": {"$ref": "#/$defs/ciStepOrder"},
         "required_jobs": {
           "type": "array",
           "minItems": 1,
@@ -112,6 +221,93 @@
     }
   },
   "$defs": {
+    "ciTriggers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pull_request", "push", "workflow_dispatch"],
+      "properties": {
+        "pull_request": {"type": "null"},
+        "push": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["branches"],
+          "properties": {
+            "branches": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+          }
+        },
+        "workflow_dispatch": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inputs"],
+          "properties": {
+            "inputs": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["base_sha"],
+              "properties": {
+                "base_sha": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["description", "required", "type"],
+                  "properties": {
+                    "description": {"type": "string", "minLength": 1},
+                    "required": {"const": false},
+                    "type": {"const": "string"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ciAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uses", "with"],
+      "properties": {
+        "uses": {"type": "string", "minLength": 1},
+        "id": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"},
+        "if": {"type": "string", "minLength": 1},
+        "with": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["string", "number", "boolean"]
+          }
+        }
+      }
+    },
+    "ciRunMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["env"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"},
+        "env": {
+          "type": "object",
+          "additionalProperties": {"type": ["string", "number", "boolean"]}
+        }
+      }
+    },
+    "ciRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run", "env"],
+      "properties": {
+        "run": {"type": "string", "minLength": 1},
+        "id": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"},
+        "env": {
+          "type": "object",
+          "additionalProperties": {"type": ["string", "number", "boolean"]}
+        }
+      }
+    },
+    "ciStepOrder": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^(?:action|run):(?:0|[1-9][0-9]*)$"}
+    },
     "task": {
       "type": "object",
       "additionalProperties": false,

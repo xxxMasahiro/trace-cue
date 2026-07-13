@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "verification-release-evidence-batch.schema.json",
+  "title": "Verification Release Evidence Batch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "batch_id",
+    "profile",
+    "context",
+    "created_at",
+    "before_snapshot",
+    "after_snapshot",
+    "policy_fingerprint",
+    "verification_policy_fingerprint",
+    "tool_fingerprint",
+    "graph_fingerprint",
+    "configuration_fingerprint",
+    "artifact_digest",
+    "plan_digest",
+    "result_digest",
+    "worktree_preserved",
+    "release_ready_claim_allowed",
+    "task_results",
+    "source_bindings",
+    "ci_proof_included",
+    "remote_ci_replaces_local_release",
+    "batch_digest"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "kind": {"const": "verification-release-evidence-batch"},
+    "batch_id": {"type": "string", "pattern": "^release-[a-f0-9]{32}$"},
+    "profile": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*$"},
+    "context": {"enum": ["all", "free-development", "product-improvement", "external-integration", "lesson-maintenance", "custom"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "before_snapshot": {"$ref": "#/$defs/snapshot"},
+    "after_snapshot": {"$ref": "#/$defs/snapshot"},
+    "policy_fingerprint": {"$ref": "#/$defs/digest"},
+    "verification_policy_fingerprint": {"$ref": "#/$defs/digest"},
+    "tool_fingerprint": {"$ref": "#/$defs/digest"},
+    "graph_fingerprint": {"$ref": "#/$defs/digest"},
+    "configuration_fingerprint": {"$ref": "#/$defs/digest"},
+    "artifact_digest": {"$ref": "#/$defs/digest"},
+    "plan_digest": {"$ref": "#/$defs/digest"},
+    "result_digest": {"$ref": "#/$defs/digest"},
+    "worktree_preserved": {"const": true},
+    "release_ready_claim_allowed": {"const": true},
+    "task_results": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/task_result"}
+    },
+    "source_bindings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/source_binding"}
+    },
+    "ci_proof_included": {"const": false},
+    "remote_ci_replaces_local_release": {"const": false},
+    "batch_digest": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "git_sha": {"type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"},
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["head_sha", "tree_sha", "worktree_state", "input_fingerprint"],
+      "properties": {
+        "head_sha": {"$ref": "#/$defs/git_sha"},
+        "tree_sha": {"$ref": "#/$defs/git_sha"},
+        "worktree_state": {"const": "clean"},
+        "input_fingerprint": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "task_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "exit_code", "reason", "duration_ms", "output_digest"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+        "status": {"const": "passed"},
+        "exit_code": {"type": "integer", "minimum": 0, "maximum": 0},
+        "reason": {"type": ["string", "null"]},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "output_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "source_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "task_id", "command_fingerprint"],
+      "properties": {
+        "source_id": {"type": "string", "pattern": "^(?:repositories\\.product|product\\.(?:docs|workflow|git|ci|security|approvals|design_system|gates))(?:\\.[A-Za-z0-9_.-]+)?$"},
+        "task_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+        "command_fingerprint": {"$ref": "#/$defs/digest"}
+      }
+    }
+  }
+}

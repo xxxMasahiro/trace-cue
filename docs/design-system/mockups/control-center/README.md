@@ -12,8 +12,11 @@ states for review and screenshot generation:
 
 - `?screen=home`
 - `?screen=new`
+- `?screen=new&source=document_text` (file intake)
 - `?screen=progress`
+- `?screen=recovery`
 - `?screen=result`
+- `?screen=intake-result` (saved automated-check result requiring attention)
 - `?screen=finding`
 - `?screen=running`
 - `?screen=settings`
@@ -33,7 +36,7 @@ root.
 
 Typography, colors, spacing, radius, sidebar width, and narrow content width
 mirror `docs/design-system/tokens.json` and the accepted exploratory prototype
-under `/home/masahiro/tmp/tracecue-control-center-prototype`.
+kept outside this production repository.
 
 ## Status
 
@@ -41,3 +44,10 @@ This is the approved design reference, not runtime behavior. The progress and
 result content is representative interaction data. The React/Vite production
 implementation uses real persisted TraceCue state and does not simulate
 execution, findings, decisions, or completion.
+
+The Phase 155 baseline is preserved under `archive/phase-155/`, and the complete
+Phase 168 reference is preserved under `archive/phase-168/`. The active mock
+extends the Phase 168 goal-completion reference with truthful saved-result
+status, timeout and not-run counts, persistent mobile status text, and explicit
+selection/current-step semantics while retaining the approved layout and visual
+tokens.

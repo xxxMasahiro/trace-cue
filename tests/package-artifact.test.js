@@ -21,8 +21,12 @@ import {
   createPackageArtifactManifest,
   createPackageToolchainIdentity,
   createPackageArtifactWorkspace,
+  inspectPackageTarball,
+  materializePackageSubtree,
   packageArtifactManifestDigest,
+  readPackageRepositoryState,
   resolvePackageRunIdentity,
+  runBoundedCommandToFile,
   validatePackageArtifactManifest,
   verifyPackageArtifact,
   writePackageArtifactManifest
@@ -45,8 +49,10 @@ test('package tools use isolated workspaces, finally cleanup, and direct argv sp
     assert.match(source, /createPackageArtifactWorkspace/u);
     assert.match(source, /finally\s*\{/u);
     assert.match(source, /cleanupPackageArtifactWorkspace/u);
-    assert.match(source, /shell:\s*false/u);
+    assert.match(source, /runBoundedCommandToFile/u);
   }
+  assert.match(library, /spawn\(command, args, \{/u);
+  assert.match(library, /shell:\s*false/u);
   assert.match(installSmoke, /mode === 'produce'/u);
   assert.match(installSmoke, /mode === 'consume'/u);
   assert.match(installSmoke, /--artifact-dir/u);
@@ -83,6 +89,101 @@ test('package artifact workspace is unique and cleanup stays run-isolated', asyn
   await rm(unmarked, { recursive: true, force: true });
 });
 
+test('bounded command output stops the producer as soon as the file limit is exceeded', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'package-bounded-command-'));
+  try {
+    const accepted = path.join(directory, 'accepted.json');
+    const body = await runBoundedCommandToFile({
+      command: process.execPath,
+      args: ['-e', 'process.stdout.write("ok")'],
+      cwd: repoRoot,
+      outputPath: accepted,
+      maxBytes: 8
+    });
+    assert.equal(body, 'ok');
+
+    const rejected = path.join(directory, 'rejected.json');
+    await assert.rejects(
+      runBoundedCommandToFile({
+        command: process.execPath,
+        args: ['-e', 'process.stdout.write("x".repeat(4096))'],
+        cwd: repoRoot,
+        outputPath: rejected,
+        maxBytes: 128
+      }),
+      /oversized output/u
+    );
+    assert.ok((await readFile(rejected)).length <= 128);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('bounded command output applies one limit to stdout and stderr', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'package-bounded-stderr-'));
+  try {
+    await assert.rejects(runBoundedCommandToFile({
+      command: process.execPath,
+      args: ['-e', 'process.stdout.write("ok"); process.stderr.write("x".repeat(4096));'],
+      cwd: repoRoot,
+      outputPath: path.join(directory, 'stderr.json'),
+      maxBytes: 128
+    }), /oversized output/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('bounded command cancellation terminates its isolated process group', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'package-bounded-cancel-'));
+  try {
+    const pidFile = path.join(directory, 'child.pid');
+    const outputPath = path.join(directory, 'cancelled.json');
+    const controller = new AbortController();
+    const running = runBoundedCommandToFile({
+      command: process.execPath,
+      args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`],
+      cwd: repoRoot,
+      outputPath,
+      maxBytes: 128,
+      timeoutMs: 5_000,
+      signal: controller.signal
+    });
+    let childPid;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        childPid = Number.parseInt(await readFile(pidFile, 'utf8'), 10);
+        break;
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+    assert.ok(Number.isSafeInteger(childPid) && childPid > 0);
+    controller.abort();
+    await assert.rejects(running, /cancelled/u);
+    assert.throws(() => process.kill(childPid, 0), (error) => error?.code === 'ESRCH');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('bounded command timeout terminates the producer', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'package-bounded-timeout-'));
+  try {
+    await assert.rejects(runBoundedCommandToFile({
+      command: process.execPath,
+      args: ['-e', 'setInterval(() => {}, 1000)'],
+      cwd: repoRoot,
+      outputPath: path.join(directory, 'timeout.json'),
+      maxBytes: 128,
+      timeoutMs: 50
+    }), /timed out/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('run identity uses explicit same-run metadata and rejects malformed attempts', () => {
   assert.deepEqual(resolvePackageRunIdentity({
     PACKAGE_ARTIFACT_RUN_ID: 'run-42',
@@ -91,6 +192,35 @@ test('run identity uses explicit same-run metadata and rejects malformed attempt
   }), { run_id: 'run-42', run_attempt: 3, job_id: 'pack-owner' });
   assert.throws(() => resolvePackageRunIdentity({ PACKAGE_ARTIFACT_RUN_ATTEMPT: '0' }), /positive integer/u);
   assert.throws(() => resolvePackageRunIdentity({ PACKAGE_ARTIFACT_RUN_ATTEMPT: '1x' }), /positive integer/u);
+});
+
+test('package repository state binds untracked file content, not only its name', async () => {
+  const repository = await createGitRepository();
+  try {
+    const extra = path.join(repository, 'extra.txt');
+    await writeFile(extra, 'one\n');
+    const first = await readPackageRepositoryState(repository);
+    await writeFile(extra, 'two\n');
+    const second = await readPackageRepositoryState(repository);
+    assert.notEqual(second.input_digest, first.input_digest);
+  } finally {
+    await rm(repository, { recursive: true, force: true });
+  }
+});
+
+test('package repository state hashes an untracked symlink target without following it', async () => {
+  const repository = await createGitRepository();
+  try {
+    const link = path.join(repository, 'untracked-link');
+    await symlink('first-local-target', link);
+    const first = await readPackageRepositoryState(repository);
+    await rm(link);
+    await symlink('second-local-target', link);
+    const second = await readPackageRepositoryState(repository);
+    assert.notEqual(first.input_digest, second.input_digest);
+  } finally {
+    await rm(repository, { recursive: true, force: true });
+  }
 });
 
 test('producer manifest binds repository, run, policy, command, tarball, and file list', async () => {
@@ -124,6 +254,69 @@ test('producer manifest binds repository, run, policy, command, tarball, and fil
     assert.equal(verified.manifest.artifact.size_bytes > 0, true);
   } finally {
     await fixture.cleanup();
+  }
+});
+
+test('consumer rejects any file outside the exact package transport set', async () => {
+  const fixture = await createFixture();
+  try {
+    await writeFile(path.join(fixture.workspace.artifactDir, 'unexpected.txt'), 'not part of the transport\n');
+    await assert.rejects(verifyPackageArtifact({
+      artifactRoot: fixture.workspace.artifactDir,
+      manifestPath: fixture.manifestPath
+    }), /unexpected file set/u);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('verified package subtree materialization writes only bounded regular files and refuses replacement', async () => {
+  const workspace = await createPackageArtifactWorkspace('package-materialize-');
+  const destinationRoot = await mkdtemp(path.join(tmpdir(), 'package-materialize-output-'));
+  try {
+    const tarballPath = path.join(workspace.artifactDir, 'ui.tgz');
+    await writeFile(tarballPath, createTarball([
+      { name: 'package/dist/control-center/index.html', type: '0', content: '<!doctype html>\n' },
+      { name: 'package/dist/control-center/assets/app.js', type: '0', content: 'export default true;\n' },
+      { name: 'package/dist/control-center/assets/app.css', type: '0', content: 'body {}\n' },
+      { name: 'package/src/private.js', type: '0', content: 'not materialized\n' }
+    ]));
+    const expectedTarballSha256 = (await inspectPackageTarball(tarballPath)).sha256;
+    const result = await materializePackageSubtree({
+      tarballPath,
+      expectedTarballSha256,
+      archiveSubtree: 'dist/control-center',
+      destinationRoot,
+      destinationPath: 'dist/control-center',
+      requiredFiles: ['index.html']
+    });
+    assert.equal(result.file_count, 3);
+    assert.match(await readFile(path.join(destinationRoot, 'dist', 'control-center', 'index.html'), 'utf8'), /doctype/u);
+    assert.equal(await readFile(path.join(destinationRoot, 'dist', 'control-center', 'assets', 'app.js'), 'utf8'), 'export default true;\n');
+    await assert.rejects(access(path.join(destinationRoot, 'src', 'private.js')));
+    await assert.rejects(materializePackageSubtree({
+      tarballPath,
+      expectedTarballSha256,
+      archiveSubtree: 'dist/control-center',
+      destinationRoot,
+      destinationPath: 'dist/control-center',
+      requiredFiles: ['index.html']
+    }), /already exists/);
+
+    await writeFile(tarballPath, createTarball([
+      { name: 'package/dist/control-center/index.html', type: '0', content: '<!doctype html><p>replaced</p>\n' }
+    ]));
+    await assert.rejects(materializePackageSubtree({
+      tarballPath,
+      expectedTarballSha256,
+      archiveSubtree: 'dist/control-center',
+      destinationRoot,
+      destinationPath: 'dist/replaced-control-center',
+      requiredFiles: ['index.html']
+    }), /changed after verification/);
+  } finally {
+    await cleanupPackageArtifactWorkspace(workspace);
+    await rm(destinationRoot, { recursive: true, force: true });
   }
 });
 

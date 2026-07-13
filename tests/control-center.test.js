@@ -311,16 +311,28 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
       '/api/playwright-test/external-ci/approve-settings',
       '/api/playwright-test/external-ci/fetch-approved'
     ]);
+    assert.deepEqual(started.metadata.source_intake_endpoints, [
+      '/api/review-intake/upload',
+      '/api/review-intake/complete',
+      '/api/review-intake/results',
+      '/api/review-intake/result'
+    ]);
 
     const health = await fetch(new URL('/api/health', started.url));
     assert.equal(health.status, 200);
     assert.equal(health.headers.get('cache-control'), 'no-store');
     const healthBody = await health.json();
     assert.equal(healthBody.read_only, true);
+    assert.equal(healthBody.protocol_version, '1.0.0');
+    assert.equal(typeof healthBody.package_version, 'string');
+    assert.match(healthBody.asset_fingerprint, /^sha256:[a-f0-9]{64}$/);
 
     const dashboard = await fetch(new URL('/api/dashboard', started.url));
     assert.equal(dashboard.status, 200);
     assert.equal(dashboard.headers.get('cache-control'), 'no-store');
+    assert.equal(dashboard.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(dashboard.headers.get('x-frame-options'), 'DENY');
+    assert.match(dashboard.headers.get('content-security-policy'), /frame-ancestors 'none'/);
     const dashboardBody = await dashboard.json();
     assert.equal(dashboardBody.command, 'control-center status');
     assert.equal(dashboardBody.data.control_center.boundary.read_only, true);
@@ -331,8 +343,47 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
     assert.equal(dashboardBody.data.control_center.regression.playwright_test.confirmations.external_ci_suggest_settings, 'suggest-playwright-test-ci-settings');
     assert.equal(dashboardBody.data.control_center.regression.playwright_test.confirmations.external_ci_approve_settings, 'approve-playwright-test-ci-settings');
     assert.equal(dashboardBody.data.control_center.regression.playwright_test.confirmations.external_ci_fetch_approved, 'fetch-approved-playwright-test-ci-artifact');
+    assert.equal(typeof dashboardBody.data.control_center.action_security.token, 'string');
 
-    const post = await fetch(new URL('/api/dashboard', started.url), { method: 'POST' });
+    const primitiveBody = await fetch(new URL('/api/settings/control-center', started.url), {
+      method: 'POST',
+      headers: { ...await actionHeaders(started), 'Content-Type': 'application/json' },
+      body: 'null'
+    });
+    assert.equal(primitiveBody.status, 400);
+    assert.match(await primitiveBody.text(), /CONTROL_CENTER_JSON_OBJECT_REQUIRED/);
+
+    const missingOrigin = await fetch(new URL('/api/settings/control-center', started.url), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    assert.equal(missingOrigin.status, 403);
+    assert.match(await missingOrigin.text(), /CONTROL_CENTER_ORIGIN_REQUIRED/);
+
+    const missingToken = await fetch(new URL('/api/settings/control-center', started.url), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: started.url.slice(0, -1) },
+      body: '{}'
+    });
+    assert.equal(missingToken.status, 403);
+    assert.match(await missingToken.text(), /CONTROL_CENTER_ACTION_TOKEN_REJECTED/);
+
+    const staleToken = await fetch(new URL('/api/settings/control-center', started.url), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: started.url.slice(0, -1),
+        'X-Trace-Cue-Action-Token': 'stale-action-token'
+      },
+      body: '{}'
+    });
+    assert.equal(staleToken.status, 403);
+
+    const post = await fetch(new URL('/api/dashboard', started.url), {
+      method: 'POST',
+      headers: await actionHeaders(started)
+    });
     assert.equal(post.status, 405);
 
     const combinedSettings = await postJson(started, '/api/settings/control-center', {
@@ -481,12 +532,13 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
     const intakeGet = await fetch(new URL('/api/source-intake/proposal', started.url));
     assert.equal(intakeGet.status, 405);
 
+    const protectedHeaders = await actionHeaders(started);
     const wrongType = await httpRequest({
       hostname: '127.0.0.1',
       port: started.config.port,
       path: '/api/source-intake/proposal',
       method: 'POST',
-      headers: { Host: `127.0.0.1:${started.config.port}`, 'Content-Type': 'text/plain' }
+      headers: { Host: `127.0.0.1:${started.config.port}`, 'Content-Type': 'text/plain', ...protectedHeaders }
     }, 'not-json');
     assert.equal(wrongType.statusCode, 415);
 
@@ -495,7 +547,7 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
       port: started.config.port,
       path: '/api/source-intake/proposal',
       method: 'POST',
-      headers: { Host: `127.0.0.1:${started.config.port}`, 'Content-Type': 'application/json' }
+      headers: { Host: `127.0.0.1:${started.config.port}`, 'Content-Type': 'application/json', ...protectedHeaders }
     }, JSON.stringify({ review_brief: 'x'.repeat(70_000) }));
     assert.equal(tooLarge.statusCode, 413);
 
@@ -504,7 +556,7 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
       port: started.config.port,
       path: '/api/source-intake/proposal',
       method: 'POST',
-      headers: { Host: `127.0.0.1:${started.config.port}`, 'Content-Type': 'application/json' }
+      headers: { Host: `127.0.0.1:${started.config.port}`, 'Content-Type': 'application/json', ...protectedHeaders }
     }, '{bad');
     assert.equal(invalidJson.statusCode, 400);
 
@@ -524,7 +576,8 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
     assert.equal(invalidOrigin.status, 403);
 
     const root = await fetch(started.url);
-    assert.equal(root.status, 503);
+    assert.equal(root.status, 200);
+    assert.match(root.headers.get('content-type'), /text\/html/);
   } finally {
     await closeServer(started.server);
   }
@@ -707,7 +760,7 @@ function closeServer(server) {
   });
 }
 
-function postJson(started, requestPath, payload) {
+async function postJson(started, requestPath, payload) {
   return httpRequest({
     hostname: '127.0.0.1',
     port: started.config.port,
@@ -715,9 +768,19 @@ function postJson(started, requestPath, payload) {
     method: 'POST',
     headers: {
       Host: `127.0.0.1:${started.config.port}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      ...await actionHeaders(started)
     }
   }, JSON.stringify(payload));
+}
+
+async function actionHeaders(started) {
+  const response = await fetch(new URL('/api/dashboard', started.url));
+  const body = await response.json();
+  return {
+    Origin: started.url.slice(0, -1),
+    'X-Trace-Cue-Action-Token': body.data.control_center.action_security.token
+  };
 }
 
 function httpRequest(options, body = '') {

@@ -33,6 +33,10 @@ export const PRODUCT_IDENTITY = Object.freeze({
   npmCacheDirectoryName: 'trace-cue-npm-cache',
   packSmokeDirectoryName: 'trace-cue-pack-smoke',
   packSmokeKeepEnv: 'TRACE_CUE_KEEP_PACK_INSTALL_SMOKE',
+  controlCenterBinName: `${CLI_NAME}-control-center`,
+  controlCenterBinPath: './bin/trace-cue-control-center.js',
+  controlCenterDistPath: 'dist/control-center',
+  controlCenterEntryFile: 'index.html',
   legacyPackSmokeKeepEnvs: Object.freeze(['BROWSER_DEBUG_KEEP_PACK_INSTALL_SMOKE']),
   defaultArtifactRoot: '.browser-debug',
   futureArtifactRoot: '.trace-cue',
@@ -63,6 +67,7 @@ export function packageSchemaSpecifier(schemaName, identity = PRODUCT_IDENTITY) 
 export function packageBinEntries(identity = PRODUCT_IDENTITY) {
   return Object.freeze([
     Object.freeze({ name: identity.cliBinName, path: identity.cliBinPath, canonical: true }),
+    Object.freeze({ name: identity.controlCenterBinName, path: identity.controlCenterBinPath, canonical: true }),
     Object.freeze({ name: identity.mcpBinName, path: identity.mcpBinPath, canonical: true }),
     ...identity.legacyCliBins.map((entry) => Object.freeze({ ...entry, canonical: false })),
     ...identity.legacyMcpBins.map((entry) => Object.freeze({ ...entry, canonical: false }))

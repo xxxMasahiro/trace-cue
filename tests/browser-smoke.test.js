@@ -2,15 +2,49 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { access, cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { executeCli } from '../src/cli.js';
 import { startControlCenterServer } from '../src/api.js';
+import { createSafeLocalStore } from '../src/safe-local-store.js';
 import { createBrowserTestWorkspace } from './helpers/browser-test-workspace.js';
 
 const runBrowserSmoke = process.env.TRACE_CUE_BROWSER_SMOKE === '1' || process.env.BROWSER_DEBUG_BROWSER_SMOKE === '1';
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fixedNow = '2026-06-17T00:00:00.000Z';
+const controlCenterMockUrl = pathToFileURL(path.join(
+  repoRoot,
+  'docs',
+  'design-system',
+  'mockups',
+  'control-center',
+  'index.html'
+)).href;
+
+async function measureNewReviewVisualContract(page, selectors) {
+  const screen = await page.locator(selectors.screen).boundingBox();
+  const sourceCards = await page.locator(selectors.sources).evaluateAll((elements) => elements.map((element) => {
+    const box = element.getBoundingClientRect();
+    return { x: Math.round(box.x), width: Math.round(box.width), height: Math.round(box.height) };
+  }));
+  return {
+    screenWidth: Math.round(screen.width),
+    headingSize: await page.locator(`${selectors.screen} h1`).evaluate((element) => getComputedStyle(element).fontSize),
+    stepCount: await page.locator(selectors.steps).count(),
+    stepMarkSize: Math.round((await page.locator(selectors.stepMark).first().boundingBox()).width),
+    sourceColumns: new Set(sourceCards.map((card) => card.x)).size,
+    sourceWidth: sourceCards[0]?.width ?? 0,
+    sourceHeight: sourceCards[0]?.height ?? 0,
+    methodHeight: Math.round((await page.locator(selectors.methods).first().boundingBox()).height),
+    purposeTag: await page.locator(selectors.purpose).evaluate((element) => element.tagName),
+    purposeHeight: Math.round((await page.locator(selectors.purpose).boundingBox()).height),
+    footerJustify: await page.locator(selectors.footer).evaluate((element) => getComputedStyle(element).justifyContent)
+  };
+}
+
+function assertCloseMetric(actual, expected, tolerance, label) {
+  assert.ok(Math.abs(actual - expected) <= tolerance, `${label}: ${actual} must stay within ${tolerance}px of ${expected}`);
+}
 
 function controlCenterReviewContext(cwd) {
   let operationId = 0;
@@ -19,7 +53,7 @@ function controlCenterReviewContext(cwd) {
     now: () => new Date(fixedNow),
     createId: () => `control-center-agentic-review-browser-${++operationId}`,
     agenticReviewServiceName: 'Example Review AI',
-    agenticReviewProviderId: 'fake-provider',
+    agenticReviewProviderId: 'fake-agent',
     async runReview() {
       return {
         status: 'ok', data: { findings: [] }, warnings: [], errors: [],
@@ -40,7 +74,7 @@ function controlCenterReviewContext(cwd) {
             plan_hash: 'browser-plan-hash',
             package_hash: 'browser-package-hash',
             provider_capability_hash: 'browser-capability-hash',
-            provider: { id: 'fake-provider' },
+            provider: { id: 'fake-agent' },
             model: { id: 'fake-model' },
             surface: { id: 'browser-smoke' },
             transfer_permissions: {
@@ -60,8 +94,31 @@ function controlCenterReviewContext(cwd) {
       const relativePath = `.browser-debug/browser-advisory-${operationId}.json`;
       await mkdir(path.join(cwd, '.browser-debug'), { recursive: true });
       await writeFile(path.join(cwd, relativePath), `${JSON.stringify({
-        agentic_human_review_advisory: { status: 'completed' },
-        non_engineer_summary: { main_takeaway: 'Make the booking action easier to find.' },
+        schema_version: '1.0.0',
+        id: 'browser-advisory',
+        result_type: 'agentic_human_review_advisory',
+        human_review_schema_version: '2.0.0',
+        agentic_human_review_advisory: {
+          id: 'browser-advisory',
+          status: 'completed',
+          plan_hash: 'browser-plan-hash',
+          plan_path: '.browser-debug/plan.json',
+          gate_effect: 'none'
+        },
+        non_engineer_summary: {
+          main_takeaway: 'Make the booking action easier to find.',
+          top_concerns: ['The booking action is easy to miss.']
+        },
+        subjective_perception: {},
+        readability_comprehension: {},
+        reader_experience_review: {},
+        mechanical_vs_human_review: {},
+        human_review_coverage: {},
+        benchmark_requirement_coverage: {},
+        xhigh_multi_round_review: {},
+        role_opinions: [],
+        consensus_summary: {},
+        dissent_summary: {},
         agentic_human_review_findings: [
           {
             id: 'booking-action',
@@ -77,7 +134,23 @@ function controlCenterReviewContext(cwd) {
           }
         ],
         agentic_human_review_action_plan: { suggested_fixes: ['Move the booking action higher.'] },
-        owner_decision_requests: []
+        agentic_human_review_readiness: { advisory_only: true, gate_effect: 'none' },
+        owner_decision_requests: [],
+        provider: { id: 'fake-agent' },
+        model: { id: 'fake-model' },
+        transfer_permissions: { required_flags: ['allow-page-text', 'allow-url'] },
+        execution: {
+          id: 'browser-execution',
+          result_path: relativePath,
+          provider_call_performed: true,
+          api_call_performed: true,
+          external_evidence_transfer: true
+        },
+        boundary: {
+          provider_call_performed: true,
+          api_call_performed: true,
+          external_evidence_transfer: true
+        }
       })}\n`, 'utf8');
       return {
         status: 'ok',
@@ -185,8 +258,41 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     const methodSelector = page.locator('.method-grid');
     assert.equal(await methodSelector.getByRole('radio').count(), 3);
     assert.equal(await methodSelector.getByRole('radio', { name: /improvements that matter most/i }).isChecked(), true);
+    assert.equal(await page.locator('.workflow-steps li.current').getAttribute('aria-current'), 'step');
     assert.ok((await methodSelector.getByRole('radio').first().boundingBox()).width >= 24);
     assert.doesNotMatch(await methodSelector.innerText(), /\bstandard\b|\bdeep\b|\bxhigh\b/i);
+    const mockPage = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await mockPage.goto(`${controlCenterMockUrl}?screen=new`, { waitUntil: 'load' });
+    const productionVisual = await measureNewReviewVisualContract(page, {
+      screen: '[data-testid="tc-cc-new-review"]',
+      sources: '.source-choice',
+      steps: '.workflow-steps li',
+      stepMark: '.workflow-steps li > span',
+      methods: '.choice-card',
+      purpose: '#review-purpose',
+      footer: '.form-actions'
+    });
+    const mockVisual = await measureNewReviewVisualContract(mockPage, {
+      screen: '[data-testid="mock-new-review"]',
+      sources: '.source-option',
+      steps: '.stepper li',
+      stepMark: '.step-number',
+      methods: '.method-option',
+      purpose: 'input[name="purpose"]',
+      footer: '.form-footer'
+    });
+    assert.equal(productionVisual.headingSize, mockVisual.headingSize);
+    assert.equal(productionVisual.stepCount, mockVisual.stepCount);
+    assert.equal(productionVisual.sourceColumns, mockVisual.sourceColumns);
+    assertCloseMetric(productionVisual.screenWidth, mockVisual.screenWidth, 2, 'new review content width');
+    assertCloseMetric(productionVisual.stepMarkSize, mockVisual.stepMarkSize, 4, 'workflow step mark');
+    assertCloseMetric(productionVisual.sourceWidth, mockVisual.sourceWidth, 12, 'source option width');
+    assertCloseMetric(productionVisual.sourceHeight, mockVisual.sourceHeight, 12, 'source option height');
+    assertCloseMetric(productionVisual.methodHeight, mockVisual.methodHeight, 12, 'review method height');
+    assert.equal(productionVisual.purposeTag, mockVisual.purposeTag);
+    assertCloseMetric(productionVisual.purposeHeight, mockVisual.purposeHeight, 2, 'review purpose input height');
+    assert.equal(productionVisual.footerJustify, mockVisual.footerJustify);
+    await mockPage.close();
     await page.getByLabel('URL to review').fill('https://example.jp/reserve');
     await page.getByLabel('What do you want to make easier?').fill('Help first-time visitors complete a booking without getting lost.');
     await page.getByRole('button', { name: 'Prepare review', exact: true }).click();
@@ -207,6 +313,8 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     await page.getByRole('heading', { name: 'The price explanation appears too late' }).waitFor();
     await page.getByRole('button', { name: /Ask someone/ }).click();
     await page.getByRole('heading', { name: 'All improvements have a decision' }).waitFor();
+    assert.equal(await page.getByRole('button', { name: /Ask someone/ }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.getByRole('button', { name: /Fix this/ }).getAttribute('aria-pressed'), 'false');
     const completedOperation = await page.evaluate(async () => {
       const id = new URLSearchParams(window.location.search).get('item');
       return (await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json()).data.control_center_agentic_review.operation;
@@ -216,7 +324,7 @@ test('review center completes prepare, consent, review, decision, repeat, and se
 
     await page.getByRole('button', { name: 'Review in more detail' }).click();
     await page.getByRole('heading', { name: /example\.jp/ }).waitFor();
-    await page.getByRole('heading', { name: 'The review is ready to start' }).waitFor({ timeout: 10_000 });
+    await page.getByRole('heading', { name: 'The review is ready to start' }).waitFor({ timeout: 20_000 });
     const repeatedOperation = await page.evaluate(async () => {
       const id = new URLSearchParams(window.location.search).get('item');
       return (await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json()).data.control_center_agentic_review.operation;
@@ -235,6 +343,26 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     assert.equal(Math.round((await settingsHub.locator('select').first().boundingBox()).height), 48);
     assert.equal(await settingsHub.locator('.panel').count(), 0);
     assert.equal(await settingsHub.locator('.primary-action').count(), 1);
+    const aiSuggestionsToggle = page.getByLabel('Use AI suggestions');
+    if (!await aiSuggestionsToggle.isChecked()) await aiSuggestionsToggle.check();
+    assert.equal(
+      await aiSuggestionsToggle.locator('xpath=following-sibling::span[1]').evaluate((element) => getComputedStyle(element).backgroundColor),
+      'rgb(40, 125, 60)'
+    );
+    const mockSettingsPage = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await mockSettingsPage.goto(`${controlCenterMockUrl}?screen=settings`, { waitUntil: 'load' });
+    const mockSettings = mockSettingsPage.locator('[data-testid="mock-settings"]');
+    await mockSettings.waitFor();
+    assert.equal(await settingsHub.locator('.settings-group').count(), await mockSettings.locator('.settings-group').count());
+    assert.equal(await settingsHub.locator('.setting-row').count(), await mockSettings.locator('.setting-row').count());
+    assert.equal(await settingsHub.locator('h1').evaluate((element) => getComputedStyle(element).fontSize), await mockSettings.locator('h1').evaluate((element) => getComputedStyle(element).fontSize));
+    assertCloseMetric(Math.round(settingsBox.width), Math.round((await mockSettings.boundingBox()).width), 2, 'settings content width');
+    assertCloseMetric(Math.round((await settingsHub.locator('select').first().boundingBox()).height), Math.round((await mockSettings.locator('select').first().boundingBox()).height), 2, 'settings select height');
+    assert.equal(
+      await settingsHub.locator('.form-actions').evaluate((element) => getComputedStyle(element).justifyContent),
+      await mockSettings.locator('.settings-footer').evaluate((element) => getComputedStyle(element).justifyContent)
+    );
+    await mockSettingsPage.close();
     const settingsText = await settingsHub.innerText();
     assert.doesNotMatch(settingsText, /Language state|Settings storage|Diagnostics|Target policy|Max age hours/);
     assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
@@ -262,6 +390,7 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     assert.equal(savedDashboard.settings.display_language.current_locale, 'ja');
     assert.equal(savedDashboard.settings.playwright_test.selected_mode, 'local_run');
     assert.equal(savedDashboard.settings.control_center.external_send_confirmation_required, true);
+    assert.match(await settingsHub.innerText(), /いつも確認する画面[\s\S]*自動確認[\s\S]*AIの提案を使う[\s\S]*外部へ送る前に確認する/);
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('button', { name: '確認', exact: true }).click();
@@ -274,6 +403,402 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     if (browser) {
       await browser.close();
     }
+    await closeServer(started.server);
+  }
+});
+
+test('review center handles every intake type, no-AI continuation, recovery, keyboard use, and responsive layouts', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-control-center-goal-smoke-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
+  const builtAssets = path.join(repoRoot, 'dist', 'control-center');
+  await cp(builtAssets, path.join(cwd, 'dist', 'control-center'), { recursive: true });
+
+  const recoveryId = 'control-center-agentic-review-browser-recovery';
+  const recoveryStore = createSafeLocalStore({
+    workspaceRoot: cwd,
+    relativeRoot: '.browser-debug/control-center-agentic-reviews',
+    namespace: 'control-center-agentic-review-operations'
+  });
+  await recoveryStore.writeJson(`${recoveryId}/operation.json`, {
+    schema_version: '1.0.0', type: 'control_center_agentic_review_operation', id: recoveryId,
+    state: 'dispatching', stage: 'external_review', created_at: fixedNow, updated_at: fixedNow,
+    started_at: fixedNow, completed_at: null,
+    request: { purpose: 'Check the booking flow', effort: 'standard', viewport: 'both', ai_suggestions: true },
+    service: { name: 'Example Review AI', external_ai: true }, relationship: null, disclosure: null,
+    confirmation: null, dispatch: { attempt: 1 }, decisions: [], result: null, error: null,
+    internal: { target_url: 'https://example.jp/' }
+  });
+  const preparingRecoveryId = 'control-center-agentic-review-browser-preparing';
+  await recoveryStore.writeJson(`${preparingRecoveryId}/operation.json`, {
+    schema_version: '1.0.0', type: 'control_center_agentic_review_operation', id: preparingRecoveryId,
+    state: 'preparing', stage: 'browser_review', created_at: fixedNow, updated_at: fixedNow,
+    started_at: null, completed_at: null,
+    request: { purpose: 'Check the booking flow', effort: 'standard', viewport: 'both', ai_suggestions: false },
+    service: { name: 'Local review', external_ai: false }, relationship: null, disclosure: null,
+    confirmation: null, dispatch: { attempt: 0 }, preparation: {
+      interrupted: false,
+      owner: { pid: 999999, process_identity: 'not-running' }
+    }, decisions: [], result: null, error: null,
+    internal: { target_url: 'https://example.jp/' }
+  });
+
+  const context = { ...controlCenterReviewContext(cwd), agenticReviewServiceName: undefined };
+  const started = await startControlCenterServer({ port: 0 }, context);
+  testWorkspace.trackServer(started.server);
+  let browser = null;
+  try {
+    browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const consoleErrors = [];
+    page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    await page.goto(started.url, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: /New review/ }).click();
+    const newReview = page.locator('[data-testid="tc-cc-new-review"]');
+    await newReview.waitFor();
+    assert.equal(await newReview.locator('input[name="source-kind"]').count(), 4);
+    assert.deepEqual(await newReview.locator('.page-header .eyebrow').allTextContents(), []);
+    assert.equal(await page.locator('[data-page-heading]').evaluate((element) => document.activeElement === element), true);
+
+    const purpose = page.getByLabel('What do you want to make easier?');
+    await purpose.fill('Help a first-time visitor understand the next action.');
+    const fileInput = page.locator('#review-file');
+    await page.getByRole('radio', { name: /^Image/ }).check();
+    assert.equal(await newReview.locator('#review-purpose').count(), 0);
+    assert.equal(await newReview.locator('.method-grid').count(), 0);
+    await fileInput.focus();
+    assert.notEqual(await newReview.locator('.file-drop').evaluate((element) => getComputedStyle(element).outlineStyle), 'none');
+    await newReview.locator('.file-drop').evaluate((element, encoded) => {
+      const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], 'private-screen.png', { type: 'image/png' }));
+      element.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: transfer }));
+    }, 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+    await page.getByText('File selected').waitFor();
+    assert.equal(await fileInput.evaluate((element) => element.files.length), 0);
+    await page.route('**/api/review-intake/upload', async (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'error',
+        errors: [{ code: 'TEST_SAFE_MESSAGE', message: 'Choose a valid image and try again.', details: {} }]
+      })
+    }), { times: 1 });
+    await page.getByRole('button', { name: 'Prepare image evidence' }).click();
+    await page.getByText('Choose a valid image and try again.').waitFor();
+    await page.getByRole('button', { name: 'Prepare image evidence' }).click();
+    await page.getByText('Image evidence is ready').waitFor();
+    assert.equal((await newReview.innerText()).includes('private-screen.png'), false);
+
+    await page.getByRole('radio', { name: /^Document/ }).check();
+    assert.equal(await newReview.locator('#review-purpose').count(), 1);
+    assert.equal(await newReview.locator('.method-grid input[type="radio"]').count(), 3);
+    await fileInput.setInputFiles({ name: 'private-notes.md', mimeType: 'text/markdown', buffer: Buffer.from('# Notes\nMake the next step clearer.\n') });
+    await page.getByRole('button', { name: 'Prepare review proposal' }).click();
+    await page.getByText('The review proposal is ready').waitFor();
+    assert.equal((await newReview.innerText()).includes('private-notes.md'), false);
+
+    await page.getByRole('radio', { name: /^Test result/ }).check();
+    assert.equal(await newReview.locator('#review-purpose').count(), 0);
+    assert.equal(await newReview.locator('.method-grid').count(), 0);
+    await fileInput.setInputFiles({
+      name: 'private-results.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify({ suites: [{ specs: [{ title: 'booking', tests: [
+        { title: 'works', projectName: 'chromium', results: [{ status: 'passed', attachments: [] }] },
+        { title: 'shows a problem', projectName: 'chromium', results: [{ status: 'failed', attachments: [] }] }
+      ] }] }] }))
+    });
+    await page.getByRole('button', { name: 'Organize test result' }).click();
+    await page.getByText('Some automated checks need attention').waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Organize test result' }).count(), 0);
+    await page.getByRole('button', { name: 'Prepare another' }).waitFor();
+    assert.equal((await newReview.innerText()).includes('private-results.json'), false);
+    await page.getByRole('button', { name: 'Open result', exact: true }).click();
+    const savedResult = page.locator('[data-testid="tc-cc-intake-result"]');
+    await savedResult.waitFor();
+    await page.getByText('Some automated checks need attention').waitFor();
+    assert.match(await savedResult.innerText(), /1 of 2 checks did not pass\. 1 passed\./);
+    assert.equal(await savedResult.locator('.inline-notice.danger').count(), 1);
+    assert.match(await savedResult.locator('.result-facts').innerText(), /Checks\s*2[\s\S]*Passed\s*1[\s\S]*Failed\s*1[\s\S]*Timed out\s*0[\s\S]*Not run\s*0/);
+    const savedResultId = await page.evaluate(() => new URLSearchParams(window.location.search).get('item'));
+    await page.reload({ waitUntil: 'networkidle' });
+    await savedResult.waitFor();
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+
+    await page.getByRole('button', { name: /New review/ }).click();
+    await page.getByRole('radio', { name: /^Test result/ }).check();
+    await fileInput.setInputFiles({
+      name: 'private-timeout-results.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify({ suites: [{ specs: [{ title: 'booking', tests: [
+        { title: 'times out', projectName: 'chromium', results: [{ status: 'timedOut', attachments: [] }] }
+      ] }] }] }))
+    });
+    await page.getByRole('button', { name: 'Organize test result' }).click();
+    await page.getByText('Some automated checks need attention').waitFor();
+    assert.match(await newReview.innerText(), /0 failed and 1 timed out among 1 checks/);
+    await page.getByRole('button', { name: 'Prepare another' }).click();
+    assert.equal(await fileInput.evaluate((element) => element.files.length), 0);
+    await fileInput.setInputFiles({
+      name: 'private-skipped-results.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify({ suites: [{ specs: [{ title: 'booking', tests: [
+        { title: 'not run', projectName: 'chromium', results: [{ status: 'skipped', attachments: [] }] }
+      ] }] }] }))
+    });
+    await page.getByRole('button', { name: 'Organize test result' }).click();
+    await page.getByText('No usable automated-check result was found').waitFor();
+    assert.equal(await newReview.locator('.inline-notice.success').count(), 0);
+    await page.getByRole('button', { name: 'Prepare another' }).click();
+    await fileInput.setInputFiles({
+      name: 'private-interrupted-results.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify({ suites: [{ specs: [{ title: 'booking', tests: [
+        { title: 'interrupted', projectName: 'chromium', results: [{ status: 'interrupted', attachments: [] }] }
+      ] }] }] }))
+    });
+    await page.getByRole('button', { name: 'Organize test result' }).click();
+    await page.getByText('Some automated checks need attention').waitFor();
+    assert.equal(await newReview.locator('.inline-notice.danger').count(), 1);
+    await page.getByRole('button', { name: 'Prepare another' }).click();
+    await fileInput.setInputFiles({ name: 'private-empty-results.json', mimeType: 'application/json', buffer: Buffer.from('{"suites":[]}') });
+    await page.getByRole('button', { name: 'Organize test result' }).click();
+    await page.getByText('No usable automated-check result was found').waitFor();
+    assert.equal(await newReview.locator('.inline-notice.warning').count(), 1);
+    await page.getByRole('button', { name: 'Open result', exact: true }).click();
+    await page.getByText('No usable automated-check result was found').waitFor();
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await page.route('**/api/review-intake/results*', async (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'error', errors: [{ code: 'TEST_RESULTS_UNAVAILABLE', message: 'Saved results are temporarily unavailable.', details: {} }] })
+    }), { times: 1 });
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    const retainedResultsNotice = page.locator('.inline-notice.warning');
+    await retainedResultsNotice.getByText('Some saved results could not be loaded').waitFor();
+    assert.match(await page.locator('.review-list').innerText(), /Test result/);
+    await retainedResultsNotice.getByRole('button', { name: 'Try again' }).click();
+    await retainedResultsNotice.waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: /New review/ }).click();
+    await newReview.waitFor();
+
+    const websiteChoice = page.getByRole('radio', { name: /^Website/ });
+    await page.getByRole('radio', { name: /^Image/ }).check();
+    assert.equal(await websiteChoice.isChecked(), false);
+    await websiteChoice.focus();
+    await websiteChoice.press('Space');
+    assert.equal(await websiteChoice.isChecked(), true);
+    assert.equal(await websiteChoice.evaluate((element) => element === document.activeElement), true);
+    const sourceState = await newReview.locator('input[name="source-kind"]').evaluateAll((elements) => elements.map((element) => ({
+      value: element.value,
+      checked: element.checked,
+      selected: element.closest('.source-choice')?.classList.contains('selected') ?? false
+    })));
+    assert.equal(await newReview.locator('#review-url').count(), 1, JSON.stringify(sourceState));
+    await page.getByLabel('URL to review').fill('https://example.jp/reserve');
+    await page.getByLabel('What do you want to make easier?').fill('Help a first-time visitor understand the next action.');
+    const aiChoice = page.locator('.ai-choice');
+    await aiChoice.waitFor();
+    const aiCopy = await aiChoice.innerText();
+    assert.match(aiCopy, /continue without AI/i);
+    assert.doesNotMatch(aiCopy, /provider|model|endpoint|API key|environment variable|token/i);
+    const continueWithoutAi = page.getByLabel('Continue without AI');
+    const continueWithoutAiBox = await continueWithoutAi.boundingBox();
+    assert.ok(continueWithoutAiBox.width >= 44);
+    assert.ok(continueWithoutAiBox.height >= 44);
+    const prepareButton = page.getByRole('button', { name: 'Prepare review' });
+    assert.equal(await prepareButton.isDisabled(), true);
+    await continueWithoutAi.check();
+    assert.equal(await prepareButton.isEnabled(), true);
+    await prepareButton.click();
+    await page.getByRole('heading', { name: 'No major improvements were found' }).waitFor({ timeout: 10_000 });
+
+    await page.goto(`${started.url}?view=work&item=${encodeURIComponent(recoveryId)}`, { waitUntil: 'networkidle' });
+    const recoveryCheck = page.getByRole('button', { name: 'Check status' });
+    await recoveryCheck.waitFor({ timeout: 10_000 });
+    await recoveryCheck.click();
+    const unknownDispatchHeading = page.getByRole('heading', { name: 'We are checking whether the review started' });
+    await unknownDispatchHeading.waitFor({ timeout: 10_000 });
+    assert.equal(await page.getByRole('button', { name: 'Check status' }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: 'Try again' }).count(), 0);
+
+    await page.goto(`${started.url}?view=work&item=${encodeURIComponent(preparingRecoveryId)}`, { waitUntil: 'networkidle' });
+    const preparingCheck = page.getByRole('button', { name: 'Check status' });
+    await preparingCheck.waitFor({ timeout: 10_000 });
+    await preparingCheck.click();
+    await page.getByRole('heading', { name: 'Preparation was interrupted' }).waitFor({ timeout: 10_000 });
+    assert.equal(await page.getByRole('button', { name: 'Resume preparation' }).count(), 1);
+
+    for (const viewport of [{ width: 768, height: 1024 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await page.goto(started.url, { waitUntil: 'networkidle' });
+      const mobileStatus = page.locator('.review-list .status-badge').first();
+      await mobileStatus.waitFor();
+      assert.equal(await mobileStatus.isVisible(), true);
+      await page.goto(`${started.url}?view=new`, { waitUntil: 'networkidle' });
+      await page.locator('[data-testid="tc-cc-new-review"]').waitFor();
+      const layout = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        sourceWidths: [...document.querySelectorAll('.source-choice')].map((element) => element.getBoundingClientRect().width),
+        workspaceWidth: document.querySelector('.workspace').getBoundingClientRect().width,
+        navColumnCount: getComputedStyle(document.querySelector('.nav-list')).gridTemplateColumns.split(/\s+/u).length,
+        navItemHeights: [...document.querySelectorAll('.nav-item')].map((element) => element.getBoundingClientRect().height)
+      }));
+      assert.equal(layout.overflow, 0);
+      assert.equal(layout.sourceWidths.every((width) => width > 0 && width <= layout.workspaceWidth), true);
+      assert.equal(layout.navColumnCount, viewport.width === 768 ? 1 : 3);
+      assert.equal(layout.navItemHeights.every((height) => height <= 68), true);
+    }
+
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByLabel('Display language').selectOption('ar');
+    await page.getByRole('button', { name: /Save settings/ }).click();
+    await page.locator('html[dir="rtl"]').waitFor();
+    const rtlText = await page.locator('[data-testid="tc-cc-settings"]').innerText();
+    assert.doesNotMatch(rtlText, /Settings|Everyday use|Display language|Default screen size|Automated checks|AI suggestions|Confirm before sending|Save settings/);
+    assert.match(rtlText, /الإعدادات/);
+    await page.goto(`${started.url}?view=work&item=${encodeURIComponent(savedResultId)}`, { waitUntil: 'networkidle' });
+    const rtlResult = page.locator('[data-testid="tc-cc-intake-result"]');
+    await rtlResult.waitFor();
+    const rtlResultText = await rtlResult.innerText();
+    assert.doesNotMatch(rtlResultText, /Saved result|Reviewed item|Saved|Checks|Passed|Failed|Timed out|Not run/);
+    assert.match(rtlResultText, /نتيجة محفوظة/);
+    assert.notEqual(await rtlResult.locator('.back-action .directional-symbol').evaluate((element) => getComputedStyle(element).transform), 'none');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+    assert.equal(consoleErrors.length, 0);
+  } finally {
+    if (browser) await browser.close();
+    await closeServer(started.server);
+  }
+});
+
+test('review center keeps one intake and redirects to truthful status after response loss', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-control-center-response-loss-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
+  await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  const started = await startControlCenterServer({ port: 0 }, controlCenterReviewContext(cwd));
+  testWorkspace.trackServer(started.server);
+  let browser = null;
+  try {
+    browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    let uploadCount = 0;
+    let completeCount = 0;
+    await page.route('**/api/review-intake/upload', async (route) => {
+      uploadCount += 1;
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          data: { control_center_intake: { intake: { id: String(uploadCount).padStart(32, '0') } } },
+          warnings: [], errors: [], artifacts: []
+        })
+      });
+    });
+    await page.route('**/api/review-intake/complete', async (route) => {
+      completeCount += 1;
+      if (completeCount === 1) {
+        await route.abort('failed');
+        return;
+      }
+      if (completeCount === 3) {
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            status: 'error', data: { control_center_intake: null }, warnings: [], artifacts: [],
+            errors: [{ code: 'TEST_ENGINE_FAILED', message: 'The selected image could not be checked.', details: { same_intake_retry_available: false } }]
+          })
+        });
+        return;
+      }
+      const intakeId = route.request().postDataJSON().intake_id;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          data: { control_center_intake: { result: {
+            schema_version: '1.0.0', type: 'control_center_intake_result', id: intakeId,
+            source_kind: 'image', label: 'Selected image', outcome: 'image_evidence_ready',
+            completed_at: fixedNow, external_ai_review_completed: false,
+            summary: { status: 'ready', format: 'png', width: 1, height: 1, finding_count: 0 }
+          } } },
+          warnings: [], errors: [], artifacts: []
+        })
+      });
+    });
+
+    await page.goto(`${started.url}?view=new`, { waitUntil: 'networkidle' });
+    await page.getByRole('radio', { name: /^Image/ }).check();
+    const fileInput = page.locator('#review-file');
+    await fileInput.setInputFiles({ name: 'screen.png', mimeType: 'image/png', buffer: Buffer.from('image') });
+    const prepareImage = page.getByRole('button', { name: 'Prepare image evidence' });
+    await prepareImage.click();
+    await page.getByText(/Failed to fetch|The review could not be prepared/).first().waitFor();
+    await prepareImage.click();
+    await page.getByText('Image evidence is ready').waitFor();
+    assert.equal(uploadCount, 1);
+    assert.equal(completeCount, 2);
+
+    await page.getByRole('button', { name: 'Prepare another' }).click();
+    await fileInput.setInputFiles({ name: 'second.png', mimeType: 'image/png', buffer: Buffer.from('image-two') });
+    await prepareImage.click();
+    await page.getByText('The selected image could not be checked.').waitFor();
+    await prepareImage.click();
+    await page.getByText('Image evidence is ready').waitFor();
+    assert.equal(uploadCount, 3);
+    assert.equal(completeCount, 4);
+
+    await page.unroute('**/api/review-intake/upload');
+    await page.unroute('**/api/review-intake/complete');
+    await page.goto(`${started.url}?view=new`, { waitUntil: 'networkidle' });
+    await page.getByLabel('URL to review').fill('https://example.jp/booking');
+    await page.getByLabel('What do you want to make easier?').fill('Help visitors find the booking action.');
+    await page.getByRole('button', { name: 'Prepare review' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Start this review?' });
+    await dialog.waitFor({ timeout: 10_000 });
+    let acceptedOperationId = null;
+    await page.route('**/api/agentic-review/start', async (route) => {
+      acceptedOperationId = route.request().postDataJSON().id;
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      await route.abort('failed');
+    }, { times: 1 });
+    await dialog.getByRole('button', { name: 'Start review', exact: true }).click();
+    await page.locator('[data-testid="tc-cc-review-workspace"]').waitFor({ timeout: 10_000 });
+    assert.equal(new URL(page.url()).searchParams.get('item'), acceptedOperationId);
+    assert.equal(await page.locator('[data-testid="tc-cc-new-review"]').count(), 0);
+
+    await page.goto(`${started.url}?view=new`, { waitUntil: 'networkidle' });
+    await page.getByLabel('URL to review').fill('https://example.jp/changed-destination');
+    await page.getByLabel('What do you want to make easier?').fill('Check a changed AI destination safely.');
+    await page.getByRole('button', { name: 'Prepare review' }).click();
+    const rejectedDialog = page.getByRole('dialog', { name: 'Start this review?' });
+    await rejectedDialog.waitFor({ timeout: 10_000 });
+    await page.route('**/api/agentic-review/start', async (route) => route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'error', data: { control_center_agentic_review: null }, warnings: [], artifacts: [],
+        errors: [{
+          code: 'CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED',
+          message: 'The AI review connection changed. Start a new review.',
+          details: {}
+        }]
+      })
+    }), { times: 1 });
+    await rejectedDialog.getByRole('button', { name: 'Start review', exact: true }).click();
+    await page.getByText('The AI review connection changed. Start a new review.').waitFor();
+    assert.equal(await page.locator('[data-testid="tc-cc-new-review"]').count(), 1);
+    assert.equal(new URL(page.url()).searchParams.get('view'), 'new');
+  } finally {
+    if (browser) await browser.close();
     await closeServer(started.server);
   }
 });

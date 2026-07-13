@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import {
   access,
@@ -7,6 +8,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   stat,
   symlink,
@@ -33,11 +35,16 @@ await main();
 
 async function main() {
   const tarballPath = process.argv[2];
-  assert.ok(tarballPath, 'Usage: node tests/pack-install-smoke.test.js <packed-tarball>');
+  const expectedTarballSha256 = process.argv[3];
+  assert.ok(tarballPath && /^[a-f0-9]{64}$/u.test(expectedTarballSha256 ?? ''),
+    'Usage: node tests/pack-install-smoke.test.js <packed-tarball> <sha256>');
   assert.equal(path.basename(tarballPath), packageTarballFilename());
   await access(tarballPath, fsConstants.R_OK);
+  const tarball = await readFile(tarballPath);
+  assert.equal(createHash('sha256').update(tarball).digest('hex'), expectedTarballSha256,
+    'The package tarball changed after producer verification.');
 
-  const layout = await createPackedInstallLayout(tarballPath);
+  const layout = await createPackedInstallLayout(tarball);
   try {
     const { installRoot, packageDir, binDir } = layout;
 
@@ -48,6 +55,12 @@ async function main() {
       await assertFile(packageDir, normalizePackagePath(binEntry.path));
     }
     await assertFile(packageDir, 'src/api.js');
+    await assertFile(packageDir, 'src/safe-local-store.js');
+    await assertFile(packageDir, 'src/control-center-agentic-review-config.js');
+    await assertFile(packageDir, 'src/control-center-ai-readiness.js');
+    await assertFile(packageDir, 'src/control-center-intake.js');
+    await assertFile(packageDir, 'src/control-center-launcher.js');
+    await assertFile(packageDir, 'src/control-center-server.js');
     await assertFile(packageDir, 'src/image-review.js');
     await assertFile(packageDir, 'src/capture-handoff.js');
     await assertFile(packageDir, 'src/capture-plan.js');
@@ -91,6 +104,10 @@ async function main() {
     await assertFile(packageDir, 'control-center/src/main.jsx');
     await assertFile(packageDir, 'control-center/src/pageDefinitions.js');
     await assertFile(packageDir, 'control-center/src/styles.css');
+    await assertFile(packageDir, 'dist/control-center/index.html');
+    const builtAssets = await readdir(path.join(packageDir, 'dist', 'control-center', 'assets'));
+    assert.equal(builtAssets.some((entry) => entry.endsWith('.js')), true);
+    assert.equal(builtAssets.some((entry) => entry.endsWith('.css')), true);
     await assertFile(packageDir, 'src/agentic-human-review.js');
     await assertFile(packageDir, 'src/agentic-human-review-providers.js');
     await assertFile(packageDir, 'src/agentic-human-review-responses-adapter.js');
@@ -169,6 +186,8 @@ async function main() {
     await assertFile(packageDir, 'schemas/e2e-result-review-material.schema.json');
     await assertFile(packageDir, 'schemas/control-center-read-model.schema.json');
     await assertFile(packageDir, 'schemas/control-center-agentic-review.schema.json');
+    await assertFile(packageDir, 'schemas/control-center-intake.schema.json');
+    await assertFile(packageDir, 'schemas/verification-release-evidence-batch.schema.json');
     await assertFile(packageDir, 'schemas/playwright-test-external-ci.schema.json');
     await assertFile(packageDir, 'schemas/playwright-test-integration.schema.json');
     await assertFile(packageDir, 'templates/review-target-manifest.json');
@@ -958,7 +977,7 @@ async function main() {
   }
 }
 
-async function createPackedInstallLayout(tarballPath) {
+async function createPackedInstallLayout(tarball) {
   const tempRoot = await mkdtemp(path.join(tmpdir(), `${filesystemSafeName(PRODUCT_IDENTITY.packageName)}-pack-install-`));
   const installRoot = path.join(tempRoot, 'install');
   const nodeModules = path.join(installRoot, 'node_modules');
@@ -969,7 +988,7 @@ async function createPackedInstallLayout(tarballPath) {
   await mkdir(binDir, { recursive: true });
   await writeFile(path.join(installRoot, 'package.json'), '{"type":"module"}\n', 'utf8');
   await writeFile(path.join(installRoot, '.gitignore'), '.browser-debug/\n', 'utf8');
-  await extractPackageTarball(tarballPath, packageDir);
+  await extractPackageTarball(tarball, packageDir);
   await linkDependency(nodeModules, 'playwright');
   await linkDependency(nodeModules, 'playwright-core');
   for (const binEntry of packageBinEntries()) {
@@ -1006,8 +1025,8 @@ function dispatchHttpRequest(server, { method, url, headers, body }) {
   });
 }
 
-async function extractPackageTarball(tarballPath, outputDir) {
-  const archive = gunzipSync(await readFile(tarballPath));
+async function extractPackageTarball(tarball, outputDir) {
+  const archive = gunzipSync(tarball);
   let offset = 0;
   while (offset + 512 <= archive.length) {
     const header = archive.subarray(offset, offset + 512);

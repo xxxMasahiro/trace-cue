@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { lstat, open, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import {
   runAgenticHumanReviewPlan,
@@ -7,11 +8,28 @@ import {
   runAgenticHumanReviewRun
 } from './agentic-human-review.js';
 import { runReview } from './review.js';
+import { getSchema } from './schema-registry.js';
+import {
+  buildControlCenterAiDestinationFingerprint,
+  buildControlCenterAiReadiness
+} from './control-center-ai-readiness.js';
+import {
+  CONTROL_CENTER_AGENTIC_REVIEW_PROVIDER_ENV,
+  CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NAME_ENV
+} from './control-center-agentic-review-config.js';
+import {
+  captureProcessIdentity,
+  createSafeLocalStore,
+  isProcessIdentityAlive,
+  readStableBoundedFileHandle
+} from './safe-local-store.js';
 
 export const CONTROL_CENTER_AGENTIC_REVIEW_SCHEMA_VERSION = '1.0.0';
 export const CONTROL_CENTER_AGENTIC_REVIEW_ARTIFACT_DIR = 'control-center-agentic-reviews';
-export const CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NAME_ENV = 'TRACE_CUE_CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NAME';
-export const CONTROL_CENTER_AGENTIC_REVIEW_PROVIDER_ENV = 'TRACE_CUE_CONTROL_CENTER_AGENTIC_REVIEW_PROVIDER';
+export {
+  CONTROL_CENTER_AGENTIC_REVIEW_PROVIDER_ENV,
+  CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NAME_ENV
+} from './control-center-agentic-review-config.js';
 export const CONTROL_CENTER_AGENTIC_REVIEW_PURPOSE_MAX_LENGTH = 1200;
 export const CONTROL_CENTER_AGENTIC_REVIEW_ENDPOINTS = Object.freeze({
   prepare: '/api/agentic-review/prepare',
@@ -20,21 +38,32 @@ export const CONTROL_CENTER_AGENTIC_REVIEW_ENDPOINTS = Object.freeze({
   status: '/api/agentic-review/status',
   decision: '/api/agentic-review/decision',
   repeat: '/api/agentic-review/repeat',
+  recover: '/api/agentic-review/recover',
+  resume: '/api/agentic-review/resume',
+  cancel: '/api/agentic-review/cancel',
   list: '/api/agentic-review/list'
 });
 export const CONTROL_CENTER_AGENTIC_REVIEW_EFFORTS = Object.freeze(['standard', 'deep', 'xhigh']);
 export const CONTROL_CENTER_AGENTIC_REVIEW_VIEWPORTS = Object.freeze(['desktop', 'mobile', 'both']);
 export const CONTROL_CENTER_AGENTIC_REVIEW_DECISIONS = Object.freeze(['fix', 'later', 'ask']);
 export const CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_MODES = Object.freeze(['deeper', 'recheck']);
+export const CONTROL_CENTER_AGENTIC_REVIEW_HISTORY_ENTRIES = 1000;
+export const CONTROL_CENTER_AGENTIC_REVIEW_ACTIVE_ENTRIES = 4032;
 
 const DEFAULT_ARTIFACT_ROOT = '.browser-debug';
 const OPERATION_FILE = 'operation.json';
 const MAX_OPERATION_BYTES = 1024 * 1024;
 const CONFIRMATION_TTL_MS = 15 * 60 * 1000;
 const MAX_LIST_LIMIT = 100;
+const MAX_OPERATION_STORE_ENTRIES = 4096;
+const DEFAULT_HISTORY_MAINTENANCE_LOCK_TIMEOUT_MS = 100;
+const MAX_HISTORY_MAINTENANCE_LOCK_TIMEOUT_MS = 1000;
+const DEFAULT_OPERATION_LOCK_TIMEOUT_MS = 10_000;
+const MAX_OPERATION_LOCK_TIMEOUT_MS = 120_000;
+const HISTORY_ELIGIBLE_STATES = new Set(['completed', 'failed', 'cancelled']);
 const OPERATION_ID_PATTERN = /^control-center-agentic-review-[a-zA-Z0-9._-]{1,160}$/;
 const ACTIVE_DISPATCHES = new Set();
-const OPERATION_LOCKS = new Map();
+const OPERATION_HISTORY_RETENTION = new Map();
 
 const TRANSFER_LABELS = Object.freeze({
   raw_pixels: 'Visible page image',
@@ -60,9 +89,12 @@ export async function runControlCenterAgenticReviewPrepare(input = {}, context =
   if (validation.value.ai_suggestions && !configuredServiceName(context)) {
     return actionError('CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NOT_CONFIGURED', 'Choose and configure the external AI review service before enabling AI suggestions.', {});
   }
+  if (validation.value.ai_suggestions && buildControlCenterAiReadiness(context).status !== 'available') {
+    return actionError('CONTROL_CENTER_AGENTIC_REVIEW_SETUP_NOT_READY', 'Finish the private AI connection setup, or continue without AI.', {});
+  }
 
   const now = materializeNow(context.now);
-  const operation = createOperation({
+  const operation = await createOperation({
     id: createOperationId(context, now),
     input: validation.value,
     now,
@@ -71,8 +103,11 @@ export async function runControlCenterAgenticReviewPrepare(input = {}, context =
   });
 
   try {
-    await saveOperation(operation, context);
+    await saveNewOperation(operation, context);
   } catch (error) {
+    if (error?.code === 'CONTROL_CENTER_AGENTIC_REVIEW_CAPACITY_REACHED') {
+      return actionError(error.code, 'Finish or remove an older review before starting another one.', {});
+    }
     return actionError('CONTROL_CENTER_AGENTIC_REVIEW_STORE_FAILED', 'The review could not be prepared in the local workspace.', {});
   }
 
@@ -93,7 +128,7 @@ export async function runControlCenterAgenticReviewConfirmation(input = {}, cont
     return actionError(id.code, id.message, id.details);
   }
 
-  return withOperationLock(id.value, async () => {
+  return withOperationLock(id.value, context, async () => {
     const loaded = await loadOperationResult(id.value, context);
     if (!loaded.ok) return loaded.result;
     const operation = loaded.operation;
@@ -145,7 +180,7 @@ export async function runControlCenterAgenticReviewStart(input = {}, context = {
     return actionError('CONTROL_CENTER_AGENTIC_REVIEW_CONFIRMATION_REQUIRED', 'A current one-time confirmation is required.', {});
   }
 
-  const prepared = await withOperationLock(id.value, async () => {
+  const prepared = await withOperationLock(id.value, context, async () => {
     const loaded = await loadOperationResult(id.value, context);
     if (!loaded.ok) return loaded.result;
     const operation = loaded.operation;
@@ -170,6 +205,13 @@ export async function runControlCenterAgenticReviewStart(input = {}, context = {
     if (computeConsentDigest(operation) !== operation.internal.consent_digest) {
       return actionError('CONTROL_CENTER_AGENTIC_REVIEW_PLAN_CHANGED', 'The prepared review changed after confirmation and cannot be started.', {});
     }
+    if (buildControlCenterAiDestinationFingerprint(context, {
+      providerId: operation.internal.provider_id,
+      serviceName: operation.service.name,
+      modelId: operation.internal.model_id
+    }) !== operation.internal.destination_fingerprint) {
+      return actionError('CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED', 'The AI review connection changed. Review the current send details again.', {});
+    }
 
     confirmation.used_at = now.toISOString();
     operation.state = 'dispatching';
@@ -182,7 +224,11 @@ export async function runControlCenterAgenticReviewStart(input = {}, context = {
       api_call_performed: false,
       external_evidence_transfer: false,
       retry_automatic: false,
-      cancel_available: false
+      cancel_available: false,
+      owner: {
+        pid: process.pid,
+        process_identity: await captureProcessIdentity(process.pid)
+      }
     };
     await saveOperation(operation, context);
     return actionOk({ operation: projectOperation(operation), accepted: true });
@@ -198,9 +244,66 @@ export async function runControlCenterAgenticReviewStart(input = {}, context = {
 export async function runControlCenterAgenticReviewStatus(input = {}, context = {}) {
   const id = normalizeOperationId(input.operation_id ?? input.operationId ?? input.id);
   if (!id.ok) return actionError(id.code, id.message, id.details);
+  const loaded = await loadOperationResult(id.value, context);
+  if (!loaded.ok) return loaded.result;
+  return actionOk({ operation: projectOperation(loaded.operation) });
+}
+
+export async function runControlCenterAgenticReviewRecover(input = {}, context = {}) {
+  const id = normalizeOperationId(input.operation_id ?? input.operationId ?? input.id);
+  if (!id.ok) return actionError(id.code, id.message, id.details);
   const loaded = await loadOperationResult(id.value, context, { recoverDispatch: true });
   if (!loaded.ok) return loaded.result;
   return actionOk({ operation: projectOperation(loaded.operation) });
+}
+
+export async function runControlCenterAgenticReviewResume(input = {}, context = {}) {
+  const id = normalizeOperationId(input.operation_id ?? input.operationId ?? input.id);
+  if (!id.ok) return actionError(id.code, id.message, id.details);
+  const prepared = await withOperationLock(id.value, context, async () => {
+    const loaded = await loadOperationResult(id.value, context);
+    if (!loaded.ok) return loaded.result;
+    const operation = loaded.operation;
+    if (operation.state !== 'preparing' || await isProcessIdentityAlive(operation.preparation?.owner)) {
+      return actionError('CONTROL_CENTER_AGENTIC_REVIEW_RESUME_NOT_AVAILABLE', 'This review preparation is not waiting to be resumed.', {
+        state: operation.state
+      });
+    }
+    operation.preparation = {
+      attempt: Number(operation.preparation?.attempt ?? 0) + 1,
+      owner: await currentProcessOwner()
+    };
+    operation.updated_at = materializeNow(context.now).toISOString();
+    await saveOperation(operation, context);
+    return actionOk({ operation: projectOperation(operation), accepted: true });
+  });
+  if (prepared.status !== 'ok') return prepared;
+  scheduleBackground(id.value, context, async () => prepareOperation(id.value, context));
+  return prepared;
+}
+
+export async function runControlCenterAgenticReviewCancel(input = {}, context = {}) {
+  const id = normalizeOperationId(input.operation_id ?? input.operationId ?? input.id);
+  if (!id.ok) return actionError(id.code, id.message, id.details);
+  return withOperationLock(id.value, context, async () => {
+    const loaded = await loadOperationResult(id.value, context);
+    if (!loaded.ok) return loaded.result;
+    const operation = loaded.operation;
+    if (operation.state !== 'confirmation_required') {
+      return actionError('CONTROL_CENTER_AGENTIC_REVIEW_CANCEL_NOT_AVAILABLE', 'This review can no longer be safely cancelled.', {
+        state: operation.state
+      });
+    }
+    const now = materializeNow(context.now).toISOString();
+    operation.state = 'cancelled';
+    operation.stage = 'attention';
+    operation.updated_at = now;
+    operation.completed_at = now;
+    operation.confirmation = null;
+    operation.error = null;
+    await saveOperation(operation, context);
+    return actionOk({ operation: projectOperation(operation) });
+  });
 }
 
 export async function runControlCenterAgenticReviewDecision(input = {}, context = {}) {
@@ -217,7 +320,7 @@ export async function runControlCenterAgenticReviewDecision(input = {}, context 
     return actionError('CONTROL_CENTER_AGENTIC_REVIEW_FINDING_ID_REQUIRED', 'Choose the improvement item this decision applies to.', {});
   }
 
-  return withOperationLock(id.value, async () => {
+  return withOperationLock(id.value, context, async () => {
     const loaded = await loadOperationResult(id.value, context);
     if (!loaded.ok) return loaded.result;
     const operation = loaded.operation;
@@ -285,10 +388,9 @@ export async function runControlCenterAgenticReviewRepeat(input = {}, context = 
 export async function runControlCenterAgenticReviewList(input = {}, context = {}) {
   const limit = normalizeLimit(input.limit);
   if (!limit.ok) return actionError(limit.code, limit.message, limit.details);
-  const root = operationsRoot(context);
   let entries = [];
   try {
-    entries = await readdir(root, { withFileTypes: true });
+    entries = await operationStore(context).listDirectories({ limit: MAX_OPERATION_STORE_ENTRIES });
   } catch (error) {
     if (error?.code === 'ENOENT') return actionOk({ operations: [], count: 0 });
     return actionError('CONTROL_CENTER_AGENTIC_REVIEW_LIST_FAILED', 'The local review list could not be read.', {});
@@ -296,11 +398,16 @@ export async function runControlCenterAgenticReviewList(input = {}, context = {}
 
   const operations = [];
   for (const entry of entries) {
-    if (!entry.isDirectory() || !OPERATION_ID_PATTERN.test(entry.name)) continue;
-    const loaded = await loadOperationResult(entry.name, context, { recoverDispatch: true, suppressNotFound: true });
-    if (loaded.ok) operations.push(loaded.operation);
+    if (!OPERATION_ID_PATTERN.test(entry)) continue;
+    const loaded = await loadListedOperationResult(entry, context);
+    if (!loaded.ok) {
+      return actionError('CONTROL_CENTER_AGENTIC_REVIEW_LIST_FAILED', 'The local review list could not be read completely.', {});
+    }
+    operations.push(loaded.operation);
   }
-  operations.sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)));
+  operations.sort((left, right) => String(right.updated_at ?? right.created_at).localeCompare(
+    String(left.updated_at ?? left.created_at)
+  ) || String(right.id).localeCompare(String(left.id)));
   return actionOk({
     operations: operations.slice(0, limit.value).map(projectOperation),
     count: Math.min(operations.length, limit.value),
@@ -308,8 +415,18 @@ export async function runControlCenterAgenticReviewList(input = {}, context = {}
   });
 }
 
+async function loadListedOperationResult(id, context) {
+  let loaded;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    loaded = await loadOperationResult(id, context, { suppressNotFound: true });
+    if (loaded.ok || !loaded.suppressed) return loaded;
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return loaded;
+}
+
 async function prepareOperation(id, context) {
-  await withOperationLock(id, async () => {
+  await withOperationLock(id, context, async () => {
     const operation = await loadOperation(id, context);
     if (operation.state !== 'preparing') return;
     operation.stage = 'browser_review';
@@ -335,8 +452,9 @@ async function prepareOperation(id, context) {
     }
 
     if (!operation.request.ai_suggestions) {
-      await withOperationLock(id, async () => {
+      await withOperationLock(id, context, async () => {
         const current = await loadOperation(id, context);
+        if (current.state !== 'preparing') return;
         const now = materializeNow(context.now).toISOString();
         current.state = 'completed';
         current.stage = 'complete';
@@ -349,8 +467,9 @@ async function prepareOperation(id, context) {
       return;
     }
 
-    await withOperationLock(id, async () => {
+    await withOperationLock(id, context, async () => {
       const current = await loadOperation(id, context);
+      if (current.state !== 'preparing') return;
       current.stage = 'review_plan';
       current.updated_at = materializeNow(context.now).toISOString();
       current.internal.review_index_path = reviewIndexPath;
@@ -389,8 +508,9 @@ async function prepareOperation(id, context) {
       throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_PLAN_MISSING', 'The external AI review plan was not created.');
     }
 
-    await withOperationLock(id, async () => {
+    await withOperationLock(id, context, async () => {
       const current = await loadOperation(id, context);
+      if (current.state !== 'preparing') return;
       const now = materializeNow(context.now).toISOString();
       current.state = 'confirmation_required';
       current.stage = 'confirmation';
@@ -405,6 +525,11 @@ async function prepareOperation(id, context) {
       current.internal.surface_id = plan.surface?.id ?? null;
       current.internal.required_transfer_flags = normalizeStrings(plan.transfer_permissions?.required_flags);
       current.internal.transfer_classes = normalizeTransferClasses(plan.transfer_permissions?.classes);
+      current.internal.destination_fingerprint = buildControlCenterAiDestinationFingerprint(context, {
+        providerId: current.internal.provider_id,
+        serviceName: current.service.name,
+        modelId: current.internal.model_id
+      });
       current.disclosure = buildDisclosure(current);
       current.internal.consent_digest = computeConsentDigest(current);
       await saveOperation(current, context);
@@ -415,9 +540,22 @@ async function prepareOperation(id, context) {
 }
 
 async function dispatchOperation(id, context) {
+  let transferMayHaveOccurred = false;
+  let runnerStarted = false;
+  let observedBoundary = null;
+  let observedExecution = null;
+  let observedResultPath = null;
+  let validationCheckpointSaved = false;
   try {
     const operation = await loadOperation(id, context);
     if (operation.state !== 'dispatching') return;
+    if (buildControlCenterAiDestinationFingerprint(context, {
+      providerId: operation.internal.provider_id,
+      serviceName: operation.service.name,
+      modelId: operation.internal.model_id
+    }) !== operation.internal.destination_fingerprint) {
+      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED', 'The AI review connection changed before dispatch.');
+    }
     const runOptions = {
       plan: operation.internal.plan_path,
       'plan-hash': operation.internal.plan_hash,
@@ -429,34 +567,75 @@ async function dispatchOperation(id, context) {
     }
 
     const runner = context.runAgenticHumanReviewRun ?? runAgenticHumanReviewRun;
+    runnerStarted = true;
     const result = await runner(runOptions, executionContext(context));
     const execution = result?.data?.agentic_human_review_execution
       ?? result?.data?.agentic_human_review_status
       ?? {};
     const boundary = result?.data?.boundary ?? execution.boundary ?? {};
+    observedBoundary = normalizeObservedDispatchBoundary(boundary);
+    observedExecution = execution;
+    transferMayHaveOccurred = boundary.provider_call_performed === true
+      || boundary.api_call_performed === true
+      || boundary.external_evidence_transfer === true;
+    const noTransferAttested = boundary.provider_call_performed === false
+      && boundary.api_call_performed === false
+      && boundary.external_evidence_transfer === false;
     const resultPath = artifactPath(result, 'agentic_human_review_advisory')
       ?? execution.result_path
       ?? null;
-    if (result?.status === 'ok') {
-      await withOperationLock(id, async () => {
+    observedResultPath = resultPath;
+    if (result?.status !== 'ok') {
+      await withOperationLock(id, context, async () => {
         const current = await loadOperation(id, context);
         if (current.state !== 'dispatching') return;
-        current.state = 'validating';
-        current.updated_at = materializeNow(context.now).toISOString();
+        const now = materializeNow(context.now).toISOString();
+        const dispatchStateUnknown = transferMayHaveOccurred || !noTransferAttested;
+        current.state = dispatchStateUnknown ? 'dispatch_unknown' : 'failed';
+        current.stage = 'attention';
+        current.completed_at = now;
+        current.updated_at = now;
+        current.dispatch = {
+          ...current.dispatch,
+          provider_call_performed: boundary.provider_call_performed === true,
+          api_call_performed: boundary.api_call_performed === true,
+          external_evidence_transfer: boundary.external_evidence_transfer === true,
+          retry_automatic: false,
+          cancel_available: false
+        };
+        current.internal.execution_path = execution.execution_path ?? null;
+        current.internal.result_path = resultPath;
+        current.error = safeResultError(result, dispatchStateUnknown
+          ? 'CONTROL_CENTER_AGENTIC_REVIEW_PROVIDER_STATE_UNKNOWN'
+          : 'CONTROL_CENTER_AGENTIC_REVIEW_NOT_SENT');
         await saveOperation(current, context);
       });
+      return;
     }
-    const safeResult = resultPath
-      ? await readSafeAdvisoryProjection(resultPath, context)
-      : null;
 
-    await withOperationLock(id, async () => {
+    if (!resultPath) {
+      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_UNREADABLE', 'The saved AI result could not be found.');
+    }
+    const verified = await readVerifiedAdvisoryProjection(resultPath, operation, boundary, context);
+    await withOperationLock(id, context, async () => {
       const current = await loadOperation(id, context);
-      if (!['dispatching', 'validating'].includes(current.state)) return;
+      if (current.state !== 'dispatching') return;
+      current.state = 'validating';
+      current.updated_at = materializeNow(context.now).toISOString();
+      current.internal.execution_path = execution.execution_path ?? null;
+      current.internal.result_path = resultPath;
+      current.internal.result_sha256 = verified.digest;
+      current.dispatch = mergeObservedDispatchBoundary(current.dispatch, observedBoundary);
+      await saveOperation(current, context);
+    });
+    validationCheckpointSaved = true;
+
+    await withOperationLock(id, context, async () => {
+      const current = await loadOperation(id, context);
+      if (current.state !== 'validating' || current.internal.result_sha256 !== verified.digest) return;
       const now = materializeNow(context.now).toISOString();
-      const completed = result?.status === 'ok' && safeResult !== null;
-      current.state = completed ? 'completed' : 'failed';
-      current.stage = completed ? 'complete' : 'attention';
+      current.state = 'completed';
+      current.stage = 'complete';
       current.completed_at = now;
       current.updated_at = now;
       current.dispatch = {
@@ -467,20 +646,29 @@ async function dispatchOperation(id, context) {
         retry_automatic: false,
         cancel_available: false
       };
-      current.result = safeResult;
-      current.error = completed ? null : safeResultError(result, safeResult === null
-        ? 'CONTROL_CENTER_AGENTIC_REVIEW_RESULT_UNREADABLE'
-        : 'CONTROL_CENTER_AGENTIC_REVIEW_PROVIDER_FAILED');
+      current.result = verified.projection;
+      current.error = null;
       current.internal.execution_path = execution.execution_path ?? null;
       current.internal.result_path = resultPath;
       await saveOperation(current, context);
     });
   } catch (error) {
-    await markFailed(id, context, 'failed', error);
+    if (validationCheckpointSaved) return;
+    await markFailed(
+      id,
+      context,
+      runnerStarted || transferMayHaveOccurred ? 'dispatch_unknown' : 'failed',
+      error,
+      {
+        boundary: observedBoundary,
+        execution: observedExecution,
+        resultPath: observedResultPath
+      }
+    );
   }
 }
 
-function createOperation({ id, input, now, context, relationship }) {
+async function createOperation({ id, input, now, context, relationship }) {
   const providerId = configuredProvider(context);
   const serviceName = input.ai_suggestions
     ? configuredServiceName(context)
@@ -495,6 +683,10 @@ function createOperation({ id, input, now, context, relationship }) {
     updated_at: now.toISOString(),
     started_at: null,
     completed_at: null,
+    preparation: {
+      attempt: 1,
+      owner: await currentProcessOwner()
+    },
     request: {
       purpose: input.purpose,
       effort: input.effort,
@@ -533,8 +725,12 @@ function createOperation({ id, input, now, context, relationship }) {
       required_transfer_flags: [],
       transfer_classes: {},
       consent_digest: null,
+      destination_fingerprint: input.ai_suggestions
+        ? buildControlCenterAiDestinationFingerprint(context, { providerId, serviceName })
+        : null,
       execution_path: null,
       result_path: null,
+      result_sha256: null,
       credentials_stored: false,
       browser_authority_fields_accepted: false
     },
@@ -600,6 +796,7 @@ function projectOperation(operation) {
       retry_automatic: false,
       cancel_available: false
     },
+    recovery: recoveryProjection(operation),
     decisions: Array.isArray(operation.decisions) ? operation.decisions : [],
     result: operation.result ?? null,
     error: operation.error ?? null,
@@ -665,6 +862,7 @@ function computeConsentDigest(operation) {
     plan_hash: operation.internal.plan_hash,
     package_hash: operation.internal.package_hash,
     provider_capability_hash: operation.internal.provider_capability_hash,
+    destination_fingerprint: operation.internal.destination_fingerprint,
     provider_id: operation.internal.provider_id,
     model_id: operation.internal.model_id,
     surface_id: operation.internal.surface_id,
@@ -729,12 +927,16 @@ function normalizeReviewUrl(value) {
   }
 }
 
-async function readSafeAdvisoryProjection(relativePath, context) {
+async function readVerifiedAdvisoryProjection(relativePath, operation, executionBoundary, context, expectedDigest = null) {
   try {
-    const file = workspaceFile(relativePath, context);
-    const raw = await readFile(file, 'utf8');
-    if (Buffer.byteLength(raw, 'utf8') > MAX_OPERATION_BYTES * 4) return null;
+    const body = await readSafeResultFile(relativePath, context);
+    const digest = createHash('sha256').update(body).digest('hex');
+    if (expectedDigest && digest !== expectedDigest) {
+      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_VALIDATION_EVIDENCE_INVALID', 'The saved AI result changed after dispatch.');
+    }
+    const raw = body.toString('utf8');
     const value = JSON.parse(raw);
+    validateAdvisoryIdentity(value, relativePath, operation, executionBoundary);
     const summary = value.non_engineer_summary ?? {};
     const findings = Array.isArray(value.agentic_human_review_findings)
       ? value.agentic_human_review_findings
@@ -745,9 +947,9 @@ async function readSafeAdvisoryProjection(relativePath, context) {
     const fixes = value.agentic_human_review_action_plan?.suggested_fixes
       ?? value.agentic_human_review_action_plan?.next_actions
       ?? [];
-    return {
+    return { digest, projection: {
       kind: 'external_ai_review',
-      status: value.agentic_human_review_advisory?.status ?? 'completed',
+      status: value.agentic_human_review_advisory.status,
       main_takeaway: safeText(summary.main_takeaway, 1200),
       likely_first_impression: safeText(summary.likely_first_impression, 900),
       top_concerns: safeStringList(summary.top_concerns, 8, 500),
@@ -759,10 +961,107 @@ async function readSafeAdvisoryProjection(relativePath, context) {
       owner_decision_count: decisions.length,
       advisory_only: true,
       gate_effect: 'none'
-    };
-  } catch {
-    return null;
+    } };
+  } catch (error) {
+    if (error?.code) throw error;
+    throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_INVALID', 'The saved AI result did not match the approved review contract.');
   }
+}
+
+function validateAdvisoryIdentity(value, relativePath, operation, executionBoundary) {
+  const schema = getSchema('agentic_human_review_advisory');
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || schema.required.some((field) => !Object.prototype.hasOwnProperty.call(value, field))
+    || value.result_type !== schema.properties.result_type.const) {
+    throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_SCHEMA_INVALID', 'The saved AI result is not a complete TraceCue advisory.');
+  }
+  for (const field of schema.required) {
+    const expectedType = schema.properties[field]?.type;
+    if (expectedType === 'object' && (!value[field] || typeof value[field] !== 'object' || Array.isArray(value[field]))) {
+      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_SCHEMA_INVALID', 'The saved AI result has an invalid required section.');
+    }
+    if (expectedType === 'array' && !Array.isArray(value[field])) {
+      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_SCHEMA_INVALID', 'The saved AI result has an invalid required list.');
+    }
+    if (expectedType === 'string' && typeof value[field] !== 'string') {
+      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_SCHEMA_INVALID', 'The saved AI result has an invalid required identity.');
+    }
+  }
+  const advisory = value.agentic_human_review_advisory;
+  const readiness = value.agentic_human_review_readiness;
+  const requiredFlags = new Set(normalizeStrings(value.transfer_permissions?.required_flags));
+  const validStatus = ['completed', 'owner_review_recommended'].includes(advisory.status);
+  const boundaryMatches = value.execution?.provider_call_performed === (executionBoundary.provider_call_performed === true)
+    && value.execution?.api_call_performed === (executionBoundary.api_call_performed === true)
+    && value.execution?.external_evidence_transfer === (executionBoundary.external_evidence_transfer === true);
+  if (!validStatus
+    || value.id !== advisory.id
+    || advisory.plan_hash !== operation.internal.plan_hash
+    || advisory.plan_path !== operation.internal.plan_path
+    || value.provider?.id !== operation.internal.provider_id
+    || (operation.internal.model_id && value.model?.id !== operation.internal.model_id)
+    || value.execution?.result_path !== relativePath
+    || operation.internal.required_transfer_flags.some((flag) => !requiredFlags.has(flag))
+    || readiness?.advisory_only !== true
+    || readiness?.gate_effect !== 'none'
+    || advisory.gate_effect !== 'none'
+    || !boundaryMatches) {
+    throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_IDENTITY_MISMATCH', 'The saved AI result does not match the approved plan and execution.');
+  }
+}
+
+async function readSafeResultFile(relativePath, context) {
+  const cwd = path.resolve(context.cwd ?? process.cwd());
+  const root = path.resolve(cwd, artifactRoot(context));
+  const target = workspaceFile(relativePath, context);
+  if (!isPathInside(root, target)) {
+    throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_PATH_REJECTED', 'The saved AI result is outside the private artifact location.');
+  }
+  await rejectResultSymlinkComponents(cwd, path.dirname(path.relative(cwd, target)));
+  const rootInfo = await lstat(root);
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) {
+    throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_ROOT_REJECTED', 'The private artifact location is unsafe.');
+  }
+  const info = await lstat(target);
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) {
+    throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_FILE_REJECTED', 'The saved AI result is not a private regular file.');
+  }
+  if (info.size > MAX_OPERATION_BYTES * 4) {
+    throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_TOO_LARGE', 'The local AI review result is too large.');
+  }
+  const [rootReal, targetReal] = await Promise.all([realpath(root), realpath(target)]);
+  if (!isPathInside(rootReal, targetReal)) {
+    throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_PATH_REJECTED', 'The saved AI result escaped the private artifact location.');
+  }
+  const handle = await open(target, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+  try {
+    return await readStableBoundedFileHandle(handle, {
+      expected: info,
+      maxBytes: MAX_OPERATION_BYTES * 4,
+      changedError: () => codedError(
+        'CONTROL_CENTER_AGENTIC_REVIEW_RESULT_CHANGED',
+        'The saved AI result changed while it was read.'
+      )
+    });
+  } finally {
+    await handle.close();
+  }
+}
+
+async function rejectResultSymlinkComponents(root, relativeDirectory) {
+  let current = root;
+  for (const segment of relativeDirectory.split(path.sep).filter(Boolean)) {
+    current = path.join(current, segment);
+    const info = await lstat(current);
+    if (!info.isDirectory() || info.isSymbolicLink()) {
+      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_RESULT_PATH_REJECTED', 'The saved AI result path is unsafe.');
+    }
+  }
+}
+
+function isPathInside(root, target) {
+  const relative = path.relative(root, target);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 function projectLocalReview(review) {
@@ -782,9 +1081,9 @@ function projectLocalReview(review) {
   };
 }
 
-async function markFailed(id, context, state, error) {
+async function markFailed(id, context, state, error, observation = {}) {
   try {
-    await withOperationLock(id, async () => {
+    await withOperationLock(id, context, async () => {
       const operation = await loadOperation(id, context);
       const now = materializeNow(context.now).toISOString();
       operation.state = state;
@@ -795,6 +1094,23 @@ async function markFailed(id, context, state, error) {
         code: error?.code ?? 'CONTROL_CENTER_AGENTIC_REVIEW_FAILED',
         message: publicFailureMessage(error?.code)
       };
+      if (observation.boundary) {
+        operation.dispatch = {
+          ...operation.dispatch,
+          provider_call_performed: operation.dispatch?.provider_call_performed === true
+            || observation.boundary.provider_call_performed === true,
+          api_call_performed: operation.dispatch?.api_call_performed === true
+            || observation.boundary.api_call_performed === true,
+          external_evidence_transfer: operation.dispatch?.external_evidence_transfer === true
+            || observation.boundary.external_evidence_transfer === true,
+          retry_automatic: false,
+          cancel_available: false
+        };
+      }
+      if (observation.execution && typeof observation.execution === 'object') {
+        operation.internal.execution_path = observation.execution.execution_path ?? operation.internal.execution_path ?? null;
+      }
+      if (observation.resultPath) operation.internal.result_path = observation.resultPath;
       await saveOperation(operation, context);
     });
   } catch {
@@ -805,15 +1121,46 @@ async function markFailed(id, context, state, error) {
 async function loadOperationResult(id, context, options = {}) {
   try {
     const operation = await loadOperation(id, context);
-    if (options.recoverDispatch && operation.state === 'dispatching' && !ACTIVE_DISPATCHES.has(id)) {
-      operation.state = 'dispatch_unknown';
-      operation.stage = 'attention';
-      operation.updated_at = materializeNow(context.now).toISOString();
-      operation.error = {
-        code: 'CONTROL_CENTER_AGENTIC_REVIEW_DISPATCH_UNKNOWN',
-        message: 'TraceCue cannot confirm whether the external AI review finished. It will not retry automatically.'
+    const ownerAlive = await isProcessIdentityAlive(operation.dispatch?.owner);
+    const dispatchOwnerIsCurrentProcess = await isCurrentProcessOwner(operation.dispatch?.owner);
+    if (options.recoverDispatch && operation.state === 'dispatching'
+      && !ACTIVE_DISPATCHES.has(id) && (!ownerAlive || dispatchOwnerIsCurrentProcess)) {
+      return {
+        ok: true,
+        operation: await withOperationLock(id, context, async () => {
+          const current = await loadOperation(id, context);
+          if (current.state !== 'dispatching') return current;
+          current.state = 'dispatch_unknown';
+          current.stage = 'attention';
+          current.updated_at = materializeNow(context.now).toISOString();
+          current.error = {
+            code: 'CONTROL_CENTER_AGENTIC_REVIEW_DISPATCH_UNKNOWN',
+            message: 'TraceCue cannot confirm whether the external AI review finished. It will not retry automatically.'
+          };
+          await saveOperation(current, context);
+          return current;
+        })
       };
-      await saveOperation(operation, context);
+    }
+    if (options.recoverDispatch && operation.state === 'validating') {
+      return { ok: true, operation: await recoverValidation(id, operation, context) };
+    }
+    const preparationOwnerAlive = await isProcessIdentityAlive(operation.preparation?.owner);
+    const preparationOwnerIsCurrentProcess = await isCurrentProcessOwner(operation.preparation?.owner);
+    if (options.recoverDispatch && operation.state === 'preparing'
+      && !ACTIVE_DISPATCHES.has(id)
+      && (!preparationOwnerAlive || preparationOwnerIsCurrentProcess)) {
+      return {
+        ok: true,
+        operation: await withOperationLock(id, context, async () => {
+          const current = await loadOperation(id, context);
+          if (current.state !== 'preparing') return current;
+          current.preparation = { ...current.preparation, interrupted: true, owner: null };
+          current.updated_at = materializeNow(context.now).toISOString();
+          await saveOperation(current, context);
+          return current;
+        })
+      };
     }
     return { ok: true, operation };
   } catch (error) {
@@ -833,12 +1180,61 @@ async function loadOperationResult(id, context, options = {}) {
   }
 }
 
-async function loadOperation(id, context) {
-  const raw = await readFile(operationFile(id, context), 'utf8');
-  if (Buffer.byteLength(raw, 'utf8') > MAX_OPERATION_BYTES) {
-    throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_OPERATION_TOO_LARGE', 'The local review state is too large.');
+async function isCurrentProcessOwner(owner) {
+  if (Number(owner?.pid) !== process.pid) return false;
+  const expected = typeof owner?.process_identity === 'string' ? owner.process_identity : null;
+  const current = await captureProcessIdentity(process.pid);
+  return expected === null || current === null || expected === current;
+}
+
+async function recoverValidation(id, operation, context) {
+  const resultPath = operation.internal?.result_path;
+  const expectedDigest = operation.internal?.result_sha256;
+  let verified;
+  try {
+    if (!resultPath || !expectedDigest) {
+      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_VALIDATION_EVIDENCE_INVALID', 'The saved review result could not be verified.');
+    }
+    verified = await readVerifiedAdvisoryProjection(resultPath, operation, operation.dispatch ?? {}, context, expectedDigest);
+  } catch {
+    return withOperationLock(id, context, async () => {
+      const current = await loadOperation(id, context);
+      if (current.state !== 'validating') return current;
+      current.state = 'dispatch_unknown';
+      current.stage = 'attention';
+      current.updated_at = materializeNow(context.now).toISOString();
+      current.error = {
+        code: 'CONTROL_CENTER_AGENTIC_REVIEW_VALIDATION_EVIDENCE_INVALID',
+        message: 'TraceCue cannot verify the saved AI result and will not send the review again automatically.'
+      };
+      await saveOperation(current, context);
+      return current;
+    });
   }
-  const operation = JSON.parse(raw);
+  return withOperationLock(id, context, async () => {
+    const current = await loadOperation(id, context);
+    if (current.state !== 'validating' || current.internal?.result_sha256 !== expectedDigest) return current;
+    const now = materializeNow(context.now).toISOString();
+    current.state = 'completed';
+    current.stage = 'complete';
+    current.updated_at = now;
+    current.completed_at = now;
+    current.result = verified.projection;
+    current.error = null;
+    await saveOperation(current, context);
+    return current;
+  });
+}
+
+async function loadOperation(id, context) {
+  const store = operationStore(context);
+  let operation;
+  try {
+    operation = await store.readJson(`${id}/${OPERATION_FILE}`, { maxBytes: MAX_OPERATION_BYTES });
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    operation = await store.readJson(operationHistoryFile(id), { maxBytes: MAX_OPERATION_BYTES });
+  }
   if (operation?.type !== 'control_center_agentic_review_operation' || operation?.id !== id) {
     throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_OPERATION_INVALID', 'The local review state is invalid.');
   }
@@ -846,12 +1242,143 @@ async function loadOperation(id, context) {
 }
 
 async function saveOperation(operation, context) {
-  const directory = path.dirname(operationFile(operation.id, context));
-  await mkdir(directory, { recursive: true });
-  const target = path.join(directory, OPERATION_FILE);
-  const temporary = path.join(directory, `.${OPERATION_FILE}.${process.pid}.${randomUUID()}.tmp`);
-  await writeFile(temporary, `${JSON.stringify(operation, null, 2)}\n`, 'utf8');
-  await rename(temporary, target);
+  const store = operationStore(context);
+  let target = `${operation.id}/${OPERATION_FILE}`;
+  let archived = false;
+  try {
+    await store.readJson(target, { maxBytes: MAX_OPERATION_BYTES });
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    await store.readJson(operationHistoryFile(operation.id), { maxBytes: MAX_OPERATION_BYTES });
+    archived = true;
+    await ensureOperationActivationCapacity(store, operation.id, context);
+  }
+  operation.store_revision = Number(operation.store_revision ?? 0) + 1;
+  await store.writeJson(target, operation, {
+    maxBytes: MAX_OPERATION_BYTES
+  });
+  try {
+    await store.removeFile(operationHistoryFile(operation.id), { maxBytes: MAX_OPERATION_BYTES });
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  if (archived) {
+    const activated = await store.readJson(target, { maxBytes: MAX_OPERATION_BYTES });
+    if (activated?.id !== operation.id || activated?.store_revision !== operation.store_revision) {
+      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_ACTIVATION_FAILED', 'The archived review could not be restored safely.');
+    }
+  }
+}
+
+async function ensureOperationActivationCapacity(store, activatingId, context) {
+  const entries = await store.listDirectories({ limit: MAX_OPERATION_STORE_ENTRIES });
+  const activeIds = entries.filter((entry) => OPERATION_ID_PATTERN.test(entry));
+  if (activeIds.length < activeOperationLimit(context)) return;
+  const candidates = [];
+  for (const id of activeIds) {
+    if (id === activatingId) continue;
+    const candidate = await store.readJson(`${id}/${OPERATION_FILE}`, { maxBytes: MAX_OPERATION_BYTES });
+    if (candidate?.id === id && HISTORY_ELIGIBLE_STATES.has(candidate.state)) candidates.push(candidate);
+  }
+  candidates.sort((left, right) => String(left.updated_at).localeCompare(String(right.updated_at))
+    || String(left.id).localeCompare(String(right.id)));
+  for (const candidate of candidates) {
+    const retired = await store.withLock(candidate.id, async () => {
+      let current;
+      try {
+        current = await store.readJson(`${candidate.id}/${OPERATION_FILE}`, { maxBytes: MAX_OPERATION_BYTES });
+      } catch (error) {
+        if (error?.code === 'ENOENT') return false;
+        throw error;
+      }
+      if (current?.id !== candidate.id || !HISTORY_ELIGIBLE_STATES.has(current.state)) return false;
+      try {
+        await store.readJson(operationHistoryFile(candidate.id), { maxBytes: MAX_OPERATION_BYTES });
+        throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_HISTORY_CONFLICT', 'The review history contains a duplicate record.');
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+      await store.writeJson(operationHistoryFile(candidate.id), current, { maxBytes: MAX_OPERATION_BYTES });
+      await store.removeDirectory(candidate.id, { maxEntries: 8 });
+      return true;
+    }, { timeoutMs: operationLockTimeout(context) });
+    if (retired) return;
+  }
+  throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_CAPACITY_REACHED', 'No completed review can be moved to history safely.');
+}
+
+async function saveNewOperation(operation, context) {
+  const store = operationStore(context);
+  const limit = activeOperationLimit(context);
+  const result = await store.withLock('operation-admission', async () => {
+    const entries = await store.listDirectories({ limit: MAX_OPERATION_STORE_ENTRIES });
+    let activeEntries = entries.filter((entry) => OPERATION_ID_PATTERN.test(entry));
+    if (activeEntries.length >= limit) {
+      await ensureOperationActivationCapacity(store, operation.id, context);
+      activeEntries = (await store.listDirectories({ limit: MAX_OPERATION_STORE_ENTRIES }))
+        .filter((entry) => OPERATION_ID_PATTERN.test(entry));
+      if (activeEntries.length >= limit) {
+        throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_CAPACITY_REACHED', 'The active review store is full.');
+      }
+    }
+    if (activeEntries.includes(operation.id)) {
+      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_ID_CONFLICT', 'The generated review id is already in use.');
+    }
+    try {
+      await store.readJson(operationHistoryFile(operation.id), { maxBytes: MAX_OPERATION_BYTES });
+      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_ID_CONFLICT', 'The generated review id is already in use.');
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    return store.withLock(operation.id, async () => {
+      operation.store_revision = Number(operation.store_revision ?? 0) + 1;
+      await store.writeJson(`${operation.id}/${OPERATION_FILE}`, operation, {
+        maxBytes: MAX_OPERATION_BYTES
+      });
+    }, { timeoutMs: operationLockTimeout(context) });
+  }, { timeoutMs: operationLockTimeout(context) });
+  scheduleOperationHistoryRetention(store, context);
+  return result;
+}
+
+async function pruneOperationHistory(store, context) {
+  const requested = Number(context.agenticReviewHistoryEntries);
+  const limit = Number.isInteger(requested) && requested > 0
+    ? Math.min(requested, MAX_OPERATION_STORE_ENTRIES - 64)
+    : CONTROL_CENTER_AGENTIC_REVIEW_HISTORY_ENTRIES;
+  const entries = await store.listDirectories({ limit: MAX_OPERATION_STORE_ENTRIES });
+  const completed = [];
+  for (const id of entries) {
+    if (!OPERATION_ID_PATTERN.test(id)) continue;
+    try {
+      const operation = await store.readJson(`${id}/${OPERATION_FILE}`, { maxBytes: MAX_OPERATION_BYTES });
+      if (operation?.id === id && HISTORY_ELIGIBLE_STATES.has(operation.state)) completed.push(operation);
+    } catch {}
+  }
+  completed.sort((left, right) => String(right.updated_at).localeCompare(String(left.updated_at))
+    || String(right.id).localeCompare(String(left.id)));
+  for (const retired of completed.slice(limit)) {
+    await store.withLock(retired.id, async () => {
+      let current;
+      try {
+        current = await store.readJson(`${retired.id}/${OPERATION_FILE}`, { maxBytes: MAX_OPERATION_BYTES });
+      } catch (error) {
+        if (error?.code === 'ENOENT') return;
+        throw error;
+      }
+      if (current?.id !== retired.id
+        || !HISTORY_ELIGIBLE_STATES.has(current.state)
+        || current.store_revision !== retired.store_revision
+        || current.updated_at !== retired.updated_at) return;
+      await store.writeJson(operationHistoryFile(retired.id), current, { maxBytes: MAX_OPERATION_BYTES });
+      await store.removeDirectory(retired.id, { maxEntries: 8 });
+    }, { timeoutMs: historyMaintenanceLockTimeout(context) });
+  }
+}
+
+function operationHistoryFile(id) {
+  const digest = sha256(id);
+  return path.join('history', digest.slice(0, 2), digest.slice(2, 4), `${id}.json`);
 }
 
 function operationFile(id, context) {
@@ -860,6 +1387,16 @@ function operationFile(id, context) {
 
 function operationsRoot(context) {
   return path.join(path.resolve(context.cwd ?? process.cwd()), artifactRoot(context), CONTROL_CENTER_AGENTIC_REVIEW_ARTIFACT_DIR);
+}
+
+function operationStore(context) {
+  return createSafeLocalStore({
+    workspaceRoot: path.resolve(context.cwd ?? process.cwd()),
+    relativeRoot: path.join(artifactRoot(context), CONTROL_CENTER_AGENTIC_REVIEW_ARTIFACT_DIR),
+    namespace: 'control-center-agentic-review-operations',
+    maxRecordBytes: MAX_OPERATION_BYTES,
+    maxEntries: MAX_OPERATION_STORE_ENTRIES
+  });
 }
 
 function workspaceFile(relativePath, context) {
@@ -910,18 +1447,74 @@ function scheduleBackground(id, context, task) {
   }
 }
 
-async function withOperationLock(id, task) {
-  const previous = OPERATION_LOCKS.get(id) ?? Promise.resolve();
-  let release;
-  const current = new Promise((resolve) => { release = resolve; });
-  OPERATION_LOCKS.set(id, current);
-  await previous;
-  try {
-    return await task();
-  } finally {
-    release();
-    if (OPERATION_LOCKS.get(id) === current) OPERATION_LOCKS.delete(id);
+async function withOperationLock(id, context, task) {
+  const store = operationStore(context);
+  const result = await store.withLock('operation-admission', async () => (
+    store.withLock(id, task, { timeoutMs: operationLockTimeout(context) })
+  ), { timeoutMs: operationLockTimeout(context) });
+  scheduleOperationHistoryRetention(store, context);
+  return result;
+}
+
+function scheduleOperationHistoryRetention(store, context) {
+  const key = operationsRoot(context);
+  const existing = OPERATION_HISTORY_RETENTION.get(key);
+  if (existing) {
+    existing.requested = true;
+    existing.store = store;
+    existing.context = context;
+    return;
   }
+  const state = { requested: true, store, context };
+  OPERATION_HISTORY_RETENTION.set(key, state);
+  scheduleUnrefImmediate(() => { void runScheduledOperationHistoryRetention(key, state); });
+}
+
+async function runScheduledOperationHistoryRetention(key, state) {
+  state.requested = false;
+  try {
+    await state.store.withLock(
+      'history-retention',
+      async () => pruneOperationHistory(state.store, state.context),
+      { timeoutMs: historyMaintenanceLockTimeout(state.context) }
+    );
+  } catch {
+    // Retention is maintenance; it must never change an already committed action result.
+  }
+  if (state.requested) {
+    scheduleUnrefImmediate(() => { void runScheduledOperationHistoryRetention(key, state); });
+    return;
+  }
+  if (OPERATION_HISTORY_RETENTION.get(key) === state) OPERATION_HISTORY_RETENTION.delete(key);
+}
+
+function scheduleUnrefImmediate(task) {
+  const immediate = setImmediate(task);
+  immediate.unref?.();
+}
+
+function historyMaintenanceLockTimeout(context) {
+  return normalizeBoundedPositiveInteger(
+    context.agenticReviewHistoryMaintenanceLockTimeoutMs,
+    DEFAULT_HISTORY_MAINTENANCE_LOCK_TIMEOUT_MS,
+    MAX_HISTORY_MAINTENANCE_LOCK_TIMEOUT_MS
+  );
+}
+
+function activeOperationLimit(context) {
+  return normalizeBoundedPositiveInteger(
+    context.agenticReviewActiveEntries,
+    CONTROL_CENTER_AGENTIC_REVIEW_ACTIVE_ENTRIES,
+    MAX_OPERATION_STORE_ENTRIES - 64
+  );
+}
+
+function operationLockTimeout(context) {
+  return normalizeBoundedPositiveInteger(
+    context.agenticReviewOperationLockTimeoutMs,
+    DEFAULT_OPERATION_LOCK_TIMEOUT_MS,
+    MAX_OPERATION_LOCK_TIMEOUT_MS
+  );
 }
 
 function configuredProvider(context) {
@@ -1069,6 +1662,61 @@ function publicStage(operation) {
   return 'review';
 }
 
+function recoveryProjection(operation) {
+  if (operation.state === 'preparing') {
+    return {
+      action: 'resume_preparation',
+      available: operation.preparation?.interrupted === true,
+      external_retry: false,
+      label: operation.preparation?.interrupted === true ? 'Resume preparation' : 'Preparing'
+    };
+  }
+  if (operation.state === 'confirmation_required') {
+    return {
+      action: 'review_confirmation',
+      available: true,
+      external_retry: false,
+      safe_cancel_available: true,
+      label: 'Review what will be sent'
+    };
+  }
+  if (operation.state === 'validating') {
+    return {
+      action: 'finish_validation',
+      available: Boolean(operation.internal?.result_sha256),
+      external_retry: false,
+      label: 'Finish checking the result'
+    };
+  }
+  if (operation.state === 'dispatching' || operation.state === 'dispatch_unknown') {
+    return {
+      action: 'check_status',
+      available: true,
+      external_retry: false,
+      label: 'Check status'
+    };
+  }
+  if (operation.state === 'failed') {
+    return {
+      action: 'new_attempt',
+      available: true,
+      external_retry: false,
+      label: 'Start a new attempt'
+    };
+  }
+  if (operation.state === 'completed') {
+    return { action: 'open_result', available: true, external_retry: false, label: 'Open result' };
+  }
+  return { action: null, available: false, external_retry: false, label: null };
+}
+
+async function currentProcessOwner() {
+  return {
+    pid: process.pid,
+    process_identity: await captureProcessIdentity(process.pid)
+  };
+}
+
 function projectFinding(finding) {
   if (!finding || typeof finding !== 'object' || Array.isArray(finding)) return null;
   const message = safeText(
@@ -1132,6 +1780,35 @@ function boundedString(value, maxLength) {
 function normalizeStrings(value) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.filter((item) => typeof item === 'string' && item.length <= 160))].sort();
+}
+
+function normalizeObservedDispatchBoundary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const keys = ['provider_call_performed', 'api_call_performed', 'external_evidence_transfer'];
+  if (!keys.some((key) => typeof value[key] === 'boolean')) return null;
+  return Object.fromEntries(keys.map((key) => [key, value[key] === true]));
+}
+
+function mergeObservedDispatchBoundary(current = {}, observed = null) {
+  if (!observed) return current;
+  return {
+    ...current,
+    provider_call_performed: current.provider_call_performed === true
+      || observed.provider_call_performed === true,
+    api_call_performed: current.api_call_performed === true
+      || observed.api_call_performed === true,
+    external_evidence_transfer: current.external_evidence_transfer === true
+      || observed.external_evidence_transfer === true,
+    retry_automatic: false,
+    cancel_available: false
+  };
+}
+
+function normalizeBoundedPositiveInteger(value, fallback, maximum) {
+  const requested = Number(value);
+  return Number.isInteger(requested) && requested > 0
+    ? Math.min(requested, maximum)
+    : fallback;
 }
 
 function canonicalStringify(value) {

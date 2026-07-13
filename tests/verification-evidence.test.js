@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,8 +12,13 @@ import {
   evidenceStatus,
   rebuildDerivedEvidence,
   recordEvidence,
+  runReleaseVerificationAndRecord,
   snapshotRepository
 } from '../tools/lib/product-gate-evidence.mjs';
+import {
+  loadVerificationPolicy,
+  planVerification
+} from '../tools/lib/verification-orchestration.mjs';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -28,7 +34,21 @@ async function fixture() {
   await mkdir(path.join(cwd, 'schemas'), { recursive: true });
   await writeFile(path.join(cwd, 'ops', 'EVIDENCE_DETAIL_MANIFEST.tsv'), '# evidence fixture\n', 'utf8');
   await writeFile(path.join(cwd, 'ops', 'TEST_PLAN_MANIFEST.tsv'), '# tests fixture\n', 'utf8');
-  await writeFile(path.join(cwd, 'ops', 'VERIFICATION_EXECUTION_POLICY.json'), '{"schema_version":"1.0.0"}\n', 'utf8');
+  await writeFile(path.join(cwd, 'ops', 'VERIFICATION_EXECUTION_POLICY.json'), `${JSON.stringify({
+    schema_version: '1.0.0',
+    evidence_policy: {
+      release_batch_required: true,
+      release_profile: 'release',
+      max_future_observation_skew_ms: 300000,
+      ci_proof_api_timeout_ms: 30000,
+      store_limits: {
+        lock_timeout_ms: 15000, stale_lock_ms: 60000,
+        receipt_retention_count: 2048, receipt_retention_bytes: 16777216,
+        release_batch_retention_count: 64, release_batch_retention_bytes: 33554432,
+        ingress_overflow_count: 128, ingress_overflow_bytes: 8388608
+      }
+    }
+  })}\n`, 'utf8');
   await writeFile(path.join(cwd, 'schemas', 'verification-execution-policy.schema.json'), '{"type":"object"}\n', 'utf8');
   await writeFile(path.join(cwd, 'README.md'), 'fixture\n', 'utf8');
   await git(cwd, 'init', '-q');
@@ -51,12 +71,120 @@ async function cli(cwd, args) {
   });
 }
 
+async function updateEvidencePolicy(cwd, update, message = 'update evidence policy') {
+  const file = path.join(cwd, 'ops', 'VERIFICATION_EXECUTION_POLICY.json');
+  const policy = JSON.parse(await readFile(file, 'utf8'));
+  update(policy);
+  await writeFile(file, `${JSON.stringify(policy, null, 2)}\n`, 'utf8');
+  await git(cwd, 'add', file);
+  await git(cwd, 'commit', '-qm', message);
+  return policy;
+}
+
 function evidenceRequirementRow(sourceId, requiredMode = 'required', contexts = 'all') {
   return [
     sourceId, requiredMode, contexts, 'local_tests', '#workflow', 'label', `${sourceId}.detail`, 'all',
     'Checked contract.', 'Required for current readiness.', 'Passed.', 'Failed.', 'Not run.', 'Stale.',
     'next_action', 'high', 'false', '10'
   ].join('\t');
+}
+
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableValue(value[key])]));
+  }
+  return value;
+}
+
+function framedDigest(value) {
+  const buffer = Buffer.from(JSON.stringify(stableValue(value)));
+  return createHash('sha256').update(String(buffer.length)).update('\0').update(buffer).update('\0').digest('hex');
+}
+
+async function releaseFixture() {
+  const cwd = await fixture();
+  const tasks = [
+    {
+      id: 'first', label: 'First', argv: ['node', '-e', 'process.exit(0)'], kind: 'parallel', locks: [], depends_on: [],
+      provides: ['product.gates.tests']
+    },
+    {
+      id: 'second', label: 'Second', argv: ['node', '-e', 'process.exit(0)'], kind: 'parallel', locks: [], depends_on: ['first'],
+      provides: ['product.gates.structure']
+    }
+  ];
+  const policy = {
+    schema_version: '1.0.0',
+    kind: 'verification-execution-policy',
+    activation_mode: 'enforce',
+    command_execution: 'argv',
+    unknown_state_policy: 'fail-closed',
+    cross_run_result_reuse: 'disabled',
+    persistent_result_cache: 'disabled',
+    evidence_policy: {
+      release_batch_required: true,
+      release_profile: 'release',
+      default_context: 'free-development',
+      release_artifact_paths: ['dist/control-center'],
+      ci_proof_source_id: 'product.ci.final_proof',
+      ci_proof_workflow_path: '.github/workflows/ci.yml',
+      ci_proof_artifact_prefix: 'verification-proof',
+      ci_proof_filename: 'verification-proof.json',
+      ci_proof_repository_remote: 'origin',
+      ci_proof_repository_hosts: ['github.com'],
+      ci_proof_default_context: 'external-integration',
+      remote_ci_replaces_local_release: false,
+      max_future_observation_skew_ms: 300000,
+      ci_proof_api_timeout_ms: 30000,
+      store_limits: {
+        lock_timeout_ms: 15000, stale_lock_ms: 60000,
+        receipt_retention_count: 2048, receipt_retention_bytes: 16777216,
+        release_batch_retention_count: 64, release_batch_retention_bytes: 33554432,
+        ingress_overflow_count: 128, ingress_overflow_bytes: 8388608
+      }
+    },
+    limits: { default_timeout_ms: 1000, cancellation_grace_ms: 50, max_log_bytes: 65536, parallel_jobs: 'auto', max_parallel_jobs: 2 },
+    tasks,
+    profiles: { release: ['first', 'second'], focused: [] },
+    focused_selectors: [{ id: 'all', patterns: ['**'], profiles: ['release'] }],
+    focused_fallback_profiles: ['release'],
+    ci_graph: {
+      workflow_contract: { name: 'CI', triggers: { pull_request: null, push: { branches: ['main'] }, workflow_dispatch: { inputs: { base_sha: { description: 'Base SHA', required: false, type: 'string' } } } }, permissions: { contents: 'read' }, concurrency: { group: 'ci-test', 'cancel-in-progress': true } },
+      owners: [{ job_id: 'owner', name: 'Owner', execution_instance_ids: ['owner-1'], runs_on: 'ubuntu-latest', timeout_minutes: 10, required_needs: [], required_strategy: {}, required_outputs: {}, required_actions: [{ uses: 'actions/checkout@v5', with: { 'persist-credentials': false } }], required_run_metadata: [{ env: {} }], required_step_order: ['action:0', 'run:0'], required_commands: ['node --test'] }],
+      final_job_id: 'final',
+      final_name: 'Final',
+      final_if: '${{ always() }}',
+      final_runs_on: 'ubuntu-latest',
+      final_timeout_minutes: 5,
+      final_required_actions: [{ uses: 'actions/checkout@v5', with: { 'persist-credentials': false } }],
+      final_required_run: { run: 'node proof', env: {} },
+      final_required_step_order: ['action:0', 'run:0'],
+      required_jobs: ['owner']
+    },
+    cache_policy: { playwright_binary_only: true, exact_key_required: true, restore_prefix_allowed: false, test_results_allowed: false, receipts_allowed: false }
+  };
+  await mkdir(path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  await writeFile(path.join(cwd, 'dist', 'control-center', 'index.html'), '<!doctype html>\n', 'utf8');
+  await writeFile(path.join(cwd, 'ops', 'EVIDENCE_DETAIL_MANIFEST.tsv'), `${[
+    evidenceRequirementRow('product.gates.tests'),
+    evidenceRequirementRow('product.gates.structure')
+  ].join('\n')}\n`, 'utf8');
+  await writeFile(path.join(cwd, 'ops', 'VERIFICATION_EXECUTION_POLICY.json'), `${JSON.stringify(policy, null, 2)}\n`, 'utf8');
+  await git(cwd, 'add', '.');
+  await git(cwd, 'commit', '-qm', 'release fixture');
+  const loaded = await loadVerificationPolicy({ root: cwd });
+  const plan = planVerification({ loadedPolicy: loaded, profile: 'release' });
+  return { cwd, loaded, plan };
+}
+
+async function recordFixtureBatch(fixtureValue) {
+  const execution = await runReleaseVerificationAndRecord({
+    loadedPolicy: fixtureValue.loaded,
+    context: 'free-development',
+    plan: fixtureValue.plan
+  });
+  return execution.evidenceBatch;
 }
 
 test('manual passed evidence is current but never authoritative', async () => {
@@ -175,6 +303,21 @@ test('HEAD input policy and age changes make evidence stale', async () => {
 
   await writeFile(path.join(cwd, 'README.md'), 'changed input\n', 'utf8');
   assert.equal((await evidenceStatus(cwd, { now: Date.parse('2026-07-13T00:00:30.000Z') })).status, 'stale');
+});
+
+test('evidence rejects observations beyond the configured future clock skew', async () => {
+  const cwd = await fixture();
+  await assert.rejects(recordEvidence({
+    repoRoot: cwd,
+    sourceId: 'product.gates.future-observation',
+    context: 'free-development',
+    status: 'passed',
+    authority: 'authoritative',
+    executionMode: 'executed',
+    sourceArtifacts: 'future observation check',
+    argv: ['true'],
+    now: new Date(Date.now() + 600000)
+  }), /too far in the future/);
 });
 
 test('derived index uses the parent-compatible 13-column whole-second timestamp contract', async () => {
@@ -352,6 +495,214 @@ test('verification execution policy and schema participate in the policy fingerp
   assert.notEqual(await computePolicyFingerprint(cwd), before);
 });
 
+test('one committed release batch makes every required source ready without changing the 13-column index', async () => {
+  const value = await releaseFixture();
+  const recorded = await recordFixtureBatch(value);
+  assert.equal(recorded.recorded.length, 2);
+  const status = await evidenceStatus(value.cwd, { now: Date.parse(recorded.batch.created_at) + 10_000 });
+  assert.equal(status.status, 'ready');
+  assert.equal(status.rows.filter((row) => row.required_in_context).every((row) => (
+    row.evidence_batch_id === recorded.batch.batch_id && row.evidence_batch_valid
+  )), true);
+  const index = await readFile(path.join(value.cwd, '.git', 'product-gate-evidence', 'index.tsv'), 'utf8');
+  assert.equal(index.trim().split('\n').slice(1).every((row) => row.split('\t').length === 13), true);
+  const commit = JSON.parse(await readFile(path.join(
+    value.cwd, '.git', 'product-gate-evidence', 'release-batches-v1', recorded.batch.batch_id, 'committed.json'
+  ), 'utf8'));
+  assert.equal(commit.receipt_count, 2);
+  assert.deepEqual(commit.receipts.map((receipt) => receipt.source_id), ['product.gates.structure', 'product.gates.tests']);
+});
+
+test('renaming the configured release profile makes old batches stale and permits fresh recovery', async () => {
+  const value = await releaseFixture();
+  const oldBatch = await recordFixtureBatch(value);
+  await updateEvidencePolicy(value.cwd, (policy) => {
+    policy.evidence_policy.release_profile = 'production';
+    policy.profiles.production = [...policy.profiles.release];
+  }, 'rename release profile');
+  const stale = await evidenceStatus(value.cwd);
+  assert.equal(stale.status, 'stale');
+  assert.equal(stale.batches.some((batch) => batch.batch_id === oldBatch.batch.batch_id && batch.artifact_current === false), true);
+
+  const loaded = await loadVerificationPolicy({ root: value.cwd });
+  const plan = planVerification({ loadedPolicy: loaded, profile: 'production' });
+  const recovered = await runReleaseVerificationAndRecord({ loadedPolicy: loaded, plan, context: 'free-development' });
+  assert.equal(recovered.evidenceBatch.batch.profile, 'production');
+  assert.equal((await evidenceStatus(value.cwd)).status, 'ready');
+});
+
+test('release evidence becomes stale when the ignored release artifact changes', async () => {
+  const value = await releaseFixture();
+  const recorded = await recordFixtureBatch(value);
+  await writeFile(path.join(value.cwd, 'dist', 'control-center', 'index.html'), '<!doctype html><p>changed</p>\n', 'utf8');
+  const status = await evidenceStatus(value.cwd, { now: Date.parse(recorded.batch.created_at) + 10_000 });
+  assert.equal(status.status, 'stale');
+  assert.equal(status.rows.filter((row) => row.required_in_context).every((row) => row.evidence_batch_valid === false), true);
+});
+
+test('optional evidence in another context does not synthesize a second required release set', async () => {
+  const value = await releaseFixture();
+  const recorded = await recordFixtureBatch(value);
+  await recordEvidence({
+    repoRoot: value.cwd,
+    sourceId: 'product.ci.final_proof',
+    context: 'external-integration',
+    status: 'passed',
+    requiredInContext: false,
+    authority: 'advisory',
+    sourceArtifacts: 'separate optional CI observation',
+    executionMode: 'manual',
+    now: new Date(Date.parse(recorded.batch.created_at) + 1000)
+  });
+  const status = await evidenceStatus(value.cwd, { now: Date.parse(recorded.batch.created_at) + 10_000 });
+  assert.equal(status.status, 'ready');
+  assert.equal(status.rows.some((row) => row.context === 'external-integration' && row.required_in_context), false);
+});
+
+test('standalone evidence cannot impersonate an authoritative CI proof pass', async () => {
+  const value = await releaseFixture();
+  await assert.rejects(recordEvidence({
+    repoRoot: value.cwd,
+    sourceId: 'product.ci.final_proof',
+    context: 'free-development',
+    status: 'passed',
+    requiredInContext: false,
+    authority: 'authoritative',
+    sourceArtifacts: 'forged CI result',
+    executionMode: 'executed',
+    argv: ['true']
+  }), /authenticated proof importer/);
+});
+
+test('release evidence rejects dirty repositories and incomplete release plans', async () => {
+  const dirty = await releaseFixture();
+  await writeFile(path.join(dirty.cwd, 'README.md'), 'dirty\n', 'utf8');
+  await assert.rejects(recordFixtureBatch(dirty), /clean worktree/);
+
+  const incomplete = await releaseFixture();
+  await assert.rejects(runReleaseVerificationAndRecord({
+    loadedPolicy: incomplete.loaded,
+    plan: { ...incomplete.plan, tasks: incomplete.plan.tasks.slice(0, 1) }
+  }), /complete current release profile/);
+});
+
+test('uncommitted or receipt-mismatched release batches are stale and never authority-ready', async () => {
+  const uncommitted = await releaseFixture();
+  const first = await recordFixtureBatch(uncommitted);
+  const batchDirectory = path.join(uncommitted.cwd, '.git', 'product-gate-evidence', 'release-batches-v1', first.batch.batch_id);
+  await rm(path.join(batchDirectory, 'committed.json'));
+  assert.equal((await evidenceStatus(uncommitted.cwd, { now: Date.parse(first.batch.created_at) + 10_000 })).status, 'stale');
+
+  const mismatched = await releaseFixture();
+  const second = await recordFixtureBatch(mismatched);
+  const commitFile = path.join(mismatched.cwd, '.git', 'product-gate-evidence', 'release-batches-v1', second.batch.batch_id, 'committed.json');
+  const commit = JSON.parse(await readFile(commitFile, 'utf8'));
+  commit.receipts[0].event_id = `${commit.receipts[0].event_id}-missing`;
+  const fields = { ...commit };
+  delete fields.commit_digest;
+  commit.commit_digest = framedDigest(fields);
+  await writeFile(commitFile, `${JSON.stringify(commit)}\n`, 'utf8');
+  assert.equal((await evidenceStatus(mismatched.cwd, { now: Date.parse(second.batch.created_at) + 10_000 })).status, 'stale');
+});
+
+test('a later standalone success cannot replace a complete batch but a later authoritative failure remains visible', async () => {
+  const value = await releaseFixture();
+  const batch = await recordFixtureBatch(value);
+  const batchTime = Date.parse(batch.batch.created_at);
+  await recordEvidence({
+    repoRoot: value.cwd,
+    sourceId: 'product.gates.tests',
+    context: 'free-development',
+    status: 'passed',
+    executionMode: 'executed',
+    authority: 'authoritative',
+    sourceArtifacts: 'later standalone success',
+    argv: ['true'],
+    now: new Date(batchTime + 1000)
+  });
+  let status = await evidenceStatus(value.cwd, { now: batchTime + 10_000 });
+  assert.equal(status.status, 'ready');
+  assert.equal(status.rows.find((row) => row.source_id === 'product.gates.tests').evidence_batch_id, batch.batch.batch_id);
+
+  await recordEvidence({
+    repoRoot: value.cwd,
+    sourceId: 'product.gates.tests',
+    context: 'free-development',
+    status: 'failed',
+    executionMode: 'executed',
+    authority: 'authoritative',
+    sourceArtifacts: 'later standalone failure',
+    argv: ['false'],
+    now: new Date(batchTime + 2000)
+  });
+  status = await evidenceStatus(value.cwd, { now: batchTime + 10_000 });
+  assert.equal(status.status, 'failed');
+  assert.equal(status.rows.find((row) => row.source_id === 'product.gates.tests').status, 'failed');
+});
+
+test('a newer complete release batch clears an older authoritative failure', async () => {
+  const value = await releaseFixture();
+  await recordFixtureBatch(value);
+  await recordEvidence({
+    repoRoot: value.cwd,
+    sourceId: 'product.gates.tests',
+    context: 'free-development',
+    status: 'failed',
+    executionMode: 'executed',
+    authority: 'authoritative',
+    sourceArtifacts: 'recoverable failed run',
+    argv: ['false']
+  });
+  assert.equal((await evidenceStatus(value.cwd)).status, 'failed');
+
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const recovered = await recordFixtureBatch(value);
+  const status = await evidenceStatus(value.cwd);
+  assert.equal(status.status, 'ready');
+  const row = status.rows.find((candidate) => candidate.source_id === 'product.gates.tests');
+  assert.equal(row.status, 'passed');
+  assert.equal(row.evidence_batch_id, recovered.batch.batch_id);
+});
+
+test('standalone writers cannot forge batch bindings and artifact symlinks are rejected', async () => {
+  const value = await releaseFixture();
+  await assert.rejects(recordEvidence({
+    repoRoot: value.cwd,
+    sourceId: 'product.gates.tests',
+    context: 'free-development',
+    status: 'passed',
+    executionMode: 'manual',
+    sourceArtifacts: 'forged receipt reservation',
+    receiptAdmissionReservation: { count: 1000, bytes: 1024 * 1024 }
+  }), /reservations are internal/);
+  await assert.rejects(recordEvidence({
+    repoRoot: value.cwd,
+    sourceId: 'product.gates.tests',
+    context: 'free-development',
+    status: 'passed',
+    executionMode: 'executed',
+    authority: 'authoritative',
+    sourceArtifacts: 'forged batch',
+    argv: ['true'],
+    evidenceBatchId: `release-${'a'.repeat(32)}`,
+    evidenceBatchDigest: 'b'.repeat(64),
+    verificationTaskId: 'first'
+  }), /only be recorded by the complete release recorder/);
+
+  const outside = path.join(value.cwd, 'outside.html');
+  await writeFile(outside, 'outside\n', 'utf8');
+  await rm(path.join(value.cwd, 'dist', 'control-center', 'index.html'));
+  await symlink(outside, path.join(value.cwd, 'dist', 'control-center', 'index.html'));
+  await git(value.cwd, 'add', '-A');
+  await git(value.cwd, 'commit', '-qm', 'symlink artifact');
+  const loaded = await loadVerificationPolicy({ root: value.cwd });
+  const plan = planVerification({ loadedPolicy: loaded, profile: 'release' });
+  await assert.rejects(runReleaseVerificationAndRecord({
+    loadedPolicy: loaded,
+    plan,
+  }), /artifact is symlinked/);
+});
+
 test('concurrent writers preserve every receipt and derived index row', async () => {
   const cwd = await fixture();
   const count = 12;
@@ -375,6 +726,233 @@ test('concurrent writers preserve every receipt and derived index row', async ()
     .trim().split('\n').map((line) => JSON.parse(line));
   assert.equal(ledger.filter((row) => row.source_id.startsWith('product.gates.concurrent-')).length, count);
   assert.equal(ledger.every((row) => typeof row.freshness_state === 'string' && typeof row.detail_artifact_path === 'string'), true);
+});
+
+test('receipt history is pruned to policy-owned count limits without losing the latest state', async () => {
+  const cwd = await fixture();
+  await updateEvidencePolicy(cwd, (policy) => {
+    policy.evidence_policy.store_limits.receipt_retention_count = 2;
+    policy.evidence_policy.store_limits.ingress_overflow_count = 4;
+  });
+  for (let index = 0; index < 3; index += 1) {
+    await recordEvidence({
+      repoRoot: cwd,
+      sourceId: 'product.gates.retained-history',
+      context: 'free-development',
+      status: index === 2 ? 'failed' : 'passed',
+      executionMode: 'manual',
+      sourceArtifacts: `retention check ${index}`
+    });
+  }
+  const result = await evidenceStatus(cwd);
+  assert.equal(result.receipts.length, 2);
+  assert.equal(result.rows.find((row) => row.source_id === 'product.gates.retained-history').status, 'failed');
+  assert.equal((await readdir(receiptFiles(cwd))).filter((entry) => entry !== '.product-gate-evidence-v2').length, 2);
+  assert.equal((await readdir(path.join(cwd, '.git', 'product-gate-evidence', 'inactive-archive-v1', 'receipts'))).length, 1);
+});
+
+test('bounded retention preserves the same authoritative failure selected before pruning', async () => {
+  const cwd = await fixture();
+  await updateEvidencePolicy(cwd, (policy) => {
+    policy.evidence_policy.store_limits.receipt_retention_count = 2;
+    policy.evidence_policy.store_limits.ingress_overflow_count = 4;
+  });
+  await recordEvidence({
+    repoRoot: cwd,
+    sourceId: 'product.gates.semantic-retention',
+    context: 'free-development',
+    status: 'failed',
+    authority: 'authoritative',
+    executionMode: 'executed',
+    sourceArtifacts: 'authoritative failed check',
+    argv: ['true']
+  });
+  await recordEvidence({
+    repoRoot: cwd,
+    sourceId: 'product.gates.semantic-retention',
+    context: 'free-development',
+    status: 'passed',
+    executionMode: 'manual',
+    sourceArtifacts: 'later ordinary pass'
+  });
+  const before = (await evidenceStatus(cwd)).rows.find((row) => row.source_id === 'product.gates.semantic-retention');
+  await recordEvidence({
+    repoRoot: cwd,
+    sourceId: 'product.gates.retention-trigger',
+    context: 'free-development',
+    status: 'passed',
+    executionMode: 'manual',
+    sourceArtifacts: 'retention trigger'
+  });
+  const after = (await evidenceStatus(cwd)).rows.find((row) => row.source_id === 'product.gates.semantic-retention');
+  assert.equal(before.status, 'failed');
+  assert.equal(after.status, 'failed');
+  assert.equal(after.event_id, before.event_id);
+});
+
+test('bounded batch retention keeps the semantic winner and archives older complete runs', async () => {
+  const value = await releaseFixture();
+  await updateEvidencePolicy(value.cwd, (policy) => {
+    policy.evidence_policy.store_limits.release_batch_retention_count = 2;
+    policy.evidence_policy.store_limits.ingress_overflow_count = 4;
+  });
+  for (let index = 0; index < 3; index += 1) {
+    const loaded = await loadVerificationPolicy({ root: value.cwd });
+    const plan = planVerification({ loadedPolicy: loaded, profile: 'release' });
+    await runReleaseVerificationAndRecord({ loadedPolicy: loaded, plan, context: 'free-development' });
+  }
+  const status = await evidenceStatus(value.cwd);
+  assert.equal(status.status, 'ready');
+  assert.equal(status.batches.length, 2);
+  assert.equal((await readdir(path.join(value.cwd, '.git', 'product-gate-evidence', 'release-batches-v1'))).length, 2);
+  assert.equal((await readdir(path.join(value.cwd, '.git', 'product-gate-evidence', 'inactive-archive-v1', 'release-batches'))).length, 1);
+});
+
+test('release evidence recovers receipt capacity without reacquiring its held index lock', async () => {
+  const value = await releaseFixture();
+  await updateEvidencePolicy(value.cwd, (policy) => {
+    policy.evidence_policy.store_limits.lock_timeout_ms = 1000;
+    policy.evidence_policy.store_limits.stale_lock_ms = 2000;
+    policy.evidence_policy.store_limits.receipt_retention_count = 2;
+    policy.evidence_policy.store_limits.ingress_overflow_count = 1;
+  });
+  await recordEvidence({
+    repoRoot: value.cwd,
+    sourceId: 'product.gates.structure',
+    context: 'free-development',
+    status: 'failed',
+    authority: 'authoritative',
+    executionMode: 'executed',
+    argv: ['false'],
+    sourceArtifacts: 'capacity prefill authoritative failure'
+  });
+  await recordEvidence({
+    repoRoot: value.cwd,
+    sourceId: 'product.gates.tests',
+    context: 'free-development',
+    status: 'passed',
+    executionMode: 'manual',
+    sourceArtifacts: 'capacity prefill ordinary result'
+  });
+  assert.equal((await evidenceStatus(value.cwd)).status, 'failed');
+  const loaded = await loadVerificationPolicy({ root: value.cwd });
+  const plan = planVerification({ loadedPolicy: loaded, profile: loaded.policy.evidence_policy.release_profile });
+  const started = Date.now();
+  const execution = await runReleaseVerificationAndRecord({ loadedPolicy: loaded, plan, context: 'free-development' });
+  assert.ok(Date.now() - started < 5000);
+  const commit = JSON.parse(await readFile(path.join(
+    value.cwd,
+    '.git',
+    'product-gate-evidence',
+    'release-batches-v1',
+    execution.evidenceBatch.batch.batch_id,
+    'committed.json'
+  ), 'utf8'));
+  assert.equal(commit.receipt_count, 2);
+  assert.equal(execution.evidenceBatch.recorded.every(({ receipt }) => receipt.next_command === 'npm run verification:release:evidence'), true);
+  const status = await evidenceStatus(value.cwd);
+  assert.equal(status.status, 'ready');
+  assert.equal(status.rows.find((row) => row.source_id === 'product.gates.structure').evidence_batch_id, execution.evidenceBatch.batch.batch_id);
+});
+
+test('a crashed archive initializer cannot wedge later evidence retirement', async () => {
+  const cwd = await fixture();
+  await updateEvidencePolicy(cwd, (policy) => {
+    policy.evidence_policy.store_limits.receipt_retention_count = 1;
+    policy.evidence_policy.store_limits.ingress_overflow_count = 2;
+  });
+  const evidenceDirectory = path.join(cwd, '.git', 'product-gate-evidence');
+  await mkdir(path.join(evidenceDirectory, `.inactive-archive-v1.initializing-99999999-${'a'.repeat(36)}`), { recursive: true });
+  await recordEvidence({
+    repoRoot: cwd, sourceId: 'product.gates.archive-init', context: 'free-development',
+    status: 'passed', executionMode: 'manual', sourceArtifacts: 'first record'
+  });
+  await recordEvidence({
+    repoRoot: cwd, sourceId: 'product.gates.archive-init', context: 'free-development',
+    status: 'failed', executionMode: 'manual', sourceArtifacts: 'second record'
+  });
+  assert.equal((await evidenceStatus(cwd)).rows.find((row) => row.source_id === 'product.gates.archive-init').status, 'failed');
+  assert.equal((await readdir(path.join(evidenceDirectory, 'inactive-archive-v1', 'receipts'))).length, 1);
+});
+
+test('expired empty and pending release batch directories are safely retired', async () => {
+  const cwd = await fixture();
+  const root = path.join(cwd, '.git', 'product-gate-evidence', 'release-batches-v1');
+  await mkdir(root, { recursive: true });
+  const empty = path.join(root, `release-${'a'.repeat(32)}`);
+  const pending = path.join(root, `release-${'b'.repeat(32)}`);
+  await mkdir(empty);
+  await mkdir(pending);
+  await writeFile(path.join(pending, '.batch.json.99999999.00000000-0000-4000-8000-000000000000.tmp'), '{}\n');
+  const old = new Date(Date.now() - 120000);
+  await utimes(empty, old, old);
+  await utimes(pending, old, old);
+  await rebuildDerivedEvidence(cwd);
+  assert.deepEqual(await readdir(root), []);
+  assert.equal((await readdir(path.join(cwd, '.git', 'product-gate-evidence', 'inactive-archive-v1', 'release-batches'))).length, 2);
+});
+
+test('retention refuses a pathname replacement and preserves the replacement directory', async () => {
+  const cwd = await fixture();
+  await updateEvidencePolicy(cwd, (policy) => {
+    policy.evidence_policy.store_limits.receipt_retention_count = 1;
+    policy.evidence_policy.store_limits.ingress_overflow_count = 2;
+  });
+  await recordEvidence({
+    repoRoot: cwd, sourceId: 'product.gates.retirement-race', context: 'free-development',
+    status: 'passed', executionMode: 'manual', sourceArtifacts: 'old record'
+  });
+  await recordEvidence({
+    repoRoot: cwd, sourceId: 'product.gates.retirement-race', context: 'free-development',
+    status: 'failed', executionMode: 'manual', sourceArtifacts: 'new record', rebuild: false
+  });
+  let replacedDirectory;
+  let backupDirectory;
+  await assert.rejects(rebuildDerivedEvidence(cwd, {
+    onEvidenceRetirementPhase: async (phase, { directory }) => {
+      if (phase !== 'validated' || replacedDirectory) return;
+      replacedDirectory = directory;
+      backupDirectory = path.join(cwd, '.git', 'product-gate-evidence', 'retirement-race-backup');
+      await rename(directory, backupDirectory);
+      await mkdir(directory);
+      await writeFile(path.join(directory, 'valuable.txt'), 'must remain\n');
+    }
+  }), /changed during archival/);
+  assert.equal(await readFile(path.join(replacedDirectory, 'valuable.txt'), 'utf8'), 'must remain\n');
+  await rm(replacedDirectory, { recursive: true, force: true });
+  await rename(backupDirectory, replacedDirectory);
+  await rebuildDerivedEvidence(cwd);
+});
+
+test('receipt directories are bound to event identity and duplicate copies are rejected', async () => {
+  const cwd = await fixture();
+  const recorded = await recordEvidence({
+    repoRoot: cwd, sourceId: 'product.gates.receipt-identity', context: 'free-development',
+    status: 'passed', executionMode: 'manual', sourceArtifacts: 'identity check'
+  });
+  const copied = path.join(receiptFiles(cwd), 'copied-valid-receipt');
+  await mkdir(copied);
+  await writeFile(path.join(copied, 'receipt.json'), await readFile(recorded.path));
+  await assert.rejects(evidenceStatus(cwd), /directory identity is inconsistent/);
+});
+
+test('the evidence lock timeout is owned by verification policy', async () => {
+  const cwd = await fixture();
+  await updateEvidencePolicy(cwd, (policy) => {
+    policy.evidence_policy.store_limits.lock_timeout_ms = 80;
+    policy.evidence_policy.store_limits.stale_lock_ms = 160;
+  });
+  const lock = path.join(cwd, '.git', 'product-gate-evidence', '.index.lock');
+  await mkdir(lock, { recursive: true });
+  await writeFile(path.join(lock, 'owner.json'), `${JSON.stringify({
+    pid: process.pid,
+    nonce: 'policy-timeout-live-owner',
+    created_at: new Date().toISOString()
+  })}\n`);
+  const started = Date.now();
+  await assert.rejects(rebuildDerivedEvidence(cwd), /Timed out waiting for product gate evidence index lock/);
+  assert.ok(Date.now() - started < 500);
+  await rm(lock, { recursive: true, force: true });
 });
 
 test('an old lock owned by a live process is never broken by age alone', async () => {
