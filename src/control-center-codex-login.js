@@ -314,10 +314,10 @@ function createLoginOperation({ executable, lock, target, contract, context, onS
 
   async function cancel({ shutdown = false } = {}) {
     terminate(shutdown ? 'shutdown' : 'cancelled');
-    const completed = await Promise.race([
-      done.then(() => true),
-      delay(normalizeCancellationWait(context.controlCenterCodexLoginCancellationWaitMs)).then(() => false)
-    ]);
+    const completed = await waitForCompletionWithin(
+      done,
+      normalizeCancellationWait(context.controlCenterCodexLoginCancellationWaitMs)
+    );
     if (!completed && !detached) {
       detached = true;
       update({
@@ -627,10 +627,20 @@ function normalizeCancellationWait(value) {
   return Number.isSafeInteger(number) && number >= 50 && number <= 15_000 ? number : CANCELLATION_WAIT_MS;
 }
 
-function delay(milliseconds) {
+function waitForCompletionWithin(completion, milliseconds) {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, milliseconds);
-    timer.unref?.();
+    let settled = false;
+    const finish = (completed) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(completed);
+    };
+    const timer = setTimeout(() => finish(false), milliseconds);
+    Promise.resolve(completion).then(
+      () => finish(true),
+      () => finish(true)
+    );
   });
 }
 

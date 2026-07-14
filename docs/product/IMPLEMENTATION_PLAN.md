@@ -2220,7 +2220,12 @@ timeouts by fail-closed outcome plus a named shared-runner observation limit.
 Completed intake retries also accept only the classified active-to-history
 stable-read-change signal for bounded reread, then revalidate the result and
 receipt as one committed pair. The observation limit is test-only and leaves
-the production policy unchanged.
+the production policy unchanged. Exact-CI cancellation hardening also replaces
+an unreferenced race timer with one completion-owning bounded wait that remains
+referenced only until the login operation finishes or its deadline fires.
+Browser response-loss checks retain the production deadline and use one named
+test-only observation ceiling so shared-runner scheduling cannot become product
+timeout authority or produce unrelated fixed-wait drift.
 
 Rollback is a TraceCue-only Git revert. No parent or consumer repository change,
 live provider call, credential persistence, arbitrary provider configuration,

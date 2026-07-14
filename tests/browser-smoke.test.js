@@ -21,6 +21,7 @@ import { createBrowserTestWorkspace } from './helpers/browser-test-workspace.js'
 const runBrowserSmoke = process.env.TRACE_CUE_BROWSER_SMOKE === '1' || process.env.BROWSER_DEBUG_BROWSER_SMOKE === '1';
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fixedNow = '2026-06-17T00:00:00.000Z';
+const CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS = 35_000;
 const controlCenterMockUrl = pathToFileURL(path.join(
   repoRoot,
   'docs',
@@ -441,7 +442,9 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     }, { times: 1 });
     await page.getByRole('button', { name: 'Review in more detail' }).click();
     await page.getByRole('heading', { name: /example\.jp/ }).waitFor();
-    await page.getByRole('heading', { name: 'The review is ready to start' }).waitFor({ timeout: 20_000 });
+    await page.getByRole('heading', { name: 'The review is ready to start' }).waitFor({
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
     const repeatedOperation = await page.evaluate(async () => {
       const id = new URLSearchParams(window.location.search).get('item');
       return (await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json()).data.control_center_agentic_review.operation;
@@ -485,7 +488,9 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     }
     await page.getByRole('heading', { name: 'All improvements have a decision' }).waitFor();
     await page.getByRole('button', { name: 'Review in more detail' }).click();
-    await page.getByRole('heading', { name: 'The review is ready to start' }).waitFor({ timeout: 20_000 });
+    await page.getByRole('heading', { name: 'The review is ready to start' }).waitFor({
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
     await page.getByRole('button', { name: 'Review and start', exact: true }).click();
     await repeatedDialog.waitFor();
     const cancelledResponseGate = new Promise((resolve) => { releaseCancelledResponse = resolve; });
@@ -1157,7 +1162,9 @@ test('paired review center hard reload gives a clear reopen path instead of a fu
     }, { times: 1 });
     await stalledPage.goto(stalledPair.url, { waitUntil: 'domcontentloaded' });
     await stalledPairingObserved;
-    await stalledPage.getByRole('heading', { name: reopenHeading, exact: true }).waitFor({ timeout: 20_000 });
+    await stalledPage.getByRole('heading', { name: reopenHeading, exact: true }).waitFor({
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
     assert.equal(await stalledPage.getByRole('button', { name: 'Try again', exact: true }).count(), 0);
     assert.equal(await stalledPage.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
     releaseStalledPairing();
@@ -1273,7 +1280,9 @@ test('review center bounds a stalled local read without relying on browser abort
 
     await page.goto(started.url, { waitUntil: 'domcontentloaded' });
     await dashboardObserved;
-    await page.getByRole('heading', { name: 'Your reviews could not be loaded', exact: true }).waitFor({ timeout: 20_000 });
+    await page.getByRole('heading', { name: 'Your reviews could not be loaded', exact: true }).waitFor({
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
     assert.equal(await page.getByRole('button', { name: 'Try again', exact: true }).isEnabled(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
     releaseDashboard();
@@ -2072,7 +2081,9 @@ test('review center keeps one intake and redirects to truthful status after resp
     await freshPage.goto(`${started.url}?view=work&item=${encodeURIComponent(pendingOperationId)}`, { waitUntil: 'networkidle' });
     await freshPage.getByRole('heading', { name: 'The AI choice changed', exact: true }).waitFor();
     await freshPage.getByRole('button', { name: 'Prepare again', exact: true }).click();
-    await freshPage.getByRole('heading', { name: 'The review is ready to start', exact: true }).waitFor({ timeout: 20_000 });
+    await freshPage.getByRole('heading', { name: 'The review is ready to start', exact: true }).waitFor({
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
     const preparedAgainId = new URL(freshPage.url()).searchParams.get('item');
     assert.notEqual(preparedAgainId, pendingOperationId);
     const preparedAgain = await freshPage.evaluate(async (id) => (

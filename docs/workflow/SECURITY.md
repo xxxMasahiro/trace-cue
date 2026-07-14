@@ -610,6 +610,9 @@ a separate write-capable adapter with a supported binary identity, fixed argv,
 bounded incremental parser, single-operation ownership, cancellation, timeout,
 and status reconciliation. It does not expose raw CLI output or authentication
 content and does not weaken the existing read-only execution sandbox. Its
+bounded cancellation deadline remains referenced only while it owns shutdown
+completion and is cleared on completed cleanup; unrelated runtime handles are
+never relied on for this safety boundary. Its
 private lock never uses age, PID-only inference, or process-list heuristics to
 recover an ambiguous child-binding state. A dead-owner `not_started` lock with
 no child can be recovered during the same boot only after unchanged safe-inode

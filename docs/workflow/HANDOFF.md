@@ -743,6 +743,19 @@ active-to-history stable-read change and revalidates the committed result and
 receipt. These changes do not alter a production timeout or accept an unsafe
 intermediate state.
 
+The first exact-CI run for completion commit `f49840d` passed repository,
+package, and all 25 browser owners but exposed a clean-runner lifecycle defect
+in both Node 20 and Node 22: the Codex child-binding shutdown test and the 27
+tests after it were cancelled because the cancellation deadline was
+unreferenced while it was the only completion authority. The bounded wait now
+keeps only that deadline referenced, clears it immediately when the operation
+finishes, and preserves the existing timeout, lock, process, and fail-closed
+behavior. Local browser closure also exposed two different response-loss UI
+waits crossing duplicated 20-second test limits under host load. The five
+product-deadline UI assertions now share one named 35-second test observation
+ceiling; the product's 10-second response deadline is unchanged, and successful
+checks still return as soon as the required UI state appears.
+
 The tracked commit containing this completion record is the final Phase
 182-187 revision. The autonomous completion flow then confirms exact GitHub CI,
 clean local/remote equality, and exact-HEAD release, CI-proof, and read-only

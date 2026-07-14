@@ -1617,6 +1617,10 @@ user code. It stores no raw output, device token, provider token, or auth file
 content. Cancellation, timeout, opener failure, server shutdown, and ambiguous
 exit reconcile through the fixed login-status probe. Its owner-only lock binds
 the manager before child creation and binds the exact child after spawn. A
+bounded cancellation deadline remains referenced while it is the only
+completion authority and is cleared as soon as the operation finishes; it
+therefore cannot disappear with a pending shutdown or keep a completed process
+alive. A
 dead-owner `not_started` lock with no child is stale after safe inode
 revalidation and can be recovered during the same boot. A crash in the narrow
 `pending` child-binding interval remains fail-closed during the same kernel

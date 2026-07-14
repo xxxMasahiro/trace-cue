@@ -651,6 +651,13 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
 - [x] Harden final shared-runner evidence tests by waiting for validated atomic
   state, revalidating completed intake after active-to-history transition, and
   separating runtime timeout authority from test observation latency.
+- [x] Keep the Codex login cancellation deadline referenced while it owns a
+  pending shutdown, clear it on early completion, and prevent Node 20/22 from
+  cancelling the remaining setup contract tests when no unrelated handle is
+  present.
+- [x] Centralize the browser response-loss observation ceiling separately from
+  the unchanged product response deadline so delayed shared runners wake on
+  the required UI state instead of failing at duplicated 20-second limits.
 - [x] Update the active production mock and PNG assets, then pass focused,
   aggregate, package, browser, release, product, post-review, CI, Git sync, and
   exact-HEAD authority gates.

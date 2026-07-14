@@ -860,6 +860,9 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   A valid same-boot pending reservation remains fail-closed and gives the user
   an explicit restart action. A legacy, missing, malformed, or unreadable
   identity remains fail-closed and requires a separate trusted local repair.
+  A bounded cancellation or shutdown deadline that owns completion must keep
+  the runtime alive until cleanup completes or that deadline fires, and must be
+  cleared immediately when cleanup completes.
 - Replacing or disconnecting an AI connection must invalidate its old
   capability immediately. Review preparation and dispatch must bind and
   revalidate profile revision, configuration identity, credential generation,

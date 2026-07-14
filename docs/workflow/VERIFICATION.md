@@ -961,7 +961,9 @@ reconciliation, owner-only locks, live orphan protection, and fail-closed
 pending child binding. Lock tests additionally cover version 1.1 state-machine
 validation, same-boot pending refusal, same-boot `not_started` recovery, legacy
 ambiguity, PID/start-time reuse across a boot boundary, and safe prior-boot
-replacement without exposing boot identity.
+replacement without exposing boot identity. The pending-binding shutdown case
+also proves its bounded cancellation deadline remains a referenced completion
+owner until it fires and is cleared when operation cleanup wins.
 Server integration proves that switching from a session API connection to
 Codex retires the old adapter only after the persistent selection commit. API
 promotion tests also prove that an expiry between persistent record write and
@@ -1015,7 +1017,10 @@ and withholds only its response beyond the deadline. The page must show the
 reopen-required state with no Try again action. API replacement coverage also
 loses an intent response while the prior API connection remains unchanged and
 requires the key form plus an error; the old connection cannot be mistaken for
-the requested replacement.
+the requested replacement. Browser assertions that observe an outcome after a
+product-owned response deadline share one named test-only observation ceiling;
+they do not extend or redefine the production deadline and return immediately
+when the expected UI state appears.
 
 Session-runtime review projection tests require
 `provider_credential_source=control_center_session`, false provider
