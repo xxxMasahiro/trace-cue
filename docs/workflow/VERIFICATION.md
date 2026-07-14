@@ -585,6 +585,12 @@ The runner uses policy-owned argv, bounded rolling parallelism, declared locks,
 per-task timeout and output limits, first-failure process-group cancellation,
 deterministic policy-order reporting, and a one-worker fallback. The tracked and
 untracked non-ignored worktree snapshot must be unchanged after execution.
+Timeout ownership tests require the configured fail-closed result and use a
+named observation ceiling only to distinguish that policy from a known longer
+fixture fallback. The ceiling tolerates shared-runner scheduling and is not a
+runtime timeout override. Atomic JSON state tests wait for the validated target
+predicate so an earlier safe intermediate record is never mistaken for the
+required committed state.
 An already-aborted signal is covered explicitly: no child process may start,
 every pending task is reported cancelled, the overall result fails, and an
 external side-effect marker remains absent.
@@ -708,10 +714,13 @@ retryable no-send failure.
 History tests hold publication/update locks while another completion requests
 retention, require both public operations to succeed, verify inactive hash
 shards retain old records, and require direct opaque-id status/result lookup and
-one-use semantics after active-list retirement. Additional contention tests hold
-the global history-maintenance lock while a decision, confirmed external-review
-start, and intake completion return; each primary action must complete before
-the lock is released, the provider dispatch must still be scheduled, and the
+one-use semantics after active-list retirement. The completed same-id retry
+injects one `SAFE_STORE_FILE_CHANGED` receipt read, requires bounded reread, and
+accepts the result only after its completed receipt and digest match. Additional
+contention tests hold the global history-maintenance lock while a decision, a
+confirmed external-review start, and intake completion return; each primary
+action must complete before the lock is released, the provider dispatch must
+still be scheduled, and the
 persisted result must remain successful. Expiry coverage advances beyond the
 intake TTL, triggers cleanup with a later upload, and requires the completed
 result, receipt, direct lookup, and one-use rejection to remain intact.

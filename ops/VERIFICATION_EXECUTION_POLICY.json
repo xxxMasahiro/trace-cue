@@ -123,7 +123,7 @@
     },
     {
       "id": "test_no_browser",
-      "label": "No-browser product and evidence concurrency tests",
+      "label": "No-browser product, evidence, and timing-contract tests",
       "argv": ["npm", "test"],
       "kind": "heavy",
       "locks": ["node-test-runtime"],

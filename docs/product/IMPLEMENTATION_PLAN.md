@@ -2214,6 +2214,14 @@ product gates; complete independent contract, determinism, and browser-race
 review; then commit, push, verify exact GitHub CI, local/remote equality, clean
 worktree, exact-HEAD evidence, and read-only parent authority.
 
+Final evidence-loop hardening waits for the validated bound child state when a
+lock record is atomically replaced, and verifies policy-owned evidence-lock
+timeouts by fail-closed outcome plus a named shared-runner observation limit.
+Completed intake retries also accept only the classified active-to-history
+stable-read-change signal for bounded reread, then revalidate the result and
+receipt as one committed pair. The observation limit is test-only and leaves
+the production policy unchanged.
+
 Rollback is a TraceCue-only Git revert. No parent or consumer repository change,
 live provider call, credential persistence, arbitrary provider configuration,
 automatic uncertain retry, MCP expansion, deterministic finding mutation, or

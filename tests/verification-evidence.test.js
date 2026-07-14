@@ -24,6 +24,7 @@ import {
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const evidenceCli = path.join(repoRoot, 'tools', 'product-gate-evidence');
+const POLICY_LOCK_TIMEOUT_OBSERVATION_LIMIT_MS = 5_000;
 
 async function git(cwd, ...args) {
   return execFileAsync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
@@ -980,7 +981,10 @@ test('the evidence lock timeout is owned by verification policy', async () => {
   })}\n`);
   const started = Date.now();
   await assert.rejects(rebuildDerivedEvidence(cwd), /Timed out waiting for product gate evidence index lock/);
-  assert.ok(Date.now() - started < 500);
+  assert.ok(
+    Date.now() - started < POLICY_LOCK_TIMEOUT_OBSERVATION_LIMIT_MS,
+    'The policy timeout must win over the 15-second fixture default even under shared-runner load.'
+  );
   await rm(lock, { recursive: true, force: true });
 });
 

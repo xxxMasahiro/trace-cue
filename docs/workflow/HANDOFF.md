@@ -734,6 +734,15 @@ documents, security, CI contract, design system, workflow, package dry-run,
 packed install, repository, and product gates pass. Independent contract,
 exact-once, and browser-concurrency reviews report no remaining findings.
 
+The final evidence loop also removes two shared-runner timing assumptions: the
+Codex lock test now waits for the validated bound-child record after atomic
+replacement, and the evidence timeout test requires the policy-owned failure
+within a named observation limit that remains well below the fixture fallback.
+The completed-intake retry additionally rereads only a classified
+active-to-history stable-read change and revalidates the committed result and
+receipt. These changes do not alter a production timeout or accept an unsafe
+intermediate state.
+
 The tracked commit containing this completion record is the final Phase
 182-187 revision. The autonomous completion flow then confirms exact GitHub CI,
 clean local/remote equality, and exact-HEAD release, CI-proof, and read-only

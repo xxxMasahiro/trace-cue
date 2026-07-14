@@ -395,10 +395,29 @@ test('intake history waits for in-flight publication and preserves its completed
   const older = await getControlCenterIntakeResult({ id: olderId }, { cwd });
   assert.equal(older.status, 'ok');
   assert.equal(older.data.control_center_intake.result.summary.characters, 18);
+  let changedReadInjected = false;
   const duplicate = await completeControlCenterIntake({
     intake_id: olderId, purpose: 'Do not execute again.', effort: 'standard'
-  }, { cwd });
-  assert.equal(duplicate.status, 'ok');
+  }, {
+    cwd,
+    createControlCenterIntakeStore(options) {
+      const injectedStore = createSafeLocalStore(options);
+      return {
+        ...injectedStore,
+        async readJson(relativePath, readOptions) {
+          if (!changedReadInjected && relativePath === `receipts/${olderId}.json`) {
+            changedReadInjected = true;
+            const error = new Error('The active receipt moved to history.');
+            error.code = 'SAFE_STORE_FILE_CHANGED';
+            throw error;
+          }
+          return injectedStore.readJson(relativePath, readOptions);
+        }
+      };
+    }
+  });
+  assert.equal(changedReadInjected, true);
+  assert.equal(duplicate.status, 'ok', JSON.stringify(duplicate.errors));
 });
 
 test('intake completion is not changed to an error by deferred history maintenance', async () => {

@@ -45,6 +45,8 @@ const DEFAULT_RECOVERY_MAINTENANCE_LOCK_TIMEOUT_MS = 100;
 const MAX_RECOVERY_MAINTENANCE_LOCK_TIMEOUT_MS = 1000;
 const DEFAULT_PUBLICATION_WAIT_POLL_MS = 20;
 const MAX_PUBLICATION_WAIT_POLL_MS = 1000;
+const INTAKE_HISTORY_READ_ATTEMPTS = 4;
+const INTAKE_HISTORY_READ_RETRY_MS = 10;
 const ID_PATTERN = /^[a-f0-9]{32}$/u;
 const RECEIPT_PATTERN = /^([a-f0-9]{32})\.json$/u;
 const RESERVATION_PATTERN = /^([a-f0-9]{32})\.json$/u;
@@ -332,7 +334,7 @@ export async function completeControlCenterIntake(input = {}, context = {}) {
 async function resolveExistingIntakeCompletion(store, id, context) {
   let receipt;
   try {
-    receipt = await readIntakeReceipt(store, id);
+    receipt = await readIntakeReceiptForCompletion(store, id);
   } catch (error) {
     if (error?.code === 'ENOENT') {
       return intakeError('CONTROL_CENTER_INTAKE_NOT_AVAILABLE', 'Choose the file again and retry.', {});
@@ -341,10 +343,7 @@ async function resolveExistingIntakeCompletion(store, id, context) {
   }
   if (receipt?.state === 'staged') return null;
   if (receipt?.state === 'completed') {
-    const result = await readIntakeResult(store, id);
-    if (!isCommittedIntakeResult(receipt, result)) {
-      throw intakeCodedError('CONTROL_CENTER_INTAKE_RESULT_NOT_COMMITTED', 'The saved result is not complete.');
-    }
+    const result = await readCommittedIntakeResult(store, id, context);
     return intakeOk({ result, already_completed: true });
   }
   if (receipt?.state === 'processing') {
@@ -1058,17 +1057,35 @@ async function finalizePendingIntakePublication(store, id, context, options = {}
 }
 
 async function readCommittedIntakeResult(store, id, context) {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < INTAKE_HISTORY_READ_ATTEMPTS; attempt += 1) {
     try {
       const result = await readIntakeResult(store, id);
       const receipt = await readIntakeReceipt(store, id);
       if (isCommittedIntakeResult(receipt, result)) return result;
     } catch (error) {
-      if (!['ENOENT', 'SAFE_STORE_FILE_CHANGED'].includes(error?.code) || attempt === 3) throw error;
+      if (!['ENOENT', 'SAFE_STORE_FILE_CHANGED'].includes(error?.code)
+        || attempt === INTAKE_HISTORY_READ_ATTEMPTS - 1) throw error;
     }
-    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 10));
+    if (attempt < INTAKE_HISTORY_READ_ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, INTAKE_HISTORY_READ_RETRY_MS));
+    }
   }
   throw intakeCodedError('CONTROL_CENTER_INTAKE_RESULT_NOT_COMMITTED', 'The saved result is not complete.');
+}
+
+async function readIntakeReceiptForCompletion(store, id) {
+  for (let attempt = 0; attempt < INTAKE_HISTORY_READ_ATTEMPTS; attempt += 1) {
+    try {
+      return await readIntakeReceipt(store, id);
+    } catch (error) {
+      if (error?.code !== 'SAFE_STORE_FILE_CHANGED'
+        || attempt === INTAKE_HISTORY_READ_ATTEMPTS - 1) throw error;
+    }
+    if (attempt < INTAKE_HISTORY_READ_ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, INTAKE_HISTORY_READ_RETRY_MS));
+    }
+  }
+  throw intakeCodedError('CONTROL_CENTER_INTAKE_NOT_AVAILABLE', 'The saved result is not available.');
 }
 
 async function hasValidPendingIntakeResult(store, receipt) {

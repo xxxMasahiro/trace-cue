@@ -557,6 +557,10 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Independent local checks may run with bounded rolling parallelism. Package,
   browser, build, settings, and evidence mutation must be isolated or locked;
   timeout, output limit, cancellation, or cleanup failure must fail the gate.
+- A test for a policy-owned timeout must require the expected fail-closed state
+  or error. Its separate wall-clock observation bound may tolerate shared-runner
+  scheduling, but must still distinguish the policy value from an unintended
+  fallback and must never extend the runtime timeout itself.
 - A verification request that is already cancelled must not start a child task.
   Cancellation observed before or during orchestration must cancel active and
   pending work, remain non-passing, and preserve the repository snapshot.

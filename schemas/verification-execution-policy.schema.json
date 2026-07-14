@@ -59,7 +59,11 @@
           "additionalProperties": false,
           "required": ["lock_timeout_ms", "stale_lock_ms", "receipt_retention_count", "receipt_retention_bytes", "release_batch_retention_count", "release_batch_retention_bytes", "ingress_overflow_count", "ingress_overflow_bytes"],
           "properties": {
-            "lock_timeout_ms": {"type": "integer", "minimum": 1},
+            "lock_timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Runtime evidence-lock wait limit; test observation ceilings may tolerate scheduler delay but must not override this value."
+            },
             "stale_lock_ms": {"type": "integer", "minimum": 1},
             "receipt_retention_count": {"type": "integer", "minimum": 1},
             "receipt_retention_bytes": {"type": "integer", "minimum": 1024},

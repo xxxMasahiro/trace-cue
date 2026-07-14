@@ -578,7 +578,7 @@ test('Codex device sign-in safely replaces a pending lock from an earlier boot',
     assert.equal(started.ok, true);
     await waitFor(() => child?.spawned === true);
     assert.equal(spawnCount, 1);
-    const replacement = JSON.parse(await readFile(lockPath, 'utf8'));
+    const replacement = await waitForJson(lockPath, (record) => record.child_binding === 'bound');
     assert.equal(replacement.schema_version, '1.1.0');
     assert.equal(replacement.boot_identity, CURRENT_BOOT_ID);
     assert.equal(replacement.owner.pid, process.pid);

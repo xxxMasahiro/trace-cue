@@ -648,6 +648,9 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
 - [x] Archive the pre-alignment Phase 187 mock, regenerate all active mock PNGs,
   and match the React setup and Settings surfaces at desktop, mobile, RTL, and
   200% zoom without overflow.
+- [x] Harden final shared-runner evidence tests by waiting for validated atomic
+  state, revalidating completed intake after active-to-history transition, and
+  separating runtime timeout authority from test observation latency.
 - [x] Update the active production mock and PNG assets, then pass focused,
   aggregate, package, browser, release, product, post-review, CI, Git sync, and
   exact-HEAD authority gates.

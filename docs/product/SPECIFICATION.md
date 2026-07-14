@@ -1135,6 +1135,13 @@ provides stable `release`, `release-evidence`, and `import-ci-proof` operations.
 The npm entrypoints resolve the release profile from policy, so renaming a
 profile does not require a script change.
 
+Timeout-contract tests judge the configured runtime outcome first. A named
+test-only observation bound may be wider than the configured timeout to absorb
+shared-runner scheduling delay, but remains narrower than the known fallback it
+is intended to detect and does not alter execution policy. Tests that inspect an
+atomically replaced JSON state wait for a validated predicate rather than
+assuming the first readable snapshot is the committed state they need.
+
 The CI graph has `repository-contracts`, Node 20/22 runtime instances, one
 package producer, Node 20/22 package consumers, one browser owner, and
 `final-gate`. The producer artifact contains a manifest and tarball bound to the
@@ -1313,8 +1320,10 @@ live work: it becomes non-retryable `failed`, its safe invalid result and
 publication reservation are removed, and later source/result admission may
 recover. Safe pathless result projections remain available through bounded
 list/open GET endpoints. Reads retry only a bounded transient active-to-history
-replacement window; persistent absence, corruption, or digest mismatch fails
-closed. Cleanup removes expired reservations, expired unfinished receipts,
+replacement window, including the initial receipt read for a completed same-id
+retry, and revalidate the committed result/receipt pair after that transition;
+persistent absence, corruption, digest mismatch, and every unclassified error
+fail closed. Cleanup removes expired reservations, expired unfinished receipts,
 owned temporary files, and old unreferenced regular files without following
 links.
 

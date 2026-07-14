@@ -329,6 +329,10 @@ Security tests block unapproved use of persistent browser profiles, storageState
   settings, and evidence mutation. Timeouts and first failure terminate the
   process group and descendants; a success receipt is not written before the
   command and required cleanup finish.
+- Shared-runner regression tests must prove the policy-owned fail-closed timeout
+  outcome without treating host scheduling latency as runtime authority. A
+  wider test-only observation limit does not extend the configured lock timeout,
+  and atomic state reads must validate the required record predicate before use.
 - Evidence projection must reject symlinked Git evidence roots, receipt stores,
   detail stores, or legacy archives before a write. Receipt reads recompute
   integrity-bound attempt and full-record result digests, and the parent-facing index and
@@ -453,6 +457,10 @@ Security tests block unapproved use of persistent browser profiles, storageState
   Once the per-id lock proves no worker remains, processing without a valid
   pending pair is failed closed, its safe invalid result and owner reservation
   are removed, and the UI is told not to repeat that engine execution.
+- A completed same-id retry may reread only a bounded
+  `SAFE_STORE_FILE_CHANGED` transition from active intake storage to owned
+  history. It must then revalidate the result digest and completed receipt;
+  persistent absence, invalid content, links, and unclassified errors fail closed.
 - Intake result projection retains source classification plus bounded failure,
   timeout, and skipped counts so the UI cannot convert missing or adverse
   evidence into a successful review. A completed opaque receipt remains
