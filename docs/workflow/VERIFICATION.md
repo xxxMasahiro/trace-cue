@@ -569,7 +569,7 @@ The supported local execution profiles are:
   evidence and never a release-ready result.
 - `npm run verification:core`: repository contracts and every no-browser test
   owner, including verification infrastructure.
-- `npm run verification:browser`: one Control Center build followed by the 15
+- `npm run verification:browser`: one Control Center build followed by the 20
   browser smoke tests without rebuilding.
 - `npm run verification:release`: the exact union of core, package, build, and
   browser owners. This is the only profile allowed to claim complete local
