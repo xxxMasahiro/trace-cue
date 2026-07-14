@@ -751,10 +751,18 @@ unreferenced while it was the only completion authority. The bounded wait now
 keeps only that deadline referenced, clears it immediately when the operation
 finishes, and preserves the existing timeout, lock, process, and fail-closed
 behavior. Local browser closure also exposed two different response-loss UI
-waits crossing duplicated 20-second test limits under host load. The five
-product-deadline UI assertions now share one named 35-second test observation
+waits crossing duplicated 20-second test limits under host load. The affected
+product-deadline UI assertions now share one named 45-second test observation
 ceiling; the product's 10-second response deadline is unchanged, and successful
 checks still return as soon as the required UI state appears.
+
+A later exact-CI browser run exposed a separate test-only page-ownership race:
+an API setup response was released after a competing page had left the owning
+page in the background. Gated API setup, Codex completion, and AI selection
+fixtures now foreground and verify the page that must observe each response
+before release, observe deliberate request failure where applicable, and
+release pending gates during cleanup. The concurrency and response-loss
+assertions remain intact; no product timeout or runtime behavior changed.
 
 The tracked commit containing this completion record is the final Phase
 182-187 revision. The autonomous completion flow then confirms exact GitHub CI,

@@ -1020,7 +1020,11 @@ requires the key form plus an error; the old connection cannot be mistaken for
 the requested replacement. Browser assertions that observe an outcome after a
 product-owned response deadline share one named test-only observation ceiling;
 they do not extend or redefine the production deadline and return immediately
-when the expected UI state appears.
+when the expected UI state appears. Multi-page response-loss fixtures first
+observe both competing operations, then foreground and verify the page that
+owns the gated response before releasing it. Deliberately aborted mutations
+must emit the expected failed-request event before the reconciled UI state is
+accepted, and cleanup releases every outstanding gate.
 
 Session-runtime review projection tests require
 `provider_credential_source=control_center_session`, false provider

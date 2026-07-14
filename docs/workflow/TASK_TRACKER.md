@@ -658,6 +658,9 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
 - [x] Centralize the browser response-loss observation ceiling separately from
   the unchanged product response deadline so delayed shared runners wake on
   the required UI state instead of failing at duplicated 20-second limits.
+- [x] Foreground and verify the owning page before releasing gated multi-page
+  response-loss fixtures, observe the intended failed request, and release all
+  pending gates during cleanup without weakening the tested concurrency.
 - [x] Update the active production mock and PNG assets, then pass focused,
   aggregate, package, browser, release, product, post-review, CI, Git sync, and
   exact-HEAD authority gates.
