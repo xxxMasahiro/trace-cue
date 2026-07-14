@@ -810,7 +810,11 @@ tests, and 20/20 built React/Vite browser tests. The browser regression covers
 late review-route responses, cancellation response loss with successful status
 reconciliation and no false warning, cancelled-item next-work exclusion,
 settings saved-state reset, and setup-needed availability recovery. Concurrent
-private-staging admission permits only the configured bound and fails closed;
+release execution may contend for local CPU, so the browser's preparation wait
+matches the product's bounded 60-second preparation contract plus fixed test
+overhead and reports an early visible preparation error instead of a bare
+30-second dialog timeout. Private-staging admission permits only the configured
+bound and fails closed;
 the fixed-process descendant test waits for readiness before cancellation; the
 real bubblewrap invocation and availability-only installed Codex probe pass.
 The complete `release:check`, 317-file package dry-run, packed-install smoke,

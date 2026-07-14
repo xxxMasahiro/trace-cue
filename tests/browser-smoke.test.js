@@ -429,9 +429,18 @@ test('review center completes prepare, consent, review, decision, repeat, and se
       assert.equal(response.ok(), true);
       await route.abort('failed');
     }, { times: 1 });
+    const cancellationReconciliation = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET'
+        && url.pathname === '/api/agentic-review/status'
+        && url.searchParams.get('id') === repeatedOperation.id;
+    }, { timeout: 70_000 });
     await repeatedDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await repeatedDialog.waitFor({ state: 'hidden' });
-    await page.getByRole('heading', { name: 'This review was not sent', exact: true }).waitFor();
+    const cancellationStatus = await cancellationReconciliation;
+    const cancellationBody = await cancellationStatus.json();
+    assert.equal(cancellationBody.data.control_center_agentic_review.operation.state, 'cancelled');
+    await page.getByRole('heading', { name: 'This review was not sent', exact: true }).waitFor({ timeout: 10_000 });
     assert.equal(await page.getByRole('dialog', { name: 'Start this review?' }).count(), 0);
     assert.equal(await page.getByText('The latest status could not be read.').count(), 0);
 
@@ -1029,7 +1038,13 @@ test('review center handles every intake type, no-AI continuation, recovery, key
     await page.locator('#review-purpose').fill('توضيح الخطوة التالية للزائر');
     await page.locator('[data-testid="tc-cc-new-review"] button[type="submit"]').click();
     const rtlDialog = page.locator('dialog.send-dialog');
-    await rtlDialog.waitFor();
+    const rtlPreparationError = page.locator('[data-testid="tc-cc-new-review"] .inline-notice.danger');
+    const preparationOutcome = await Promise.race([
+      rtlDialog.waitFor({ state: 'visible', timeout: 70_000 }).then(() => 'dialog'),
+      rtlPreparationError.waitFor({ state: 'visible', timeout: 70_000 })
+        .then(async () => `error: ${await rtlPreparationError.innerText()}`)
+    ]);
+    assert.equal(preparationOutcome, 'dialog', preparationOutcome);
     const rtlDialogText = await rtlDialog.innerText();
     assert.match(rtlDialogText, /النص الظاهر في الصفحة/);
     assert.match(rtlDialogText, /تحفظ النتيجة في مساحة العمل المحلية/);
