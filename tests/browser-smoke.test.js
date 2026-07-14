@@ -1252,7 +1252,6 @@ test('paired review center hard reload gives a clear reopen path instead of a fu
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
 
     const stalledPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    await activateObservedPage(stalledPage);
     const stalledPair = await issueControlCenterPairingUrl(started);
     let observeStalledPairing;
     const stalledPairingObserved = new Promise((resolve) => { observeStalledPairing = resolve; });
@@ -1270,6 +1269,7 @@ test('paired review center hard reload gives a clear reopen path instead of a fu
     }, { times: 1 });
     await stalledPage.goto(stalledPair.url, { waitUntil: 'domcontentloaded' });
     await stalledPairingObserved;
+    await activateObservedPage(stalledPage);
     await stalledPage.getByRole('heading', { name: reopenHeading, exact: true }).waitFor({
       timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
     });
@@ -1388,6 +1388,7 @@ test('review center bounds a stalled local read without relying on browser abort
 
     await page.goto(started.url, { waitUntil: 'domcontentloaded' });
     await dashboardObserved;
+    await activateObservedPage(page);
     await page.getByRole('heading', { name: 'Your reviews could not be loaded', exact: true }).waitFor({
       timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
     });

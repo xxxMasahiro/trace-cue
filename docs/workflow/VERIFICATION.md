@@ -1026,7 +1026,9 @@ owns the gated response before releasing it. Deliberately aborted mutations
 must emit the expected failed-request event before the reconciled UI state is
 accepted, cleanup releases every outstanding gate, and recovery after a
 competing settings page closes must reactivate its owning page before the next
-action.
+action. Fixtures that hold a local response past its product deadline must
+recheck page ownership after the request is observed and immediately before
+observing that deadline.
 
 Session-runtime review projection tests require
 `provider_credential_source=control_center_session`, false provider
