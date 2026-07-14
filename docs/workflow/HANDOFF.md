@@ -762,7 +762,9 @@ page in the background. Gated API setup, Codex completion, and AI selection
 fixtures now foreground and verify the page that must observe each response
 before release, observe deliberate request failure where applicable, and
 release pending gates during cleanup. The concurrency and response-loss
-assertions remain intact; no product timeout or runtime behavior changed.
+assertions remain intact. Response-loss recovery also reactivates its owning
+page after the competing AI settings page closes and before preparing again;
+no product timeout or runtime behavior changed.
 
 The tracked commit containing this completion record is the final Phase
 182-187 revision. The autonomous completion flow then confirms exact GitHub CI,

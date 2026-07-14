@@ -2185,6 +2185,7 @@ test('review center keeps one intake and redirects to truthful status after resp
     await driftPage.getByRole('button', { name: 'Update availability', exact: true }).click();
     await driftPage.getByText('Available', { exact: true }).waitFor();
     await driftPage.close();
+    await activateObservedPage(freshPage);
     await rejectedDialog.getByRole('button', { name: 'Start review', exact: true }).click();
     await freshPage.getByText('The AI choice changed before anything was sent. Update availability, then prepare this review again.').waitFor();
     assert.equal(await freshPage.getByRole('button', { name: 'Open AI settings', exact: true }).count(), 1);
@@ -2201,6 +2202,7 @@ test('review center keeps one intake and redirects to truthful status after resp
     await freshPage.getByText('Available', { exact: true }).waitFor();
     await freshPage.goto(`${started.url}?view=work&item=${encodeURIComponent(pendingOperationId)}`, { waitUntil: 'networkidle' });
     await freshPage.getByRole('heading', { name: 'The AI choice changed', exact: true }).waitFor();
+    await activateObservedPage(freshPage);
     await freshPage.getByRole('button', { name: 'Prepare again', exact: true }).click();
     await freshPage.getByRole('heading', { name: 'The review is ready to start', exact: true }).waitFor({
       timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS

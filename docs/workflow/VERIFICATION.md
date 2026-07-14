@@ -1024,7 +1024,9 @@ when the expected UI state appears. Multi-page response-loss fixtures first
 observe both competing operations, then foreground and verify the page that
 owns the gated response before releasing it. Deliberately aborted mutations
 must emit the expected failed-request event before the reconciled UI state is
-accepted, and cleanup releases every outstanding gate.
+accepted, cleanup releases every outstanding gate, and recovery after a
+competing settings page closes must reactivate its owning page before the next
+action.
 
 Session-runtime review projection tests require
 `provider_credential_source=control_center_session`, false provider
