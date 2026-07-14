@@ -340,7 +340,10 @@ Security tests block unapproved use of persistent browser profiles, storageState
 - Concurrent evidence writers may skip a redundant locked rebuild only after a
   bounded, no-follow, stable-descriptor ledger read proves the exact receipt
   event is already projected. Ledger presence is only a coalescing signal and
-  never replaces receipt integrity or full deterministic rebuild authority.
+  never replaces receipt integrity or full deterministic rebuild authority. A
+  zero-link opened descriptor created by concurrent atomic replacement is never
+  trusted as evidence and instead forces the locked retry path; multiple links
+  remain a hard failure.
 - CI artifacts are same-run transport only, short-lived, revision-bound, and
   content-digest verified. They are not external publication, cannot cross
   workflow runs, and cannot replace consumer tests. The final proof contains

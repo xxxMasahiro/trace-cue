@@ -2124,6 +2124,13 @@ when a new edit begins. Focused contracts cover both subscription `recheck` and
 subscription-runner path, staging concurrency, descendant termination, and the
 browser recovery/concurrency states without a live external AI send.
 
+Exact-CI closure treats an opened evidence-ledger descriptor with link count
+zero as a concurrent atomic replacement and retries through the existing
+locked rebuild path, while retaining fail-closed rejection for multiply linked,
+non-regular, or oversized ledgers. Browser response-loss verification waits for
+the final cancelled UI or a visible reconciliation error instead of depending
+on an environment-specific intermediate response event.
+
 Additional providers are additive adapters. Their available models and native
 effort values come from safe provider-specific discovery or explicit
 environment configuration and never from browser-supplied commands or free-form

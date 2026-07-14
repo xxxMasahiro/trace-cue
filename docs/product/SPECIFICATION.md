@@ -1155,7 +1155,11 @@ may skip a redundant rebuild only when a bounded, no-follow, stable-descriptor
 read of the current ledger already contains that exact event id, which means a
 preceding locked rebuild incorporated the receipt. Otherwise it performs the
 full deterministic receipt-to-detail/index/ledger rebuild. This coalesces
-concurrent writers without turning a derived view into receipt authority.
+concurrent writers without turning a derived view into receipt authority. If an
+opened ledger descriptor reaches link count zero because another writer
+atomically replaced the pathname, the reader treats that descriptor as a
+changed projection and enters the normal locked retry/rebuild path. A
+multiply-linked, non-regular, or oversized ledger still fails closed.
 
 The Dashboard-facing `index.tsv` is the active compatibility projection and
 contains only the latest valid v2.2 batch receipt for each exact source and

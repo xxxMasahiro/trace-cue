@@ -600,7 +600,10 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   integrity-bound receipt fields before writing or projecting authority.
 - Concurrent receipt writers may coalesce a derived-view rebuild only after the
   locked, bounded ledger proves that the exact new event is already projected.
-  Coalescing must not drop receipts or weaken deterministic rebuilds.
+  An opened ledger descriptor unlinked by another writer's atomic replacement
+  must be treated as a changed projection and retried under the lock, while a
+  multiply linked ledger remains unsafe. Coalescing must not drop receipts or
+  weaken deterministic rebuilds.
 - A complete release batch must reserve bounded temporary receipt admission for
   all policy-owned sources before sequential publication. Interim retention
   must not discard an earlier batch receipt while an older authoritative failure

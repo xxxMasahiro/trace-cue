@@ -2180,9 +2180,7 @@ async function ledgerContainsEvent(repoRoot, eventId) {
   }
   try {
     const before = await handle.stat();
-    if (!before.isFile() || before.nlink !== 1 || before.size > MAX_UNTRACKED_FILE_BYTES) {
-      throw new Error('Product gate evidence ledger is unsafe or oversized.');
-    }
+    if (classifyOpenedEvidenceLedger(before) === 'replaced') return false;
     const body = Buffer.alloc(before.size);
     let offset = 0;
     while (offset < body.length) {
@@ -2193,6 +2191,7 @@ async function ledgerContainsEvent(repoRoot, eventId) {
     const probe = Buffer.alloc(1);
     if ((await handle.read(probe, 0, 1, before.size)).bytesRead !== 0) return false;
     const after = await handle.stat();
+    if (classifyOpenedEvidenceLedger(after) === 'replaced') return false;
     if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size
       || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) return false;
     try {
@@ -2204,6 +2203,15 @@ async function ledgerContainsEvent(repoRoot, eventId) {
   } finally {
     await handle.close();
   }
+}
+
+export function classifyOpenedEvidenceLedger(info) {
+  if (!info?.isFile?.() || info.size > MAX_UNTRACKED_FILE_BYTES) {
+    throw new Error('Product gate evidence ledger is unsafe or oversized.');
+  }
+  if (info.nlink === 0) return 'replaced';
+  if (info.nlink !== 1) throw new Error('Product gate evidence ledger is unsafe or oversized.');
+  return 'readable';
 }
 
 export async function rebuildDerivedEvidence(repoRootInput, options = {}) {

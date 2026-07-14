@@ -668,7 +668,7 @@ prioritizes transferred evidence, destination, and TraceCue review method. The
 previous active mock is preserved under `archive/phase-176/`.
 
 Focused AI-connection and Agentic Human Review contracts pass 41/41, the
-complete no-browser suite passes 379/379, and the production build, active mock,
+complete no-browser suite passes 380/380, and the production build, active mock,
 and 20-flow browser suite pass locally. The browser suite includes late-route
 response refusal, cancellation response-loss reconciliation without a false
 warning, cancelled-next exclusion, settings feedback reset, and AI readiness
@@ -683,6 +683,14 @@ Settings review found one low-severity 32-pixel-wide text action; the shared
 design-system touch target was raised to 44 by 44 pixels, the active 18-image
 mock was regenerated, and the final mobile review reports zero findings,
 overlap, clipping, horizontal overflow, console errors, or failed requests.
+
+Exact-CI follow-up hardens the derived evidence ledger against the benign
+zero-link descriptor produced when another writer atomically replaces an
+already-open ledger, without accepting hardlinks or weakening rebuild
+authority. Browser cancellation response-loss verification now judges the
+final not-sent UI or a visible reconciliation failure rather than relying on an
+intermediate response event. Both changes are generic and preserve existing
+runtime authority.
 
 The tracked commit containing this paragraph is the final Phase 177-181 Git
 revision. Complete clean-HEAD release evidence, authenticated CI proof, and the

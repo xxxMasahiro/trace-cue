@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, open, readFile, readdir, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   computePolicyFingerprint,
+  classifyOpenedEvidenceLedger,
   evidenceStatus,
   rebuildDerivedEvidence,
   recordEvidence,
@@ -726,6 +727,34 @@ test('concurrent writers preserve every receipt and derived index row', async ()
     .trim().split('\n').map((line) => JSON.parse(line));
   assert.equal(ledger.filter((row) => row.source_id.startsWith('product.gates.concurrent-')).length, count);
   assert.equal(ledger.every((row) => typeof row.freshness_state === 'string' && typeof row.detail_artifact_path === 'string'), true);
+});
+
+test('an opened ledger replaced by another writer is retried without accepting hardlinks', async () => {
+  const cwd = await fixture();
+  await recordEvidence({
+    repoRoot: cwd,
+    sourceId: 'product.gates.ledger-replacement',
+    context: 'free-development',
+    status: 'passed',
+    executionMode: 'manual',
+    sourceArtifacts: 'ledger replacement check'
+  });
+  const ledger = path.join(cwd, '.git', 'product-gate-evidence', 'ledger.jsonl');
+  const handle = await open(ledger, 'r');
+  try {
+    assert.equal(classifyOpenedEvidenceLedger(await handle.stat()), 'readable');
+    await rm(ledger);
+    const replaced = await handle.stat();
+    assert.equal(replaced.nlink, 0);
+    assert.equal(classifyOpenedEvidenceLedger(replaced), 'replaced');
+    assert.throws(() => classifyOpenedEvidenceLedger({
+      ...replaced,
+      nlink: 2,
+      isFile: () => true
+    }), /ledger is unsafe or oversized/);
+  } finally {
+    await handle.close();
+  }
 });
 
 test('receipt history is pruned to policy-owned count limits without losing the latest state', async () => {

@@ -429,18 +429,16 @@ test('review center completes prepare, consent, review, decision, repeat, and se
       assert.equal(response.ok(), true);
       await route.abort('failed');
     }, { times: 1 });
-    const cancellationReconciliation = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return response.request().method() === 'GET'
-        && url.pathname === '/api/agentic-review/status'
-        && url.searchParams.get('id') === repeatedOperation.id;
-    }, { timeout: 70_000 });
     await repeatedDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await repeatedDialog.waitFor({ state: 'hidden' });
-    const cancellationStatus = await cancellationReconciliation;
-    const cancellationBody = await cancellationStatus.json();
-    assert.equal(cancellationBody.data.control_center_agentic_review.operation.state, 'cancelled');
-    await page.getByRole('heading', { name: 'This review was not sent', exact: true }).waitFor({ timeout: 10_000 });
+    const cancelledHeading = page.getByRole('heading', { name: 'This review was not sent', exact: true });
+    const cancellationError = page.getByText('The latest status could not be read.', { exact: true });
+    const cancellationOutcome = await Promise.race([
+      cancelledHeading.waitFor({ state: 'visible', timeout: 70_000 }).then(() => 'cancelled'),
+      cancellationError.waitFor({ state: 'visible', timeout: 70_000 })
+        .then(() => 'status reconciliation failed')
+    ]);
+    assert.equal(cancellationOutcome, 'cancelled', cancellationOutcome);
     assert.equal(await page.getByRole('dialog', { name: 'Start this review?' }).count(), 0);
     assert.equal(await page.getByText('The latest status could not be read.').count(), 0);
 

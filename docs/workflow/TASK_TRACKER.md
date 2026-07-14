@@ -612,5 +612,8 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
   and test-manifest synchronization.
 - [x] Pass focused, complete no-browser, production build, mock, package,
   TraceCue browser, release, product, and independent post-implementation gates.
+- [x] Close exact-CI portability gaps for concurrent atomic ledger replacement
+  and browser cancellation response-loss observation without weakening either
+  safety boundary.
 - [x] Commit, push, pass exact GitHub CI, confirm local/remote equality and a
   clean worktree, then refresh exact-HEAD authority evidence.

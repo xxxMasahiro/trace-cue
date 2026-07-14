@@ -652,6 +652,14 @@ The order-sensitive case places an older authoritative failure on the first
 lexical release source and requires bounded whole-batch admission to preserve
 all pending receipts until commit replaces that semantic winner.
 
+The ledger replacement regression opens the current regular ledger, removes
+its pathname to reproduce the zero-link descriptor left by another writer's
+atomic replacement, and requires a retry classification. A synthetic
+multiple-link descriptor must still fail. Browser response-loss coverage waits
+for either the final not-sent screen or its visible reconciliation error; it
+does not depend on observing an intermediate HTTP response event that browser
+runtimes may coalesce differently.
+
 The active evidence index is verified as exactly 13 tab-separated fields with a
 whole-second UTC `observed_at` value and full product HEAD. Legacy short-HEAD
 rows are copied intact to a digest-named local archive before removal from the
@@ -804,7 +812,7 @@ retain the existing responsive, focus, RTL, overlap, clipping, console, failed-
 request, and horizontal-overflow checks. The active versioned mock is verified
 and its previous Phase 176 state remains archived.
 
-Current 2026-07-14 pre-commit local evidence for Phase 177-181 is 379/379
+Current 2026-07-14 pre-commit local evidence for Phase 177-181 is 380/380
 complete no-browser tests, 41/41 focused AI-connection and Agentic Human Review
 tests, and 20/20 built React/Vite browser tests. The browser regression covers
 late review-route responses, cancellation response loss with successful status
