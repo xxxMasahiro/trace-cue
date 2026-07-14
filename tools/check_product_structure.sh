@@ -38,6 +38,7 @@ for rel in \
   bin/trace-cue-mcp.js \
   bin/browser-debug.js \
   bin/browser-debug-mcp.js \
+  ops/CONTROL_CENTER_AI_SETUP_CATALOG.json \
   schemas/artifact.schema.json \
   schemas/agentic-human-review-advisory.schema.json \
   schemas/agentic-human-review-package.schema.json \
@@ -70,6 +71,7 @@ for rel in \
   schemas/playwright-test-result.schema.json \
   schemas/e2e-result-review-material.schema.json \
   schemas/control-center-intake.schema.json \
+  schemas/control-center-ai-setup.schema.json \
   schemas/verification-release-evidence-batch.schema.json \
   schemas/mcp-tool.schema.json \
   schemas/review.schema.json \
@@ -82,6 +84,10 @@ for rel in \
   src/safe-local-store.js \
   src/control-center-agentic-review-config.js \
   src/control-center-ai-readiness.js \
+  src/control-center-ai-setup-catalog.js \
+  src/control-center-ai-setup-runtime.js \
+  src/control-center-codex-login.js \
+  src/control-center-pairing.js \
   src/control-center-intake.js \
   src/control-center-launcher.js \
   src/control-center-server.js \

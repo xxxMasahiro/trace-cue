@@ -435,7 +435,11 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 
 - Review state must persist under the local artifact root so closing the page does not lose prepared, running, completed, failed, or decision state. Public projections must omit local paths, hashes, internal provider and adapter identifiers, credentials, request bodies, and raw provider responses. They may expose only opaque AI option ids and bounded user-facing service, model, connection type, and provider-native effort labels.
 - Browser input may choose URL, purpose, purpose-led TraceCue effort, viewport, whether AI suggestions are used, and one server-issued opaque AI selection. Raw provider or adapter ids, model ids outside that opaque selection, endpoints, tokens, plans, hashes, transfer flags, artifact roots, and execute authority must be rejected if supplied by the browser.
-- External service credentials stay in environment/provider configuration. The browser must never accept, read back, or persist credential values.
+- Outside the dedicated paired AI setup flow, external service credentials stay
+  in provider configuration and ordinary review controls must reject them. The
+  API setup password field may submit one credential to the current server
+  session, but the browser must never read it back, retain it after submission,
+  or persist it.
 - Confirmation must name the configured external service and enumerate what evidence will be sent. Its nonce is one-time, time-bounded, stored only as a hash, and invalidated when the disclosure or prepared plan changes.
 - After dispatch begins, TraceCue must never retry automatically. If a restart makes completion uncertain, status becomes `dispatch_unknown`; the UI must explain the uncertainty and avoid a duplicate provider call.
 - Process-start, possible-dispatch, temporary-raw-output, and credential-read
@@ -447,8 +451,31 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   cancellation response is lost, the browser must close the stale confirmation
   and reconcile stored status; it shows a read warning only when reconciliation
   itself fails, and a cancelled review must not become the suggested next task.
+- Every Control Center API request must have a bounded end-to-end browser wait
+  that includes pairing, action-token bootstrap, response headers, and JSON
+  body parsing. AI connection discovery may use a separately declared longer
+  bound than ordinary local reads and mutations. A malformed, empty, truncated,
+  or stalled successful response is transport uncertainty, not success.
+- When a user action has an identifiable authoritative server state, settings,
+  AI connection refresh/selection/setup/disconnect, subscription setup, review
+  start/cancel/repeat, and review-status flows must reconcile that state after
+  transport uncertainty without resubmitting a credential or uncertain provider
+  execution. Review polling must pause while a review mutation and its
+  reconciliation are active. Only repeat admission may make its one scoped
+  exact-once retry with the same memory-held idempotency key.
+- Leaving New Review or a review workspace must invalidate and abort that
+  page's pending preparation, status wait, or repeat request. A late response
+  must not navigate away from the page the user subsequently chose.
 - Findings are advisory. Each finding may receive `fix`, `later`, or `ask`; these choices and AI output must not mutate deterministic findings, proof contracts, owner authority, or release gates.
 - `recheck` and `deeper` create new operations and new browser evidence. `deeper` advances `standard` to `deep` and `deep` to `xhigh`; it is unavailable after `xhigh`.
+- Every `recheck` or `deeper` admission must carry a browser-generated 256-bit
+  base64url idempotency key retained only in page memory for the pending action.
+  The server must persist only its digest. The same parent operation, key, and
+  effective request must return the same active or historical child operation
+  without scheduling its review again, including after restart and before
+  capacity admission. Reusing the key with a different effective request must
+  fail as a conflict. This retry authority covers only a lost local admission
+  response; it must never retry uncertain external AI execution.
 
 ## Document Synchronization Enforcement
 
@@ -717,10 +744,13 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   connection type, adapter, provider, model, native effort, capability revision,
   configuration identity, and executable identity where applicable.
 - Subscription execution must use an audited fixed adapter for a supported
-  already-authenticated CLI. API execution must use environment-only endpoint,
-  credential, and configured model data. Neither path may accept credentials,
-  executable paths, arbitrary arguments, or commands from the browser, persist
-  credential values, or silently fall back to another connection, model, or
+  already-authenticated CLI. A legacy preconfigured API connection must use
+  environment-only endpoint, credential, and configured model data. The
+  dedicated paired Control Center setup channel below is the only browser
+  credential-input exception: it accepts a bounded API key into the
+  server-owned session vault without accepting browser endpoints, executable
+  paths, arbitrary arguments, or commands. Neither API path may persist
+  credential values or silently fall back to another connection, model, or
   effort.
 - External AI execution continues to require a fresh concrete disclosure and
   one-time confirmation. Input identity, evidence classes, service identity,
@@ -773,3 +803,65 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   one exact-HEAD evidence batch. All projected source receipts must reference
   the same batch. Verified remote CI proof remains a distinct exact-run
   authority and cannot replace local release evidence.
+
+## Control Center AI Setup
+
+- A non-engineer must be able to connect a supported subscription service or a
+  supported API service from the Control Center without editing environment
+  variables, configuration files, or terminal commands. The same setup dialog
+  must be available from New Review and Settings without adding another
+  top-level page.
+- Opening AI setup must preserve the current New Review URL, purpose, source,
+  TraceCue review method, and no-AI choice in memory. Completing setup must not
+  automatically prepare a review, transfer evidence, or start provider work.
+- TraceCue review method (`standard`, `deep`, or `xhigh`) and provider-native
+  model effort remain independent choices. Neither value may be inferred from,
+  silently replace, or broaden the other.
+- A launched production Control Center must pair the opened browser before it
+  permits mutations. Pairing, session authorization, and CSRF values must be
+  separate, short-lived, memory-bound capabilities and must not be disclosed by
+  health, public runtime metadata, logs, results, artifacts, or ordinary UI.
+  A pairing transport or response-contract failure is acceptance-ambiguous and
+  must show the reopen-required state without offering a futile retry of the
+  one-time token.
+- API keys entered in the Control Center must use a dedicated bounded secret
+  submission channel and must not enter JSON records, URLs, general browser
+  headers, command arguments, process environments, browser storage, receipts,
+  artifacts, or logs. The audited server-side provider transport is the sole
+  exception: it may place the key in the provider's outbound authorization
+  header without returning or recording it. The initial supported retention
+  mode is explicitly session-only: the key is discarded when that Control
+  Center server ends. Idle expiry must refuse new execution leases while
+  allowing an already acquired lease to finish. Absolute expiry must disable
+  the generation, abort any in-flight provider transport, clear the owned key
+  buffer best-effort, and close its adapter even while a lease exists.
+- Public review projections must distinguish an upstream credential supplied
+  by environment configuration, a Control Center session-held API key, a
+  provider subscription session, and no provider credential. A session-held
+  upstream key must not be described as environment-only merely because a
+  separate short-lived loopback adapter token is passed through an execution
+  environment.
+- API setup must use an audited built-in service catalog. Browser input cannot
+  choose provider endpoints, headers, request shapes, executable paths, or
+  commands. Connection verification is explicit, bounded, redirect-free, sends
+  no review evidence, and does not retry or fall back automatically.
+- Subscription sign-in may run only an audited fixed CLI adapter with a fixed
+  version, command, output parser, timeout, cancellation, process ownership,
+  and writable authentication boundary. Raw CLI output, authentication data,
+  arbitrary URLs, and arbitrary commands are not browser content. A dead-owner
+  reservation that proves no child creation started may be recovered after
+  safe lock revalidation, including during the same boot. A reservation in the
+  ambiguous pending child-binding interval may be recovered automatically only
+  when a valid kernel boot identity proves that it came from an earlier boot.
+  A valid same-boot pending reservation remains fail-closed and gives the user
+  an explicit restart action. A legacy, missing, malformed, or unreadable
+  identity remains fail-closed and requires a separate trusted local repair.
+- Replacing or disconnecting an AI connection must invalidate its old
+  capability immediately. Review preparation and dispatch must bind and
+  revalidate profile revision, configuration identity, credential generation,
+  runtime instance, exact model, and exact provider-native effort. Drift stops
+  the action without fallback.
+- After API setup response loss, the existing API connection is not proof that
+  the requested setup succeeded. The browser may present a reconciled connected
+  API choice only when authoritative connection storage advanced beyond the
+  revision observed before that setup action.

@@ -5,6 +5,14 @@ const controlCenterAiConnectionsSchema = JSON.parse(readFileSync(
   new URL('../schemas/control-center-ai-connections.schema.json', import.meta.url),
   'utf8'
 ));
+const controlCenterAiSetupSchema = JSON.parse(readFileSync(
+  new URL('../schemas/control-center-ai-setup.schema.json', import.meta.url),
+  'utf8'
+));
+const controlCenterAgenticReviewSchema = JSON.parse(readFileSync(
+  new URL('../schemas/control-center-agentic-review.schema.json', import.meta.url),
+  'utf8'
+));
 
 const baseEnvelopeProperties = {
   schema_version: { type: 'string' },
@@ -266,55 +274,8 @@ const schemas = Object.freeze({
     additionalProperties: true
   }),
   control_center_ai_connections: Object.freeze(controlCenterAiConnectionsSchema),
-  control_center_agentic_review: Object.freeze({
-    $schema: 'https://json-schema.org/draft/2020-12/schema',
-    $id: 'https://trace-cue.local/schemas/control-center-agentic-review.schema.json',
-    title: 'TraceCue Control Center Agentic Review Projection',
-    type: 'object',
-    required: [
-      'schema_version',
-      'type',
-      'id',
-      'state',
-      'stage',
-      'purpose',
-      'review_effort',
-      'created_at',
-      'updated_at',
-      'provider_execution_exposed',
-      'external_send_confirmation_required',
-      'boundary'
-    ],
-    properties: {
-      schema_version: { type: 'string' },
-      type: { const: 'control_center_agentic_review' },
-      id: { type: 'string' },
-      state: { enum: ['preparing', 'confirmation_required', 'dispatching', 'validating', 'completed', 'failed', 'needs_attention', 'dispatch_unknown', 'cancelled'] },
-      stage: { enum: ['prepare', 'review', 'decide', 'recheck', 'complete'] },
-      purpose: { type: 'string' },
-      target: { type: ['string', 'null'] },
-      review_effort: { enum: ['standard', 'deep', 'xhigh'] },
-      viewport: { enum: ['desktop', 'mobile', 'both'] },
-      ai_suggestions: { type: 'boolean' },
-      service: { type: 'object' },
-      parent_review: { type: ['object', 'null'] },
-      progress: { type: 'object' },
-      disclosure: { type: ['object', 'null'] },
-      result: { type: ['object', 'null'] },
-      decisions: { type: 'array' },
-      dispatch: { type: 'object' },
-      recovery: { type: 'object' },
-      error: { type: ['object', 'null'] },
-      created_at: { type: 'string' },
-      updated_at: { type: 'string' },
-      started_at: { type: ['string', 'null'] },
-      completed_at: { type: ['string', 'null'] },
-      provider_execution_exposed: { type: 'boolean' },
-      external_send_confirmation_required: { const: true },
-      boundary: { type: 'object' }
-    },
-    additionalProperties: false
-  }),
+  control_center_ai_setup: Object.freeze(controlCenterAiSetupSchema),
+  control_center_agentic_review: Object.freeze(controlCenterAgenticReviewSchema),
   control_center_intake: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     $id: 'https://trace-cue.local/schemas/control-center-intake.schema.json',

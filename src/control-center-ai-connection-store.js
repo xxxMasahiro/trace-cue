@@ -49,7 +49,13 @@ export async function readControlCenterAiConnectionsProjection(context = {}) {
     : emptyControlCenterAiConnectionsProjection();
 }
 
-export async function replaceControlCenterAiConnections({ connections, expectedRevision = 0, selection = null } = {}, context = {}) {
+export async function replaceControlCenterAiConnections({
+  connections,
+  expectedRevision = 0,
+  selection = null,
+  preferredConnectionId = null,
+  finalize = null
+} = {}, context = {}) {
   if (context.controlCenterAiConnectionRecord) {
     return storeError('CONTROL_CENTER_AI_CONNECTION_STORE_READ_ONLY', 'Injected AI connection information cannot be changed.');
   }
@@ -72,9 +78,27 @@ export async function replaceControlCenterAiConnections({ connections, expectedR
         previousSettingsRevision: currentSettingsRevision,
         observedAt: materializeNow(context.now),
         ttlMs: context.controlCenterAiCapabilityTtlMs,
-        selection: selection ?? current.record?.selection ?? null
+        selection: selection ?? current.record?.selection ?? null,
+        preferredConnectionId
       });
       await store.writeJson(STORE_RECORD, record, { maxBytes: MAX_RECORD_BYTES });
+      if (typeof finalize === 'function') {
+        let finalized;
+        try {
+          finalized = await finalize({ record, previousRecord: current.record });
+        } catch {
+          finalized = storeError('CONTROL_CENTER_AI_CONNECTION_FINALIZE_FAILED', 'AI connection information could not be finalized.');
+        }
+        if (!finalized?.ok) {
+          if (current.record) await store.writeJson(STORE_RECORD, current.record, { maxBytes: MAX_RECORD_BYTES });
+          else await store.removeFile(STORE_RECORD, { maxBytes: MAX_RECORD_BYTES });
+          return storeError(
+            finalized?.error?.code ?? 'CONTROL_CENTER_AI_CONNECTION_FINALIZE_FAILED',
+            finalized?.error?.message ?? 'AI connection information could not be finalized.',
+            finalized?.error?.details ?? {}
+          );
+        }
+      }
       return {
         ok: true,
         record,

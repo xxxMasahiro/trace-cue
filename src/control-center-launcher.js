@@ -1,4 +1,3 @@
-import { once } from 'node:events';
 import { spawn as defaultSpawn } from 'node:child_process';
 import path from 'node:path';
 import {
@@ -9,6 +8,7 @@ import { captureProcessIdentity, createSafeLocalStore } from './safe-local-store
 
 const RUNTIME_DIRECTORY = 'control-center-runtime';
 const RUNTIME_RECEIPT = 'server.json';
+const RUNTIME_MANAGEMENT_CAPABILITY = 'management.json';
 const HEALTH_TIMEOUT_MS = 2000;
 
 export async function runControlCenterLaunch(options = {}, context = {}) {
@@ -17,7 +17,8 @@ export async function runControlCenterLaunch(options = {}, context = {}) {
   const expectedCompatibility = await buildControlCenterRuntimeCompatibility(context.controlCenterAssetRoot);
   const existing = await readHealthyRuntime(store, context, expectedCompatibility);
   if (existing) {
-    const opened = await openControlCenterUrl(existing.url, context);
+    const pairing = await issueBrowserPairing(existing.url, existing.managementCapability, context);
+    const opened = await openControlCenterUrl(pairing.url, context);
     return launchResult({ url: existing.url, reused: true, opened, closed: false });
   }
 
@@ -25,7 +26,8 @@ export async function runControlCenterLaunch(options = {}, context = {}) {
     return await store.withLock('server', async () => {
       const raced = await readHealthyRuntime(store, context, expectedCompatibility);
       if (raced) {
-        const opened = await openControlCenterUrl(raced.url, context);
+        const pairing = await issueBrowserPairing(raced.url, raced.managementCapability, context);
+        const opened = await openControlCenterUrl(pairing.url, context);
         return launchResult({ url: raced.url, reused: true, opened, closed: false });
       }
       const serverStarter = context.startControlCenterServer ?? startControlCenterServer;
@@ -33,49 +35,65 @@ export async function runControlCenterLaunch(options = {}, context = {}) {
         host: options.host,
         port: options.port,
         'artifact-root': options['artifact-root'],
-        assetRoot: context.controlCenterAssetRoot
+        assetRoot: context.controlCenterAssetRoot,
+        authorizationMode: 'paired'
       }, context);
-      const health = await readHealthRuntime(started.url, context);
-      if (!health || !sameCompatibility(health, expectedCompatibility)) {
-        await closeServer(started.server);
-        throw launcherError('CONTROL_CENTER_LAUNCH_HEALTH_FAILED', 'The local Control Center did not become ready.');
-      }
-      const asset = await fetchWithTimeout(started.url, context);
-      if (!asset?.ok) {
-        await closeServer(started.server);
-        throw launcherError('CONTROL_CENTER_LAUNCH_ASSETS_UNAVAILABLE', 'The installed Control Center screen is unavailable.');
-      }
-      const receipt = {
-        schema_version: '1.0.0',
-        type: 'control_center_runtime',
-        url: started.url,
-        instance_id: health.instance_id,
-        protocol_version: health.protocol_version,
-        package_version: health.package_version,
-        asset_fingerprint: health.asset_fingerprint,
-        owner: {
-          pid: process.pid,
-          process_identity: await captureProcessIdentity(process.pid)
-        },
-        started_at: new Date().toISOString()
-      };
-      await store.writeJson(RUNTIME_RECEIPT, receipt, { maxBytes: 16 * 1024 });
-      const opened = await openControlCenterUrl(started.url, context);
-      writeLaunchNotice(started.url, opened, context);
-      const removeSignalHandlers = attachCloseSignals(started.server, context.signal);
       try {
-        await once(started.server, 'close');
-      } finally {
-        removeSignalHandlers();
-        await removeOwnedRuntime(store, health.instance_id);
+        const health = await readHealthRuntime(started.url, context);
+        if (!health || !sameCompatibility(health, expectedCompatibility)) {
+          throw launcherError('CONTROL_CENTER_LAUNCH_HEALTH_FAILED', 'The local Control Center did not become ready.');
+        }
+        const asset = await fetchWithTimeout(started.url, context);
+        if (!asset?.ok) {
+          throw launcherError('CONTROL_CENTER_LAUNCH_ASSETS_UNAVAILABLE', 'The installed Control Center screen is unavailable.');
+        }
+        const receipt = {
+          schema_version: '1.0.0',
+          type: 'control_center_runtime',
+          url: started.url,
+          instance_id: health.instance_id,
+          protocol_version: health.protocol_version,
+          package_version: health.package_version,
+          asset_fingerprint: health.asset_fingerprint,
+          owner: {
+            pid: process.pid,
+            process_identity: await captureProcessIdentity(process.pid)
+          },
+          started_at: new Date().toISOString()
+        };
+        if (typeof started.managementCapability !== 'string') {
+          throw launcherError('CONTROL_CENTER_LAUNCH_PAIRING_UNAVAILABLE', 'The local Control Center could not create a private browser session.');
+        }
+        await store.writeJson(RUNTIME_RECEIPT, receipt, { maxBytes: 16 * 1024 });
+        await store.writeJson(RUNTIME_MANAGEMENT_CAPABILITY, {
+          schema_version: '1.0.0',
+          type: 'control_center_management_capability',
+          instance_id: health.instance_id,
+          capability: started.managementCapability
+        }, { maxBytes: 4096 });
+        const pairing = await issueBrowserPairing(started.url, started.managementCapability, context);
+        const opened = await openControlCenterUrl(pairing.url, context);
+        writeLaunchNotice(started.url, opened, context);
+        const removeSignalHandlers = attachCloseSignals(started.server, context.signal);
+        try {
+          await started.closed;
+        } finally {
+          removeSignalHandlers();
+          await removeOwnedRuntime(store, health.instance_id);
+        }
+        return launchResult({ url: started.url, reused: false, opened, closed: true });
+      } catch (error) {
+        await started.close();
+        await removeOwnedRuntimeByUrl(store, started.url);
+        throw error;
       }
-      return launchResult({ url: started.url, reused: false, opened, closed: true });
     }, { timeoutMs: 1500 });
   } catch (error) {
     if (error?.code === 'SAFE_STORE_LOCK_TIMEOUT') {
       const winner = await waitForHealthyRuntime(store, context, expectedCompatibility);
       if (winner) {
-        const opened = await openControlCenterUrl(winner.url, context);
+        const pairing = await issueBrowserPairing(winner.url, winner.managementCapability, context);
+        const opened = await openControlCenterUrl(pairing.url, context);
         return launchResult({ url: winner.url, reused: true, opened, closed: false });
       }
       if (await hasIncompatibleLiveRuntime(store, context, expectedCompatibility)) {
@@ -118,13 +136,18 @@ export async function openControlCenterUrl(url, context = {}) {
 async function readHealthyRuntime(store, context, expectedCompatibility) {
   try {
     const receipt = await store.readJson(RUNTIME_RECEIPT, { maxBytes: 16 * 1024 });
+    const management = await store.readJson(RUNTIME_MANAGEMENT_CAPABILITY, { maxBytes: 4096 });
     if (receipt?.type !== 'control_center_runtime' || typeof receipt.instance_id !== 'string') return null;
+    if (management?.type !== 'control_center_management_capability'
+      || management.instance_id !== receipt.instance_id
+      || typeof management.capability !== 'string'
+      || !/^[A-Za-z0-9_-]{43}$/u.test(management.capability)) return null;
     validateLoopbackUrl(receipt.url);
     if (!sameCompatibility(receipt, expectedCompatibility)) return null;
     const health = await readHealthRuntime(receipt.url, context);
     return health?.instance_id === receipt.instance_id
       && sameCompatibility(health, expectedCompatibility)
-      ? receipt
+      ? { ...receipt, managementCapability: management.capability }
       : null;
   } catch {
     return null;
@@ -243,8 +266,48 @@ function attachCloseSignals(server, signal) {
 async function removeOwnedRuntime(store, instanceId) {
   try {
     const current = await store.readJson(RUNTIME_RECEIPT, { maxBytes: 16 * 1024 });
-    if (current?.instance_id === instanceId) await store.removeFile(RUNTIME_RECEIPT, { maxBytes: 16 * 1024 });
+    if (current?.instance_id === instanceId) {
+      await store.removeFile(RUNTIME_RECEIPT, { maxBytes: 16 * 1024 });
+      try {
+        const management = await store.readJson(RUNTIME_MANAGEMENT_CAPABILITY, { maxBytes: 4096 });
+        if (management?.instance_id === instanceId) {
+          await store.removeFile(RUNTIME_MANAGEMENT_CAPABILITY, { maxBytes: 4096 });
+        }
+      } catch {}
+    }
   } catch {}
+}
+
+async function removeOwnedRuntimeByUrl(store, url) {
+  try {
+    const current = await store.readJson(RUNTIME_RECEIPT, { maxBytes: 16 * 1024 });
+    if (current?.url === url && typeof current.instance_id === 'string') {
+      await removeOwnedRuntime(store, current.instance_id);
+    }
+  } catch {}
+}
+
+async function issueBrowserPairing(baseUrl, managementCapability, context) {
+  validateLoopbackUrl(baseUrl);
+  const fetchImpl = context.fetch ?? globalThis.fetch;
+  const response = await fetchImpl(new URL('/api/pairing/issue', baseUrl), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      Origin: new URL(baseUrl).origin,
+      'X-Trace-Cue-Management-Token': managementCapability,
+      'Content-Length': '0'
+    },
+    signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS)
+  });
+  let body;
+  try { body = await response.json(); } catch { body = null; }
+  if (!response.ok || typeof body?.pairing_token !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(body.pairing_token)) {
+    throw launcherError('CONTROL_CENTER_LAUNCH_PAIRING_FAILED', 'The local Control Center could not create a private browser session.');
+  }
+  const paired = new URL(baseUrl);
+  paired.hash = `pair=${encodeURIComponent(body.pairing_token)}`;
+  return { url: paired.toString() };
 }
 
 function writeLaunchNotice(url, opened, context) {
@@ -261,10 +324,6 @@ function validateLoopbackUrl(value) {
   return url;
 }
 
-function closeServer(server) {
-  return new Promise((resolve) => server.close(resolve));
-}
-
 function launchResult({ url, reused, opened, closed }) {
   return {
     status: 'ok',
@@ -278,7 +337,10 @@ function launchResult({ url, reused, opened, closed }) {
         shell_used: false
       }
     },
-    warnings: opened ? [] : [{ code: 'CONTROL_CENTER_BROWSER_NOT_OPENED', message: `Open ${url} in a browser.` }],
+    warnings: opened ? [] : [{
+      code: 'CONTROL_CENTER_BROWSER_NOT_OPENED',
+      message: `The protected browser session could not be opened. Run the Control Center command again after browser opening is available. ${url} is view-only.`
+    }],
     errors: [],
     artifacts: []
   };

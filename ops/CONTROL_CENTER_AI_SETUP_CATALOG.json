@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "type": "control_center_ai_setup_catalog",
+  "catalog_revision": "2026-07-14.1",
+  "services": [
+    {
+      "id": "codex-subscription",
+      "display_name": "Codex",
+      "connection_type": "subscription",
+      "adapter": "codex-device-login",
+      "retention": "service_owned",
+      "recommended": true
+    },
+    {
+      "id": "openai-api",
+      "display_name": "OpenAI",
+      "connection_type": "api",
+      "adapter": "openai-responses",
+      "retention": "control_center_session",
+      "recommended": false,
+      "models_endpoint": "https://api.openai.com/v1/models",
+      "responses_endpoint": "https://api.openai.com/v1/responses",
+      "default_model_id": "gpt-5.6-sol",
+      "models": [
+        {
+          "id": "gpt-5.6-sol",
+          "display_name": "GPT-5.6 Sol",
+          "native_efforts": ["low", "medium", "high", "xhigh", "max"],
+          "default_native_effort": "medium"
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "display_name": "GPT-5.6 Terra",
+          "native_efforts": ["low", "medium", "high", "xhigh", "max"],
+          "default_native_effort": "medium"
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "display_name": "GPT-5.6 Luna",
+          "native_efforts": ["low", "medium", "high", "xhigh", "max"],
+          "default_native_effort": "medium"
+        }
+      ]
+    }
+  ]
+}

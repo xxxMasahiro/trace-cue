@@ -95,29 +95,26 @@ cd /path/to/workspace
 trace-cue-control-center
 ```
 
-On native Linux, an already-signed-in official Codex CLI can be found with
-**Update availability** in Settings; no API key is entered in the browser. The
-initial audited adapter accepts `@openai/codex` 0.144.1 with `/usr/bin/bwrap`
-and fails closed for other CLI versions. Other subscription CLIs require their
-own audited adapter. To use the generic API connection instead, configure it
-before launch:
+Open **Set up AI** from New Review or **Change connection** from Settings. The
+recommended Codex choice opens its fixed device sign-in page and continues
+automatically after sign-in. The alternative OpenAI choice accepts an API key
+in the same focused dialog, checks the fixed built-in model catalog, and keeps
+the key only while that local review center is running. Neither path requires
+editing environment variables, configuration files, or terminal commands.
 
-```bash
-TRACE_CUE_CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NAME="Review AI" \
-TRACE_CUE_CONTROL_CENTER_AGENTIC_REVIEW_PROVIDER="generic-api-provider" \
-AGENTIC_HUMAN_REVIEW_API_ENDPOINT="https://provider.example/v1/review" \
-AGENTIC_HUMAN_REVIEW_API_TOKEN="<tok>" \
-AGENTIC_HUMAN_REVIEW_OPENAI_MODEL="<model>" \
-trace-cue-control-center
-```
+The initial native Linux subscription adapter accepts the audited
+`@openai/codex` 0.144.1 contract and fails closed for other CLI versions. Other
+subscription CLIs require their own audited adapter. Existing environment-
+configured API connections remain available as an advanced compatibility path,
+but they are not required for the built-in GUI setup.
 
 The launcher reuses a healthy local instance. If the operating system cannot
 open a browser, it prints the safe loopback URL. Repository development may
 still use `npm run control-center:build` and `control-center serve` directly.
 
-When AI suggestions are enabled, the browser chooses only server-issued opaque
-options. It shows the user-facing service, model, and AI processing level but
-does not accept credentials, provider/adapter ids, raw model ids, endpoints,
+When AI suggestions are enabled, ordinary review controls choose only server-
+issued opaque options. The dedicated paired setup dialog is the sole API-key
+input; it never exposes provider/adapter ids, raw model ids, endpoints,
 executable paths, commands, hashes, or transfer flags. TraceCue review method
 (`standard`, `deep`, or `xhigh`) is separate from the AI model's processing
 level. Before sending, the UI displays the service, model, review method, and

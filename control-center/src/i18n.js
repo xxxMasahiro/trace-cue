@@ -1,7 +1,214 @@
 import { normalizeTraceCueLocale } from './localePolicy.js';
 
+const AI_SETUP_KEYS = Object.freeze([
+  'aiSetup.eyebrow', 'aiSetup.title', 'aiSetup.open', 'aiSetup.change',
+  'aiSetup.intro', 'aiSetup.connected', 'aiSetup.disconnect', 'aiSetup.replaceApiKey', 'aiSetup.subscriptionText',
+  'aiSetup.unavailable', 'aiSetup.anotherMethod', 'aiSetup.apiText', 'aiSetup.codeInstruction',
+  'aiSetup.codeLabel', 'aiSetup.openSignIn', 'aiSetup.waiting', 'aiSetup.checking',
+  'aiSetup.starting', 'aiSetup.cancelled', 'aiSetup.signInFailed', 'aiSetup.tryAgainText',
+  'aiSetup.stop', 'aiSetup.apiIntro', 'aiSetup.apiKey', 'aiSetup.sessionOnly',
+  'aiSetup.connecting', 'aiSetup.connect', 'aiSetup.failed', 'aiSetup.failedText',
+  'aiSetup.errorKey', 'aiSetup.errorModel', 'aiSetup.errorChanged', 'aiSetup.errorCodex',
+  'aiSetup.errorReopen', 'aiSetup.errorNetwork', 'aiSetup.errorRestart',
+  'common.close', 'common.recommended', 'common.back', 'common.retry',
+  'state.sessionEnded.title', 'state.sessionEnded.text'
+]);
+
+function aiSetupMessages(values) {
+  if (!Array.isArray(values) || values.length !== AI_SETUP_KEYS.length) {
+    throw new Error('AI setup translations are incomplete.');
+  }
+  return Object.freeze(Object.fromEntries(AI_SETUP_KEYS.map((key, index) => [key, values[index]])));
+}
+
+const AI_SETUP_MESSAGES = Object.freeze({
+  en: aiSetupMessages([
+    'AI suggestions', 'Set up AI', 'Set up AI', 'Change connection',
+    'Choose the service you already use.', 'Connected', 'Disconnect', 'Change API key', 'Use your subscription',
+    'AI setup is not available right now', 'Use another method', 'Connect with an API key', 'Open the sign-in page, then enter this code.',
+    'One-time code', 'Open sign-in page', 'This screen will continue automatically after sign-in.', 'Checking sign-in...',
+    'Preparing sign-in...', 'Sign-in was cancelled', 'Sign-in could not be completed', 'Try again when you are ready.',
+    'Stop sign-in', 'Enter the API key from your AI service.', 'API key', 'Used only while this Control Center is open. It is not saved in the browser or project.',
+    'Connecting...', 'Connect', 'AI could not be set up', 'Nothing was changed. Check the service and try again.',
+    'The API key was not accepted. Check it and try again.', 'This account does not currently include a supported AI model.', 'The AI choice changed in another screen. Close this window and open it again.', 'Codex on this computer cannot be connected from this screen yet.',
+    'Open the Control Center again in the usual way, then continue.', 'The AI service could not be reached. Check your connection and try again.', 'Sign-in stopped unexpectedly. Restart this computer, then try again.',
+    'Close', 'Recommended', 'Back', 'Try again',
+    'Open the Control Center again', 'This private browser session has ended. Open the Control Center in the usual way to continue.'
+  ]),
+  ja: aiSetupMessages([
+    'AIの提案', 'AIを使えるようにする', 'AIを使えるようにする', '接続を変更',
+    '普段お使いのサービスを選んでください。', '接続済み', '接続を解除', 'APIキーを変更', 'サブスクリプションで使う',
+    '現在AIの準備を始められません', '別の方法を使う', 'APIキーで接続', 'サインインページを開き、このコードを入力してください。',
+    '一時コード', 'サインインページを開く', 'サインイン後、この画面は自動で続きます。', 'サインインを確認しています...',
+    'サインインを準備しています...', 'サインインを中止しました', 'サインインを完了できませんでした', '準備ができたら、もう一度お試しください。',
+    'サインインを中止', 'AIサービスで発行したAPIキーを入力してください。', 'APIキー', 'このコントロールセンターの起動中だけ使います。ブラウザやプロジェクトには保存しません。',
+    '接続しています...', '接続する', 'AIを使えるようにできませんでした', '変更はありません。サービスを確認して、もう一度お試しください。',
+    'APIキーを確認できませんでした。キーを確かめて、もう一度お試しください。', 'このアカウントでは、現在対応しているAIモデルを利用できません。', '別の画面でAIの選択が変わりました。この画面を閉じて、もう一度開いてください。', 'このパソコンのCodexは、まだこの画面から接続できません。',
+    'いつもの方法でコントロールセンターを開き直して、続けてください。', 'AIサービスに接続できませんでした。通信状態を確認して、もう一度お試しください。', 'サインインが途中で停止しました。このパソコンを再起動して、もう一度お試しください。',
+    '閉じる', 'おすすめ', '戻る', 'もう一度試す',
+    'コントロールセンターを開き直してください', 'このブラウザでの利用時間が終了しました。いつもの方法でコントロールセンターを開き直してください。'
+  ]),
+  ko: aiSetupMessages([
+    'AI 제안', 'AI 설정', 'AI 설정', '연결 변경',
+    '이미 사용 중인 서비스를 선택하세요.', '연결됨', '연결 해제', 'API 키 변경', '구독으로 사용',
+    '지금은 AI를 설정할 수 없습니다', '다른 방법 사용', 'API 키로 연결', '로그인 페이지를 열고 이 코드를 입력하세요.',
+    '일회용 코드', '로그인 페이지 열기', '로그인하면 이 화면이 자동으로 계속됩니다.', '로그인 확인 중...',
+    '로그인 준비 중...', '로그인이 취소되었습니다', '로그인을 완료하지 못했습니다', '준비되면 다시 시도하세요.',
+    '로그인 중지', 'AI 서비스에서 발급한 API 키를 입력하세요.', 'API 키', '이 Control Center가 열려 있는 동안만 사용합니다. 브라우저나 프로젝트에는 저장하지 않습니다.',
+    '연결 중...', '연결', 'AI를 설정하지 못했습니다', '변경된 내용이 없습니다. 서비스를 확인하고 다시 시도하세요.',
+    'API 키가 승인되지 않았습니다. 확인 후 다시 시도하세요.', '이 계정에는 현재 지원되는 AI 모델이 없습니다.', '다른 화면에서 AI 선택이 변경되었습니다. 이 창을 닫고 다시 여세요.', '이 컴퓨터의 Codex는 아직 이 화면에서 연결할 수 없습니다.',
+    '평소 방법으로 Control Center를 다시 열고 계속하세요.', 'AI 서비스에 연결할 수 없습니다. 네트워크를 확인하고 다시 시도하세요.', '로그인이 예기치 않게 중지되었습니다. 이 컴퓨터를 다시 시작한 후 다시 시도하세요.',
+    '닫기', '권장', '뒤로', '다시 시도',
+    'Control Center 다시 열기', '이 비공개 브라우저 세션이 종료되었습니다. 평소 방법으로 Control Center를 다시 열어 계속하세요.'
+  ]),
+  'zh-CN': aiSetupMessages([
+    'AI 建议', '设置 AI', '设置 AI', '更改连接',
+    '选择您已在使用的服务。', '已连接', '断开连接', '更改 API 密钥', '使用订阅',
+    '目前无法设置 AI', '使用其他方式', '使用 API 密钥连接', '打开登录页面，然后输入此代码。',
+    '一次性代码', '打开登录页面', '登录后，此页面会自动继续。', '正在确认登录...',
+    '正在准备登录...', '登录已取消', '无法完成登录', '准备好后请重试。',
+    '停止登录', '输入 AI 服务提供的 API 密钥。', 'API 密钥', '仅在此控制中心运行期间使用，不会保存在浏览器或项目中。',
+    '正在连接...', '连接', '无法设置 AI', '未进行任何更改。请检查服务后重试。',
+    'API 密钥未被接受。请检查后重试。', '此帐户目前没有受支持的 AI 模型。', 'AI 选择已在其他页面更改。请关闭此窗口后重新打开。', '此计算机上的 Codex 暂时无法从此页面连接。',
+    '请按平常方式重新打开控制中心，然后继续。', '无法连接 AI 服务。请检查网络后重试。', '登录意外中止。请重新启动此计算机后再试。',
+    '关闭', '推荐', '返回', '重试',
+    '重新打开控制中心', '此专用浏览器会话已结束。请按平常方式重新打开控制中心以继续。'
+  ]),
+  'zh-TW': aiSetupMessages([
+    'AI 建議', '設定 AI', '設定 AI', '變更連線',
+    '選擇您已在使用的服務。', '已連線', '中斷連線', '變更 API 金鑰', '使用訂閱',
+    '目前無法設定 AI', '使用其他方式', '使用 API 金鑰連線', '開啟登入頁面，然後輸入此代碼。',
+    '一次性代碼', '開啟登入頁面', '登入後，此畫面會自動繼續。', '正在確認登入...',
+    '正在準備登入...', '登入已取消', '無法完成登入', '準備好後請再試一次。',
+    '停止登入', '輸入 AI 服務提供的 API 金鑰。', 'API 金鑰', '只在此控制中心執行期間使用，不會儲存在瀏覽器或專案中。',
+    '正在連線...', '連線', '無法設定 AI', '沒有進行任何變更。請檢查服務後再試一次。',
+    'API 金鑰未被接受。請檢查後再試一次。', '此帳戶目前沒有支援的 AI 模型。', 'AI 選擇已在其他畫面變更。請關閉此視窗後重新開啟。', '此電腦上的 Codex 暫時無法從此畫面連線。',
+    '請以平常方式重新開啟控制中心，然後繼續。', '無法連線 AI 服務。請檢查網路後再試一次。', '登入意外中止。請重新啟動此電腦後再試一次。',
+    '關閉', '推薦', '返回', '再試一次',
+    '重新開啟控制中心', '此專用瀏覽器工作階段已結束。請以平常方式重新開啟控制中心以繼續。'
+  ]),
+  es: aiSetupMessages([
+    'Sugerencias de IA', 'Configurar IA', 'Configurar IA', 'Cambiar conexión',
+    'Elige el servicio que ya utilizas.', 'Conectado', 'Desconectar', 'Cambiar clave de API', 'Usar tu suscripción',
+    'La configuración de IA no está disponible ahora', 'Usar otro método', 'Conectar con una clave API', 'Abre la página de inicio de sesión e introduce este código.',
+    'Código de un solo uso', 'Abrir inicio de sesión', 'Esta pantalla continuará automáticamente después de iniciar sesión.', 'Comprobando el inicio de sesión...',
+    'Preparando el inicio de sesión...', 'Se canceló el inicio de sesión', 'No se pudo completar el inicio de sesión', 'Vuelve a intentarlo cuando estés listo.',
+    'Detener inicio de sesión', 'Introduce la clave API de tu servicio de IA.', 'Clave API', 'Solo se usa mientras este Centro de control está abierto. No se guarda en el navegador ni en el proyecto.',
+    'Conectando...', 'Conectar', 'No se pudo configurar la IA', 'No se cambió nada. Comprueba el servicio e inténtalo de nuevo.',
+    'La clave API no fue aceptada. Compruébala e inténtalo de nuevo.', 'Esta cuenta no incluye actualmente un modelo de IA compatible.', 'La elección de IA cambió en otra pantalla. Cierra esta ventana y vuelve a abrirla.', 'Codex en este equipo aún no puede conectarse desde esta pantalla.',
+    'Abre de nuevo el Centro de control de la forma habitual y continúa.', 'No se pudo acceder al servicio de IA. Comprueba la conexión e inténtalo de nuevo.', 'El inicio de sesión se detuvo inesperadamente. Reinicia este equipo y vuelve a intentarlo.',
+    'Cerrar', 'Recomendado', 'Atrás', 'Reintentar',
+    'Abre de nuevo el Centro de control', 'Esta sesión privada del navegador ha terminado. Abre el Centro de control de la forma habitual para continuar.'
+  ]),
+  'pt-BR': aiSetupMessages([
+    'Sugestões de IA', 'Configurar IA', 'Configurar IA', 'Alterar conexão',
+    'Escolha o serviço que você já usa.', 'Conectado', 'Desconectar', 'Alterar chave de API', 'Usar sua assinatura',
+    'A configuração de IA não está disponível agora', 'Usar outro método', 'Conectar com uma chave de API', 'Abra a página de login e digite este código.',
+    'Código de uso único', 'Abrir página de login', 'Esta tela continuará automaticamente após o login.', 'Verificando o login...',
+    'Preparando o login...', 'O login foi cancelado', 'Não foi possível concluir o login', 'Tente novamente quando estiver pronto.',
+    'Interromper login', 'Digite a chave de API do seu serviço de IA.', 'Chave de API', 'Usada apenas enquanto este Centro de Controle estiver aberto. Não é salva no navegador nem no projeto.',
+    'Conectando...', 'Conectar', 'Não foi possível configurar a IA', 'Nada foi alterado. Verifique o serviço e tente novamente.',
+    'A chave de API não foi aceita. Verifique e tente novamente.', 'Esta conta não inclui no momento um modelo de IA compatível.', 'A escolha de IA mudou em outra tela. Feche esta janela e abra novamente.', 'O Codex neste computador ainda não pode ser conectado por esta tela.',
+    'Abra novamente o Centro de Controle da forma habitual e continue.', 'Não foi possível acessar o serviço de IA. Verifique a conexão e tente novamente.', 'O login foi interrompido inesperadamente. Reinicie este computador e tente novamente.',
+    'Fechar', 'Recomendado', 'Voltar', 'Tentar novamente',
+    'Abra novamente o Centro de Controle', 'Esta sessão privada do navegador terminou. Abra o Centro de Controle da forma habitual para continuar.'
+  ]),
+  fr: aiSetupMessages([
+    'Suggestions IA', 'Configurer l’IA', 'Configurer l’IA', 'Changer de connexion',
+    'Choisissez le service que vous utilisez déjà.', 'Connecté', 'Déconnecter', 'Modifier la clé API', 'Utiliser votre abonnement',
+    'La configuration de l’IA est indisponible pour le moment', 'Utiliser une autre méthode', 'Se connecter avec une clé API', 'Ouvrez la page de connexion, puis saisissez ce code.',
+    'Code à usage unique', 'Ouvrir la page de connexion', 'Cet écran continuera automatiquement après la connexion.', 'Vérification de la connexion...',
+    'Préparation de la connexion...', 'La connexion a été annulée', 'La connexion n’a pas pu être terminée', 'Réessayez lorsque vous êtes prêt.',
+    'Arrêter la connexion', 'Saisissez la clé API de votre service d’IA.', 'Clé API', 'Utilisée uniquement tant que ce Centre de contrôle est ouvert. Elle n’est enregistrée ni dans le navigateur ni dans le projet.',
+    'Connexion...', 'Connecter', 'Impossible de configurer l’IA', 'Rien n’a été modifié. Vérifiez le service et réessayez.',
+    'La clé API n’a pas été acceptée. Vérifiez-la et réessayez.', 'Ce compte ne dispose actuellement d’aucun modèle d’IA compatible.', 'Le choix de l’IA a changé dans un autre écran. Fermez cette fenêtre et rouvrez-la.', 'Codex sur cet ordinateur ne peut pas encore être connecté depuis cet écran.',
+    'Rouvrez le Centre de contrôle de la manière habituelle, puis continuez.', 'Le service d’IA est inaccessible. Vérifiez la connexion et réessayez.', 'La connexion s’est interrompue. Redémarrez cet ordinateur, puis réessayez.',
+    'Fermer', 'Recommandé', 'Retour', 'Réessayer',
+    'Rouvrez le Centre de contrôle', 'Cette session privée du navigateur est terminée. Rouvrez le Centre de contrôle de la manière habituelle pour continuer.'
+  ]),
+  de: aiSetupMessages([
+    'KI-Vorschläge', 'KI einrichten', 'KI einrichten', 'Verbindung ändern',
+    'Wählen Sie den Dienst, den Sie bereits nutzen.', 'Verbunden', 'Trennen', 'API-Schlüssel ändern', 'Abonnement verwenden',
+    'Die KI-Einrichtung ist derzeit nicht verfügbar', 'Andere Methode verwenden', 'Mit API-Schlüssel verbinden', 'Öffnen Sie die Anmeldeseite und geben Sie diesen Code ein.',
+    'Einmalcode', 'Anmeldeseite öffnen', 'Nach der Anmeldung wird dieser Bildschirm automatisch fortgesetzt.', 'Anmeldung wird geprüft...',
+    'Anmeldung wird vorbereitet...', 'Anmeldung wurde abgebrochen', 'Anmeldung konnte nicht abgeschlossen werden', 'Versuchen Sie es erneut, wenn Sie bereit sind.',
+    'Anmeldung stoppen', 'Geben Sie den API-Schlüssel Ihres KI-Dienstes ein.', 'API-Schlüssel', 'Wird nur verwendet, solange dieses Kontrollzentrum geöffnet ist. Er wird weder im Browser noch im Projekt gespeichert.',
+    'Verbindung wird hergestellt...', 'Verbinden', 'KI konnte nicht eingerichtet werden', 'Es wurde nichts geändert. Prüfen Sie den Dienst und versuchen Sie es erneut.',
+    'Der API-Schlüssel wurde nicht akzeptiert. Prüfen Sie ihn und versuchen Sie es erneut.', 'Dieses Konto enthält derzeit kein unterstütztes KI-Modell.', 'Die KI-Auswahl wurde in einem anderen Fenster geändert. Schließen und öffnen Sie dieses Fenster erneut.', 'Codex auf diesem Computer kann noch nicht über diesen Bildschirm verbunden werden.',
+    'Öffnen Sie das Kontrollzentrum wie gewohnt erneut und fahren Sie fort.', 'Der KI-Dienst ist nicht erreichbar. Prüfen Sie die Verbindung und versuchen Sie es erneut.', 'Die Anmeldung wurde unerwartet beendet. Starten Sie diesen Computer neu und versuchen Sie es erneut.',
+    'Schließen', 'Empfohlen', 'Zurück', 'Erneut versuchen',
+    'Kontrollzentrum erneut öffnen', 'Diese private Browsersitzung ist beendet. Öffnen Sie das Kontrollzentrum wie gewohnt erneut, um fortzufahren.'
+  ]),
+  id: aiSetupMessages([
+    'Saran AI', 'Siapkan AI', 'Siapkan AI', 'Ubah koneksi',
+    'Pilih layanan yang sudah Anda gunakan.', 'Terhubung', 'Putuskan', 'Ubah kunci API', 'Gunakan langganan Anda',
+    'Pengaturan AI belum tersedia saat ini', 'Gunakan cara lain', 'Hubungkan dengan kunci API', 'Buka halaman masuk, lalu masukkan kode ini.',
+    'Kode sekali pakai', 'Buka halaman masuk', 'Layar ini akan berlanjut otomatis setelah Anda masuk.', 'Memeriksa proses masuk...',
+    'Menyiapkan proses masuk...', 'Proses masuk dibatalkan', 'Proses masuk tidak dapat diselesaikan', 'Coba lagi saat Anda siap.',
+    'Hentikan proses masuk', 'Masukkan kunci API dari layanan AI Anda.', 'Kunci API', 'Hanya digunakan selama Pusat Kontrol ini terbuka. Tidak disimpan di browser atau proyek.',
+    'Menghubungkan...', 'Hubungkan', 'AI tidak dapat disiapkan', 'Tidak ada yang diubah. Periksa layanan lalu coba lagi.',
+    'Kunci API tidak diterima. Periksa lalu coba lagi.', 'Akun ini belum memiliki model AI yang didukung.', 'Pilihan AI berubah di layar lain. Tutup jendela ini lalu buka kembali.', 'Codex di komputer ini belum dapat dihubungkan dari layar ini.',
+    'Buka kembali Pusat Kontrol seperti biasa, lalu lanjutkan.', 'Layanan AI tidak dapat dijangkau. Periksa koneksi lalu coba lagi.', 'Proses masuk berhenti tiba-tiba. Mulai ulang komputer ini, lalu coba lagi.',
+    'Tutup', 'Disarankan', 'Kembali', 'Coba lagi',
+    'Buka kembali Pusat Kontrol', 'Sesi browser pribadi ini telah berakhir. Buka kembali Pusat Kontrol seperti biasa untuk melanjutkan.'
+  ]),
+  vi: aiSetupMessages([
+    'Đề xuất AI', 'Thiết lập AI', 'Thiết lập AI', 'Đổi kết nối',
+    'Chọn dịch vụ bạn đang dùng.', 'Đã kết nối', 'Ngắt kết nối', 'Đổi khóa API', 'Dùng gói đăng ký của bạn',
+    'Hiện chưa thể thiết lập AI', 'Dùng cách khác', 'Kết nối bằng khóa API', 'Mở trang đăng nhập rồi nhập mã này.',
+    'Mã dùng một lần', 'Mở trang đăng nhập', 'Màn hình này sẽ tự động tiếp tục sau khi đăng nhập.', 'Đang kiểm tra đăng nhập...',
+    'Đang chuẩn bị đăng nhập...', 'Đã hủy đăng nhập', 'Không thể hoàn tất đăng nhập', 'Hãy thử lại khi bạn sẵn sàng.',
+    'Dừng đăng nhập', 'Nhập khóa API từ dịch vụ AI của bạn.', 'Khóa API', 'Chỉ dùng khi Trung tâm điều khiển này đang mở. Khóa không được lưu trong trình duyệt hoặc dự án.',
+    'Đang kết nối...', 'Kết nối', 'Không thể thiết lập AI', 'Không có thay đổi nào. Hãy kiểm tra dịch vụ rồi thử lại.',
+    'Khóa API không được chấp nhận. Hãy kiểm tra rồi thử lại.', 'Tài khoản này hiện không có mô hình AI được hỗ trợ.', 'Lựa chọn AI đã thay đổi ở màn hình khác. Hãy đóng cửa sổ này rồi mở lại.', 'Codex trên máy tính này chưa thể kết nối từ màn hình này.',
+    'Hãy mở lại Trung tâm điều khiển theo cách thông thường rồi tiếp tục.', 'Không thể kết nối dịch vụ AI. Hãy kiểm tra mạng rồi thử lại.', 'Quá trình đăng nhập đã dừng đột ngột. Hãy khởi động lại máy tính này rồi thử lại.',
+    'Đóng', 'Đề xuất', 'Quay lại', 'Thử lại',
+    'Mở lại Trung tâm điều khiển', 'Phiên trình duyệt riêng tư này đã kết thúc. Hãy mở lại Trung tâm điều khiển theo cách thông thường để tiếp tục.'
+  ]),
+  th: aiSetupMessages([
+    'คำแนะนำจาก AI', 'ตั้งค่า AI', 'ตั้งค่า AI', 'เปลี่ยนการเชื่อมต่อ',
+    'เลือกบริการที่คุณใช้อยู่', 'เชื่อมต่อแล้ว', 'ยกเลิกการเชื่อมต่อ', 'เปลี่ยนคีย์ API', 'ใช้การสมัครสมาชิกของคุณ',
+    'ขณะนี้ยังตั้งค่า AI ไม่ได้', 'ใช้วิธีอื่น', 'เชื่อมต่อด้วยคีย์ API', 'เปิดหน้าลงชื่อเข้าใช้ แล้วป้อนรหัสนี้',
+    'รหัสใช้ครั้งเดียว', 'เปิดหน้าลงชื่อเข้าใช้', 'หน้าจอนี้จะดำเนินการต่ออัตโนมัติหลังลงชื่อเข้าใช้', 'กำลังตรวจสอบการลงชื่อเข้าใช้...',
+    'กำลังเตรียมการลงชื่อเข้าใช้...', 'ยกเลิกการลงชื่อเข้าใช้แล้ว', 'ลงชื่อเข้าใช้ไม่สำเร็จ', 'ลองอีกครั้งเมื่อพร้อม',
+    'หยุดการลงชื่อเข้าใช้', 'ป้อนคีย์ API จากบริการ AI ของคุณ', 'คีย์ API', 'ใช้เฉพาะขณะที่ศูนย์ควบคุมนี้เปิดอยู่ และจะไม่บันทึกในเบราว์เซอร์หรือโปรเจกต์',
+    'กำลังเชื่อมต่อ...', 'เชื่อมต่อ', 'ตั้งค่า AI ไม่สำเร็จ', 'ไม่มีการเปลี่ยนแปลง โปรดตรวจสอบบริการแล้วลองอีกครั้ง',
+    'ไม่ยอมรับคีย์ API โปรดตรวจสอบแล้วลองอีกครั้ง', 'บัญชีนี้ยังไม่มีโมเดล AI ที่รองรับ', 'ตัวเลือก AI เปลี่ยนในหน้าจออื่น โปรดปิดหน้าต่างนี้แล้วเปิดใหม่', 'Codex บนคอมพิวเตอร์นี้ยังเชื่อมต่อจากหน้าจอนี้ไม่ได้',
+    'เปิดศูนย์ควบคุมใหม่ด้วยวิธีปกติแล้วดำเนินการต่อ', 'ไม่สามารถเข้าถึงบริการ AI โปรดตรวจสอบการเชื่อมต่อแล้วลองอีกครั้ง', 'การลงชื่อเข้าใช้หยุดลงโดยไม่คาดคิด ให้เริ่มคอมพิวเตอร์เครื่องนี้ใหม่แล้วลองอีกครั้ง',
+    'ปิด', 'แนะนำ', 'กลับ', 'ลองอีกครั้ง',
+    'เปิดศูนย์ควบคุมอีกครั้ง', 'เซสชันเบราว์เซอร์ส่วนตัวนี้สิ้นสุดแล้ว โปรดเปิดศูนย์ควบคุมด้วยวิธีปกติเพื่อดำเนินการต่อ'
+  ]),
+  hi: aiSetupMessages([
+    'AI सुझाव', 'AI सेट अप करें', 'AI सेट अप करें', 'कनेक्शन बदलें',
+    'वह सेवा चुनें जिसका आप पहले से उपयोग करते हैं।', 'कनेक्टेड', 'डिस्कनेक्ट करें', 'API कुंजी बदलें', 'अपनी सदस्यता का उपयोग करें',
+    'अभी AI सेटअप उपलब्ध नहीं है', 'दूसरा तरीका इस्तेमाल करें', 'API कुंजी से कनेक्ट करें', 'साइन-इन पेज खोलें और यह कोड दर्ज करें।',
+    'एक बार उपयोग होने वाला कोड', 'साइन-इन पेज खोलें', 'साइन-इन के बाद यह स्क्रीन अपने आप आगे बढ़ेगी।', 'साइन-इन जांच रहे हैं...',
+    'साइन-इन तैयार हो रहा है...', 'साइन-इन रद्द कर दिया गया', 'साइन-इन पूरा नहीं हो सका', 'तैयार होने पर फिर कोशिश करें।',
+    'साइन-इन रोकें', 'अपनी AI सेवा की API कुंजी दर्ज करें।', 'API कुंजी', 'केवल इस कंट्रोल सेंटर के खुले रहने तक उपयोग होती है। इसे ब्राउज़र या प्रोजेक्ट में सहेजा नहीं जाता।',
+    'कनेक्ट हो रहा है...', 'कनेक्ट करें', 'AI सेट अप नहीं हो सका', 'कुछ भी नहीं बदला। सेवा जांचें और फिर कोशिश करें।',
+    'API कुंजी स्वीकार नहीं हुई। इसे जांचें और फिर कोशिश करें।', 'इस खाते में अभी कोई समर्थित AI मॉडल नहीं है।', 'AI चयन दूसरी स्क्रीन पर बदल गया। यह विंडो बंद करके फिर खोलें।', 'इस कंप्यूटर का Codex अभी इस स्क्रीन से कनेक्ट नहीं हो सकता।',
+    'कंट्रोल सेंटर को सामान्य तरीके से फिर खोलें और जारी रखें।', 'AI सेवा तक नहीं पहुंच सके। कनेक्शन जांचें और फिर कोशिश करें।', 'साइन-इन अनपेक्षित रूप से रुक गया। इस कंप्यूटर को फिर से शुरू करें और दोबारा कोशिश करें।',
+    'बंद करें', 'सुझाया गया', 'वापस', 'फिर कोशिश करें',
+    'कंट्रोल सेंटर फिर खोलें', 'यह निजी ब्राउज़र सत्र समाप्त हो गया है। जारी रखने के लिए कंट्रोल सेंटर को सामान्य तरीके से फिर खोलें।'
+  ]),
+  ar: aiSetupMessages([
+    'اقتراحات الذكاء الاصطناعي', 'إعداد الذكاء الاصطناعي', 'إعداد الذكاء الاصطناعي', 'تغيير الاتصال',
+    'اختر الخدمة التي تستخدمها بالفعل.', 'متصل', 'قطع الاتصال', 'تغيير مفتاح API', 'استخدام اشتراكك',
+    'إعداد الذكاء الاصطناعي غير متاح الآن', 'استخدام طريقة أخرى', 'الاتصال باستخدام مفتاح API', 'افتح صفحة تسجيل الدخول ثم أدخل هذا الرمز.',
+    'رمز يستخدم مرة واحدة', 'فتح صفحة تسجيل الدخول', 'ستتابع هذه الشاشة تلقائيا بعد تسجيل الدخول.', 'جار التحقق من تسجيل الدخول...',
+    'جار إعداد تسجيل الدخول...', 'تم إلغاء تسجيل الدخول', 'تعذر إكمال تسجيل الدخول', 'حاول مرة أخرى عندما تكون مستعدا.',
+    'إيقاف تسجيل الدخول', 'أدخل مفتاح API من خدمة الذكاء الاصطناعي.', 'مفتاح API', 'يستخدم فقط أثناء فتح مركز التحكم هذا. لا يحفظ في المتصفح أو المشروع.',
+    'جار الاتصال...', 'اتصال', 'تعذر إعداد الذكاء الاصطناعي', 'لم يتغير شيء. تحقق من الخدمة وحاول مرة أخرى.',
+    'لم يتم قبول مفتاح API. تحقّق منه وحاول مرة أخرى.', 'لا يتضمن هذا الحساب حاليا نموذج ذكاء اصطناعي مدعوما.', 'تغير اختيار الذكاء الاصطناعي في شاشة أخرى. أغلق هذه النافذة وافتحها مجددا.', 'لا يمكن بعد توصيل Codex على هذا الكمبيوتر من هذه الشاشة.',
+    'افتح مركز التحكم مجددا بالطريقة المعتادة ثم تابع.', 'تعذر الوصول إلى خدمة الذكاء الاصطناعي. تحقق من الاتصال وحاول مرة أخرى.', 'توقف تسجيل الدخول بشكل غير متوقع. أعد تشغيل هذا الكمبيوتر ثم حاول مرة أخرى.',
+    'إغلاق', 'موصى به', 'رجوع', 'إعادة المحاولة',
+    'أعد فتح مركز التحكم', 'انتهت جلسة المتصفح الخاصة هذه. افتح مركز التحكم بالطريقة المعتادة للمتابعة.'
+  ])
+});
+
 const MESSAGES = {
   en: {
+    ...AI_SETUP_MESSAGES.en,
     'app.eyebrow': 'TraceCue',
     'app.title': 'Review center',
     'app.statusEyebrow': 'Local status',
@@ -284,6 +491,8 @@ const MESSAGES = {
     'state.loading.text': 'Reading the latest local results.',
     'state.loadError.title': 'Your reviews could not be loaded',
     'state.loadError.text': 'Check that the local Control Center is running, then try again.',
+    'state.sessionEnded.title': 'Open the Control Center again',
+    'state.sessionEnded.text': 'This private browser session has ended. Open the Control Center in the usual way to continue.',
     'confirm.nextEyebrow': 'Next step',
     'confirm.nextSummary': 'Review the available local results and decide what needs attention.',
     'confirm.summary': 'Review summary',
@@ -462,6 +671,7 @@ const MESSAGES = {
     'common.recommended': 'Recommended'
   },
   ja: {
+    ...AI_SETUP_MESSAGES.ja,
     'app.statusEyebrow': 'ローカル状態',
     'app.loadingTitle': 'ローカル証拠を読み込み中',
     'app.unavailableTitle': 'ローカル証拠を読み込めません',
@@ -744,6 +954,8 @@ const MESSAGES = {
     'state.loading.text': 'このパソコン内の最新結果を読み込んでいます。',
     'state.loadError.title': '確認を読み込めませんでした',
     'state.loadError.text': 'Control Centerが起動していることを確かめて、もう一度お試しください。',
+    'state.sessionEnded.title': 'コントロールセンターを開き直してください',
+    'state.sessionEnded.text': 'このブラウザでの利用時間が終了しました。いつもの方法でコントロールセンターを開き直してください。',
     'confirm.nextEyebrow': '次にすること',
     'confirm.nextSummary': 'このパソコン内の結果を見て、対応が必要な点を決めます。',
     'confirm.summary': '確認のまとめ',
@@ -922,6 +1134,7 @@ const MESSAGES = {
     'common.recommended': 'おすすめ'
   },
   ko: {
+    ...AI_SETUP_MESSAGES.ko,
     'nav.intake': '가져오기',
     'nav.review': '검토',
     'nav.regression': '회귀',
@@ -934,6 +1147,7 @@ const MESSAGES = {
     'settings.save': '언어 저장'
   },
   'zh-CN': {
+    ...AI_SETUP_MESSAGES['zh-CN'],
     'nav.intake': '导入',
     'nav.review': '审阅',
     'nav.regression': '回归',
@@ -946,6 +1160,7 @@ const MESSAGES = {
     'settings.save': '保存语言'
   },
   'zh-TW': {
+    ...AI_SETUP_MESSAGES['zh-TW'],
     'nav.intake': '匯入',
     'nav.review': '審閱',
     'nav.regression': '回歸',
@@ -958,6 +1173,7 @@ const MESSAGES = {
     'settings.save': '儲存語言'
   },
   es: {
+    ...AI_SETUP_MESSAGES.es,
     'nav.intake': 'Importar',
     'nav.review': 'Revisar',
     'nav.regression': 'Regresión',
@@ -969,7 +1185,11 @@ const MESSAGES = {
     'settings.languageTitle': 'Idioma de pantalla',
     'settings.save': 'Guardar idioma'
   },
+  'pt-BR': {
+    ...AI_SETUP_MESSAGES['pt-BR']
+  },
   fr: {
+    ...AI_SETUP_MESSAGES.fr,
     'nav.intake': 'Importer',
     'nav.review': 'Revue',
     'nav.regression': 'Régression',
@@ -982,6 +1202,7 @@ const MESSAGES = {
     'settings.save': 'Enregistrer'
   },
   de: {
+    ...AI_SETUP_MESSAGES.de,
     'nav.intake': 'Import',
     'nav.review': 'Prüfung',
     'nav.regression': 'Regression',
@@ -994,6 +1215,7 @@ const MESSAGES = {
     'settings.save': 'Sprache speichern'
   },
   id: {
+    ...AI_SETUP_MESSAGES.id,
     'nav.intake': 'Impor',
     'nav.review': 'Tinjau',
     'nav.regression': 'Regresi',
@@ -1006,6 +1228,7 @@ const MESSAGES = {
     'settings.save': 'Simpan bahasa'
   },
   vi: {
+    ...AI_SETUP_MESSAGES.vi,
     'nav.intake': 'Nhập',
     'nav.review': 'Đánh giá',
     'nav.regression': 'Hồi quy',
@@ -1018,6 +1241,7 @@ const MESSAGES = {
     'settings.save': 'Lưu ngôn ngữ'
   },
   th: {
+    ...AI_SETUP_MESSAGES.th,
     'nav.intake': 'นำเข้า',
     'nav.review': 'รีวิว',
     'nav.regression': 'ถดถอย',
@@ -1030,6 +1254,7 @@ const MESSAGES = {
     'settings.save': 'บันทึกภาษา'
   },
   hi: {
+    ...AI_SETUP_MESSAGES.hi,
     'nav.intake': 'इनटेक',
     'nav.review': 'समीक्षा',
     'nav.regression': 'रिग्रेशन',
@@ -1042,6 +1267,7 @@ const MESSAGES = {
     'settings.save': 'भाषा सहेजें'
   },
   ar: {
+    ...AI_SETUP_MESSAGES.ar,
     'nav.confirm': 'المراجعات',
     'nav.running': 'قيد التنفيذ',
     'nav.settings': 'الإعدادات',
@@ -1057,6 +1283,8 @@ const MESSAGES = {
     'state.loading.text': 'جار قراءة أحدث النتائج المحلية.',
     'state.loadError.title': 'تعذر تحميل المراجعات',
     'state.loadError.text': 'تأكد من تشغيل مركز التحكم ثم حاول مرة أخرى.',
+    'state.sessionEnded.title': 'أعد فتح مركز التحكم',
+    'state.sessionEnded.text': 'انتهت جلسة المتصفح الخاصة هذه. افتح مركز التحكم بالطريقة المعتادة للمتابعة.',
     'confirm.title': 'المراجعات',
     'confirm.new': 'مراجعة جديدة',
     'confirm.nextEyebrow': 'الخطوة التالية',
@@ -1305,4 +1533,10 @@ export function createTranslator(locale) {
       return active[key] ?? fallback[key] ?? defaultText;
     }
   };
+}
+
+export function hasCompleteAiSetupTranslations(locale) {
+  const normalized = normalizeTraceCueLocale(locale, 'en');
+  const active = MESSAGES[normalized];
+  return Boolean(active && AI_SETUP_KEYS.every((key) => typeof active[key] === 'string' && active[key].trim()));
 }

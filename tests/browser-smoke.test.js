@@ -294,6 +294,7 @@ test('review center completes prepare, consent, review, decision, repeat, and se
   const started = await startControlCenterServer({ port: 0 }, controlCenterReviewContext(cwd));
   testWorkspace.trackServer(started.server);
   let browser = null;
+  let releaseCancelledResponse;
   try {
     browser = await chromium.launch();
     testWorkspace.trackBrowser(browser);
@@ -309,7 +310,22 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     const setupChoice = page.locator('.ai-choice');
     assert.match(await setupChoice.innerText(), /AI suggestions need setup/);
     assert.doesNotMatch(await setupChoice.innerText(), /provider|endpoint|API token|CLI command|file path/i);
-    await setupChoice.getByRole('button', { name: 'Open AI settings' }).click();
+    await setupChoice.getByRole('button', { name: 'Set up AI' }).click();
+    const setupDialog = page.getByRole('dialog', { name: 'Set up AI' });
+    await setupDialog.waitFor();
+    assert.doesNotMatch(await setupDialog.innerText(), /provider|endpoint|API token|CLI command|file path/i);
+    const mockSetupPage = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await mockSetupPage.goto(`${controlCenterMockUrl}?screen=new&ai=setup-required&dialog=ai-setup`, { waitUntil: 'load' });
+    const mockSetupDialog = mockSetupPage.locator('[data-testid="mock-ai-setup"]');
+    await mockSetupDialog.waitFor();
+    assert.equal(
+      await setupDialog.locator('h2').evaluate((element) => getComputedStyle(element).fontSize),
+      await mockSetupDialog.locator('h2').evaluate((element) => getComputedStyle(element).fontSize)
+    );
+    await mockSetupPage.close();
+    await setupDialog.getByRole('button', { name: 'Close' }).click();
+    await setupDialog.waitFor({ state: 'hidden' });
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
     const initialSettings = page.locator('[data-testid="tc-cc-settings"]');
     await initialSettings.waitFor();
     await initialSettings.getByRole('button', { name: 'Update availability' }).click();
@@ -411,6 +427,18 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     assert.equal(completedOperation.decisions.length, 2);
     assert.equal(completedOperation.stage, 'complete');
 
+    await page.route('**/api/agentic-review/repeat', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          data: { control_center_agentic_review: {} }
+        })
+      });
+    }, { times: 1 });
     await page.getByRole('button', { name: 'Review in more detail' }).click();
     await page.getByRole('heading', { name: /example\.jp/ }).waitFor();
     await page.getByRole('heading', { name: 'The review is ready to start' }).waitFor({ timeout: 20_000 });
@@ -420,25 +448,82 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     });
     assert.equal(repeatedOperation.review_effort, 'deep');
     assert.equal(repeatedOperation.parent_review.repeat_mode, 'deeper');
+    const repeatedChildren = await page.evaluate(async (parentId) => (
+      await (await fetch('/api/agentic-review/list')).json()
+    ).data.control_center_agentic_review.operations.filter((item) => item.parent_review?.id === parentId), completedOperation.id);
+    assert.equal(repeatedChildren.length, 1);
+    assert.equal(repeatedChildren[0].id, repeatedOperation.id);
 
     await page.getByRole('button', { name: 'Review and start', exact: true }).click();
     const repeatedDialog = page.getByRole('dialog', { name: 'Start this review?' });
     await repeatedDialog.waitFor();
-    await page.route('**/api/agentic-review/cancel', async (route) => {
+    await page.route('**/api/agentic-review/start', async (route) => {
       const response = await route.fetch();
       assert.equal(response.ok(), true);
       await route.abort('failed');
+    }, { times: 1 });
+    await repeatedDialog.getByRole('button', { name: 'Start review', exact: true }).click();
+    await repeatedDialog.waitFor({ state: 'hidden' });
+    await page.waitForTimeout(4_000);
+    const repeatedStartSnapshot = await page.evaluate(async () => {
+      const id = new URLSearchParams(window.location.search).get('item');
+      const body = await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json();
+      return {
+        operation: body.data?.control_center_agentic_review?.operation,
+        visibleText: document.querySelector('[data-testid="tc-cc-review-workspace"]')?.innerText
+      };
+    });
+    assert.equal(repeatedStartSnapshot.operation?.state, 'completed', JSON.stringify(repeatedStartSnapshot));
+    await workspace.locator('.finding-detail h2').waitFor({ timeout: 5_000 });
+    assert.equal(await page.getByRole('heading', { name: 'The review is ready to start', exact: true }).count(), 0);
+    assert.equal(await page.getByText('The latest status could not be read.', { exact: true }).count(), 0);
+    const repeatedFindingCount = await workspace.locator('.finding-list button').count();
+    assert.ok(repeatedFindingCount > 0);
+    for (let index = 0; index < repeatedFindingCount; index += 1) {
+      await workspace.locator('.finding-list button').nth(index).click();
+      await workspace.getByRole('button', { name: /Fix this/ }).click();
+    }
+    await page.getByRole('heading', { name: 'All improvements have a decision' }).waitFor();
+    await page.getByRole('button', { name: 'Review in more detail' }).click();
+    await page.getByRole('heading', { name: 'The review is ready to start' }).waitFor({ timeout: 20_000 });
+    await page.getByRole('button', { name: 'Review and start', exact: true }).click();
+    await repeatedDialog.waitFor();
+    const cancelledResponseGate = new Promise((resolve) => { releaseCancelledResponse = resolve; });
+    await page.route('**/api/agentic-review/cancel', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      await cancelledResponseGate;
+      try {
+        await route.abort('failed');
+      } catch (error) {
+        if (!/Route is already handled|Target page, context or browser has been closed/u.test(String(error?.message))) throw error;
+      }
     }, { times: 1 });
     await repeatedDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await repeatedDialog.waitFor({ state: 'hidden' });
     const cancelledHeading = page.getByRole('heading', { name: 'This review was not sent', exact: true });
     const cancellationError = page.getByText('The latest status could not be read.', { exact: true });
-    const cancellationOutcome = await Promise.race([
-      cancelledHeading.waitFor({ state: 'visible', timeout: 70_000 }).then(() => 'cancelled'),
-      cancellationError.waitFor({ state: 'visible', timeout: 70_000 })
-        .then(() => 'status reconciliation failed')
-    ]);
+    let cancellationOutcome;
+    try {
+      cancellationOutcome = await Promise.race([
+        cancelledHeading.waitFor({ state: 'visible', timeout: 70_000 }).then(() => 'cancelled'),
+        cancellationError.waitFor({ state: 'visible', timeout: 70_000 })
+          .then(() => 'status reconciliation failed')
+      ]);
+    } catch (caught) {
+      const cancellationSnapshot = await page.evaluate(async () => {
+        const id = new URLSearchParams(window.location.search).get('item');
+        const body = await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json();
+        return {
+          state: body.data?.control_center_agentic_review?.operation?.state,
+          stage: body.data?.control_center_agentic_review?.operation?.stage,
+          visibleText: document.querySelector('[data-testid="tc-cc-review-workspace"]')?.innerText
+        };
+      });
+      throw new Error(`Cancellation did not reconcile: ${JSON.stringify(cancellationSnapshot)}`, { cause: caught });
+    }
     assert.equal(cancellationOutcome, 'cancelled', cancellationOutcome);
+    releaseCancelledResponse();
     assert.equal(await page.getByRole('dialog', { name: 'Start this review?' }).count(), 0);
     assert.equal(await page.getByText('The latest status could not be read.').count(), 0);
 
@@ -472,6 +557,20 @@ test('review center completes prepare, consent, review, decision, repeat, and se
       await settingsHub.locator('.form-actions').evaluate((element) => getComputedStyle(element).justifyContent),
       await mockSettings.locator('.settings-footer').evaluate((element) => getComputedStyle(element).justifyContent)
     );
+    assertCloseMetric(
+      Math.round((await settingsHub.locator('.ai-connection-setting').boundingBox()).width),
+      Math.round((await mockSettings.locator('.ai-connection-setting').boundingBox()).width),
+      2,
+      'AI connection setting width'
+    );
+    assert.equal(
+      await settingsHub.locator('.ai-status').evaluate((element) => getComputedStyle(element).backgroundColor),
+      await mockSettings.locator('.ai-status').evaluate((element) => getComputedStyle(element).backgroundColor)
+    );
+    assert.equal(
+      await settingsHub.locator('.ai-status').evaluate((element) => getComputedStyle(element).borderTopWidth),
+      await mockSettings.locator('.ai-status').evaluate((element) => getComputedStyle(element).borderTopWidth)
+    );
     await mockSettingsPage.close();
     const settingsText = await settingsHub.innerText();
     assert.doesNotMatch(settingsText, /Language state|Settings storage|Diagnostics|Target policy|Max age hours/);
@@ -494,6 +593,11 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     await page.getByLabel('Automated checks').selectOption('local_run');
     assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
     await page.getByLabel('Display language').selectOption('ja');
+    await page.route('**/api/settings/control-center', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      await route.abort('failed');
+    }, { times: 1 });
     await page.getByRole('button', { name: /Save settings|設定を保存/ }).click();
     const savedNotice = page.locator('.inline-notice.success').filter({ hasText: '設定を保存しました' });
     await savedNotice.waitFor();
@@ -533,10 +637,534 @@ test('review center completes prepare, consent, review, decision, repeat, and se
       []
     );
   } finally {
+    releaseCancelledResponse?.();
     if (browser) {
       await browser.close();
     }
     await closeServer(started.server);
+  }
+});
+
+test('paired review center connects AI without terminal setup and preserves the review draft', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-control-center-ai-setup-browser-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
+  const apiCredentialValue = ['browser', 'fixture', 'value', '123456789'].join('-');
+  const replacementCredentialValue = ['browser', 'replacement', 'value', '987654321'].join('-');
+  const competingCredentialValue = ['browser', 'competing', 'value', '456789123'].join('-');
+  const acceptedCredentials = new Set([apiCredentialValue, replacementCredentialValue, competingCredentialValue]);
+  let modelRequestCount = 0;
+  let adapterStartCount = 0;
+  let adapterClosed = false;
+  let loginManagerDisposed = false;
+  const idleLogin = Object.freeze({
+    status: 'idle', operation_id: null, verification_url: null, user_code: null,
+    message: 'Not connected.', can_cancel: false, raw_output_included: false,
+    technical_details_included: false
+  });
+  await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  const started = await startControlCenterServer({ port: 0, authorizationMode: 'paired' }, {
+    cwd,
+    env: { PATH: '' },
+    now: () => new Date(fixedNow),
+    controlCenterCodexLoginManager: {
+      status: () => idleLogin,
+      async start() { return { ok: false }; },
+      async cancel() { return { ok: false }; },
+      markFinalized: () => idleLogin,
+      async dispose() { loginManagerDisposed = true; }
+    },
+    async controlCenterAiUpstreamFetch(url, options = {}) {
+      modelRequestCount += 1;
+      assert.equal(String(url), 'https://api.openai.com/v1/models');
+      assert.equal(options.redirect, 'error');
+      assert.equal(acceptedCredentials.has(String(options.headers.authorization).replace(/^Bearer /u, '')), true);
+      return new Response(JSON.stringify({
+        data: [
+          { id: 'gpt-5.6-sol', created: 2 },
+          { id: 'gpt-5.6-terra', created: 1 },
+          { id: 'embedding-browser', created: 3 }
+        ]
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    },
+    async startControlCenterResponsesAdapter(_options, adapterContext) {
+      adapterStartCount += 1;
+      for (const credential of acceptedCredentials) {
+        assert.doesNotMatch(JSON.stringify(adapterContext.env), new RegExp(credential));
+      }
+      return {
+        url: 'http://127.0.0.1:34569/agentic-human-review',
+        async close() { adapterClosed = true; }
+      };
+    }
+  });
+  testWorkspace.trackServer(started.server);
+  let browser = null;
+  let flowCompleted = false;
+  try {
+    browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const consoleErrors = [];
+    let apiKeyRequest = null;
+    page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname === '/api/settings/ai-setup/key') {
+        apiKeyRequest = { url: request.url(), headers: request.headers(), body: request.postData() };
+      }
+    });
+    await page.route('**/api/settings/ai-setup/key', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      await route.abort('failed');
+    }, { times: 1 });
+
+    const paired = await issueControlCenterPairingUrl(started);
+    await page.goto(paired.url, { waitUntil: 'networkidle' });
+    await page.locator('[data-testid="tc-cc-home"]').waitFor();
+    assert.equal(new URL(page.url()).hash, '');
+    assert.doesNotMatch(page.url(), new RegExp(paired.token));
+
+    await page.getByRole('button', { name: /New review/ }).click();
+    const newReview = page.locator('[data-testid="tc-cc-new-review"]');
+    await newReview.waitFor();
+    const draftUrl = 'https://example.jp/preserved-ai-setup';
+    const draftPurpose = 'Keep this goal while connecting AI.';
+    await page.getByLabel('URL to review').fill(draftUrl);
+    await page.getByLabel('What do you want to make easier?').fill(draftPurpose);
+    await page.getByRole('radio', { name: 'Find improvements in more detail' }).check();
+    await page.getByRole('button', { name: 'Set up AI' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Set up AI' });
+    await dialog.waitFor();
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'ai-setup-title');
+    const workspaceBox = await page.locator('.workspace').boundingBox();
+    const dialogBox = await dialog.boundingBox();
+    assertCloseMetric(dialogBox.x + (dialogBox.width / 2), workspaceBox.x + (workspaceBox.width / 2), 2, 'AI setup dialog workspace center');
+    assert.doesNotMatch(await dialog.innerText(), /terminal|command|provider|endpoint|environment|file path/i);
+    const mockSetupPage = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await mockSetupPage.goto(`${controlCenterMockUrl}?screen=new&ai=setup-required&dialog=ai-setup`, { waitUntil: 'load' });
+    const productionRecommendation = dialog.locator('.ai-service-choice .recommended');
+    const mockRecommendation = mockSetupPage.locator('.ai-service-choice .recommend');
+    assert.equal(
+      await productionRecommendation.evaluate((element) => getComputedStyle(element).backgroundColor),
+      await mockRecommendation.evaluate((element) => getComputedStyle(element).backgroundColor)
+    );
+    assert.equal(
+      await productionRecommendation.evaluate((element) => getComputedStyle(element).paddingInlineStart),
+      await mockRecommendation.evaluate((element) => getComputedStyle(element).paddingInlineStart)
+    );
+    await mockSetupPage.close();
+
+    await dialog.getByText('Use another method', { exact: true }).click();
+    await dialog.getByRole('button', { name: /OpenAI/ }).click();
+    const keyInput = dialog.getByLabel('API key');
+    assert.equal(await keyInput.getAttribute('type'), 'password');
+    assert.equal(await keyInput.getAttribute('autocomplete'), 'off');
+    await keyInput.fill(apiCredentialValue);
+    await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
+    await dialog.getByText('Connected', { exact: true }).waitFor();
+    assert.match(await dialog.innerText(), /Connected[\s\S]*OpenAI/);
+    assert.equal(await dialog.locator('.inline-notice.danger').count(), 0);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+
+    assert.equal(modelRequestCount, 1);
+    assert.equal(adapterStartCount, 1);
+    assert.ok(apiKeyRequest);
+    assert.doesNotMatch(apiKeyRequest.url, new RegExp(apiCredentialValue));
+    assert.doesNotMatch(JSON.stringify(apiKeyRequest.headers), new RegExp(apiCredentialValue));
+    assert.match(apiKeyRequest.headers['content-type'], /^application\/octet-stream\b/u);
+    assert.equal(apiKeyRequest.body, apiCredentialValue);
+    assert.equal(await page.getByLabel('URL to review').inputValue(), draftUrl);
+    assert.equal(await page.getByLabel('What do you want to make easier?').inputValue(), draftPurpose);
+    assert.equal(await page.getByRole('radio', { name: 'Find improvements in more detail' }).isChecked(), true);
+    assert.equal(await page.getByRole('dialog', { name: 'Start this review?' }).count(), 0);
+    assert.equal(new URL(page.url()).searchParams.get('view'), 'new');
+    assert.equal(await page.getByRole('button', { name: 'Prepare review', exact: true }).isEnabled(), true);
+
+    const browserState = await page.evaluate(() => ({
+      url: window.location.href,
+      local: JSON.stringify(localStorage),
+      session: JSON.stringify(sessionStorage),
+      html: document.documentElement.innerHTML
+    }));
+    assert.doesNotMatch(JSON.stringify(browserState), new RegExp(apiCredentialValue));
+
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.locator('[data-testid="tc-cc-settings"]').waitFor();
+    const setupButton = page.getByRole('button', { name: 'Change connection', exact: true });
+    await setupButton.click();
+    await dialog.waitFor();
+    assert.match(await dialog.innerText(), /Connected[\s\S]*OpenAI/);
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden' });
+    assert.equal(await setupButton.evaluate((element) => element === document.activeElement), true);
+
+    await setupButton.click();
+    await dialog.getByRole('button', { name: 'Change API key', exact: true }).click();
+    await dialog.getByLabel('API key').fill(replacementCredentialValue);
+    await page.route('**/api/settings/ai-setup/intents', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      await route.abort('failed');
+    }, { times: 1 });
+    await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
+    await dialog.locator('.inline-notice.danger').waitFor();
+    assert.equal(await dialog.getByLabel('API key').count(), 1);
+    assert.equal(modelRequestCount, 1);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+
+    let observeLostReplacement;
+    let releaseLostReplacement;
+    const lostReplacementObserved = new Promise((resolve) => { observeLostReplacement = resolve; });
+    const lostReplacementGate = new Promise((resolve) => { releaseLostReplacement = resolve; });
+    await setupButton.click();
+    await dialog.getByRole('button', { name: 'Change API key', exact: true }).click();
+    await dialog.getByLabel('API key').fill(replacementCredentialValue);
+    await page.route('**/api/settings/ai-setup/key', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      observeLostReplacement();
+      await lostReplacementGate;
+      await route.abort('failed');
+    }, { times: 1 });
+    await dialog.getByRole('button', { name: 'Connect', exact: true }).click();
+    await lostReplacementObserved;
+
+    const competingPage = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const competingPair = await issueControlCenterPairingUrl(started);
+    await competingPage.goto(competingPair.url, { waitUntil: 'networkidle' });
+    await competingPage.getByRole('button', { name: 'Settings', exact: true }).click();
+    const competingDialog = competingPage.getByRole('dialog', { name: 'Set up AI' });
+    await competingPage.getByRole('button', { name: 'Change connection', exact: true }).click();
+    await competingDialog.getByRole('button', { name: 'Change API key', exact: true }).click();
+    await competingDialog.getByLabel('API key').fill(competingCredentialValue);
+    await competingDialog.getByRole('button', { name: 'Connect', exact: true }).click();
+    await competingDialog.waitFor({ state: 'hidden' });
+    releaseLostReplacement();
+    await dialog.getByText('Connected', { exact: true }).waitFor();
+    assert.equal(await dialog.isVisible(), true);
+    assert.equal(await dialog.locator('.inline-notice.danger').count(), 0);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await competingPage.close();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await setupButton.click();
+    await dialog.waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+    const closeButton = dialog.getByRole('button', { name: 'Close' });
+    const closeBox = await closeButton.boundingBox();
+    assert.ok(closeBox.width >= 44 && closeBox.height >= 44);
+    await closeButton.click();
+    assert.deepEqual(consoleErrors.filter((message) => !/Failed to load resource: net::ERR_FAILED/u.test(message)), []);
+    flowCompleted = true;
+  } finally {
+    if (browser) await browser.close();
+    await started.close();
+    if (flowCompleted) {
+      assert.equal(loginManagerDisposed, true);
+      assert.equal(adapterClosed, true);
+    }
+  }
+});
+
+test('paired review center completes repeated subscription polling with accessible responsive setup states', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-control-center-subscription-setup-browser-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
+  const providerResolution = resolveAgenticHumanReviewProvider({ providerId: 'codex-subscription-cli', context: {} });
+  assert.equal(providerResolution.ok, true);
+  const provider = providerResolution.provider;
+  let startedLogin = false;
+  let finalized = false;
+  let loginReady = false;
+  let statusReads = 0;
+  let loginAttempt = 0;
+  let loginPhase = 'idle';
+  let cancelAttempts = 0;
+  const loginState = (status, values = {}) => Object.freeze({
+    status,
+    operation_id: startedLogin ? 'browser-subscription-login' : null,
+    verification_url: null,
+    user_code: null,
+    message: 'Subscription sign-in test state.',
+    can_cancel: ['starting', 'waiting', 'checking'].includes(status),
+    raw_output_included: false,
+    technical_details_included: false,
+    ...values
+  });
+  const idleLogin = loginState('idle');
+  const loginManager = {
+    status() {
+      if (finalized) return loginState('complete');
+      if (!startedLogin) return idleLogin;
+      if (loginPhase === 'cancelled') return loginState('cancelled', { can_cancel: false });
+      statusReads += 1;
+      if (loginAttempt === 1) {
+        return loginState('waiting', {
+          verification_url: 'https://auth.openai.com/codex/device',
+          user_code: 'BROW-SER1'
+        });
+      }
+      if (statusReads <= 2) {
+        return loginState('waiting', {
+          verification_url: 'https://auth.openai.com/codex/device',
+          user_code: 'BROW-SER1'
+        });
+      }
+      if (statusReads === 3) return loginState('checking');
+      loginReady = true;
+      return loginState('connected', { can_cancel: false });
+    },
+    async start() {
+      startedLogin = true;
+      loginAttempt += 1;
+      loginPhase = 'active';
+      statusReads = 0;
+      return { ok: true, login: loginState('starting') };
+    },
+    async cancel() {
+      cancelAttempts += 1;
+      if (cancelAttempts === 1) {
+        loginPhase = 'cancelled';
+        return { ok: true, login: loginState('cancelled', { can_cancel: false }) };
+      }
+      return {
+        ok: false,
+        error: {
+          code: 'CONTROL_CENTER_CODEX_LOGIN_CANCEL_FAILED',
+          message: 'The deterministic browser cancellation failed.'
+        }
+      };
+    },
+    markFinalized() { finalized = true; return loginState('complete', { can_cancel: false }); },
+    async dispose() {}
+  };
+  const connection = {
+    id: 'codex-subscription',
+    display_name: 'Codex',
+    connection_type: 'subscription',
+    status: 'available',
+    status_message: 'Ready to use with your signed-in Codex account.',
+    adapter_id: 'codex-subscription-cli',
+    adapter_version: '1.0.0',
+    provider_id: provider.id,
+    transport: provider.transport,
+    execution_strategy: 'one-shot',
+    provider_effort_request_field: provider.effort_capability.native_effort_binding.request_field,
+    provider_capability_hash: agenticProviderCapabilityHash(provider),
+    executable_identity_hash: 'c'.repeat(64),
+    models: [{
+      id: 'gpt-5.6-sol',
+      display_name: 'GPT-5.6 Sol',
+      native_efforts: [
+        { id: 'low', display_name: 'Low' },
+        { id: 'medium', display_name: 'Medium' },
+        { id: 'high', display_name: 'High' },
+        { id: 'xhigh', display_name: 'Xhigh' },
+        { id: 'max', display_name: 'Max' }
+      ],
+      default_native_effort_id: 'medium'
+    }],
+    default_model_id: 'gpt-5.6-sol'
+  };
+  await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  const started = await startControlCenterServer({ port: 0, authorizationMode: 'paired' }, {
+    cwd,
+    now: () => new Date(fixedNow),
+    controlCenterCodexLoginManager: loginManager,
+    async discoverControlCenterAiConnections() {
+      return {
+        connections: loginReady ? [connection] : [],
+        selection: null,
+        boundary: { process_spawned: false, network_used: false, credential_values_read: false }
+      };
+    }
+  });
+  testWorkspace.trackServer(started.server);
+  let browser = null;
+  let releaseOldStatus;
+  try {
+    browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    let observeOldStatus;
+    const oldStatusObserved = new Promise((resolve) => { observeOldStatus = resolve; });
+    const oldStatusGate = new Promise((resolve) => { releaseOldStatus = resolve; });
+    await page.route('**/api/settings/ai-setup/subscription/status', async (route) => {
+      observeOldStatus();
+      await oldStatusGate;
+      try {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ status: 'ok', data: { subscription_login: idleLogin } })
+        });
+      } catch (error) {
+        if (!/Route is already handled/u.test(String(error?.message))) throw error;
+      }
+    }, { times: 1 });
+    await page.route('**/api/settings/ai-setup/subscription/start', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      await route.abort('failed');
+    }, { times: 1 });
+    const paired = await issueControlCenterPairingUrl(started);
+    await page.goto(paired.url, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New review' }).click();
+    await page.getByRole('button', { name: 'Set up AI' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Set up AI' });
+    await oldStatusObserved;
+    await dialog.getByRole('button', { name: /Codex/ }).click();
+    releaseOldStatus();
+
+    const signInLink = dialog.getByRole('link', { name: /Open sign-in page/ });
+    await signInLink.waitFor({ timeout: 10_000 });
+    await signInLink.focus();
+    assert.equal(await signInLink.evaluate((element) => element === document.activeElement), true);
+    await page.route('**/api/settings/ai-setup/subscription/cancel', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      await route.abort('failed');
+    }, { times: 1 });
+    await dialog.getByRole('button', { name: 'Stop sign-in', exact: true }).click();
+    await dialog.getByText('Sign-in was cancelled', { exact: true }).waitFor();
+    assert.equal(await dialog.locator('.inline-notice.danger').count(), 0);
+
+    await dialog.getByRole('button', { name: 'Try again', exact: true }).click();
+    await dialog.getByRole('link', { name: /Open sign-in page/ }).waitFor({ timeout: 10_000 });
+    let observeFirstFinish;
+    let releaseFirstFinish;
+    let observeSecondFinish;
+    let releaseSecondFinish;
+    const firstFinishObserved = new Promise((resolve) => { observeFirstFinish = resolve; });
+    const firstFinishGate = new Promise((resolve) => { releaseFirstFinish = resolve; });
+    const secondFinishObserved = new Promise((resolve) => { observeSecondFinish = resolve; });
+    const secondFinishGate = new Promise((resolve) => { releaseSecondFinish = resolve; });
+    await page.route('**/api/settings/ai-setup/subscription/finish', async (route) => {
+      observeFirstFinish();
+      await firstFinishGate;
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      await route.fulfill({ response });
+    }, { times: 1 });
+    await dialog.getByRole('button', { name: 'Stop sign-in', exact: true }).click();
+    await dialog.getByText('Checking sign-in...', { exact: true }).waitFor({ timeout: 10_000 });
+    const progressMark = dialog.locator('.ai-setup-progress span');
+    assert.equal(await progressMark.evaluate((element) => getComputedStyle(element).animationName), 'none');
+    await page.waitForFunction(() => document.activeElement?.id === 'ai-setup-title');
+
+    const secondPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const secondPair = await issueControlCenterPairingUrl(started);
+    await secondPage.route('**/api/settings/ai-setup/subscription/finish', async (route) => {
+      observeSecondFinish();
+      await secondFinishGate;
+      const response = await route.fetch();
+      assert.equal(response.status(), 409);
+      assert.match(JSON.stringify(await response.json()), /CONTROL_CENTER_CODEX_LOGIN_NOT_READY/u);
+      await route.fulfill({ response });
+    }, { times: 1 });
+    await secondPage.goto(secondPair.url, { waitUntil: 'networkidle' });
+    await secondPage.getByRole('button', { name: 'New review' }).click();
+    await secondPage.getByRole('button', { name: 'Set up AI' }).click();
+    const secondDialog = secondPage.getByRole('dialog', { name: 'Set up AI' });
+    await Promise.all([firstFinishObserved, secondFinishObserved]);
+    releaseFirstFinish();
+    await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
+    releaseSecondFinish();
+    try {
+      await secondDialog.waitFor({ state: 'hidden', timeout: 10_000 });
+    } catch (caught) {
+      const safeDialogText = (await secondDialog.innerText()).replace(/\s+/gu, ' ').trim();
+      throw new Error(`The competing sign-in dialog stayed open: ${safeDialogText}`, { cause: caught });
+    }
+    assert.equal(await secondPage.locator('.inline-notice.danger:visible').count(), 0);
+    await secondPage.close();
+    assert.ok(statusReads >= 4);
+    assert.equal(cancelAttempts, 2);
+
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    const changeConnection = page.getByRole('button', { name: 'Change connection', exact: true });
+    await changeConnection.click();
+    await dialog.waitFor();
+    assert.match(await dialog.innerText(), /Connected[\s\S]*Codex/);
+    assert.equal(await dialog.getByRole('button', { name: 'Disconnect', exact: true }).count(), 0);
+    assert.equal(await dialog.getByRole('button', { name: /Codex/ }).count(), 0);
+    assert.doesNotMatch(await dialog.innerText(), /AI setup is not available right now/);
+
+    await page.setViewportSize({ width: 320, height: 700 });
+    const narrowOverflow = await page.evaluate(() => ({
+      amount: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      elements: [...document.querySelectorAll('body *')].map((element) => {
+        const box = element.getBoundingClientRect();
+        return { tag: element.tagName, className: element.className, left: box.left, right: box.right, width: box.width };
+      }).filter((item) => item.left < -1 || item.right > window.innerWidth + 1).slice(0, 12)
+    }));
+    assert.equal(narrowOverflow.amount, 0, JSON.stringify(narrowOverflow));
+    await page.evaluate(() => { document.documentElement.dir = 'rtl'; });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+    await page.setViewportSize({ width: 640, height: 900 });
+    await page.evaluate(() => { document.documentElement.style.zoom = '2'; });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 1);
+  } finally {
+    releaseOldStatus?.();
+    if (browser) await browser.close();
+    await started.close();
+  }
+});
+
+test('paired review center hard reload gives a clear reopen path instead of a futile retry', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-control-center-session-reopen-browser-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
+  await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  const started = await startControlCenterServer({ port: 0, authorizationMode: 'paired' }, { cwd });
+  testWorkspace.trackServer(started.server);
+  let browser = null;
+  let releaseStalledPairing;
+  try {
+    browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const paired = await issueControlCenterPairingUrl(started);
+    await page.goto(paired.url, { waitUntil: 'networkidle' });
+    await page.locator('[data-testid="tc-cc-home"]').waitFor();
+    await page.reload({ waitUntil: 'networkidle' });
+    const reopenHeading = ['Open the', 'Control', 'Center again'].join(' ');
+    await page.getByRole('heading', { name: reopenHeading, exact: true }).waitFor();
+    assert.match(await page.locator('.workspace').innerText(), /private browser session has ended/i);
+    assert.equal(await page.getByRole('button', { name: 'Try again', exact: true }).count(), 0);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+
+    const stalledPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const stalledPair = await issueControlCenterPairingUrl(started);
+    let observeStalledPairing;
+    const stalledPairingObserved = new Promise((resolve) => { observeStalledPairing = resolve; });
+    const stalledPairingGate = new Promise((resolve) => { releaseStalledPairing = resolve; });
+    await stalledPage.route('**/api/pairing/exchange', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      observeStalledPairing();
+      await stalledPairingGate;
+      try {
+        await route.abort('failed');
+      } catch (error) {
+        if (!/Route is already handled|Target page, context or browser has been closed/u.test(String(error?.message))) throw error;
+      }
+    }, { times: 1 });
+    await stalledPage.goto(stalledPair.url, { waitUntil: 'domcontentloaded' });
+    await stalledPairingObserved;
+    await stalledPage.getByRole('heading', { name: reopenHeading, exact: true }).waitFor({ timeout: 20_000 });
+    assert.equal(await stalledPage.getByRole('button', { name: 'Try again', exact: true }).count(), 0);
+    assert.equal(await stalledPage.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+    releaseStalledPairing();
+  } finally {
+    releaseStalledPairing?.();
+    if (browser) await browser.close();
+    await started.close();
   }
 });
 
@@ -608,9 +1236,166 @@ test('review workspace ignores a late status response from the previous route', 
     await page.waitForTimeout(100);
     assert.equal(await page.locator('[data-page-heading]').innerText(), 'NEW REVIEW');
     assert.equal(new URL(page.url()).searchParams.get('item'), newId);
-    assert.equal(consoleErrors.length, 0, JSON.stringify(consoleErrors));
+    const unexpectedConsoleErrors = consoleErrors.filter((message) => !/Failed to load resource: net::ERR_FAILED/u.test(message));
+    assert.equal(unexpectedConsoleErrors.length, 0, JSON.stringify(unexpectedConsoleErrors));
   } finally {
     releaseOldResponse?.();
+    if (browser) await browser.close();
+    await closeServer(started.server);
+  }
+});
+
+test('review center bounds a stalled local read without relying on browser abort behavior', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-control-center-response-bound-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
+  await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  const started = await startControlCenterServer({ port: 0 }, controlCenterReviewContext(cwd));
+  testWorkspace.trackServer(started.server);
+  let browser = null;
+  let releaseDashboard;
+  let observeDashboard;
+  const dashboardGate = new Promise((resolve) => { releaseDashboard = resolve; });
+  const dashboardObserved = new Promise((resolve) => { observeDashboard = resolve; });
+  try {
+    browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.route('**/api/dashboard', async (route) => {
+      observeDashboard();
+      await dashboardGate;
+      try {
+        await route.abort('failed');
+      } catch (error) {
+        if (!/Route is already handled|Target page, context or browser has been closed/u.test(String(error?.message))) throw error;
+      }
+    }, { times: 1 });
+
+    await page.goto(started.url, { waitUntil: 'domcontentloaded' });
+    await dashboardObserved;
+    await page.getByRole('heading', { name: 'Your reviews could not be loaded', exact: true }).waitFor({ timeout: 20_000 });
+    assert.equal(await page.getByRole('button', { name: 'Try again', exact: true }).isEnabled(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+    releaseDashboard();
+  } finally {
+    releaseDashboard?.();
+    if (browser) await browser.close();
+    await closeServer(started.server);
+  }
+});
+
+test('review center keeps the chosen page when prepare and repeat responses finish late', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-control-center-late-navigation-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
+  await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  const started = await startControlCenterServer({ port: 0 }, controlCenterReviewContext(cwd));
+  testWorkspace.trackServer(started.server);
+  let browser = null;
+  let releasePrepare;
+  let releaseRepeat;
+  try {
+    browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.goto(`${started.url}?view=new`, { waitUntil: 'networkidle' });
+
+    let observePrepare;
+    const prepareObserved = new Promise((resolve) => { observePrepare = resolve; });
+    const prepareGate = new Promise((resolve) => { releasePrepare = resolve; });
+    await page.route('**/api/agentic-review/prepare', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      observePrepare();
+      await prepareGate;
+      try {
+        await route.fulfill({ response });
+      } catch (error) {
+        if (!/Route is already handled|Target page, context or browser has been closed/u.test(String(error?.message))) throw error;
+      }
+    }, { times: 1 });
+    await page.getByLabel('URL to review').fill('https://example.jp/late-prepare');
+    await page.getByLabel('What do you want to make easier?').fill('Stay on the page I choose while preparation finishes.');
+    const continueWithoutAi = page.getByLabel('Continue without AI');
+    if (await continueWithoutAi.count()) await continueWithoutAi.check();
+    await page.getByRole('button', { name: 'Prepare review', exact: true }).click();
+    await prepareObserved;
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor();
+    releasePrepare();
+    await page.waitForTimeout(250);
+    assert.equal(new URL(page.url()).searchParams.get('page'), 'settings');
+    assert.equal(await page.getByRole('heading', { name: 'Settings', exact: true }).count(), 1);
+
+    const parentId = 'control-center-agentic-review-late-repeat-parent';
+    const childId = 'control-center-agentic-review-late-repeat-child';
+    const operation = (id, state = 'completed') => ({
+      schema_version: '2.0.0',
+      type: 'control_center_agentic_review',
+      id,
+      state,
+      stage: state === 'completed' ? 'complete' : 'prepare',
+      created_at: fixedNow,
+      updated_at: fixedNow,
+      completed_at: state === 'completed' ? fixedNow : null,
+      target: 'LATE RESPONSE REVIEW',
+      purpose: 'Keep explicit navigation authoritative.',
+      review_effort: 'standard',
+      ai_suggestions: false,
+      service: { name: 'Local review', external_ai: false },
+      decisions: [],
+      result: state === 'completed' ? { findings: [] } : null
+    });
+    await page.route('**/api/agentic-review/status?*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          data: { control_center_agentic_review: { operation: operation(parentId) } },
+          warnings: [],
+          errors: [],
+          artifacts: []
+        })
+      });
+    });
+    let observeRepeat;
+    const repeatObserved = new Promise((resolve) => { observeRepeat = resolve; });
+    const repeatGate = new Promise((resolve) => { releaseRepeat = resolve; });
+    await page.route('**/api/agentic-review/repeat', async (route) => {
+      observeRepeat();
+      await repeatGate;
+      try {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            status: 'ok',
+            data: { control_center_agentic_review: { operation: operation(childId, 'preparing') } },
+            warnings: [],
+            errors: [],
+            artifacts: []
+          })
+        });
+      } catch (error) {
+        if (!/Route is already handled|Target page, context or browser has been closed/u.test(String(error?.message))) throw error;
+      }
+    }, { times: 1 });
+
+    await page.goto(`${started.url}?view=work&item=${parentId}`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('heading', { name: 'LATE RESPONSE REVIEW', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Review in more detail', exact: true }).click();
+    await repeatObserved;
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor();
+    releaseRepeat();
+    await page.waitForTimeout(250);
+    assert.equal(new URL(page.url()).searchParams.get('page'), 'settings');
+    assert.equal(new URL(page.url()).searchParams.get('item'), null);
+    assert.equal(await page.getByRole('heading', { name: 'Settings', exact: true }).count(), 1);
+  } finally {
+    releasePrepare?.();
+    releaseRepeat?.();
     if (browser) await browser.close();
     await closeServer(started.server);
   }
@@ -663,14 +1448,80 @@ test('review center preserves an AI choice draft when another settings page wins
     await conflict.getByRole('button', { name: 'Load latest choices', exact: true }).click();
     await conflict.waitFor({ state: 'detached' });
     assert.equal(await first.getByLabel('AI processing level').locator('option:checked').innerText(), 'Low');
-    const savedDashboard = await first.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
+    let savedDashboard = await first.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
     assert.equal(savedDashboard.ai_connections.selection.effort_name, 'Low');
+
+    await first.getByLabel('AI processing level').selectOption({ label: 'High' });
+    await first.route('**/api/settings/ai-connections/selection', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      await route.abort('failed');
+    }, { times: 1 });
+    await first.getByRole('button', { name: 'Use this AI', exact: true }).click();
+    await first.getByText('AI choice updated.', { exact: true }).waitFor();
+    savedDashboard = await first.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
+    assert.equal(savedDashboard.ai_connections.selection.effort_name, 'High');
+
+    await first.getByLabel('AI processing level').selectOption({ label: 'Low' });
+    let releaseLostSelection;
+    let observeLostSelection;
+    const lostSelectionGate = new Promise((resolve) => { releaseLostSelection = resolve; });
+    const lostSelectionObserved = new Promise((resolve) => { observeLostSelection = resolve; });
+    await first.route('**/api/settings/ai-connections/selection', async (route) => {
+      observeLostSelection();
+      await lostSelectionGate;
+      await route.abort('failed');
+    }, { times: 1 });
+    await first.getByRole('button', { name: 'Use this AI', exact: true }).click();
+    await lostSelectionObserved;
+
+    await second.reload({ waitUntil: 'networkidle' });
+    await second.locator('[data-testid="tc-cc-settings"]').waitFor();
+    await second.getByRole('button', { name: 'Change', exact: true }).click();
+    await second.getByText('AI details', { exact: true }).click();
+    await second.getByLabel('AI processing level').selectOption({ label: 'Medium · Recommended' });
+    await second.getByRole('button', { name: 'Use this AI', exact: true }).click();
+    await second.getByText('AI choice updated.', { exact: true }).waitFor();
+    releaseLostSelection();
+
+    const lostSelectionWarning = first.locator('.inline-notice.warning').filter({ hasText: 'AI settings could not be updated' });
+    try {
+      await lostSelectionWarning.waitFor();
+    } catch (caught) {
+      const safeSettingsText = (await first.locator('[data-testid="tc-cc-settings"]').innerText()).replace(/\s+/gu, ' ').trim();
+      throw new Error(`The stale AI choice did not reconcile visibly: ${safeSettingsText}`, { cause: caught });
+    }
+    assert.equal(await first.getByText('AI choice updated.', { exact: true }).count(), 0);
+    assert.equal(await first.getByLabel('AI processing level').locator('option:checked').innerText(), 'Low');
+    savedDashboard = await first.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
+    assert.equal(savedDashboard.ai_connections.selection.effort_name, 'Medium');
+
+    await lostSelectionWarning.getByRole('button', { name: 'Load latest choices', exact: true }).click();
+    await lostSelectionWarning.waitFor({ state: 'detached' });
+    assert.match(await first.getByLabel('AI processing level').locator('option:checked').innerText(), /^Medium/u);
+
+    const refreshRevision = savedDashboard.ai_connections.revision;
+    let observeLostRefresh;
+    const lostRefreshObserved = new Promise((resolve) => { observeLostRefresh = resolve; });
+    await first.route('**/api/settings/ai-connections/refresh', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      observeLostRefresh();
+      await route.abort('failed');
+    }, { times: 1 });
+    await first.getByRole('button', { name: 'Update availability', exact: true }).click();
+    await lostRefreshObserved;
+    await first.waitForFunction(() => document.querySelector('.ai-connection-setting')?.getAttribute('aria-busy') === 'false');
+    assert.equal(await first.locator('.ai-connection-setting > .inline-notice.warning').count(), 0);
+    savedDashboard = await first.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
+    assert.ok(savedDashboard.ai_connections.revision > refreshRevision);
 
     await first.setViewportSize({ width: 390, height: 844 });
     assert.equal(await first.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
     const compactHeights = await first.locator('.primary-action.compact, .secondary-action.compact').evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().height));
     assert.equal(compactHeights.every((height) => height >= 44), true);
-    assert.equal(consoleErrors.length, 0, JSON.stringify(consoleErrors));
+    const unexpectedConsoleErrors = consoleErrors.filter((message) => !/Failed to load resource: net::ERR_FAILED/u.test(message));
+    assert.equal(unexpectedConsoleErrors.length, 0, JSON.stringify(unexpectedConsoleErrors));
   } finally {
     if (browser) await browser.close();
     await closeServer(started.server);
@@ -930,7 +1781,7 @@ test('review center handles every intake type, no-AI continuation, recovery, key
     await fileInput.setInputFiles({ name: 'private-empty-results.json', mimeType: 'application/json', buffer: Buffer.from('{"suites":[]}') });
     await page.getByRole('button', { name: 'Organize test result' }).click();
     await page.getByText('No usable automated-check result was found').waitFor();
-    assert.equal(await newReview.locator('.inline-notice.warning').count(), 1);
+    assert.equal(await newReview.locator('.inline-notice.warning').filter({ hasText: 'No usable automated-check result was found' }).count(), 1);
     await page.getByRole('button', { name: 'Open result', exact: true }).click();
     await page.getByText('No usable automated-check result was found').waitFor();
     await page.getByRole('button', { name: 'Back', exact: true }).click();
@@ -1035,7 +1886,7 @@ test('review center handles every intake type, no-AI continuation, recovery, key
     await page.locator('#review-url').fill('https://example.jp/rtl');
     await page.locator('#review-purpose').fill('توضيح الخطوة التالية للزائر');
     await page.locator('[data-testid="tc-cc-new-review"] button[type="submit"]').click();
-    const rtlDialog = page.locator('dialog.send-dialog');
+    const rtlDialog = page.locator('dialog[aria-labelledby="send-dialog-title"]');
     const rtlPreparationError = page.locator('[data-testid="tc-cc-new-review"] .inline-notice.danger');
     const preparationOutcome = await Promise.race([
       rtlDialog.waitFor({ state: 'visible', timeout: 70_000 }).then(() => 'dialog'),
@@ -2240,4 +3091,21 @@ function closeServer(server) {
       }
     });
   });
+}
+
+async function issueControlCenterPairingUrl(started) {
+  const origin = started.url.slice(0, -1);
+  const response = await fetch(new URL('/api/pairing/issue', started.url), {
+    method: 'POST',
+    headers: {
+      Origin: origin,
+      'X-Trace-Cue-Management-Token': started.managementCapability
+    }
+  });
+  if (response.status !== 201) assert.fail(`Pairing issuance failed: ${response.status} ${await response.text()}`);
+  const body = await response.json();
+  return {
+    token: body.pairing_token,
+    url: `${started.url}#pair=${encodeURIComponent(body.pairing_token)}`
+  };
 }

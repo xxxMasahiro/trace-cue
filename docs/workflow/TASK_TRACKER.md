@@ -48,7 +48,7 @@ findings, recheck result, or completion state.
 
 Playwright Test regression evidence integration is implemented as a disabled-by-default, advisory-only CLI/API/Control Center surface. TraceCue can import workspace-confined Playwright Test artifacts, project normalized results into non-engineer review cards plus standard/deep/xhigh review inputs, compare a current result with a normalized baseline, plan and explicitly run local Playwright Test from the CLI with plan-hash gating, fetch existing GitHub Actions artifacts through read-only `gh run list/view/download` commands with exact run/artifact selection, and use approved external-CI fetch settings to resolve the latest matching successful run before explicit download. The Control Center now includes Regression and Settings surfaces for mode selection, local import, compact review material, approved external-CI settings, and external CI artifact fetch, but it does not expose local browser execution. Results remain local and do not mutate TraceCue deterministic findings, Agentic Human Review proof, release gates, product gates, MCP profiles, or remote CI state.
 
-Control Center agentic review execution is complete: persistent operation schema/API, browser review plus AHR propose/plan/run composition, concrete send disclosure, hashed one-time nonce, duplicate-start rejection, restart-safe `dispatch_unknown`, normalized pathless results, per-finding decisions, and new-operation recheck/deeper are implemented. Credentials remain environment-only; automatic retry, generic provider controls, raw responses, shell, MCP execution, cleanup, CI mutation, deterministic finding mutation, and gate mutation remain excluded.
+Control Center agentic review execution is complete: persistent operation schema/API, browser review plus AHR propose/plan/run composition, concrete send disclosure, hashed one-time nonce, duplicate-start rejection, restart-safe `dispatch_unknown`, normalized pathless results, per-finding decisions, and new-operation recheck/deeper are implemented. Legacy preconfigured API credentials remain environment-only; the paired fixed-catalog Control Center setup added later uses only its bounded server-owned session vault. Automatic retry, generic provider controls, raw responses, shell, MCP execution, cleanup, CI mutation, deterministic finding mutation, and gate mutation remain excluded.
 
 The durable autonomous workflow protocol now treats `A. Pre-Implementation
 Proposal` and `B. Implementation Plan` as mandatory pre-implementation
@@ -617,3 +617,37 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
   safety boundary.
 - [x] Commit, push, pass exact GitHub CI, confirm local/remote equality and a
   clean worktree, then refresh exact-HEAD authority evidence.
+
+## Control Center AI Setup
+
+- [x] Complete Gate E/F/A/B proposal and implementation-plan review with
+  independent UI/accessibility, security, and runtime/concurrency reviewers.
+- [x] Archive the complete Phase 181 production mock without deleting prior
+  Phase 155, 168, or 176 archives.
+- [x] Synchronize Phase 182-186 product, workflow, security, verification,
+  design-system, schema, catalog, and package authorities.
+- [x] Add launcher-owned one-time pairing, session-specific CSRF, paired
+  mutation authorization, direct-serve read-only behavior, and protocol drift
+  rejection.
+- [x] Add the bounded session credential vault, two-step secret submission,
+  fixed provider verification/model catalog, replacement, disconnect, and
+  restart downgrade without secret persistence or environment mutation.
+- [x] Add the audited Codex device-login lifecycle with fixed contract,
+  incremental safe output parsing, cancellation, status reconciliation, and no
+  raw authentication output.
+- [x] Bind profile revision, configuration identity, credential generation, and
+  runtime instance through preparation and dispatch without fallback.
+- [x] Add one shared accessible setup dialog to New Review and Settings while
+  preserving the mounted review draft and independent TraceCue/provider effort.
+- [x] Make repeat admission exact-once across local response loss, concurrent
+  processes, active/history storage, restart, and capacity without retaining the
+  raw idempotency key or retrying uncertain provider execution.
+- [x] Reconcile settings, review start/cancel, API setup, and concurrent Codex
+  completion from authoritative state with bounded response waits and
+  mutation-priority status reads.
+- [x] Archive the pre-alignment Phase 187 mock, regenerate all active mock PNGs,
+  and match the React setup and Settings surfaces at desktop, mobile, RTL, and
+  200% zoom without overflow.
+- [x] Update the active production mock and PNG assets, then pass focused,
+  aggregate, package, browser, release, product, post-review, CI, Git sync, and
+  exact-HEAD authority gates.

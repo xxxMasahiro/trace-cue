@@ -1401,12 +1401,23 @@ test('launcher uses packaged-style assets, injected opener, and reuses one healt
   });
   assert.equal(second.status, 'ok');
   assert.equal(second.data.control_center_launch.reused_existing_server, true);
-  assert.deepEqual(secondUrls, [firstUrl]);
+  assert.equal(secondUrls.length, 1);
+  const firstBrowserUrl = new URL(firstUrl);
+  const secondBrowserUrl = new URL(secondUrls[0]);
+  assert.equal(firstBrowserUrl.origin, secondBrowserUrl.origin);
+  assert.equal(firstBrowserUrl.pathname, secondBrowserUrl.pathname);
+  assert.match(firstBrowserUrl.hash, /^#pair=[A-Za-z0-9_-]{43}$/u);
+  assert.match(secondBrowserUrl.hash, /^#pair=[A-Za-z0-9_-]{43}$/u);
+  assert.notEqual(firstBrowserUrl.hash, secondBrowserUrl.hash);
+  const publicReceipt = await readFile(path.join(cwd, '.browser-debug', 'control-center-runtime', 'server.json'), 'utf8');
+  assert.doesNotMatch(publicReceipt, /pair=|management|capability/iu);
   controller.abort();
   const firstResult = await first;
+  assert.doesNotMatch(firstResult.data.control_center_launch.url, /#/u);
   assert.equal(firstResult.data.control_center_launch.shell_used, false);
   assert.equal(firstResult.data.control_center_launch.command_input_accepted, false);
   await assert.rejects(readFile(path.join(cwd, '.browser-debug', 'control-center-runtime', 'server.json')));
+  await assert.rejects(readFile(path.join(cwd, '.browser-debug', 'control-center-runtime', 'management.json')));
 });
 
 test('launcher refuses to reuse a live server with different screen assets', async () => {

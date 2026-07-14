@@ -924,3 +924,97 @@ from dashboard reads. The downloaded proof container is parsed with explicit
 entry, compressed-size, expanded-size, total-size, duplicate-name, path,
 encryption, link, and CRC limits before the single expected JSON proof is
 accepted.
+
+## Control Center AI Setup Verification
+
+Pairing coverage verifies one-time issuance and exchange, replay rejection,
+separate session and CSRF values, session expiry, wrong-Origin and unpaired
+dashboard refusal, and omission of management capabilities from public server
+metadata. Browser coverage verifies that the fragment token is removed before
+normal use and that a hard reload gives a clear reopen path instead of a futile
+retry.
+
+Dedicated API credential tests cover intent replay, wrong content type and
+encoding, invalid UTF-8, declared oversize, catalog and retention drift,
+generation and total-byte reservation, staged replace, disconnect, shutdown,
+and adapter disposal. Separate lease tests prove that idle expiry refuses new
+work while an acquired immutable lease finishes, and that absolute expiry
+aborts an acquired provider transport and prevents every later provider call.
+Fake transport tests cover exact fixed HTTPS model discovery, 401 and 429
+refusal, non-JSON output, model catalog intersection, no retry, no fallback, no
+review-evidence transfer, and secret-sentinel absence. They never use a real
+credential or provider.
+
+Subscription setup tests use only a fake fixed-process adapter and cover the
+supported fixed argv and `shell: false`, bounded separate stdout/stderr UTF-8
+parsing, one-operation ownership, bounded cancel with TERM/KILL, status
+reconciliation, owner-only locks, live orphan protection, and fail-closed
+pending child binding. Lock tests additionally cover version 1.1 state-machine
+validation, same-boot pending refusal, same-boot `not_started` recovery, legacy
+ambiguity, PID/start-time reuse across a boot boundary, and safe prior-boot
+replacement without exposing boot identity.
+Server integration proves that switching from a session API connection to
+Codex retires the old adapter only after the persistent selection commit. API
+promotion tests also prove that an expiry between persistent record write and
+runtime commit removes the candidate record, closes the candidate adapter, and
+either restores the exact seeded previous record and projection or leaves no
+projection when no previous record existed. Browser coverage verifies pairing
+before application data, New Review draft retention, the shared Settings
+dialog, no automatic review
+start, response-loss reconciliation, repeated subscription polling, focus and
+Escape, 44px targets, 320/390px and desktop layouts, 200% zoom, RTL, reduced
+motion, translation parity, and no horizontal overflow.
+
+Repeat-review tests require a canonical 32-byte base64url key, prove concurrent
+same-process and cross-process admission returns one child operation and starts
+one review, and prove sequential, historical, restart, and capacity-bound
+replays return that operation without new work. Changed mode or effective AI
+selection for the same key returns `409 Conflict`; different keys create
+different children; persistent and public output contain only key and request
+digests. A deterministic store adapter also hides the committed child during
+the first read and forces the admission lock to time out; the post-timeout
+lookup must return that child without scheduling background work again.
+API-client tests reject empty or malformed successful JSON without an error
+envelope and prove the same key remains eligible for reconciliation.
+Browser tests replace a successful repeat response after server commit with
+truncated JSON and verify that the one safe retry returns the same child. They
+separately lose
+ordinary settings-save and repeated-review start responses, replace an API
+choice from another tab while the first response is lost, and complete Codex
+sign-in concurrently in two tabs; every flow reloads authoritative state rather
+than claiming the initiating tab's stale intent succeeded.
+
+The cancellation response-loss flow deterministically completes the server
+mutation and then withholds the browser response beyond the centralized local
+response bound. It must reach the stored cancelled state without retrying the
+mutation, without a false read warning, and without periodic polling replacing
+the post-action reconciliation. The combined review journey is also exercised
+concurrently during focused stress to expose response and polling races without
+calling a live provider.
+
+API-client timeout tests prove the AI connection bound exceeds the server model
+probe bound, rejects independently of fetch settlement, aborts the request, and
+releases the encoded key body through `finally`. Browser coverage holds an
+initial dashboard route open beyond the ordinary deadline and requires a usable
+plain-language retry state without relying on route abort. Separate delayed
+prepare and repeat responses complete after the user opens Settings and must not
+change the Settings route; this proves page cleanup, abortable preparation
+delay/status reads, and post-await generation checks.
+
+The paired-session browser flow completes a real one-time exchange on the server
+and withholds only its response beyond the deadline. The page must show the
+reopen-required state with no Try again action. API replacement coverage also
+loses an intent response while the prior API connection remains unchanged and
+requires the key form plus an error; the old connection cannot be mistaken for
+the requested replacement.
+
+Session-runtime review projection tests require
+`provider_credential_source=control_center_session`, false provider
+environment-only flags, and a true internal-adapter environment-only flag. The
+schema permits only the four declared source labels and requires the three
+unambiguous credential-boundary fields without exposing credential values.
+
+Visual verification compares the active production mock and built Control
+Center for setup heading size, plain recommendation text, compact AI status,
+and Settings AI-control width. Desktop, 320/390px mobile, RTL, and 200% zoom
+assertions reject clipping, overlap, and horizontal overflow.

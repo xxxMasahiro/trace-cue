@@ -325,7 +325,7 @@ test('control-center server keeps dashboard GET-only while exposing bounded loca
     assert.equal(health.headers.get('cache-control'), 'no-store');
     const healthBody = await health.json();
     assert.equal(healthBody.read_only, true);
-    assert.equal(healthBody.protocol_version, '1.0.0');
+    assert.equal(healthBody.protocol_version, '2.0.0');
     assert.equal(typeof healthBody.package_version, 'string');
     assert.match(healthBody.asset_fingerprint, /^sha256:[a-f0-9]{64}$/);
 

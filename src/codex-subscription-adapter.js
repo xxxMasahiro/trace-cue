@@ -336,6 +336,10 @@ async function resolveCodexExecutable(context) {
   return probeFailure('CONTROL_CENTER_CODEX_NOT_FOUND', 'Codex was not found in a safe local installation.');
 }
 
+export async function resolveCodexSubscriptionExecutable(context = {}) {
+  return resolveCodexExecutable(context);
+}
+
 async function resolveCandidate(candidate, context) {
   let handle = null;
   let keepHandle = false;
@@ -610,6 +614,10 @@ async function verifyPinnedExecutable(executable) {
   } catch {
     return false;
   }
+}
+
+export async function verifyCodexSubscriptionExecutable(executable) {
+  return verifyPinnedExecutable(executable);
 }
 
 async function trustedSystemExecutable(file) {

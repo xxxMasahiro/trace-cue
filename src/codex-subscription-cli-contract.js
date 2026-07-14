@@ -100,6 +100,11 @@ export const CODEX_SUBSCRIPTION_CLI_CONTRACT = Object.freeze({
   package_name: '@openai/codex',
   versions: Object.freeze({
     '0.144.1': Object.freeze({
+      device_login: Object.freeze({
+        argv: Object.freeze(['login', '--device-auth']),
+        verification_url: 'https://auth.openai.com/codex/device',
+        user_code_pattern: '^[A-Z0-9]{4,8}-[A-Z0-9]{4,8}$'
+      }),
       feature_catalog: Object.freeze(featureCatalog01441),
       platforms: Object.freeze({
         arm64: Object.freeze({

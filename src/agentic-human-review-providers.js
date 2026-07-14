@@ -153,6 +153,7 @@ export const AGENTIC_HUMAN_REVIEW_PROVIDERS = Object.freeze([
         deep: 'high',
         xhigh: 'high'
       }),
+      dynamic_catalog_authoritative: true,
       unsupported_behavior: 'record_not_supported_and_require_tracecue_contract_validation'
     }),
     structured_output_contract: Object.freeze({

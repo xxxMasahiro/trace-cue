@@ -22,10 +22,17 @@ import { runControlCenterSetPreferences } from './control-center-preferences.js'
 import { runControlCenterSaveSettings } from './control-center-settings.js';
 import { buildControlCenterAiReadiness } from './control-center-ai-readiness.js';
 import {
+  CONTROL_CENTER_AI_REFRESH_CONFIRM,
   readControlCenterAiConnections,
   runControlCenterAiConnectionsRefresh,
   runControlCenterAiSelectionSave
 } from './control-center-ai-connection-actions.js';
+import {
+  CONTROL_CENTER_AI_SETUP_SCHEMA_VERSION,
+  CONTROL_CENTER_AI_SECRET_SUBMISSION_HEADER,
+  CONTROL_CENTER_AI_SECRET_TRANSPORT_LIMITS,
+  createControlCenterAiSetupRuntime
+} from './control-center-ai-setup-runtime.js';
 import {
   completeControlCenterIntake,
   getControlCenterIntakeResult,
@@ -49,6 +56,12 @@ import {
 import { isAllowedMcpHttpHost, isLoopbackHost } from './mcp-transport-policy.js';
 import { PRODUCT_IDENTITY } from './product-identity.js';
 import { readStableBoundedFileHandle } from './safe-local-store.js';
+import {
+  CONTROL_CENTER_CSRF_HEADER,
+  CONTROL_CENTER_MANAGEMENT_HEADER,
+  CONTROL_CENTER_SESSION_HEADER,
+  createControlCenterPairingAuthority
+} from './control-center-pairing.js';
 
 const DEFAULT_CONTROL_CENTER_HOST = '127.0.0.1';
 const DEFAULT_CONTROL_CENTER_PORT = 0;
@@ -56,11 +69,10 @@ const DEFAULT_CONTROL_CENTER_ASSET_ROOT = path.join(
   fileURLToPath(new URL('..', import.meta.url)),
   PRODUCT_IDENTITY.controlCenterDistPath
 );
-const CONTROL_CENTER_CSRF_HEADER = 'x-trace-cue-action-token';
 const MAX_STATIC_ASSET_BYTES = 8 * 1024 * 1024;
 const MAX_STATIC_ASSET_TOTAL_BYTES = 64 * 1024 * 1024;
 const MAX_STATIC_ASSET_ENTRIES = 1000;
-export const CONTROL_CENTER_RUNTIME_PROTOCOL_VERSION = '1.0.0';
+export const CONTROL_CENTER_RUNTIME_PROTOCOL_VERSION = '2.0.0';
 
 const MIME_TYPES = Object.freeze({
   '.html': 'text/html; charset=utf-8',
@@ -75,35 +87,66 @@ export async function startControlCenterServer(options = {}, context = {}) {
   if (!config.ok) {
     throw new Error(config.message);
   }
-  config.config.runtimeCompatibility = await buildControlCenterRuntimeCompatibility(config.config.staticRoot);
-  await recoverPendingControlCenterIntakePublications({
-    ...context,
-    cwd: config.config.cwd,
-    artifactRoot: config.config.readModelOptions['artifact-root']
-  });
-  const server = createControlCenterServer(config.config, context);
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(config.config.port, config.config.host, () => {
-      server.off('error', reject);
-      resolve();
+  let aiSetupRuntime = null;
+  let server = null;
+  const ownsAiSetupRuntime = config.config.authorizationMode === 'paired' && !context.controlCenterAiSetupRuntime;
+  try {
+    config.config.runtimeCompatibility = await buildControlCenterRuntimeCompatibility(config.config.staticRoot);
+    aiSetupRuntime = context.controlCenterAiSetupRuntime
+      ?? (config.config.authorizationMode === 'paired'
+        ? await createControlCenterAiSetupRuntime({ instanceId: config.config.instanceId }, context)
+        : null);
+    const serverContext = aiSetupRuntime ? { ...context, controlCenterAiSetupRuntime: aiSetupRuntime } : context;
+    await recoverPendingControlCenterIntakePublications({
+      ...serverContext,
+      cwd: config.config.cwd,
+      artifactRoot: config.config.readModelOptions['artifact-root']
     });
-  });
-  const address = server.address();
-  const port = typeof address === 'object' && address ? address.port : config.config.port;
-  const url = `http://${formatUrlHost(config.config.host)}:${port}/`;
-  config.config.port = port;
-  config.config.origin = url.slice(0, -1);
-  return {
-    server,
-    url,
-    config: { host: config.config.host, port },
-    metadata: controlCenterServerMetadata(config.config, url)
-  };
+    server = createControlCenterServer(config.config, serverContext);
+    const serverClosed = new Promise((resolve) => server.once('close', resolve));
+    const closed = serverClosed.then(async () => {
+      config.config.pairingAuthority.dispose();
+      if (ownsAiSetupRuntime) await aiSetupRuntime.dispose();
+    });
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(config.config.port, config.config.host, () => {
+        server.off('error', reject);
+        resolve();
+      });
+    });
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : config.config.port;
+    const url = `http://${formatUrlHost(config.config.host)}:${port}/`;
+    config.config.port = port;
+    config.config.origin = url.slice(0, -1);
+    return {
+      server,
+      close: async () => {
+        await closeControlCenterServer(server);
+        await closed;
+      },
+      closed,
+      url,
+      config: { host: config.config.host, port },
+      metadata: controlCenterServerMetadata(config.config, url),
+      managementCapability: config.config.pairingAuthority.managementCapability()
+    };
+  } catch (error) {
+    config.config.pairingAuthority.dispose();
+    if (server?.listening) await closeControlCenterServer(server).catch(() => {});
+    if (ownsAiSetupRuntime) await aiSetupRuntime?.dispose().catch(() => {});
+    throw error;
+  }
+}
+
+function closeControlCenterServer(server) {
+  if (!server?.listening) return Promise.resolve();
+  return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 
 export async function runControlCenterServe(options = {}, context = {}) {
-  const started = await startControlCenterServer(options, context);
+  const started = await startControlCenterServer({ ...options, authorizationMode: 'read-only' }, context);
   const stderr = context.stderr ?? process.stderr;
   stderr.write(`${JSON.stringify({
     event: 'trace_cue_control_center_listening',
@@ -172,6 +215,15 @@ export function resolveControlCenterServerConfig(options = {}, context = {}) {
   const staticRoot = options.assetRoot
     ? path.resolve(String(options.assetRoot))
     : DEFAULT_CONTROL_CENTER_ASSET_ROOT;
+  const instanceId = randomBytes(24).toString('base64url');
+  const authorizationMode = normalizeAuthorizationMode(options.authorizationMode ?? context.controlCenterAuthorizationMode);
+  if (!authorizationMode) {
+    return {
+      ok: false,
+      code: 'CONTROL_CENTER_AUTHORIZATION_MODE_REJECTED',
+      message: 'The Control Center authorization mode is invalid.'
+    };
+  }
   return {
     ok: true,
     config: {
@@ -181,14 +233,23 @@ export function resolveControlCenterServerConfig(options = {}, context = {}) {
       staticRoot,
       origin: null,
       csrfToken: randomBytes(32).toString('base64url'),
-      instanceId: randomBytes(24).toString('base64url'),
+      instanceId,
+      authorizationMode,
       readModelOptions: {
         'artifact-root': options['artifact-root'],
         limit: options.limit,
         'max-bytes': options['max-bytes'],
         'evidence-set': options['evidence-set'],
         input: options.input
-      }
+      },
+      pairingAuthority: createControlCenterPairingAuthority({
+        mode: authorizationMode,
+        instanceId,
+        now: context.now,
+        pairingTtlMs: context.controlCenterPairingTtlMs,
+        sessionIdleTtlMs: context.controlCenterSessionIdleTtlMs,
+        sessionAbsoluteTtlMs: context.controlCenterSessionAbsoluteTtlMs
+      })
     }
   };
 }
@@ -212,8 +273,316 @@ export async function handleControlCenterRequest(request, response, config, cont
       package_version: config.runtimeCompatibility?.package_version ?? null,
       asset_fingerprint: config.runtimeCompatibility?.asset_fingerprint ?? null,
       local_only: true,
-      read_only: true,
+      read_only: config.authorizationMode !== 'paired',
       boundary: controlCenterBoundary()
+    });
+    return;
+  }
+  if (url.pathname === '/api/pairing/issue') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_PAIRING_ISSUE_POST_ONLY', 'Control Center pairing issuance only accepts POST requests.');
+      return;
+    }
+    const issued = config.pairingAuthority.issue(String(request.headers[CONTROL_CENTER_MANAGEMENT_HEADER] ?? ''));
+    if (!issued.ok) {
+      sendJson(response, 403, { error: { code: issued.code, message: 'A new Control Center browser session could not be opened.' } });
+      return;
+    }
+    sendJson(response, 201, {
+      status: 'ok',
+      pairing_token: issued.token,
+      instance_id: issued.instanceId,
+      expires_at: issued.expiresAt
+    });
+    return;
+  }
+  if (url.pathname === '/api/pairing/exchange') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_PAIRING_EXCHANGE_POST_ONLY', 'Control Center pairing only accepts POST requests.');
+      return;
+    }
+    const body = await readPairingTokenBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message } });
+      return;
+    }
+    const exchanged = config.pairingAuthority.exchange(body.token);
+    body.clear();
+    if (!exchanged.ok) {
+      sendJson(response, 403, { error: { code: exchanged.code, message: 'This Control Center link is no longer valid. Open the Control Center again.' } });
+      return;
+    }
+    sendJson(response, 200, {
+      status: 'ok',
+      session_token: exchanged.bearer,
+      action_token: exchanged.csrf,
+      instance_id: exchanged.instanceId,
+      expires_at: exchanged.expiresAt,
+      session_header: CONTROL_CENTER_SESSION_HEADER,
+      action_header: CONTROL_CENTER_CSRF_HEADER
+    });
+    return;
+  }
+  if (url.pathname.startsWith('/api/')) {
+    const access = validateApiAuthorization(request, config);
+    if (!access.ok) {
+      sendJson(response, access.status, { error: { code: access.code, message: access.message } });
+      return;
+    }
+  }
+  if (url.pathname === '/api/settings/ai-setup/intents') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_AI_SETUP_INTENT_POST_ONLY', 'AI setup only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const result = context.controlCenterAiSetupRuntime?.createApiSubmission(body.value);
+    if (!result?.ok) {
+      sendJson(response, 400, { error: result?.error ?? { code: 'CONTROL_CENTER_AI_SETUP_UNAVAILABLE', message: 'AI setup is unavailable.' } });
+      return;
+    }
+    sendJson(response, 201, {
+      status: 'ok',
+      data: {
+        ai_setup_submission: {
+          submission_id: result.submission_id,
+          expires_at: result.expires_at,
+          retention: result.retention
+        }
+      }
+    });
+    return;
+  }
+  if (url.pathname === '/api/settings/ai-setup/subscription/start') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_CODEX_LOGIN_START_POST_ONLY', 'Codex sign-in only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const result = await context.controlCenterAiSetupRuntime?.startSubscription(body.value);
+    if (!result?.ok) {
+      sendJson(response, 400, { error: result?.error ?? { code: 'CONTROL_CENTER_CODEX_LOGIN_UNAVAILABLE', message: 'Codex sign-in is unavailable.' } });
+      return;
+    }
+    sendJson(response, 202, { status: 'ok', data: { subscription_login: result.login } });
+    return;
+  }
+  if (url.pathname === '/api/settings/ai-setup/subscription/status') {
+    if (request.method !== 'GET') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_CODEX_LOGIN_STATUS_GET_ONLY', 'Codex sign-in status only accepts GET requests.');
+      return;
+    }
+    const login = context.controlCenterAiSetupRuntime?.subscriptionStatus();
+    if (!login) {
+      sendJson(response, 503, { error: { code: 'CONTROL_CENTER_CODEX_LOGIN_UNAVAILABLE', message: 'Codex sign-in is unavailable.' } });
+      return;
+    }
+    sendJson(response, 200, { status: 'ok', data: { subscription_login: login } });
+    return;
+  }
+  if (url.pathname === '/api/settings/ai-setup/subscription/cancel') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_CODEX_LOGIN_CANCEL_POST_ONLY', 'Codex sign-in cancellation only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message } });
+      return;
+    }
+    if (body.value.confirm !== 'cancel-ai-sign-in') {
+      sendJson(response, 400, { error: { code: 'CONTROL_CENTER_CODEX_LOGIN_CANCEL_CONFIRM_REQUIRED', message: 'Confirm that you want to cancel Codex sign-in.' } });
+      return;
+    }
+    const result = await context.controlCenterAiSetupRuntime?.cancelSubscription();
+    if (!result?.ok) {
+      sendJson(response, 400, { error: result?.error ?? { code: 'CONTROL_CENTER_CODEX_LOGIN_UNAVAILABLE', message: 'Codex sign-in is unavailable.' } });
+      return;
+    }
+    sendJson(response, 200, { status: 'ok', data: { subscription_login: result.login } });
+    return;
+  }
+  if (url.pathname === '/api/settings/ai-setup/subscription/finish') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_CODEX_LOGIN_FINISH_POST_ONLY', 'Codex sign-in completion only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message } });
+      return;
+    }
+    if (body.value.confirm !== 'finish-ai-sign-in'
+      || context.controlCenterAiSetupRuntime?.subscriptionCompletionReady() !== true) {
+      sendJson(response, 409, { error: { code: 'CONTROL_CENTER_CODEX_LOGIN_NOT_READY', message: 'Finish Codex sign-in before continuing.' } });
+      return;
+    }
+    const disconnect = context.controlCenterAiSetupRuntime.beginDisconnect();
+    const disconnectTransaction = disconnect.ok ? disconnect : null;
+    if (!disconnect.ok && disconnect.error?.code !== 'CONTROL_CENTER_AI_NOT_CONNECTED') {
+      sendJson(response, 409, { error: disconnect.error });
+      return;
+    }
+    const refresh = await runControlCenterAiConnectionsRefresh({
+      confirm: CONTROL_CENTER_AI_REFRESH_CONFIRM,
+      expected_revision: body.value.expected_revision
+    }, {
+      ...context,
+      cwd: config.cwd,
+      artifactRoot: config.readModelOptions['artifact-root'],
+      controlCenterAiPreferredConnectionId: 'codex-subscription',
+      ...(disconnectTransaction ? {
+        controlCenterAiRefreshFinalize: async () => {
+          await disconnectTransaction.commit();
+          return { ok: true };
+        }
+      } : {}),
+      ...(disconnectTransaction ? {
+        controlCenterAiConnectionSnapshot: disconnectTransaction.connectionSnapshot
+      } : {})
+    });
+    if (refresh.status !== 'ok') {
+      await disconnectTransaction?.rollback();
+      const conflict = refresh.errors?.[0]?.code === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT';
+      sendJson(response, conflict ? 409 : 400, {
+        error: refresh.errors?.[0] ?? { code: 'CONTROL_CENTER_CODEX_LOGIN_FINISH_FAILED', message: 'Codex availability could not be updated.' }
+      });
+      return;
+    }
+    context.controlCenterAiSetupRuntime.markSubscriptionFinalized();
+    sendJson(response, 200, {
+      status: 'ok',
+      data: {
+        subscription_login: context.controlCenterAiSetupRuntime.subscriptionStatus(),
+        ai_connections: refresh.data.ai_connections
+      }
+    });
+    return;
+  }
+  if (url.pathname === '/api/settings/ai-setup/key') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_AI_SETUP_KEY_POST_ONLY', 'AI key setup only accepts POST requests.');
+      return;
+    }
+    const secret = await readSecretRequestBody(request);
+    if (!secret.ok) {
+      sendJson(response, secret.status, { error: { code: secret.code, message: secret.message } });
+      return;
+    }
+    let prepared;
+    try {
+      prepared = await context.controlCenterAiSetupRuntime?.prepareApiConnection(
+        String(request.headers[CONTROL_CENTER_AI_SECRET_SUBMISSION_HEADER] ?? ''),
+        secret.buffer
+      );
+    } finally {
+      secret.clear();
+    }
+    if (!prepared?.ok) {
+      sendJson(response, 400, { error: prepared?.error ?? { code: 'CONTROL_CENTER_AI_SETUP_UNAVAILABLE', message: 'AI setup is unavailable.' } });
+      return;
+    }
+    const promotion = context.controlCenterAiSetupRuntime.beginPromotion(prepared.pending);
+    if (!promotion.ok) {
+      await context.controlCenterAiSetupRuntime.discardPending(prepared.pending);
+      sendJson(response, 409, { error: promotion.error });
+      return;
+    }
+    let refresh;
+    try {
+      refresh = await runControlCenterAiConnectionsRefresh({
+        confirm: CONTROL_CENTER_AI_REFRESH_CONFIRM,
+        expected_revision: prepared.expectedRevision
+      }, {
+        ...context,
+        cwd: config.cwd,
+        artifactRoot: config.readModelOptions['artifact-root'],
+        controlCenterAiConnectionSnapshot: promotion.connectionSnapshot,
+        controlCenterAiPreferredConnectionId: prepared.pending.connection.id,
+        controlCenterAiRefreshFinalize: () => promotion.commit()
+      });
+    } catch (error) {
+      await promotion.rollback();
+      throw error;
+    }
+    if (refresh.status !== 'ok') {
+      await promotion.rollback();
+      const conflict = [
+        'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT',
+        'CONTROL_CENTER_AI_SETUP_CHANGED'
+      ].includes(refresh.errors?.[0]?.code);
+      sendJson(response, conflict ? 409 : 400, {
+        error: refresh.errors?.[0] ?? { code: 'CONTROL_CENTER_AI_CONNECTION_FAILED', message: 'The AI service could not be connected.' }
+      });
+      return;
+    }
+    sendJson(response, 200, {
+      status: 'ok',
+      data: {
+        ai_setup: context.controlCenterAiSetupRuntime.projection({ canConnect: true }),
+        ai_connections: refresh.data.ai_connections
+      }
+    });
+    return;
+  }
+  if (url.pathname === '/api/settings/ai-setup/disconnect') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_AI_SETUP_DISCONNECT_POST_ONLY', 'AI disconnect only accepts POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message } });
+      return;
+    }
+    if (body.value.confirm !== 'disconnect-ai-service') {
+      sendJson(response, 400, { error: { code: 'CONTROL_CENTER_AI_DISCONNECT_CONFIRM_REQUIRED', message: 'Confirm that you want to disconnect this AI service.' } });
+      return;
+    }
+    const transaction = context.controlCenterAiSetupRuntime?.beginDisconnect();
+    if (!transaction?.ok) {
+      sendJson(response, 400, { error: transaction?.error ?? { code: 'CONTROL_CENTER_AI_SETUP_UNAVAILABLE', message: 'AI setup is unavailable.' } });
+      return;
+    }
+    let refresh;
+    try {
+      refresh = await runControlCenterAiConnectionsRefresh({
+        confirm: CONTROL_CENTER_AI_REFRESH_CONFIRM,
+        expected_revision: body.value.expected_revision
+      }, {
+        ...context,
+        cwd: config.cwd,
+        artifactRoot: config.readModelOptions['artifact-root'],
+        controlCenterAiConnectionSnapshot: transaction.connectionSnapshot,
+        controlCenterAiRefreshFinalize: async () => {
+          await transaction.commit();
+          return { ok: true };
+        }
+      });
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+    if (refresh.status !== 'ok') {
+      await transaction.rollback();
+      const conflict = refresh.errors?.[0]?.code === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT';
+      sendJson(response, conflict ? 409 : 400, { error: refresh.errors?.[0] });
+      return;
+    }
+    sendJson(response, 200, {
+      status: 'ok',
+      data: {
+        ai_setup: context.controlCenterAiSetupRuntime.projection({ canConnect: true }),
+        ai_connections: refresh.data.ai_connections
+      }
     });
     return;
   }
@@ -232,13 +601,12 @@ export async function handleControlCenterRequest(request, response, config, cont
       ...result.data,
       control_center: {
         ...(result.data?.control_center ?? {}),
-        action_security: {
-          token: config.csrfToken,
-          header: CONTROL_CENTER_CSRF_HEADER,
-          expires_on_restart: true
-        },
+        action_security: projectActionSecurity(config),
         ai_readiness: compatibilityAiReadiness(aiConnections, context),
-        ai_connections: aiConnections
+        ai_connections: aiConnections,
+        ai_setup: context.controlCenterAiSetupRuntime?.projection({
+          canConnect: config.authorizationMode === 'paired'
+        }) ?? unavailableAiSetupProjection(config.authorizationMode)
       }
     };
     const envelope = createEnvelope({
@@ -380,7 +748,9 @@ export async function handleControlCenterRequest(request, response, config, cont
       artifacts: result.artifacts,
       now: context.now
     });
-    sendJson(response, result.status === 'ok' ? acceptedStatus : 400, envelope);
+    const conflict = actionName === 'repeat'
+      && result.errors?.[0]?.code === 'CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_IDEMPOTENCY_CONFLICT';
+    sendJson(response, result.status === 'ok' ? acceptedStatus : conflict ? 409 : 400, envelope);
     return;
   }
   if (url.pathname === '/api/source-intake/proposal') {
@@ -723,17 +1093,138 @@ function validateCommonRequest(request, config) {
         message: 'Control Center changes require the active local Origin.'
       };
     }
-    const suppliedToken = String(request.headers[CONTROL_CENTER_CSRF_HEADER] ?? '');
-    if (!constantTimeEqual(suppliedToken, config.csrfToken)) {
-      return {
-        ok: false,
-        status: 403,
-        code: 'CONTROL_CENTER_ACTION_TOKEN_REJECTED',
-        message: 'Refresh the Control Center before making this change.'
-      };
-    }
   }
   return { ok: true };
+}
+
+function validateApiAuthorization(request, config) {
+  const mutation = !['GET', 'HEAD'].includes(String(request.method ?? '').toUpperCase());
+  if (config.authorizationMode === 'legacy') {
+    if (!mutation || constantTimeEqual(String(request.headers[CONTROL_CENTER_CSRF_HEADER] ?? ''), config.csrfToken)) {
+      return { ok: true };
+    }
+    return {
+      ok: false,
+      status: 403,
+      code: 'CONTROL_CENTER_ACTION_TOKEN_REJECTED',
+      message: 'Refresh the Control Center before making this change.'
+    };
+  }
+  const authorized = config.pairingAuthority.authorize({
+    bearer: String(request.headers[CONTROL_CENTER_SESSION_HEADER] ?? ''),
+    csrf: String(request.headers[CONTROL_CENTER_CSRF_HEADER] ?? ''),
+    mutation
+  });
+  if (authorized.ok) return authorized;
+  return {
+    ok: false,
+    status: 403,
+    code: authorized.code,
+    message: authorized.code === 'CONTROL_CENTER_READ_ONLY'
+      ? 'Open the Control Center with the normal launcher to make changes.'
+      : 'Open the Control Center again to continue.'
+  };
+}
+
+function projectActionSecurity(config) {
+  if (config.authorizationMode === 'legacy') {
+    return {
+      mode: 'legacy',
+      token: config.csrfToken,
+      header: CONTROL_CENTER_CSRF_HEADER,
+      expires_on_restart: true
+    };
+  }
+  return {
+    mode: config.authorizationMode,
+    paired: config.authorizationMode === 'paired',
+    session_header: CONTROL_CENTER_SESSION_HEADER,
+    action_header: CONTROL_CENTER_CSRF_HEADER,
+    expires_on_restart: true,
+    technical_details_included: false
+  };
+}
+
+async function readPairingTokenBody(request) {
+  if (String(request.headers['content-encoding'] ?? '').trim()) {
+    return { ok: false, status: 415, code: 'CONTROL_CENTER_PAIRING_ENCODING_REJECTED', message: 'Control Center pairing does not accept encoded content.' };
+  }
+  if (String(request.headers['content-type'] ?? '').toLowerCase().split(';', 1)[0].trim() !== 'application/octet-stream') {
+    return { ok: false, status: 415, code: 'CONTROL_CENTER_PAIRING_CONTENT_TYPE_REJECTED', message: 'Control Center pairing requires a private token body.' };
+  }
+  const declared = Number(request.headers['content-length']);
+  if (!Number.isSafeInteger(declared) || declared !== 43) {
+    return { ok: false, status: 400, code: 'CONTROL_CENTER_PAIRING_LENGTH_REJECTED', message: 'Control Center pairing token length is invalid.' };
+  }
+  const buffer = Buffer.alloc(43);
+  let offset = 0;
+  let accepted = false;
+  try {
+    for await (const incoming of request) {
+      const chunk = Buffer.isBuffer(incoming) ? incoming : Buffer.from(incoming);
+      if (offset + chunk.length > buffer.length) {
+        chunk.fill(0);
+        return { ok: false, status: 413, code: 'CONTROL_CENTER_PAIRING_BODY_TOO_LARGE', message: 'Control Center pairing token is too large.' };
+      }
+      chunk.copy(buffer, offset);
+      offset += chunk.length;
+      chunk.fill(0);
+    }
+    const token = buffer.toString('ascii', 0, offset);
+    if (offset !== 43 || !/^[A-Za-z0-9_-]{43}$/u.test(token)) {
+      return { ok: false, status: 400, code: 'CONTROL_CENTER_PAIRING_TOKEN_REJECTED', message: 'Control Center pairing token is invalid.' };
+    }
+    accepted = true;
+    return { ok: true, token, clear: () => buffer.fill(0) };
+  } finally {
+    if (!accepted) buffer.fill(0);
+  }
+}
+
+async function readSecretRequestBody(request) {
+  if (String(request.headers['content-encoding'] ?? '').trim()) {
+    return { ok: false, status: 415, code: 'CONTROL_CENTER_AI_KEY_ENCODING_REJECTED', message: 'API key input does not accept encoded content.' };
+  }
+  if (String(request.headers['content-type'] ?? '').toLowerCase().split(';', 1)[0].trim() !== 'application/octet-stream') {
+    return { ok: false, status: 415, code: 'CONTROL_CENTER_AI_KEY_CONTENT_TYPE_REJECTED', message: 'API key input requires the private key field.' };
+  }
+  const declared = Number(request.headers['content-length']);
+  if (!Number.isSafeInteger(declared)
+    || declared < CONTROL_CENTER_AI_SECRET_TRANSPORT_LIMITS.minBytes
+    || declared > CONTROL_CENTER_AI_SECRET_TRANSPORT_LIMITS.maxBytes) {
+    return {
+      ok: false,
+      status: declared > CONTROL_CENTER_AI_SECRET_TRANSPORT_LIMITS.maxBytes ? 413 : 400,
+      code: 'CONTROL_CENTER_AI_KEY_LENGTH_REJECTED',
+      message: 'Enter a valid API key.'
+    };
+  }
+  const buffer = Buffer.alloc(declared);
+  let offset = 0;
+  let complete = false;
+  const timer = setTimeout(() => request.destroy(), CONTROL_CENTER_AI_SECRET_TRANSPORT_LIMITS.readTimeoutMs);
+  try {
+    for await (const incoming of request) {
+      const chunk = Buffer.isBuffer(incoming) ? incoming : Buffer.from(incoming);
+      if (offset + chunk.length > buffer.length) {
+        chunk.fill(0);
+        return { ok: false, status: 413, code: 'CONTROL_CENTER_AI_KEY_TOO_LARGE', message: 'The API key is too large.' };
+      }
+      chunk.copy(buffer, offset);
+      offset += chunk.length;
+      chunk.fill(0);
+    }
+    complete = request.complete !== false && offset === declared;
+    if (!complete) {
+      return { ok: false, status: 400, code: 'CONTROL_CENTER_AI_KEY_INCOMPLETE', message: 'The API key was not received completely. Try again.' };
+    }
+    return { ok: true, buffer, clear: () => buffer.fill(0) };
+  } catch {
+    return { ok: false, status: 408, code: 'CONTROL_CENTER_AI_KEY_TIMEOUT', message: 'The API key was not received in time. Try again.' };
+  } finally {
+    clearTimeout(timer);
+    if (!complete) buffer.fill(0);
+  }
 }
 
 async function readJsonRequestBody(request) {
@@ -887,6 +1378,20 @@ function controlCenterServerMetadata(config, url) {
       '/api/settings/ai-connections/refresh',
       '/api/settings/ai-connections/selection'
     ],
+    pairing_endpoints: [
+      '/api/pairing/issue',
+      '/api/pairing/exchange'
+    ],
+    ai_setup_endpoints: [
+      '/api/settings/ai-setup/intents',
+      '/api/settings/ai-setup/key',
+      '/api/settings/ai-setup/disconnect',
+      '/api/settings/ai-setup/subscription/start',
+      '/api/settings/ai-setup/subscription/status',
+      '/api/settings/ai-setup/subscription/cancel',
+      '/api/settings/ai-setup/subscription/finish'
+    ],
+    authorization_mode: config.authorizationMode,
     agentic_review_endpoints: Object.values(CONTROL_CENTER_AGENTIC_REVIEW_ENDPOINTS),
     agentic_review_execution_requires_explicit_external_send_confirmation: true,
     mcp_json_rpc_exposed: false,
@@ -912,6 +1417,28 @@ function compatibilityAiReadiness(aiConnections, context) {
       : aiConnections.status_message,
     network_checked: false,
     can_continue_without_ai: true,
+    technical_details_included: false
+  };
+}
+
+function unavailableAiSetupProjection(mode) {
+  return {
+    schema_version: CONTROL_CENTER_AI_SETUP_SCHEMA_VERSION,
+    status: mode === 'read-only' ? 'read_only' : 'unavailable',
+    retention: 'none',
+    services: [],
+    connection: null,
+    subscription_login: {
+      status: 'idle',
+      operation_id: null,
+      verification_url: null,
+      user_code: null,
+      message: 'AI setup is unavailable.',
+      can_cancel: false,
+      raw_output_included: false,
+      technical_details_included: false
+    },
+    can_connect: false,
     technical_details_included: false
   };
 }
@@ -989,6 +1516,11 @@ function parsePort(value) {
     };
   }
   return { ok: true, value: port };
+}
+
+function normalizeAuthorizationMode(value) {
+  const mode = String(value ?? 'legacy').trim();
+  return ['legacy', 'paired', 'read-only'].includes(mode) ? mode : null;
 }
 
 function isInside(root, target) {

@@ -69,6 +69,8 @@ const DEFAULT_OPERATION_LOCK_TIMEOUT_MS = 10_000;
 const MAX_OPERATION_LOCK_TIMEOUT_MS = 120_000;
 const HISTORY_ELIGIBLE_STATES = new Set(['completed', 'failed', 'cancelled', 'needs_attention']);
 const OPERATION_ID_PATTERN = /^control-center-agentic-review-[a-zA-Z0-9._-]{1,160}$/;
+const REPEAT_IDEMPOTENCY_KEY_PATTERN = /^[a-zA-Z0-9_-]{43}$/;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const ACTIVE_DISPATCHES = new Set();
 const OPERATION_HISTORY_RETENTION = new Map();
 
@@ -81,7 +83,7 @@ const TRANSFER_LABELS = Object.freeze({
   accessibility_summary: 'Accessibility summary'
 });
 
-export async function runControlCenterAgenticReviewPrepare(input = {}, context = {}) {
+export async function runControlCenterAgenticReviewPrepare(input = {}, context = {}, internal = {}) {
   const forbidden = findBrowserAuthorityFields(input);
   if (forbidden.length > 0) {
     return actionError('CONTROL_CENTER_AGENTIC_REVIEW_BROWSER_AUTHORITY_REJECTED', 'Provider execution details are controlled by the local TraceCue service.', {
@@ -112,33 +114,51 @@ export async function runControlCenterAgenticReviewPrepare(input = {}, context =
     };
   }
 
+  const creationLease = acquireRuntimeExecutionContext(aiBinding?.execution_binding, context);
+  if (!creationLease.ok) {
+    return actionError(creationLease.error.code, creationLease.error.message, creationLease.error.details);
+  }
   const now = materializeNow(context.now);
-  const operation = await createOperation({
-    id: createOperationId(context, now),
-    input: validation.value,
-    now,
-    context,
-    relationship: normalizeRelationship(input.relationship),
-    aiBinding
-  });
-
+  let operation;
+  let created = true;
   try {
-    await saveNewOperation(operation, context);
+    operation = await createOperation({
+      id: internal.operationId ?? createOperationId(context, now),
+      input: validation.value,
+      now,
+      context: creationLease.context,
+      relationship: internal.relationship ?? normalizeRelationship(input.relationship),
+      aiBinding,
+      repeatIdempotency: internal.repeatIdempotency ?? null
+    });
+    const stored = await saveNewOperation(operation, context, {
+      repeatIdempotency: internal.repeatIdempotency ?? null
+    });
+    operation = stored.operation;
+    created = stored.created;
   } catch (error) {
     if (error?.code === 'CONTROL_CENTER_AGENTIC_REVIEW_CAPACITY_REACHED') {
       return actionError(error.code, 'Finish or remove an older review before starting another one.', {});
     }
+    if (error?.code === 'CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_IDEMPOTENCY_CONFLICT') {
+      return actionError(error.code, 'This repeat request no longer matches the saved review.', {});
+    }
     return actionError('CONTROL_CENTER_AGENTIC_REVIEW_STORE_FAILED', 'The review could not be prepared in the local workspace.', {});
+  } finally {
+    await creationLease.release();
   }
 
-  scheduleBackground(operation.id, context, async () => {
-    await prepareOperation(operation.id, context);
-  });
+  if (created) {
+    scheduleBackground(operation.id, context, async () => {
+      await prepareOperation(operation.id, context);
+    });
+  }
 
   return actionOk({
     operation: projectOperation(operation),
     accepted: true,
-    background_work_started: true
+    background_work_started: created,
+    idempotent_replay: !created
   });
 }
 
@@ -231,7 +251,11 @@ export async function runControlCenterAgenticReviewStart(input = {}, context = {
         return markConnectionSelectionChanged(operation, context);
       }
     }
-    if (destinationFingerprintForOperation(operation, context) !== operation.internal.destination_fingerprint) {
+    const fingerprintLease = acquireRuntimeExecutionContext(operation.internal.connection_binding, context);
+    if (!fingerprintLease.ok) return markConnectionSelectionChanged(operation, context);
+    const currentFingerprint = destinationFingerprintForOperation(operation, fingerprintLease.context);
+    await fingerprintLease.release();
+    if (currentFingerprint !== operation.internal.destination_fingerprint) {
       return markConnectionSelectionChanged(operation, context);
     }
 
@@ -400,6 +424,10 @@ export async function runControlCenterAgenticReviewRepeat(input = {}, context = 
       allowed: [...CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_MODES]
     });
   }
+  const idempotencyKey = normalizeRepeatIdempotencyKey(input.idempotency_key ?? input.idempotencyKey);
+  if (!idempotencyKey.ok) {
+    return actionError(idempotencyKey.code, idempotencyKey.message, idempotencyKey.details);
+  }
   const loaded = await loadOperationResult(id.value, context, { recoverDispatch: true });
   if (!loaded.ok) return loaded.result;
   const previous = loaded.operation;
@@ -422,6 +450,14 @@ export async function runControlCenterAgenticReviewRepeat(input = {}, context = 
   };
   const hasReplacementSelection = Object.values(replacementSelection).some((value) => value !== null && value !== undefined);
   const selectedBinding = hasReplacementSelection ? replacementSelection : previous.internal.connection_selection;
+  const repeatIdempotency = createRepeatIdempotency({
+    parentOperationId: previous.id,
+    key: idempotencyKey.value,
+    mode: mode.value,
+    selection: selectedBinding
+  });
+  const existing = await loadIdempotentRepeat(repeatIdempotency.operation_id, repeatIdempotency, context);
+  if (existing) return existing;
   return runControlCenterAgenticReviewPrepare({
     url: previous.internal.target_url,
     purpose: previous.request.purpose,
@@ -435,11 +471,14 @@ export async function runControlCenterAgenticReviewRepeat(input = {}, context = 
       capability_revision: selectedBinding.capability_revision,
       capability_token: selectedBinding.capability_token
     } : {}),
+  }, context, {
+    operationId: repeatIdempotency.operation_id,
     relationship: {
       kind: mode.value,
       previous_operation_id: previous.id
-    }
-  }, context);
+    },
+    repeatIdempotency
+  });
 }
 
 export async function runControlCenterAgenticReviewList(input = {}, context = {}) {
@@ -493,6 +532,7 @@ async function prepareOperation(id, context) {
     await saveOperation(operation, context);
   });
 
+  let executionLease = null;
   try {
     const operation = await loadOperation(id, context);
     const reviewRunner = context.runReview ?? runReview;
@@ -535,6 +575,12 @@ async function prepareOperation(id, context) {
       await saveOperation(current, context);
     });
 
+    executionLease = acquireRuntimeExecutionContext(operation.internal.connection_binding, context);
+    if (!executionLease.ok) {
+      throw codedError(executionLease.error.code, executionLease.error.message);
+    }
+    const aiExecutionContext = executionLease.context;
+
     const proposeRunner = context.runAgenticHumanReviewPropose ?? runAgenticHumanReviewPropose;
     const proposal = await proposeRunner({
       brief: operation.request.purpose,
@@ -543,7 +589,7 @@ async function prepareOperation(id, context) {
       provider: operation.internal.provider_id,
       model: operation.internal.model_id,
       'artifact-root': artifactRoot(context)
-    }, executionContext(context));
+    }, executionContext(aiExecutionContext));
     if (proposal?.status !== 'ok') {
       throw resultFailure('CONTROL_CENTER_AGENTIC_REVIEW_PROPOSAL_FAILED', proposal);
     }
@@ -561,7 +607,7 @@ async function prepareOperation(id, context) {
       'connection-binding': operation.internal.connection_binding,
       effort: operation.request.effort,
       'artifact-root': artifactRoot(context)
-    }, executionContext(context));
+    }, executionContext(aiExecutionContext));
     if (planResult?.status !== 'ok') {
       throw resultFailure('CONTROL_CENTER_AGENTIC_REVIEW_PLAN_FAILED', planResult);
     }
@@ -590,13 +636,15 @@ async function prepareOperation(id, context) {
       current.internal.surface_id = plan.surface?.id ?? null;
       current.internal.required_transfer_flags = normalizeStrings(plan.transfer_permissions?.required_flags);
       current.internal.transfer_classes = normalizeTransferClasses(plan.transfer_permissions?.classes);
-      current.internal.destination_fingerprint = destinationFingerprintForOperation(current, context);
+      current.internal.destination_fingerprint = destinationFingerprintForOperation(current, aiExecutionContext);
       current.disclosure = buildDisclosure(current);
       current.internal.consent_digest = computeConsentDigest(current);
       await saveOperation(current, context);
     });
   } catch (error) {
     await markFailed(id, context, 'failed', error);
+  } finally {
+    await executionLease?.release?.();
   }
 }
 
@@ -607,14 +655,20 @@ async function dispatchOperation(id, context) {
   let observedExecution = null;
   let observedResultPath = null;
   let validationCheckpointSaved = false;
+  let executionLease = null;
   try {
     const operation = await loadOperation(id, context);
     if (operation.state !== 'dispatching') return;
+    executionLease = acquireRuntimeExecutionContext(operation.internal.connection_binding, context);
+    if (!executionLease.ok) {
+      throw codedError(executionLease.error.code, executionLease.error.message);
+    }
+    const dispatchContext = executionLease.context;
     if (operation.schema_version === CONTROL_CENTER_AGENTIC_REVIEW_SCHEMA_VERSION && operation.request?.ai_suggestions === true) {
-      const binding = await revalidateControlCenterAiBinding(operation.internal.connection_selection, context);
+      const binding = await revalidateControlCenterAiBinding(operation.internal.connection_selection, dispatchContext);
       if (!binding.ok) throw codedError(binding.error.code, binding.error.message);
     }
-    if (destinationFingerprintForOperation(operation, context) !== operation.internal.destination_fingerprint) {
+    if (destinationFingerprintForOperation(operation, dispatchContext) !== operation.internal.destination_fingerprint) {
       throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED', 'The AI review connection changed before dispatch.');
     }
     const runOptions = {
@@ -629,7 +683,7 @@ async function dispatchOperation(id, context) {
 
     const runner = context.runAgenticHumanReviewRun ?? runAgenticHumanReviewRun;
     runnerStarted = true;
-    const result = await runner(runOptions, executionContext(context));
+    const result = await runner(runOptions, executionContext(dispatchContext));
     const execution = result?.data?.agentic_human_review_execution
       ?? result?.data?.agentic_human_review_status
       ?? {};
@@ -726,10 +780,12 @@ async function dispatchOperation(id, context) {
         resultPath: observedResultPath
       }
     );
+  } finally {
+    await executionLease?.release?.();
   }
 }
 
-async function createOperation({ id, input, now, context, relationship, aiBinding = null }) {
+async function createOperation({ id, input, now, context, relationship, aiBinding = null, repeatIdempotency = null }) {
   const providerId = aiBinding?.execution_binding?.provider_id ?? configuredProvider(context);
   const serviceName = input.ai_suggestions
     ? aiBinding?.execution_binding?.connection_display_name ?? configuredServiceName(context)
@@ -804,6 +860,10 @@ async function createOperation({ id, input, now, context, relationship, aiBindin
       execution_path: null,
       result_path: null,
       result_sha256: null,
+      repeat_idempotency: repeatIdempotency ? {
+        key_hash: repeatIdempotency.key_hash,
+        request_hash: repeatIdempotency.request_hash
+      } : null,
       credentials_stored: false,
       browser_authority_fields_accepted: false
     },
@@ -820,6 +880,7 @@ async function createOperation({ id, input, now, context, relationship, aiBindin
 }
 
 function projectOperation(operation) {
+  const credentialBoundary = credentialBoundaryForOperation(operation);
   return {
     schema_version: operation.schema_version,
     type: 'control_center_agentic_review',
@@ -880,7 +941,10 @@ function projectOperation(operation) {
     error: operation.error ?? null,
     boundary: {
       local_only: true,
-      credentials_env_only: true,
+      credentials_env_only: credentialBoundary.providerCredentialsEnvOnly,
+      provider_credential_source: credentialBoundary.providerCredentialSource,
+      provider_credentials_env_only: credentialBoundary.providerCredentialsEnvOnly,
+      internal_adapter_credentials_env_only: credentialBoundary.internalAdapterCredentialsEnvOnly,
       advisory_only: true,
       gate_effect: 'none',
       paths_included: false,
@@ -897,6 +961,43 @@ function projectOperation(operation) {
     },
     provider_execution_exposed: operation.request?.ai_suggestions === true,
     external_send_confirmation_required: true
+  };
+}
+
+function credentialBoundaryForOperation(operation) {
+  if (operation.request?.ai_suggestions !== true) {
+    return {
+      providerCredentialSource: 'none',
+      providerCredentialsEnvOnly: false,
+      internalAdapterCredentialsEnvOnly: false
+    };
+  }
+  const binding = operation.internal?.connection_binding;
+  if (binding?.connection_type === 'subscription') {
+    return {
+      providerCredentialSource: 'subscription_session',
+      providerCredentialsEnvOnly: false,
+      internalAdapterCredentialsEnvOnly: false
+    };
+  }
+  if (binding?.connection_type === 'api' && binding.runtime_instance_id && binding.credential_generation) {
+    return {
+      providerCredentialSource: 'control_center_session',
+      providerCredentialsEnvOnly: false,
+      internalAdapterCredentialsEnvOnly: true
+    };
+  }
+  if (binding?.connection_type === 'local') {
+    return {
+      providerCredentialSource: 'none',
+      providerCredentialsEnvOnly: false,
+      internalAdapterCredentialsEnvOnly: false
+    };
+  }
+  return {
+    providerCredentialSource: 'environment',
+    providerCredentialsEnvOnly: true,
+    internalAdapterCredentialsEnvOnly: false
   };
 }
 
@@ -1422,38 +1523,75 @@ async function ensureOperationActivationCapacity(store, activatingId, context) {
   throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_CAPACITY_REACHED', 'No completed review can be moved to history safely.');
 }
 
-async function saveNewOperation(operation, context) {
+async function saveNewOperation(operation, context, { repeatIdempotency = null } = {}) {
   const store = operationStore(context);
   const limit = activeOperationLimit(context);
-  const result = await store.withLock('operation-admission', async () => {
-    const entries = await store.listDirectories({ limit: MAX_OPERATION_STORE_ENTRIES });
-    let activeEntries = entries.filter((entry) => OPERATION_ID_PATTERN.test(entry));
-    if (activeEntries.length >= limit) {
-      await ensureOperationActivationCapacity(store, operation.id, context);
-      activeEntries = (await store.listDirectories({ limit: MAX_OPERATION_STORE_ENTRIES }))
-        .filter((entry) => OPERATION_ID_PATTERN.test(entry));
-      if (activeEntries.length >= limit) {
-        throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_CAPACITY_REACHED', 'The active review store is full.');
-      }
-    }
-    if (activeEntries.includes(operation.id)) {
-      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_ID_CONFLICT', 'The generated review id is already in use.');
-    }
-    try {
-      await store.readJson(operationHistoryFile(operation.id), { maxBytes: MAX_OPERATION_BYTES });
-      throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_ID_CONFLICT', 'The generated review id is already in use.');
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error;
-    }
-    return store.withLock(operation.id, async () => {
-      operation.store_revision = Number(operation.store_revision ?? 0) + 1;
-      await store.writeJson(`${operation.id}/${OPERATION_FILE}`, operation, {
-        maxBytes: MAX_OPERATION_BYTES
-      });
+  let result;
+  try {
+    result = await store.withLock('operation-admission', async () => {
+      return store.withLock(operation.id, async () => {
+        const existing = await readStoredOperationIfPresent(store, operation.id);
+        if (existing) {
+          if (!repeatIdempotency || !matchesRepeatIdempotency(existing, repeatIdempotency)) {
+            throw codedError(
+              repeatIdempotency
+                ? 'CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_IDEMPOTENCY_CONFLICT'
+                : 'CONTROL_CENTER_AGENTIC_REVIEW_ID_CONFLICT',
+              'The generated review id is already in use.'
+            );
+          }
+          return { operation: existing, created: false };
+        }
+        let activeEntries = (await store.listDirectories({ limit: MAX_OPERATION_STORE_ENTRIES }))
+          .filter((entry) => OPERATION_ID_PATTERN.test(entry));
+        if (activeEntries.length >= limit) {
+          await ensureOperationActivationCapacity(store, operation.id, context);
+          activeEntries = (await store.listDirectories({ limit: MAX_OPERATION_STORE_ENTRIES }))
+            .filter((entry) => OPERATION_ID_PATTERN.test(entry));
+          if (activeEntries.length >= limit) {
+            throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_CAPACITY_REACHED', 'The active review store is full.');
+          }
+        }
+        operation.store_revision = Number(operation.store_revision ?? 0) + 1;
+        await store.writeJson(`${operation.id}/${OPERATION_FILE}`, operation, {
+          maxBytes: MAX_OPERATION_BYTES
+        });
+        return { operation, created: true };
+      }, { timeoutMs: operationLockTimeout(context) });
     }, { timeoutMs: operationLockTimeout(context) });
-  }, { timeoutMs: operationLockTimeout(context) });
+  } catch (error) {
+    if (error?.code !== 'SAFE_STORE_LOCK_TIMEOUT' || !repeatIdempotency) throw error;
+    const existing = await readStoredOperationIfPresent(store, operation.id);
+    if (!existing) throw error;
+    if (!matchesRepeatIdempotency(existing, repeatIdempotency)) {
+      throw codedError(
+        'CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_IDEMPOTENCY_CONFLICT',
+        'The generated review id is already in use.'
+      );
+    }
+    result = { operation: existing, created: false };
+  }
   scheduleOperationHistoryRetention(store, context);
   return result;
+}
+
+async function readStoredOperationIfPresent(store, id) {
+  let operation;
+  try {
+    operation = await store.readJson(`${id}/${OPERATION_FILE}`, { maxBytes: MAX_OPERATION_BYTES });
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    try {
+      operation = await store.readJson(operationHistoryFile(id), { maxBytes: MAX_OPERATION_BYTES });
+    } catch (historyError) {
+      if (historyError?.code === 'ENOENT') return null;
+      throw historyError;
+    }
+  }
+  if (operation?.type !== 'control_center_agentic_review_operation' || operation.id !== id) {
+    throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_OPERATION_INVALID', 'The local review state is invalid.');
+  }
+  return operation;
 }
 
 async function pruneOperationHistory(store, context) {
@@ -1543,6 +1681,21 @@ function executionContext(context) {
   return {
     ...context,
     cwd: path.resolve(context.cwd ?? process.cwd())
+  };
+}
+
+function acquireRuntimeExecutionContext(binding, context) {
+  if (!binding?.runtime_instance_id) {
+    return { ok: true, context, async release() {} };
+  }
+  const lease = context.controlCenterAiSetupRuntime?.acquireExecutionContext(context, binding);
+  return lease?.ok ? lease : {
+    ok: false,
+    error: lease?.error ?? {
+      code: 'CONTROL_CENTER_AI_BINDING_CHANGED',
+      message: 'AI availability changed. Review the send details again.',
+      details: {}
+    }
   };
 }
 
@@ -1678,6 +1831,87 @@ function findBrowserAuthorityFields(input) {
     'execute', 'execution_mode', 'executionMode', 'semantic_capability_hash', 'semanticCapabilityHash'
   ]);
   return Object.keys(input).filter((key) => forbidden.has(key) || key.startsWith('allow-')).sort();
+}
+
+async function loadIdempotentRepeat(id, repeatIdempotency, context) {
+  let operation;
+  try {
+    operation = await loadOperation(id, context);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    return actionError('CONTROL_CENTER_AGENTIC_REVIEW_STORE_FAILED', 'The saved repeat request could not be read.', {});
+  }
+  if (!matchesRepeatIdempotency(operation, repeatIdempotency)) {
+    return actionError(
+      'CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_IDEMPOTENCY_CONFLICT',
+      'This repeat request no longer matches the saved review.',
+      {}
+    );
+  }
+  return actionOk({
+    operation: projectOperation(operation),
+    accepted: true,
+    background_work_started: false,
+    idempotent_replay: true
+  });
+}
+
+function createRepeatIdempotency({ parentOperationId, key, mode, selection }) {
+  const keyHash = sha256(`control-center-repeat-v1\0${parentOperationId}\0${key}`);
+  const requestHash = sha256(JSON.stringify({
+    schema_version: '1.0.0',
+    parent_operation_id: parentOperationId,
+    mode,
+    ai_selection: canonicalRepeatSelection(selection)
+  }));
+  return {
+    operation_id: `control-center-agentic-review-repeat-${keyHash.slice(0, 48)}`,
+    parent_operation_id: parentOperationId,
+    mode,
+    key_hash: keyHash,
+    request_hash: requestHash
+  };
+}
+
+function canonicalRepeatSelection(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return {
+    connection_option_id: value.connection_option_id ?? null,
+    model_option_id: value.model_option_id ?? null,
+    effort_option_id: value.effort_option_id ?? null,
+    capability_revision: value.capability_revision ?? null,
+    capability_token: value.capability_token ?? null
+  };
+}
+
+function matchesRepeatIdempotency(operation, expected) {
+  const actual = operation?.internal?.repeat_idempotency;
+  return actual
+    && SHA256_PATTERN.test(actual.key_hash)
+    && SHA256_PATTERN.test(actual.request_hash)
+    && actual.key_hash === expected.key_hash
+    && actual.request_hash === expected.request_hash
+    && operation.relationship?.previous_operation_id === expected.parent_operation_id
+    && operation.relationship?.kind === expected.mode;
+}
+
+function normalizeRepeatIdempotencyKey(value) {
+  const key = boundedString(value, 64);
+  if (!key) {
+    return validationFailure(
+      'CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_IDEMPOTENCY_REQUIRED',
+      'A one-time repeat request key is required.',
+      {}
+    );
+  }
+  if (!REPEAT_IDEMPOTENCY_KEY_PATTERN.test(key)) {
+    return validationFailure(
+      'CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_IDEMPOTENCY_INVALID',
+      'The repeat request key is invalid.',
+      {}
+    );
+  }
+  return { ok: true, value: key };
 }
 
 function normalizeOperationId(value) {

@@ -156,6 +156,12 @@ test('AI availability refresh and selection use explicit actions, private storag
   assert.equal(refreshed.status, 'ok');
   assert.equal(refreshed.data.ai_connections.storage_revision, 1);
   assert.equal(refreshed.data.boundary.credential_values_recorded, false);
+  const missingPreferred = await runControlCenterAiConnectionsRefresh({
+    confirm: CONTROL_CENTER_AI_REFRESH_CONFIRM,
+    expected_revision: 1
+  }, { ...context, controlCenterAiPreferredConnectionId: 'missing-connection' });
+  assert.equal(missingPreferred.status, 'error');
+  assert.equal(missingPreferred.errors[0].code, 'CONTROL_CENTER_AI_PREFERRED_CONNECTION_UNAVAILABLE');
   const choices = refreshed.data.ai_connections;
   const saved = await runControlCenterAiSelectionSave({
     confirm: CONTROL_CENTER_AI_SELECTION_CONFIRM,

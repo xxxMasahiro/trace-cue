@@ -2046,6 +2046,170 @@ textarea.text-input {
   background: color-mix(in srgb, var(--tc-color-navigation) 52%, transparent);
 }
 
+.ai-setup-dialog {
+  width: min(540px, calc(100vw - var(--tc-layout-sidebar-width) - 32px));
+}
+
+.ai-setup-intro {
+  margin: 12px 0 22px;
+  color: var(--tc-color-muted);
+  line-height: 1.65;
+}
+
+.ai-setup-current {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-block-end: 14px;
+  border: 1px solid var(--tc-color-line);
+  border-radius: var(--tc-radius-md);
+  padding: 12px 14px;
+  background: var(--tc-color-success-soft);
+}
+
+.ai-setup-current > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--tc-color-success);
+  color: var(--tc-color-surface);
+  font-weight: 800;
+}
+
+.ai-setup-current p {
+  margin: 3px 0 0;
+  color: var(--tc-color-muted);
+  font-size: var(--tc-font-supporting);
+}
+
+.ai-setup-current-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 12px;
+}
+
+.ai-service-choice {
+  display: grid;
+  width: 100%;
+  min-height: 76px;
+  grid-template-columns: 42px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--tc-color-line);
+  border-radius: var(--tc-radius-md);
+  padding: 12px 14px;
+  background: var(--tc-color-surface);
+  color: var(--tc-color-foreground);
+  cursor: pointer;
+  text-align: start;
+}
+
+.ai-service-choice:hover,
+.ai-service-choice:focus-visible {
+  border-color: var(--tc-color-accent);
+  background: var(--tc-color-accent-soft);
+}
+
+.ai-service-choice:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.ai-service-choice strong,
+.ai-service-choice small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-service-choice small {
+  margin-block-start: 3px;
+  color: var(--tc-color-muted);
+  font-size: var(--tc-font-supporting);
+}
+
+.ai-service-mark {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--tc-color-navigation);
+  color: var(--tc-color-surface);
+  font-weight: 800;
+}
+
+.ai-service-choice .recommended {
+  white-space: nowrap;
+}
+
+.ai-setup-alternative {
+  margin-block-start: 14px;
+  border-block-start: 1px solid var(--tc-color-line);
+  padding-block-start: 8px;
+}
+
+.ai-setup-alternative summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--tc-color-accent-strong);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.ai-setup-step {
+  display: grid;
+  gap: 14px;
+  margin-block-start: 18px;
+}
+
+.ai-setup-step > p {
+  margin: 0;
+  line-height: 1.65;
+}
+
+.device-code {
+  display: block;
+  border-block: 1px solid var(--tc-color-line);
+  padding: 20px 8px;
+  color: var(--tc-color-foreground);
+  font-family: var(--tc-font-mono);
+  font-size: 1.65rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.ai-setup-step > .primary-action {
+  width: 100%;
+  text-decoration: none;
+}
+
+.ai-setup-progress {
+  display: flex;
+  min-height: 96px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--tc-color-muted);
+}
+
+.ai-setup-progress > span {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--tc-color-line);
+  border-block-start-color: var(--tc-color-accent);
+  border-radius: 50%;
+  animation: tc-spin 1s linear infinite;
+}
+
 .dialog-heading {
   display: flex;
   align-items: flex-start;
@@ -2054,7 +2218,11 @@ textarea.text-input {
 }
 
 .dialog-heading h2 {
-  font-size: 1.35rem;
+  font-size: 24px;
+}
+
+.dialog-heading h2:focus {
+  outline: none;
 }
 
 .send-summary {
@@ -2151,6 +2319,12 @@ textarea.text-input {
 }
 
 @keyframes tc-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-setup-progress > span {
+    animation: none;
+  }
+}
 
 .progress-track {
   height: 8px;
@@ -2287,21 +2461,36 @@ textarea.text-input {
 }
 
 .ai-status {
-  color: var(--tc-color-muted);
-  font-size: 0.78rem;
-  font-weight: 750;
+  border: 1px solid var(--tc-color-line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: var(--tc-color-success-soft);
+  color: var(--tc-color-success);
+  font-size: 12px;
+  font-weight: 700;
   white-space: nowrap;
 }
 
 .ai-status.available { color: var(--tc-color-success); }
-.ai-status.setup_required { color: var(--tc-color-warning); }
+.ai-status.setup_required {
+  background: var(--tc-color-warning-soft);
+  color: var(--tc-color-warning);
+}
 .ai-status.stale,
-.ai-status.not_checked { color: var(--tc-color-warning); }
-.ai-status.error { color: var(--tc-color-danger); }
+.ai-status.not_checked {
+  background: var(--tc-color-warning-soft);
+  color: var(--tc-color-warning);
+}
+.ai-status.error {
+  background: var(--tc-color-surface);
+  color: var(--tc-color-danger);
+}
 
 .ai-connection-setting {
   display: grid;
-  width: min(100%, 440px);
+  width: 360px;
+  max-width: 100%;
+  min-width: 0;
   gap: 10px;
   justify-items: stretch;
 }
@@ -2310,6 +2499,7 @@ textarea.text-input {
 .compact-actions {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
@@ -2481,6 +2671,13 @@ textarea.text-input {
   }
   .send-dialog,
   :dir(rtl) .send-dialog { width: min(520px, calc(100% - 32px)); padding: 22px; transform: none; }
+  .ai-setup-dialog,
+  :dir(rtl) .ai-setup-dialog { width: min(540px, calc(100% - 32px)); }
+  .ai-service-choice { grid-template-columns: 42px minmax(0, 1fr) auto; }
+  .ai-service-choice .recommended { grid-column: 2; justify-self: start; }
+  .ai-service-choice .directional-symbol { grid-column: 3; grid-row: 1 / span 2; }
+  .ai-setup-current { grid-template-columns: 28px minmax(0, 1fr); }
+  .ai-setup-current-actions { grid-column: 2; justify-content: flex-start; }
   .send-summary div { grid-template-columns: 1fr; gap: 5px; }
   .progress-panel { grid-template-columns: 1fr; padding: 22px; }
   .progress-mark { width: 48px; height: 48px; }

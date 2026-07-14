@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/control-center-ai-setup.schema.json",
+  "title": "TraceCue Control Center AI Setup Projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "retention",
+    "services",
+    "connection",
+    "subscription_login",
+    "can_connect",
+    "technical_details_included"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "status": { "enum": ["not_connected", "connected", "read_only", "unavailable"] },
+    "retention": { "enum": ["control_center_session", "none"] },
+    "services": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["option_id", "name", "kind", "recommended"],
+        "properties": {
+          "option_id": { "type": "string", "pattern": "^service_[a-f0-9]{20}$" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "kind": { "enum": ["subscription", "api"] },
+          "recommended": { "type": "boolean" }
+        }
+      }
+    },
+    "connection": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "kind", "retention", "session_managed", "can_replace", "can_disconnect"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "kind": { "enum": ["subscription", "api"] },
+            "retention": { "enum": ["control_center_session", "service_owned"] },
+            "session_managed": { "type": "boolean" },
+            "can_replace": { "type": "boolean" },
+            "can_disconnect": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "subscription_login": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "operation_id",
+        "verification_url",
+        "user_code",
+        "message",
+        "can_cancel",
+        "raw_output_included",
+        "technical_details_included"
+      ],
+      "properties": {
+        "status": { "enum": ["idle", "starting", "waiting", "checking", "connected", "complete", "cancelled", "error"] },
+        "operation_id": { "type": ["string", "null"], "maxLength": 64 },
+        "verification_url": {
+          "oneOf": [
+            { "type": "null" },
+            { "const": "https://auth.openai.com/codex/device" }
+          ]
+        },
+        "user_code": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^[A-Z0-9]{4,8}-[A-Z0-9]{4,8}$" }
+          ]
+        },
+        "message": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "can_cancel": { "type": "boolean" },
+        "raw_output_included": { "const": false },
+        "technical_details_included": { "const": false }
+      }
+    },
+    "can_connect": { "type": "boolean" },
+    "technical_details_included": { "const": false }
+  }
+}

@@ -141,10 +141,37 @@ Current redaction is a defensive baseline for common secret-like strings and sen
 
 The control-center browser surface is a dedicated local review plane, not a generic control plane. `control-center status` builds a body-free read model and `/api/dashboard` remains GET-only. `control-center serve` is loopback-only, Host/Origin validated, cache-disabled with `Cache-Control: no-store`, and isolated in `src/control-center-server.js`. The original eight action endpoint paths remain unchanged. Separate namespaced endpoints may persist the bounded Control Center preferences and orchestrate one page-review operation through existing TraceCue browser review and Agentic Human Review APIs.
 
-Agentic review preparation accepts only URL, purpose, effort, viewport, AI-suggestion preference, and a current server-issued opaque AI selection. Browser-supplied provider or adapter ids, model ids outside that opaque selection, endpoint, credential, token, plan, hash, transfer flag, artifact root, executable path, command, or execute authority is rejected. API credentials remain environment-only and subscription authentication remains owned by the supported CLI. Before any external AI call, the user must see the concrete configured service, model, TraceCue review method, and exact evidence classes and approve a fresh time-bounded nonce. The nonce is stored only as a hash and bound to the prepared disclosure and plan contract. It is single-use. Dispatch is never retried automatically; restart uncertainty becomes `dispatch_unknown` to avoid duplicate evidence transfer or provider billing.
+Agentic review preparation accepts only URL, purpose, effort, viewport, AI-suggestion preference, and a current server-issued opaque AI selection. Browser-supplied provider or adapter ids, model ids outside that opaque selection, endpoint, credential, token, plan, hash, transfer flag, artifact root, executable path, command, or execute authority is rejected. Credentials may enter only through the paired fixed-catalog AI setup channel described below or through existing provider configuration; subscription authentication remains owned by the supported audited CLI. Before any external AI call, the user must see the concrete configured service, model, TraceCue review method, and exact evidence classes and approve a fresh time-bounded nonce. The nonce is stored only as a hash and bound to the prepared disclosure and plan contract. It is single-use. Dispatch is never retried automatically; restart uncertainty becomes `dispatch_unknown` to avoid duplicate evidence transfer or provider billing.
 
 Operation files stay under the configured workspace-confined artifact root,
-defaulting to `.browser-debug/control-center-agentic-reviews/`. Browser projections are whitelist-only and omit query strings, paths, hashes, internal provider/adapter ids, endpoint data, credential values, request bodies, raw provider responses, and executable commands. They may show only server-issued opaque AI option ids and bounded user-facing service, model, connection-type, and provider-native effort labels. Only normalized advisory findings and safe summaries are shown. AI output and user decisions do not mutate deterministic findings, proof contracts, owner authority, product gates, or release gates. The browser server still must not expose arbitrary actions, generic provider controls, MCP JSON-RPC, credential inputs, cleanup, shell execution, raw artifact serving, CI trigger/rerun/cancel, automatic retry, or external upload beyond the explicitly confirmed review disclosure. Design-system changes grant no runtime authority.
+defaulting to `.browser-debug/control-center-agentic-reviews/`. Browser projections are whitelist-only and omit query strings, paths, hashes, internal provider/adapter ids, endpoint data, credential values, request bodies, raw provider responses, and executable commands. They may show only server-issued opaque AI option ids and bounded user-facing service, model, connection-type, and provider-native effort labels. Only normalized advisory findings and safe summaries are shown. AI output and user decisions do not mutate deterministic findings, proof contracts, owner authority, product gates, or release gates. The browser server still must not expose arbitrary actions, generic provider controls or credential inputs, MCP JSON-RPC, cleanup, shell execution, raw artifact serving, CI trigger/rerun/cancel, automatic retry, or external upload beyond the explicitly confirmed review disclosure. The dedicated paired API setup field is the only credential-input exception. Design-system changes grant no runtime authority.
+
+Repeat-review admission uses a random 256-bit browser key only to reconcile a
+lost local response. The browser keeps the pending key and payload in memory,
+and the server stores only a scoped digest plus canonical request digest. A
+matching active or historical replay returns the existing operation before
+capacity evaluation and never schedules a second browser or provider review;
+payload drift fails with a conflict. Raw keys must not enter URLs, browser
+storage, logs, projections, operation artifacts, or results. This exact-once
+admission contract does not weaken the no-retry boundary after external
+dispatch may have started.
+
+Every Control Center browser API call has a centralized bounded deadline. The
+deadline includes pairing, action-token bootstrap, response headers, and JSON
+body parsing and rejects independently of browser abort behavior. AI connection
+operations use a separately declared longer bound. A malformed successful body
+has no trusted error envelope and is handled as transport uncertainty. A
+deadline neither cancels a server-side provider action nor proves that it did
+not run. It only releases the UI for action-specific authoritative state reads.
+Review polling is suspended during review mutation and reconciliation so a
+stale periodic read cannot overwrite the result. External dispatch uncertainty
+retains its strict no-automatic-retry boundary, and API credentials are never
+resubmitted automatically.
+
+Page-owned AbortControllers and operation generations make explicit navigation
+authoritative over late preparation, status, and repeat responses. Component
+cleanup aborts pending fetches and delays; a response from an invalidated page
+cannot initiate navigation or write current-page state.
 
 The purpose-led Control Center navigation is presentation-only authority. Its
 three ordinary destinations and five work-stage labels may route to existing
@@ -485,12 +512,12 @@ Security tests block unapproved use of persistent browser profiles, storageState
   credential-read observations accumulate monotonically after execution; no
   parse, validation, cleanup, or unexpected failure may reset an observed
   external-transfer boundary to a safe pre-send state.
-- API credentials remain environment-only. Passive reads never inspect their
-  values; explicit server-side refresh and execution may test or consume them
-  only inside the private provider boundary without returning or persisting
-  them. Subscription login state remains
-  owned by the CLI. Neither connection type stores credential values in the
-  Control Center, sends them to the browser, or records them in receipts.
+- API credentials come from existing provider configuration or the dedicated
+  paired, session-only setup vault. Passive reads never inspect their values;
+  explicit server-side refresh and execution may consume them only inside the
+  private provider boundary without returning or persisting them. Subscription
+  login state remains owned by the CLI. Neither connection type returns
+  credential values to the browser or records them in receipts.
 - TraceCue `standard`, `deep`, and `xhigh` review contracts are independent of
   provider-native effort. Both exact selections are integrity-bound through
   the operation and plan so a provider capability change cannot silently alter
@@ -519,3 +546,76 @@ Security tests block unapproved use of persistent browser profiles, storageState
   unexpired artifact, and clean local HEAD/tree match, then parses only a
   bounded non-encrypted regular-file ZIP entry with safe path, size, duplicate,
   and CRC checks before rebuilding the expected proof locally.
+
+## Control Center AI Setup Security
+
+Production launch uses a separate private management capability to mint
+one-time pairing tokens; the server retains only digests and binds each token to
+one runtime instance, issuance time, expiry, and atomic consumption. A successful
+exchange returns a memory-only session bearer and a distinct session CSRF value.
+In paired mode, all browser mutations require both values. Health and static
+assets remain public loopback reads, while direct serve does not grant privileged
+mutations. Pairing, session, CSRF, and management values must never enter public
+runtime metadata, dashboard projections, logs, errors, artifacts, package files,
+or ordinary launcher results.
+
+Pairing exchange acceptance is ambiguous after timeout, malformed response, or
+response loss. The one-time fragment token is never replayed. These failures are
+classified as session-ended/reopen-required and do not expose an in-place retry
+control backed by the permanently rejected exchange promise.
+
+API credentials use a dedicated bounded octet-stream channel created by a
+paired, one-use catalog intent. They must not enter JSON, URLs, browser request
+headers, argv, environment variables, browser storage, workspace files,
+settings, receipts, or raw diagnostic output. The audited outbound provider
+transport may use the value only in its authorization header and must never
+return or record it. The server-owned memory vault has strict count, byte,
+key-length, idle, and absolute limits. Idle expiry blocks new work and retires
+the connection while allowing an already acquired execution lease to finish.
+Absolute expiry is a hard boundary: it disables the generation, aborts an
+in-flight provider transport, clears the owned credential buffer best-effort,
+and closes the adapter even while a lease exists. Replace, disconnect, and
+shutdown also retire or clear their owned buffers best-effort. Persistent
+Secret Service support is not claimed until a fixed secret runner and isolated
+real integration evidence exist; failure must never silently change retention
+mode.
+
+The browser keeps the encoded API-key body only until the complete response or
+the longer AI-connection deadline settles. Timeout clears the encoded byte
+buffer and triggers only an authoritative dashboard read; it does not resubmit
+the key. Public review boundaries distinguish the upstream credential source
+from the short-lived internal adapter token. A session-vault key is reported as
+`control_center_session`, never as provider environment-only; credential values
+and private generation identifiers remain excluded.
+
+An unchanged pre-existing API connection cannot be used as evidence that a lost
+replacement request committed. Reconciliation requires an authoritative storage
+revision increase after the captured pre-action revision before showing a
+connected API result.
+
+Provider verification and model discovery use only installed catalog
+destinations with exact HTTPS origin, port, path, redirect refusal, bounded
+timeouts and responses, and no review evidence. Browser-provided endpoints,
+headers, commands, executable paths, and arbitrary models are rejected.
+Provider uncertainty is not retried automatically. Fixed subscription login is
+a separate write-capable adapter with a supported binary identity, fixed argv,
+bounded incremental parser, single-operation ownership, cancellation, timeout,
+and status reconciliation. It does not expose raw CLI output or authentication
+content and does not weaken the existing read-only execution sandbox. Its
+private lock never uses age, PID-only inference, or process-list heuristics to
+recover an ambiguous child-binding state. A dead-owner `not_started` lock with
+no child can be recovered during the same boot only after unchanged safe-inode
+revalidation. Automatic recovery of an ambiguous `pending` binding additionally
+requires a valid version 1.1 stored Linux boot identity and a different valid
+current boot identity. A same-boot pending binding remains fail-closed and is
+surfaced as a computer-restart recovery action. A legacy, missing, malformed,
+or unreadable identity cannot prove a pending binding safe; it requires a
+separate trusted local repair and is never removed automatically.
+
+The threat model covers remote and cross-origin callers, stale and replayed
+sessions, accidental persistence or logging, unpaired browsers, redirects,
+configuration drift, and interrupted setup. Root/admin, malicious processes of
+the same operating-system user, process-table observers, browser extensions or
+developer tools, swap, core dumps, and a compromised supported provider CLI are
+outside the boundary. Memory clearing is best-effort and is never described as
+complete erasure.

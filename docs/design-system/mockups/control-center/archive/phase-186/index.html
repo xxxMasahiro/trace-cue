@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>TraceCue コントロールセンター 本番モック候補</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="メインメニュー">
+        <button class="brand" type="button" data-route="home" aria-label="TraceCue 確認一覧へ">
+          <span class="brand-mark" aria-hidden="true">T</span>
+          <span>TraceCue</span>
+        </button>
+        <nav class="side-nav">
+          <button class="nav-item is-active" type="button" data-route="home">
+            <span class="nav-icon" aria-hidden="true">✓</span><span>確認</span>
+          </button>
+          <button class="nav-item" type="button" data-route="running">
+            <span class="nav-icon" aria-hidden="true">↻</span><span>進行中</span>
+          </button>
+          <button class="nav-item" type="button" data-route="settings">
+            <span class="nav-icon" aria-hidden="true">⚙</span><span>設定</span>
+          </button>
+        </nav>
+        <p class="sidebar-note">本番デザイン候補</p>
+      </aside>
+
+      <main class="main-content" id="main-content" tabindex="-1">
+        <div id="screen" aria-live="polite"></div>
+      </main>
+
+      <nav class="mobile-nav" aria-label="メインメニュー">
+        <button class="mobile-nav-item is-active" type="button" data-route="home">
+          <span aria-hidden="true">✓</span><span>確認</span>
+        </button>
+        <button class="mobile-nav-item" type="button" data-route="running">
+          <span aria-hidden="true">↻</span><span>進行中</span>
+        </button>
+        <button class="mobile-nav-item" type="button" data-route="settings">
+          <span aria-hidden="true">⚙</span><span>設定</span>
+        </button>
+      </nav>
+    </div>
+
+    <dialog class="send-dialog" id="send-dialog" data-testid="mock-send-confirmation" aria-labelledby="send-dialog-title">
+      <button class="dialog-close" type="button" data-action="close-send" aria-label="閉じる">×</button>
+      <p class="eyebrow">確認を始める前に</p>
+      <h2 id="send-dialog-title">AIで確認する内容</h2>
+      <p class="dialog-lead">次の情報を、設定済みのAIサービスへ送ります。</p>
+      <dl class="send-summary">
+        <div><dt>送る内容</dt><dd>画面の文章、画面の見た目、TraceCueの確認結果</dd></div>
+        <div><dt>送信先</dt><dd>Codex</dd></div>
+        <div><dt>確認方法</dt><dd>大切な改善点を確認</dd></div>
+        <div><dt>保存</dt><dd>確認結果はこのパソコンに保存</dd></div>
+      </dl>
+      <details class="send-ai-details"><summary>AIの設定</summary><p>Review Model · High</p></details>
+      <div class="dialog-actions">
+        <button class="button secondary" type="button" data-action="close-send">戻る</button>
+        <button class="button primary" type="button" data-action="confirm-send">同意して始める</button>
+      </div>
+    </dialog>
+
+    <dialog class="send-dialog ai-setup-dialog" id="ai-setup-dialog" data-testid="mock-ai-setup" aria-labelledby="ai-setup-title"></dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>

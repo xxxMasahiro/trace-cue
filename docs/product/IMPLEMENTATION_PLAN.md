@@ -2149,3 +2149,72 @@ Rollback is a TraceCue-only Git revert. Intake artifacts are private ignored
 local data and may be cleaned only through their owned marker and retention
 contract. Existing CLI, MCP, browser review, image review, Playwright import,
 Agentic Human Review, settings, and evidence-v2 interfaces remain compatible.
+
+## Phase 182-186: Control Center AI Setup
+
+1. Phase 182: synchronize the non-engineer AI setup requirement, pairing and
+   credential threat model, passive-read boundary, session-only retention,
+   model/effort independence, replacement/disconnect lifecycle, and
+   deterministic verification contract. Archive the complete Phase 181
+   production mock before changing the active visual baseline.
+2. Phase 183: add a server-owned setup runtime, launcher management capability,
+   one-time pairing exchange, session-specific CSRF, paired mutation guard,
+   bounded in-memory credential vault, fixed provider catalog, configuration
+   identity, revision/generation binding, and restart downgrade. Keep direct
+   serve read-only, GET passive, and caller/process environments immutable.
+3. Phase 184: add the two-step bounded API-key submission, fixed OpenAI
+   verification/model discovery adapter, explicit replace/disconnect actions,
+   immutable execution snapshots, and audited Codex device-login lifecycle.
+   Do not implement arbitrary endpoints, commands, automatic install/retry,
+   secret-file persistence, or implicit retention fallback.
+4. Phase 185: add one shared accessible React setup dialog used by New Review
+   and Settings. Preserve the mounted New Review draft, keep subscription as
+   the primary path and API key as a secondary method, progressively disclose
+   model/native effort, never auto-start a review, and synchronize every
+   supported locale, RTL, mobile, zoom, focus, and reduced-motion state.
+5. Phase 186: update the active production HTML/CSS/PNG mock, design tokens,
+   schemas, catalog/package coverage, protocol fixtures, fake transports and
+   processes, browser journeys, leak sentinels, package-install checks, release
+   gates, exact CI proof, current-HEAD product evidence, and parent authority
+   readiness. Persistent operating-system credential storage remains deferred
+   until its real integration gate is available.
+
+## Phase 187: Control Center Response-Loss And Exact-Once Hardening
+
+Purpose: preserve truthful non-engineer outcomes when a successful local
+mutation response is lost or another tab changes the same AI connection while
+the first tab is waiting. This phase does not retry uncertain provider work.
+
+Implemented scope: reconcile ordinary settings save, repeated-review start,
+API-key setup, and Codex sign-in finish against authoritative server state;
+keep competing API replacement dialogs open and show the actual connected
+choice; add memory-only 256-bit repeat-admission keys, digest-only persistence,
+deterministic child identity, canonical request binding, active/history/restart
+replay, conflict detection, capacity bypass for existing operations, and one
+safe transport retry; restore an exact previous connection after failed API
+promotion; distinguish recoverable same-boot `not_started` login locks from
+ambiguous same-boot pending child bindings; and align the production React
+surface with the accepted mock at desktop, mobile, RTL, and 200% zoom.
+All Control Center requests use centrally declared end-to-end browser response
+bounds backed by an explicit rejecting timer. The default bound covers ordinary
+reads and mutations; the longer AI connection bound covers fixed model and CLI
+discovery. Both include pairing, token bootstrap, headers, and JSON parsing.
+Malformed successful responses remain transport uncertainty, review polling
+pauses for the complete mutation and reconciliation interval, and page-owned
+abort/generation guards prevent late preparation or repeat responses from
+overriding later navigation. Public operation boundaries distinguish provider
+environment credentials, session-held API keys, subscription sessions, and the
+separate internal adapter token.
+
+Verification order: run syntax and diff checks; complete focused AI setup,
+connection, agentic-review, server, concurrency, and browser contracts; rebuild
+and verify all active mock PNGs; run the complete no-browser and Playwright
+suites; run package, release, security, structure, document, design-system, and
+product gates; complete independent contract, determinism, and browser-race
+review; then commit, push, verify exact GitHub CI, local/remote equality, clean
+worktree, exact-HEAD evidence, and read-only parent authority.
+
+Rollback is a TraceCue-only Git revert. No parent or consumer repository change,
+live provider call, credential persistence, arbitrary provider configuration,
+automatic uncertain retry, MCP expansion, deterministic finding mutation, or
+release-gate authority is introduced.

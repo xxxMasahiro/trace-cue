@@ -57,9 +57,22 @@
     "external_send_confirmation_required": { "const": true },
     "boundary": {
       "type": "object",
+      "required": [
+        "provider_credential_source",
+        "provider_credentials_env_only",
+        "internal_adapter_credentials_env_only"
+      ],
       "properties": {
         "local_only": { "const": true },
-        "credentials_env_only": { "const": true },
+        "credentials_env_only": {
+          "type": "boolean",
+          "description": "Compatibility alias for provider_credentials_env_only."
+        },
+        "provider_credential_source": {
+          "enum": ["none", "environment", "control_center_session", "subscription_session"]
+        },
+        "provider_credentials_env_only": { "type": "boolean" },
+        "internal_adapter_credentials_env_only": { "type": "boolean" },
         "credential_values_included": { "const": false },
         "raw_provider_response_included": { "const": false },
         "paths_included": { "const": false },

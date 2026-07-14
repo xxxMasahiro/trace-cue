@@ -1458,24 +1458,28 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiProvider.ok, true);
   const boundPlan = await runAgenticHumanReviewPlan({
     'review-index': reviewIndexPath,
-    intent: 'Verify that the approved AI connection cannot be changed to staged execution.',
+    intent: 'Verify the exact session-catalog processing level and execution strategy.',
     provider: 'generic-api-provider',
     model: 'api-model',
-    'provider-effort': 'high',
+    'provider-effort': 'max',
     'connection-binding': {
       schema_version: '1.0.0',
-      connection_id: 'configured-api',
+      connection_id: 'session-api',
       connection_type: 'api',
-      adapter_id: 'configured-api-adapter',
+      adapter_id: 'control-center-openai-responses',
       adapter_version: '1.0.0',
       provider_id: 'generic-api-provider',
       transport: 'provider_api',
       execution_strategy: 'one-shot',
       model_id: 'api-model',
-      provider_effort: 'high',
+      provider_effort: 'max',
       provider_effort_request_field: 'reasoning.effort',
       provider_capability_hash: agenticProviderCapabilityHash(apiProvider.provider),
       executable_identity_hash: null,
+      profile_revision: 1,
+      configuration_identity_hash: 'c'.repeat(64),
+      credential_generation: '1',
+      runtime_instance_id: 'runtime_instance_for_plan_1234567890',
       semantic_capability_hash: 'b'.repeat(64),
       capability_revision: 1,
       observed_at: '2026-07-14T00:00:00.000Z',
@@ -1489,6 +1493,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   });
   assert.equal(boundPlan.status, 'ok');
   const boundPlanBody = boundPlan.data.agentic_human_review_plan;
+  assert.equal(boundPlanBody.provider_effort_binding.native_effort_applied_value, 'max');
   const boundPlanPath = boundPlan.artifacts.find((artifact) => artifact.type === 'agentic_human_review_plan').path;
   const boundFlags = Object.fromEntries(boundPlanBody.transfer_permissions.required_flags.map((flag) => [flag, true]));
   const stagedOverride = await runAgenticHumanReviewRun({

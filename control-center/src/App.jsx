@@ -4,7 +4,11 @@ import {
   fetchAgenticReviewStatus,
   fetchDashboard,
   completeReviewIntake,
+  cancelCodexSubscription,
   cancelAgenticReview,
+  createAiSetupIntent,
+  disconnectAiService,
+  fetchCodexSubscriptionStatus,
   getReviewIntakeResult,
   listReviewIntakeResults,
   prepareAgenticReview,
@@ -14,6 +18,9 @@ import {
   resumeAgenticReview,
   saveAgenticReviewDecision,
   saveAiConnectionSelection,
+  startCodexSubscription,
+  finishCodexSubscription,
+  submitAiApiKey,
   setControlCenterPreferences,
   startAgenticReview,
   uploadReviewIntake
@@ -40,7 +47,7 @@ const DEFAULT_REVIEW = {
 export default function App() {
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [intakeResults, setIntakeResults] = useState([]);
   const [intakeLoadError, setIntakeLoadError] = useState(false);
   const [locale, setLocale] = useState('en');
@@ -52,7 +59,7 @@ export default function App() {
   async function loadDashboard({ quiet = false } = {}) {
     const generation = ++dashboardRequestGeneration.current;
     if (!quiet) setLoading(true);
-    setLoadError(false);
+    setLoadError(null);
     try {
       const [dashboardResult, intakeResult] = await Promise.allSettled([
         fetchDashboard(),
@@ -70,8 +77,8 @@ export default function App() {
       }
       setLocale(readLocale(next));
       return next;
-    } catch {
-      if (generation === dashboardRequestGeneration.current) setLoadError(true);
+    } catch (caught) {
+      if (generation === dashboardRequestGeneration.current) setLoadError(controlCenterLoadError(caught));
       return null;
     } finally {
       if (!quiet && generation === dashboardRequestGeneration.current) setLoading(false);
@@ -119,7 +126,8 @@ export default function App() {
 
       <section className="workspace">
         {loading ? <StatePanel title={t('state.loading.title', 'Loading your reviews')} text={t('state.loading.text', 'Reading the latest status.')} /> : null}
-        {!loading && loadError ? <StatePanel title={t('state.loadError.title', 'Your reviews could not be loaded')} text={t('state.loadError.text', 'Check that the Control Center is running, then try again.')} action={<button className="primary-action" type="button" onClick={() => loadDashboard()}>{t('common.retry', 'Try again')}</button>} tone="danger" /> : null}
+        {!loading && loadError === 'session' ? <StatePanel title={t('state.sessionEnded.title', 'Open the Control Center again')} text={t('state.sessionEnded.text', 'This private browser session has ended. Open the Control Center in the usual way to continue.')} tone="danger" /> : null}
+        {!loading && loadError && loadError !== 'session' ? <StatePanel title={t('state.loadError.title', 'Your reviews could not be loaded')} text={t('state.loadError.text', 'Check that the Control Center is running, then try again.')} action={<button className="primary-action" type="button" onClick={() => loadDashboard()}>{t('common.retry', 'Try again')}</button>} tone="danger" /> : null}
         {!loading && !loadError ? (
           <ControlCenter
             dashboard={dashboard ?? {}}
@@ -205,8 +213,17 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
   const [needsAiRefresh, setNeedsAiRefresh] = useState(false);
   const [aiDraft, setAiDraft] = useState(() => readAiSelection(dashboard?.ai_connections));
   const [aiEditorOpen, setAiEditorOpen] = useState(false);
+  const [aiSetupOpen, setAiSetupOpen] = useState(false);
   const startButtonRef = useRef(null);
+  const aiSetupButtonRef = useRef(null);
   const fileInputRef = useRef(null);
+  const actionGenerationRef = useRef(0);
+  const actionAbortRef = useRef(null);
+
+  useEffect(() => () => {
+    actionGenerationRef.current += 1;
+    actionAbortRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     setAiDraft(readAiSelection(dashboard?.ai_connections));
@@ -225,6 +242,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
   async function prepare(event) {
     event.preventDefault();
     if (localResult) return;
+    const action = beginPageAction(actionGenerationRef, actionAbortRef);
     setBusy(true);
     setError(null);
     setNeedsAiRefresh(false);
@@ -235,6 +253,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
         let intakeId = pendingIntakeId;
         if (!intakeId) {
           const intake = await uploadReviewIntake(file, form.source_kind);
+          if (!isCurrentPageAction(actionGenerationRef, action)) return;
           intakeId = intake.id;
           setPendingIntakeId(intakeId);
         }
@@ -245,6 +264,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
             effort: form.review_method
           } : {})
         });
+        if (!isCurrentPageAction(actionGenerationRef, action)) return;
         setPendingIntakeId(null);
         setLocalResult(result);
         await reload({ quiet: true });
@@ -272,22 +292,30 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
           capability_revision: aiConnections.revision,
           capability_token: aiConnections.capability_token
         } : {})
-      });
+      }, { signal: action.signal });
+      if (!isCurrentPageAction(actionGenerationRef, action)) return;
       const reviewId = readReviewId(next);
       if (!reviewId) throw new Error('Missing review');
-      const preparedOperation = isActive(readState(next)) ? await waitUntilPrepared(reviewId) : next;
+      const preparedOperation = isActive(readState(next))
+        ? await waitUntilPrepared(reviewId, { signal: action.signal })
+        : next;
+      if (!isCurrentPageAction(actionGenerationRef, action)) return;
       if (isComplete(readState(preparedOperation))) {
         await reload({ quiet: true });
+        if (!isCurrentPageAction(actionGenerationRef, action)) return;
         navigate({ page: 'confirm', view: 'work', itemId: reviewId });
         return;
       }
-      const disclosure = await fetchAgenticReviewConfirmation(reviewId);
+      const disclosure = await fetchAgenticReviewConfirmation(reviewId, { signal: action.signal });
+      if (!isCurrentPageAction(actionGenerationRef, action)) return;
       setPrepared({ ...next, review_id: reviewId });
       setConfirmation(disclosure);
     } catch (caught) {
+      if (!isCurrentPageAction(actionGenerationRef, action)) return;
       if (!sameIntakeRetryAvailable(caught)) setPendingIntakeId(null);
       if (requiresAiProjectionRefresh(apiErrorCode(caught))) {
         const nextDashboard = await reload({ quiet: true });
+        if (!isCurrentPageAction(actionGenerationRef, action)) return;
         setAiDraft(readAiSelection(nextDashboard?.ai_connections));
         setNeedsAiRefresh(true);
         setError(t('review.ai.changedBeforePrepare', 'AI availability changed. Your review details are still here; check the current choice and prepare again.'));
@@ -295,7 +323,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
         setError(uiErrorMessage(caught, t));
       }
     } finally {
-      setBusy(false);
+      if (isCurrentPageAction(actionGenerationRef, action)) setBusy(false);
     }
   }
 
@@ -318,6 +346,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
     && (aiConnections.status !== 'available' || !selectedAiSummary);
   const needsReviewGoal = form.source_kind === 'website' || form.source_kind === 'document_text';
   async function start() {
+    const action = beginPageAction(actionGenerationRef, actionAbortRef);
     setBusy(true);
     setError(null);
     try {
@@ -329,17 +358,21 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
         nonce: consent.token,
         revision: consent.revision,
         execute_confirmed: true
-      });
+      }, { signal: action.signal });
+      if (!isCurrentPageAction(actionGenerationRef, action)) return;
       const reviewId = readReviewId(result) ?? prepared.review_id;
       setConfirmation(null);
       await reload({ quiet: true });
+      if (!isCurrentPageAction(actionGenerationRef, action)) return;
       navigate({ page: 'confirm', view: 'work', itemId: reviewId });
     } catch (caught) {
+      if (!isCurrentPageAction(actionGenerationRef, action)) return;
       setConfirmation(null);
       if (apiErrorCode(caught) === 'CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED') {
         setPrepared(null);
         setNeedsAiRefresh(true);
         const nextDashboard = await reload({ quiet: true });
+        if (!isCurrentPageAction(actionGenerationRef, action)) return;
         setAiDraft(readAiSelection(nextDashboard?.ai_connections));
         setError(t('review.ai.changedBeforeSend', 'The AI choice changed before anything was sent. Update availability, then prepare this review again.'));
       } else if (!caught?.envelope) {
@@ -348,7 +381,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
         setError(uiErrorMessage(caught, t));
       }
     } finally {
-      setBusy(false);
+      if (isCurrentPageAction(actionGenerationRef, action)) setBusy(false);
     }
   }
 
@@ -358,18 +391,22 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
       setConfirmation(null);
       return;
     }
+    const action = beginPageAction(actionGenerationRef, actionAbortRef);
     setBusy(true);
     try {
-      await cancelAgenticReview(reviewId);
+      await cancelAgenticReview(reviewId, { signal: action.signal });
+      if (!isCurrentPageAction(actionGenerationRef, action)) return;
       setConfirmation(null);
       setPrepared(null);
       await reload({ quiet: true });
     } catch {
+      if (!isCurrentPageAction(actionGenerationRef, action)) return;
       setConfirmation(null);
       await reload({ quiet: true });
+      if (!isCurrentPageAction(actionGenerationRef, action)) return;
       navigate({ page: 'confirm', view: 'work', itemId: reviewId });
     } finally {
-      setBusy(false);
+      if (isCurrentPageAction(actionGenerationRef, action)) setBusy(false);
     }
   }
 
@@ -428,7 +465,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
             <div className="ai-choice-actions">
               {aiConnections.status === 'available' && !selectedAiSummary && firstAvailableAiSelection(aiConnections) ? (
                 <button className="primary-action compact" type="button" onClick={() => { setAiDraft(firstAvailableAiSelection(aiConnections)); update('continue_without_ai', false); }}>{t('review.ai.useShown', 'Use this AI')}</button>
-              ) : <button className="secondary-action compact" type="button" onClick={() => navigate({ page: 'settings', view: 'settings' })}>{t('review.ai.openSettings', 'Open AI settings')}</button>}
+              ) : <button ref={aiSetupButtonRef} className="primary-action compact" type="button" onClick={() => setAiSetupOpen(true)}>{t('aiSetup.open', 'Set up AI')}</button>}
               <label className="check-option">
                 <input type="checkbox" aria-label={t('review.ai.continueLocal', 'Continue without AI')} checked={form.continue_without_ai} onChange={(event) => update('continue_without_ai', event.target.checked)} />
                 <span className="check-option-mark" aria-hidden="true" />
@@ -476,6 +513,21 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
         returnFocusRef={startButtonRef}
         onCancel={cancelPreparedReview}
         onConfirm={start}
+        t={t}
+      />
+      <AiSetupDialog
+        open={aiSetupOpen}
+        aiSetup={dashboard?.ai_setup}
+        aiConnections={dashboard?.ai_connections}
+        returnFocusRef={aiSetupButtonRef}
+        fallbackFocusRef={startButtonRef}
+        onClose={() => setAiSetupOpen(false)}
+        onComplete={async () => {
+          const next = await reload({ quiet: true });
+          setAiDraft(readAiSelection(next?.ai_connections));
+          update('continue_without_ai', false);
+          return next;
+        }}
         t={t}
       />
     </div>
@@ -740,6 +792,512 @@ function SendConfirmationDialog({ open, confirmation, busy, returnFocusRef, onCa
   );
 }
 
+function AiSetupDialog({ open, aiSetup, aiConnections, returnFocusRef, fallbackFocusRef, onClose, onComplete, t }) {
+  const dialogRef = useRef(null);
+  const headingRef = useRef(null);
+  const keyInputRef = useRef(null);
+  const finishingRef = useRef(false);
+  const previousLoginStatusRef = useRef(aiSetup?.subscription_login?.status ?? null);
+  const loginRequestGenerationRef = useRef(0);
+  const loginActionPendingRef = useRef(false);
+  const [view, setView] = useState('choose');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [apiKey, setApiKey] = useState('');
+  const [login, setLogin] = useState(aiSetup?.subscription_login ?? null);
+  const [loginPollRevision, setLoginPollRevision] = useState(0);
+  const [revision, setRevision] = useState(aiConnections?.storage_revision ?? 0);
+  const services = Array.isArray(aiSetup?.services) ? aiSetup.services : [];
+  const subscription = services.find((service) => service.kind === 'subscription');
+  const api = services.find((service) => service.kind === 'api');
+  const loginActive = ['starting', 'waiting', 'checking'].includes(login?.status);
+  const canCancelLogin = loginActive && login?.can_cancel === true;
+  const selectedConnection = selectedAiConnection(aiConnections);
+  const managedSessionConnection = aiSetup?.connection?.session_managed === true ? aiSetup.connection : null;
+  const currentConnection = managedSessionConnection ?? selectedConnection;
+  const canDisconnectCurrent = Boolean(managedSessionConnection?.can_disconnect);
+  const canReplaceCurrentApi = managedSessionConnection?.kind === 'api' && managedSessionConnection?.can_replace === true;
+  const currentIsSubscription = currentConnection?.kind === 'subscription';
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (open && !dialog.open) {
+      loginRequestGenerationRef.current += 1;
+      loginActionPendingRef.current = false;
+      setView(subscriptionViewForLogin(aiSetup?.subscription_login));
+      setBusy(false);
+      setError(null);
+      setApiKey('');
+      setLogin(aiSetup?.subscription_login ?? null);
+      setRevision(aiConnections?.storage_revision ?? 0);
+      finishingRef.current = false;
+      previousLoginStatusRef.current = aiSetup?.subscription_login?.status ?? null;
+      dialog.showModal();
+      window.requestAnimationFrame(() => headingRef.current?.focus());
+    }
+    if (!open && dialog.open) {
+      loginRequestGenerationRef.current += 1;
+      loginActionPendingRef.current = false;
+      dialog.close();
+    }
+  }, [open, aiSetup?.subscription_login?.status, aiConnections?.storage_revision]);
+
+  useEffect(() => {
+    if (!open || !subscription || loginActionPendingRef.current) return undefined;
+    let active = true;
+    const generation = ++loginRequestGenerationRef.current;
+    fetchCodexSubscriptionStatus()
+      .then((next) => {
+        if (!active || generation !== loginRequestGenerationRef.current) return;
+        setLogin(next);
+        if (['starting', 'waiting', 'checking', 'connected'].includes(next?.status)) changeView('subscription');
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [open, subscription?.option_id]);
+
+  useEffect(() => {
+    if (!open || !loginActive) return undefined;
+    let cancelled = false;
+    let timer = null;
+    const poll = async () => {
+      if (loginActionPendingRef.current) {
+        timer = window.setTimeout(poll, 150);
+        return;
+      }
+      const generation = ++loginRequestGenerationRef.current;
+      try {
+        const next = await fetchCodexSubscriptionStatus();
+        if (cancelled || generation !== loginRequestGenerationRef.current) return;
+        setError(null);
+        setLogin(next);
+        if (['starting', 'waiting', 'checking'].includes(next?.status)) {
+          timer = window.setTimeout(poll, 750);
+        }
+      } catch (caught) {
+        if (!cancelled && generation === loginRequestGenerationRef.current) {
+          setError(aiSetupErrorMessage(caught, t));
+          timer = window.setTimeout(poll, 1_500);
+        }
+      }
+    };
+    timer = window.setTimeout(poll, 750);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [open, loginActive, loginPollRevision, t]);
+
+  useEffect(() => {
+    const previous = previousLoginStatusRef.current;
+    const current = login?.status ?? null;
+    previousLoginStatusRef.current = current;
+    if (!open || !previous || previous === current) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      if (dialog?.open && !dialog.contains(document.activeElement)) headingRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, login?.status]);
+
+  useEffect(() => {
+    if (!open || !finishingRef.current || !currentIsSubscription) return;
+    setLogin((current) => ({ ...current, status: 'complete' }));
+    onClose();
+  }, [open, currentIsSubscription, onClose]);
+
+  useEffect(() => {
+    if (!open || login?.status !== 'connected' || finishingRef.current) return;
+    finishingRef.current = true;
+    loginActionPendingRef.current = true;
+    const generation = ++loginRequestGenerationRef.current;
+    setBusy(true);
+    finishCodexSubscription(revision)
+      .then(async () => {
+        await onComplete();
+        if (generation !== loginRequestGenerationRef.current) return;
+        setLogin((current) => ({ ...current, status: 'complete' }));
+        onClose();
+      })
+      .catch(async (caught) => {
+        const errorCode = apiErrorCode(caught);
+        const latest = (!caught?.envelope
+          || isAiRevisionConflict(caught)
+          || errorCode === 'CONTROL_CENTER_CODEX_LOGIN_NOT_READY')
+          ? await onComplete().catch(() => null)
+          : null;
+        if (generation !== loginRequestGenerationRef.current) return;
+        if (Number.isSafeInteger(latest?.ai_connections?.storage_revision)) {
+          setRevision(latest.ai_connections.storage_revision);
+        }
+        if ((hasAdvancedAiRevision(latest?.ai_connections, revision)
+            || errorCode === 'CONTROL_CENTER_CODEX_LOGIN_NOT_READY')
+          && isSelectedConnectionKind(latest?.ai_connections, 'subscription')) {
+          setLogin((current) => ({ ...current, status: 'complete' }));
+          onClose();
+          return;
+        }
+        finishingRef.current = false;
+        setError(aiSetupErrorMessage(caught, t));
+      })
+      .finally(() => {
+        if (generation === loginRequestGenerationRef.current) {
+          loginActionPendingRef.current = false;
+          setBusy(false);
+        }
+      });
+  }, [open, login?.status, revision, onComplete, onClose, t]);
+
+  function close() {
+    if (busy) return;
+    loginRequestGenerationRef.current += 1;
+    loginActionPendingRef.current = false;
+    setApiKey('');
+    onClose();
+  }
+
+  async function connectSubscription() {
+    if (!subscription) return;
+    loginActionPendingRef.current = true;
+    const generation = ++loginRequestGenerationRef.current;
+    setBusy(true);
+    setError(null);
+    let actionRevision = revision;
+    try {
+      const checked = await refreshAiConnections({
+        confirm: 'refresh-ai-availability',
+        expected_revision: revision
+      });
+      const nextRevision = checked?.storage_revision ?? revision;
+      actionRevision = nextRevision;
+      setRevision(nextRevision);
+      const ready = checked?.connections?.find((connection) => connection.kind === 'subscription' && connection.status === 'available');
+      if (ready) {
+        const selection = defaultAiSelectionForConnection(checked, ready);
+        if (selection) {
+          await saveAiConnectionSelection({
+            ...selection,
+            capability_revision: checked.revision,
+            capability_token: checked.capability_token,
+            expected_revision: checked.storage_revision,
+            confirm: 'save-ai-selection'
+          });
+        }
+        await onComplete();
+        onClose();
+        return;
+      }
+      const next = await startCodexSubscription({
+        service_option_id: subscription.option_id,
+        expected_revision: nextRevision
+      });
+      if (generation !== loginRequestGenerationRef.current) return;
+      setLogin(next);
+      changeView('subscription');
+    } catch (caught) {
+      if (apiErrorCode(caught) === 'CONTROL_CENTER_CODEX_LOGIN_BUSY') {
+        try {
+          const next = await fetchCodexSubscriptionStatus();
+          if (generation === loginRequestGenerationRef.current
+            && ['starting', 'waiting', 'checking', 'connected'].includes(next?.status)) {
+            setLogin(next);
+            changeView('subscription');
+            return;
+          }
+        } catch {}
+      }
+      if (!caught?.envelope || isAiRevisionConflict(caught)) {
+        const latest = await onComplete().catch(() => null);
+        if (generation !== loginRequestGenerationRef.current) return;
+        if (Number.isSafeInteger(latest?.ai_connections?.storage_revision)) {
+          setRevision(latest.ai_connections.storage_revision);
+        }
+        const latestLogin = latest?.ai_setup?.subscription_login;
+        if (['starting', 'waiting', 'checking', 'connected'].includes(latestLogin?.status)) {
+          setLogin(latestLogin);
+          setLoginPollRevision((value) => value + 1);
+          changeView('subscription');
+          return;
+        }
+        if (hasAdvancedAiRevision(latest?.ai_connections, actionRevision)
+          && isSelectedConnectionKind(latest?.ai_connections, 'subscription')) {
+          onClose();
+          return;
+        }
+      }
+      if (generation === loginRequestGenerationRef.current) setError(aiSetupErrorMessage(caught, t));
+    } finally {
+      if (generation === loginRequestGenerationRef.current) {
+        loginActionPendingRef.current = false;
+        setBusy(false);
+      }
+    }
+  }
+
+  async function cancelSubscription() {
+    loginActionPendingRef.current = true;
+    const generation = ++loginRequestGenerationRef.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await cancelCodexSubscription();
+      if (generation === loginRequestGenerationRef.current) setLogin(next);
+    } catch (caught) {
+      let latest = null;
+      try { latest = await fetchCodexSubscriptionStatus(); } catch {}
+      if (generation !== loginRequestGenerationRef.current) return;
+      if (latest) setLogin(latest);
+      if (['starting', 'waiting', 'checking'].includes(latest?.status)) {
+        setLoginPollRevision((value) => value + 1);
+      }
+      if (!['idle', 'cancelled'].includes(latest?.status)) {
+        setError(aiSetupErrorMessage(caught, t));
+      }
+    } finally {
+      if (generation === loginRequestGenerationRef.current) {
+        loginActionPendingRef.current = false;
+        setBusy(false);
+      }
+    }
+  }
+
+  async function connectApi(event) {
+    event.preventDefault();
+    if (!api || !apiKey) return;
+    setBusy(true);
+    setError(null);
+    const key = apiKey;
+    const previousRevision = revision;
+    setApiKey('');
+    if (keyInputRef.current) keyInputRef.current.value = '';
+    try {
+      const intent = await createAiSetupIntent({
+        service_option_id: api.option_id,
+        expected_revision: revision
+      });
+      await submitAiApiKey(intent.submission_id, key);
+      await onComplete();
+      onClose();
+    } catch (caught) {
+      const transportLost = !caught?.envelope;
+      const revisionConflict = isAiRevisionConflict(caught);
+      const latest = (transportLost || revisionConflict)
+        ? await onComplete().catch(() => null)
+        : null;
+      if (Number.isSafeInteger(latest?.ai_connections?.storage_revision)) {
+        setRevision(latest.ai_connections.storage_revision);
+      }
+      if (hasAdvancedAiRevision(latest?.ai_connections, previousRevision)
+        && latest?.ai_setup?.status === 'connected'
+        && latest.ai_setup.connection?.kind === 'api') {
+        changeView('choose');
+        setError(revisionConflict
+          ? t('aiSetup.errorChanged', 'The AI choice changed in another screen. Close this window and open it again.')
+          : null);
+        return;
+      }
+      setError(aiSetupErrorMessage(caught, t));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnectApi() {
+    setBusy(true);
+    setError(null);
+    try {
+      await disconnectAiService({ expected_revision: revision });
+      await onComplete();
+      onClose();
+    } catch (caught) {
+      const latest = (!caught?.envelope || isAiRevisionConflict(caught))
+        ? await onComplete().catch(() => null)
+        : null;
+      if (Number.isSafeInteger(latest?.ai_connections?.storage_revision)) {
+        setRevision(latest.ai_connections.storage_revision);
+      }
+      if (latest && hasAdvancedAiRevision(latest.ai_connections, revision)
+        && (latest.ai_setup?.status !== 'connected' || latest.ai_setup?.connection?.kind !== 'api')) {
+        onClose();
+        return;
+      }
+      setError(aiSetupErrorMessage(caught, t));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function changeView(next) {
+    setView(next);
+    window.requestAnimationFrame(() => headingRef.current?.focus());
+  }
+
+  const signInUrl = safeCodexSignInUrl(login?.verification_url);
+  return (
+    <dialog
+      ref={dialogRef}
+      className="send-dialog ai-setup-dialog"
+      aria-labelledby="ai-setup-title"
+      onCancel={(event) => { event.preventDefault(); close(); }}
+      onClose={() => (returnFocusRef.current ?? fallbackFocusRef?.current)?.focus()}
+    >
+      <div className="dialog-heading">
+        <div>
+          <p className="eyebrow">{t('aiSetup.eyebrow', 'AI suggestions')}</p>
+          <h2 ref={headingRef} tabIndex="-1" id="ai-setup-title">{t('aiSetup.title', 'Set up AI')}</h2>
+        </div>
+        <button className="icon-action" type="button" onClick={close} disabled={busy} aria-label={t('common.close', 'Close')}>×</button>
+      </div>
+
+      {view === 'choose' ? <>
+        <p className="ai-setup-intro">{t('aiSetup.intro', 'Choose the service you already use.')}</p>
+        {currentConnection ? <div className="ai-setup-current">
+          <span aria-hidden="true">✓</span>
+          <div><strong>{t('aiSetup.connected', 'Connected')}</strong><p>{currentConnection.name}</p></div>
+          {canReplaceCurrentApi || canDisconnectCurrent ? <div className="ai-setup-current-actions">
+            {canReplaceCurrentApi ? <button className="link-action" type="button" disabled={busy} onClick={() => { changeView('api'); setError(null); }}>{t('aiSetup.replaceApiKey', 'Change API key')}</button> : null}
+            {canDisconnectCurrent ? <button className="link-action" type="button" disabled={busy} onClick={disconnectApi}>{t('aiSetup.disconnect', 'Disconnect')}</button> : null}
+          </div> : null}
+        </div> : null}
+        {subscription ? (!currentIsSubscription ? <button className="ai-service-choice recommended" type="button" disabled={busy} onClick={connectSubscription}>
+          <span className="ai-service-mark" aria-hidden="true">C</span>
+          <span><strong>{subscription.name}</strong><small>{t('aiSetup.subscriptionText', 'Use your subscription')}</small></span>
+          <span className="recommended">{t('common.recommended', 'Recommended')}</span>
+          <DirectionalSymbol symbol="›" />
+        </button> : null) : <InlineNotice tone="warning" title={t('aiSetup.unavailable', 'AI setup is not available right now')} />}
+        {api && !canReplaceCurrentApi ? <details className="ai-setup-alternative">
+          <summary>{t('aiSetup.anotherMethod', 'Use another method')}</summary>
+          <button type="button" className="ai-service-choice" onClick={() => { changeView('api'); setError(null); }}>
+            <span className="ai-service-mark" aria-hidden="true">A</span>
+            <span><strong>{api.name}</strong><small>{t('aiSetup.apiText', 'Connect with an API key')}</small></span>
+            <DirectionalSymbol symbol="›" />
+          </button>
+        </details> : null}
+      </> : null}
+
+      {view === 'subscription' ? <div className="ai-setup-step" aria-live="polite">
+        {login?.status === 'waiting' && signInUrl ? <>
+          <p>{t('aiSetup.codeInstruction', 'Open the sign-in page, then enter this code.')}</p>
+          <output className="device-code" aria-label={t('aiSetup.codeLabel', 'One-time code')}>{login.user_code}</output>
+          <a className="primary-action" href={signInUrl} target="_blank" rel="noreferrer">{t('aiSetup.openSignIn', 'Open sign-in page')}<DirectionalSymbol symbol="↗" /></a>
+          <p className="field-hint">{t('aiSetup.waiting', 'This screen will continue automatically after sign-in.')}</p>
+        </> : null}
+        {['starting', 'checking'].includes(login?.status) ? <div className="ai-setup-progress"><span aria-hidden="true" /><strong>{login?.status === 'checking' ? t('aiSetup.checking', 'Checking sign-in...') : t('aiSetup.starting', 'Preparing sign-in...')}</strong></div> : null}
+        {login?.status === 'cancelled' ? <InlineNotice title={t('aiSetup.cancelled', 'Sign-in was cancelled')} /> : null}
+        {login?.status === 'error' ? <InlineNotice tone="warning" title={t('aiSetup.signInFailed', 'Sign-in could not be completed')} text={t('aiSetup.tryAgainText', 'Try again when you are ready.')} /> : null}
+        <div className="dialog-actions">
+          {canCancelLogin ? <button className="secondary-action" type="button" disabled={busy} onClick={cancelSubscription}>{t('aiSetup.stop', 'Stop sign-in')}</button> : !loginActive ? <button className="secondary-action" type="button" onClick={() => changeView('choose')}>{t('common.back', 'Back')}</button> : null}
+          {['cancelled', 'error'].includes(login?.status) ? <button className="primary-action" type="button" disabled={busy} onClick={connectSubscription}>{t('common.retry', 'Try again')}</button> : null}
+        </div>
+      </div> : null}
+
+      {view === 'api' ? <form className="ai-setup-step" onSubmit={connectApi}>
+        <p>{t('aiSetup.apiIntro', 'Enter the API key from your AI service.')}</p>
+        <label className="field-label" htmlFor="ai-api-key">{t('aiSetup.apiKey', 'API key')}</label>
+        <input
+          ref={keyInputRef}
+          id="ai-api-key"
+          className="text-input"
+          type="password"
+          required
+          minLength="8"
+          maxLength="4096"
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck="false"
+          value={apiKey}
+          onChange={(event) => setApiKey(event.target.value)}
+        />
+        <p className="field-hint">{t('aiSetup.sessionOnly', 'Used only while this Control Center is open. It is not saved in the browser or project.')}</p>
+        <div className="dialog-actions">
+          <button className="secondary-action" type="button" disabled={busy} onClick={() => { setApiKey(''); changeView('choose'); }}>{t('common.back', 'Back')}</button>
+          <button className="primary-action" type="submit" disabled={busy || !apiKey}>{busy ? t('aiSetup.connecting', 'Connecting...') : t('aiSetup.connect', 'Connect')}</button>
+        </div>
+      </form> : null}
+
+      {error ? <InlineNotice tone="danger" title={t('aiSetup.failed', 'AI could not be set up')} text={error} /> : null}
+    </dialog>
+  );
+}
+
+function safeCodexSignInUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'auth.openai.com' && url.pathname === '/codex/device'
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function subscriptionViewForLogin(login) {
+  return ['starting', 'waiting', 'checking', 'connected'].includes(login?.status) ? 'subscription' : 'choose';
+}
+
+function selectedAiConnection(aiConnections) {
+  const optionId = aiConnections?.selection?.connection_option_id;
+  return aiConnections?.connections?.find((connection) => (
+    connection.option_id === optionId && connection.status === 'available'
+  )) ?? null;
+}
+
+function isSelectedConnectionKind(aiConnections, kind) {
+  return selectedAiConnection(aiConnections)?.kind === kind;
+}
+
+function hasAdvancedAiRevision(aiConnections, expectedRevision) {
+  return Number.isSafeInteger(aiConnections?.storage_revision)
+    && aiConnections.storage_revision > Number(expectedRevision ?? -1);
+}
+
+function isAiRevisionConflict(error) {
+  return ['CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT', 'CONTROL_CENTER_AI_SETUP_CHANGED']
+    .includes(apiErrorCode(error));
+}
+
+function defaultAiSelectionForConnection(aiConnections, connection) {
+  const model = connection?.models?.find((item) => item.option_id === connection.default_model_option_id)
+    ?? connection?.models?.[0];
+  const effort = model?.efforts?.find((item) => item.option_id === model.default_effort_option_id)
+    ?? model?.efforts?.[0];
+  return model && effort ? {
+    connection_option_id: connection.option_id,
+    model_option_id: model.option_id,
+    effort_option_id: effort.option_id
+  } : null;
+}
+
+function aiSetupErrorMessage(error, t) {
+  const code = apiErrorCode(error);
+  if (code === 'CONTROL_CENTER_AI_KEY_REJECTED') {
+    return t('aiSetup.errorKey', 'The API key was not accepted. Check it and try again.');
+  }
+  if (code === 'CONTROL_CENTER_AI_MODEL_LIST_EMPTY') {
+    return t('aiSetup.errorModel', 'This account does not currently include a supported AI model.');
+  }
+  if (code === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT'
+    || code === 'CONTROL_CENTER_AI_SETUP_CHANGED'
+    || code === 'CONTROL_CENTER_AI_BINDING_CHANGED') {
+    return t('aiSetup.errorChanged', 'The AI choice changed in another screen. Close this window and open it again.');
+  }
+  if (code === 'CONTROL_CENTER_CODEX_LOGIN_CONTRACT_UNAVAILABLE'
+    || code === 'CONTROL_CENTER_CODEX_NOT_FOUND'
+    || code === 'CONTROL_CENTER_CODEX_PLATFORM_UNSUPPORTED') {
+    return t('aiSetup.errorCodex', 'Codex on this computer cannot be connected from this screen yet.');
+  }
+  if (code === 'CONTROL_CENTER_CODEX_LOGIN_RESTART_REQUIRED') {
+    return t('aiSetup.errorRestart', 'Sign-in stopped unexpectedly. Restart this computer, then try again.');
+  }
+  if (code === 'CONTROL_CENTER_PAIRING_REQUIRED'
+    || code === 'CONTROL_CENTER_SESSION_REJECTED'
+    || code === 'CONTROL_CENTER_SESSION_REQUIRED') {
+    return t('aiSetup.errorReopen', 'Open the Control Center again in the usual way, then continue.');
+  }
+  if (code === 'CONTROL_CENTER_AI_CONNECTION_UNREACHABLE'
+    || code === 'CONTROL_CENTER_AI_CONNECTION_UNAVAILABLE') {
+    return t('aiSetup.errorNetwork', 'The AI service could not be reached. Check your connection and try again.');
+  }
+  return t('aiSetup.failedText', 'Nothing was changed. Check the service and try again.');
+}
+
 function RunningPage({ items, navigate, reload, t }) {
   const active = items.filter((item) => isActive(item.state) || item.state === 'dispatch_unknown');
   return (
@@ -765,6 +1323,10 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
   const startButtonRef = useRef(null);
   const reviewIdRef = useRef(reviewId);
   const statusRequestGeneration = useRef(0);
+  const pendingRepeatRef = useRef(null);
+  const actionPendingRef = useRef(false);
+  const actionGenerationRef = useRef(0);
+  const actionAbortRef = useRef(null);
   reviewIdRef.current = reviewId;
 
   async function refresh({ quiet = false } = {}) {
@@ -786,6 +1348,8 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
     }
   }
   useEffect(() => {
+    actionGenerationRef.current += 1;
+    actionAbortRef.current?.abort();
     statusRequestGeneration.current += 1;
     setOperation(null);
     setLoading(true);
@@ -795,14 +1359,24 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
     setConfirmation(null);
     setNeedsAiRefresh(false);
     setSaving(false);
+    pendingRepeatRef.current = null;
+    actionPendingRef.current = false;
     refresh();
-    return () => { statusRequestGeneration.current += 1; };
+    return () => {
+      statusRequestGeneration.current += 1;
+      actionGenerationRef.current += 1;
+      actionAbortRef.current?.abort();
+    };
   }, [reviewId]);
   useEffect(() => {
     if (!operation || !isActive(readState(operation))) return undefined;
     let cancelled = false;
     let timer = null;
     const poll = async () => {
+      if (actionPendingRef.current) {
+        timer = window.setTimeout(poll, 150);
+        return;
+      }
       await refresh({ quiet: true });
       if (!cancelled) timer = window.setTimeout(poll, 2000);
     };
@@ -826,6 +1400,7 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
     if (!currentFinding) return;
     const requestedReviewId = reviewId;
     const findingId = currentFinding.id;
+    actionPendingRef.current = true;
     setSaving(true);
     setStatusError(false);
     try {
@@ -837,45 +1412,84 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
     } catch {
       if (reviewIdRef.current === requestedReviewId) setStatusError(true);
     } finally {
-      if (reviewIdRef.current === requestedReviewId) setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) {
+        actionPendingRef.current = false;
+        setSaving(false);
+      }
     }
   }
   async function repeat(kind) {
     const requestedReviewId = reviewId;
+    const action = beginPageAction(actionGenerationRef, actionAbortRef);
+    actionPendingRef.current = true;
     setSaving(true);
     setStatusError(false);
     setNeedsAiRefresh(false);
+    let pending = pendingRepeatRef.current;
     try {
-      const latestDashboard = await reload({ quiet: true });
-      if (reviewIdRef.current !== requestedReviewId) return;
-      const aiConnections = latestDashboard?.ai_connections ?? dashboard?.ai_connections;
-      const currentSelection = readAiSelection(aiConnections);
-      const next = await repeatAgenticReview({
-        review_id: requestedReviewId,
-        repeat_kind: kind,
-        ...(operation?.ai_suggestions && currentSelection ? {
-          ...currentSelection,
-          capability_revision: aiConnections.revision,
-          capability_token: aiConnections.capability_token
-        } : {})
-      });
+      if (pending?.reviewId !== requestedReviewId || pending.kind !== kind) {
+        const latestDashboard = await reload({ quiet: true });
+        if (!isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action)) return;
+        const aiConnections = latestDashboard?.ai_connections ?? dashboard?.ai_connections;
+        const currentSelection = readAiSelection(aiConnections);
+        pending = {
+          reviewId: requestedReviewId,
+          kind,
+          payload: {
+            review_id: requestedReviewId,
+            repeat_kind: kind,
+            idempotency_key: createRepeatIdempotencyKey(),
+            ...(operation?.ai_suggestions && currentSelection ? {
+              ...currentSelection,
+              capability_revision: aiConnections.revision,
+              capability_token: aiConnections.capability_token
+            } : {})
+          }
+        };
+        pendingRepeatRef.current = pending;
+      }
+      let next;
+      try {
+        next = await repeatAgenticReview(pending.payload, { signal: action.signal });
+      } catch (caught) {
+        if (!isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action)) return;
+        if (caught?.envelope) {
+          if (pendingRepeatRef.current === pending) pendingRepeatRef.current = null;
+          throw caught;
+        }
+        try {
+          next = await repeatAgenticReview(pending.payload, { signal: action.signal });
+        } catch (reconciliationError) {
+          if (reconciliationError?.envelope && pendingRepeatRef.current === pending) {
+            pendingRepeatRef.current = null;
+          }
+          throw reconciliationError;
+        }
+      }
       const nextId = readReviewId(next);
-      if (!nextId) throw new Error('Missing review');
-      if (reviewIdRef.current !== requestedReviewId) return;
+      if (!nextId) {
+        throw new Error('Missing review');
+      }
+      if (!isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action)) return;
+      if (pendingRepeatRef.current === pending) pendingRepeatRef.current = null;
       await reload({ quiet: true });
-      if (reviewIdRef.current !== requestedReviewId) return;
+      if (!isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action)) return;
       navigate({ page: 'confirm', view: 'work', itemId: nextId });
     } catch (caught) {
-      if (reviewIdRef.current === requestedReviewId) {
+      if (isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action)) {
         if (requiresAiProjectionRefresh(apiErrorCode(caught))) setNeedsAiRefresh(true);
         setStatusError(true);
       }
     } finally {
-      if (reviewIdRef.current === requestedReviewId) setSaving(false);
+      if (isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action)) {
+        actionPendingRef.current = false;
+        setSaving(false);
+      }
     }
   }
   async function requestStartConfirmation() {
     const requestedReviewId = reviewId;
+    actionPendingRef.current = true;
     setSaving(true);
     setStatusError(false);
     try {
@@ -884,11 +1498,15 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
     } catch {
       if (reviewIdRef.current === requestedReviewId) setStatusError(true);
     } finally {
-      if (reviewIdRef.current === requestedReviewId) setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) {
+        actionPendingRef.current = false;
+        setSaving(false);
+      }
     }
   }
   async function resumeStart() {
     const requestedReviewId = reviewId;
+    actionPendingRef.current = true;
     setSaving(true);
     setStatusError(false);
     try {
@@ -913,15 +1531,23 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
         await refresh({ quiet: true });
         await reload({ quiet: true });
         setStatusError(false);
+      } else if (!caught?.envelope) {
+        const statusReconciled = await refresh({ quiet: true });
+        await reload({ quiet: true });
+        if (reviewIdRef.current === requestedReviewId) setStatusError(!statusReconciled);
       } else {
         setStatusError(true);
       }
     } finally {
-      if (reviewIdRef.current === requestedReviewId) setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) {
+        actionPendingRef.current = false;
+        setSaving(false);
+      }
     }
   }
   async function resumePreparation() {
     const requestedReviewId = reviewId;
+    actionPendingRef.current = true;
     setSaving(true);
     setStatusError(false);
     try {
@@ -932,11 +1558,15 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
     } catch {
       if (reviewIdRef.current === requestedReviewId) setStatusError(true);
     } finally {
-      if (reviewIdRef.current === requestedReviewId) setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) {
+        actionPendingRef.current = false;
+        setSaving(false);
+      }
     }
   }
   async function cancelBeforeSend() {
     const requestedReviewId = reviewId;
+    actionPendingRef.current = true;
     setSaving(true);
     setStatusError(false);
     try {
@@ -952,11 +1582,15 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
       await reload({ quiet: true });
       if (reviewIdRef.current === requestedReviewId && !statusReconciled) setStatusError(true);
     } finally {
-      if (reviewIdRef.current === requestedReviewId) setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) {
+        actionPendingRef.current = false;
+        setSaving(false);
+      }
     }
   }
   async function checkRecoveryStatus() {
     const requestedReviewId = reviewId;
+    actionPendingRef.current = true;
     setSaving(true);
     setStatusError(false);
     try {
@@ -968,7 +1602,10 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
     } catch {
       if (reviewIdRef.current === requestedReviewId) setStatusError(true);
     } finally {
-      if (reviewIdRef.current === requestedReviewId) setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) {
+        actionPendingRef.current = false;
+        setSaving(false);
+      }
     }
   }
 
@@ -1076,11 +1713,14 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
   const [aiConnections, setAiConnections] = useState(initialAiConnections);
   const [aiDraft, setAiDraft] = useState(() => readAiSelection(initialAiConnections));
   const [aiEditorOpen, setAiEditorOpen] = useState(false);
+  const [aiSetupOpen, setAiSetupOpen] = useState(false);
   const [aiActionState, setAiActionState] = useState('idle');
   const [aiErrorMessage, setAiErrorMessage] = useState(null);
   const [state, setState] = useState('idle');
   const [settingsErrorMessage, setSettingsErrorMessage] = useState(null);
   const aiRequestGeneration = useRef(0);
+  const aiSetupButtonRef = useRef(null);
+  const saveButtonRef = useRef(null);
   const aiDraftDirty = Boolean(aiDraft) && !sameAiSelection(aiDraft, aiConnections.selection);
   const aiDraftDirtyRef = useRef(aiDraftDirty);
   aiDraftDirtyRef.current = aiDraftDirty;
@@ -1116,6 +1756,9 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
   }
   async function refreshAvailability() {
     const generation = ++aiRequestGeneration.current;
+    const previousRevision = aiConnections.storage_revision ?? 0;
+    const previousCapabilityRevision = aiConnections.revision ?? 0;
+    const previousCapabilityToken = aiConnections.capability_token ?? null;
     setAiActionState('refreshing');
     setAiErrorMessage(null);
     try {
@@ -1132,6 +1775,23 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
       await reload({ quiet: true });
     } catch (caught) {
       if (generation !== aiRequestGeneration.current) return;
+      if (!caught?.envelope) {
+        const latestDashboard = await reload({ quiet: true }).catch(() => null);
+        if (generation !== aiRequestGeneration.current) return;
+        const latest = latestDashboard?.ai_connections;
+        if (Number.isSafeInteger(latest?.storage_revision)
+          && latest.storage_revision > previousRevision
+          && Number.isSafeInteger(latest.revision)
+          && latest.revision > previousCapabilityRevision
+          && latest.capability_token !== previousCapabilityToken) {
+          setAiConnections(latest);
+          setAiDraft(readAiSelection(latest));
+          aiVersionRef.current = aiProjectionVersion(latest);
+          setAiEditorOpen(latest.selection === null);
+          setAiActionState('ready');
+          return;
+        }
+      }
       setAiActionState(apiErrorCode(caught) === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT' ? 'conflict' : 'error');
       setAiErrorMessage(uiErrorMessage(caught, t));
     }
@@ -1139,6 +1799,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
   async function applyAiSelection(selection = aiDraft) {
     if (!selection || !describeAiSelection(aiConnections, selection)) return;
     const generation = ++aiRequestGeneration.current;
+    const previousRevision = aiConnections.storage_revision ?? 0;
     setAiActionState('saving');
     setAiErrorMessage(null);
     try {
@@ -1157,6 +1818,20 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
       await reload({ quiet: true });
     } catch (caught) {
       if (generation !== aiRequestGeneration.current) return;
+      if (!caught?.envelope) {
+        const latestDashboard = await reload({ quiet: true }).catch(() => null);
+        if (generation !== aiRequestGeneration.current) return;
+        const latest = latestDashboard?.ai_connections;
+        if (Number.isSafeInteger(latest?.storage_revision)
+          && latest.storage_revision > previousRevision
+          && sameAiSelection(latest.selection, selection)) {
+          setAiConnections(latest);
+          setAiDraft(readAiSelection(latest));
+          aiVersionRef.current = aiProjectionVersion(latest);
+          setAiActionState('saved');
+          return;
+        }
+      }
       setAiActionState(apiErrorCode(caught) === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT' ? 'conflict' : 'error');
       setAiErrorMessage(uiErrorMessage(caught, t));
     }
@@ -1196,6 +1871,18 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
       setLocale(form.locale);
       setState('saved');
     } catch (caught) {
+      if (!caught?.envelope) {
+        const latest = await reload({ quiet: true }).catch(() => null);
+        const latestPreferences = readPreferences(latest);
+        if (latest?.settings?.display_language?.current_locale === form.locale
+          && latestPreferences.defaultViewport === form.defaultViewport
+          && latestPreferences.playwrightMode === form.playwrightMode
+          && latestPreferences.aiSuggestions === form.aiSuggestions) {
+          setLocale(form.locale);
+          setState('saved');
+          return;
+        }
+      }
       setSettingsErrorMessage(uiErrorMessage(caught, t));
       setState('error');
     }
@@ -1240,6 +1927,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
               </div>
               <div className="compact-actions">
                 {selectedAi && hasAlternativeAiSelection(aiConnections, aiDraft) ? <button className="link-action" type="button" onClick={() => setAiEditorOpen((value) => !value)} aria-expanded={aiEditorOpen}>{t('common.change', 'Change')}</button> : null}
+                <button ref={aiSetupButtonRef} className={selectedAi ? 'secondary-action compact' : 'primary-action compact'} type="button" onClick={() => setAiSetupOpen(true)} disabled={aiBusy}>{selectedAi ? t('aiSetup.change', 'Change connection') : t('aiSetup.open', 'Set up AI')}</button>
                 <button className="secondary-action compact" type="button" onClick={refreshAvailability} disabled={aiBusy || aiDraftDirty}>{aiActionState === 'refreshing' ? t('settings.aiRefreshing', 'Updating...') : t('settings.aiRefresh', 'Update availability')}</button>
               </div>
               {showAiEditor ? <AiConnectionEditor aiConnections={aiConnections} value={aiDraft} onChange={changeAiDraft} t={t} disabled={aiBusy} /> : null}
@@ -1255,8 +1943,27 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
         </section>
         {state === 'saved' ? <InlineNotice tone="success" title={t('settings.saved', 'Settings saved')} /> : null}
         {state === 'error' ? <InlineNotice tone="danger" title={t('settings.saveFailed', 'Settings could not be saved')} text={settingsErrorMessage} /> : null}
-        <div className="form-actions"><button className="primary-action" type="submit" disabled={state === 'saving'}>{state === 'saving' ? t('settings.saving', 'Saving...') : t('settings.saveAll', 'Save settings')}</button></div>
+        <div className="form-actions"><button ref={saveButtonRef} className="primary-action" type="submit" disabled={state === 'saving'}>{state === 'saving' ? t('settings.saving', 'Saving...') : t('settings.saveAll', 'Save settings')}</button></div>
       </form>
+      <AiSetupDialog
+        open={aiSetupOpen}
+        aiSetup={dashboard?.ai_setup}
+        aiConnections={aiConnections}
+        returnFocusRef={aiSetupButtonRef}
+        fallbackFocusRef={saveButtonRef}
+        onClose={() => setAiSetupOpen(false)}
+        onComplete={async () => {
+          const nextDashboard = await reload({ quiet: true });
+          const next = nextDashboard?.ai_connections;
+          if (next) {
+            setAiConnections(next);
+            setAiDraft(readAiSelection(next));
+            aiVersionRef.current = aiProjectionVersion(next);
+          }
+          return nextDashboard;
+        }}
+        t={t}
+      />
     </div>
   );
 }
@@ -1463,6 +2170,14 @@ function readPreferences(dashboard) {
   };
 }
 
+function createRepeatIdempotencyKey() {
+  const bytes = new Uint8Array(32);
+  globalThis.crypto.getRandomValues(bytes);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return globalThis.btoa(binary).replace(/\+/gu, '-').replace(/\//gu, '_').replace(/=+$/gu, '');
+}
+
 function localeOptions(dashboard) {
   const configured = dashboard?.settings?.display_language?.supported_locales;
   if (Array.isArray(configured) && configured.length) return configured.map((item) => {
@@ -1535,6 +2250,20 @@ function apiErrorCode(error) {
     ?? null;
 }
 
+function controlCenterLoadError(error) {
+  if (error?.controlCenterReopenRequired === true) return 'session';
+  return [
+    'CONTROL_CENTER_PAIRING_REQUIRED',
+    'CONTROL_CENTER_PAIRING_REJECTED',
+    'CONTROL_CENTER_PAIRING_DISABLED',
+    'CONTROL_CENTER_PAIRING_TOKEN_EXPIRED',
+    'CONTROL_CENTER_PAIRING_TOKEN_REJECTED',
+    'CONTROL_CENTER_SESSION_CAPACITY_REACHED',
+    'CONTROL_CENTER_SESSION_REQUIRED',
+    'CONTROL_CENTER_SESSION_REJECTED'
+  ].includes(apiErrorCode(error)) ? 'session' : 'load';
+}
+
 function requiresAiProjectionRefresh(code) {
   return new Set([
     'CONTROL_CENTER_AI_CONNECTION_NOT_CHECKED',
@@ -1604,13 +2333,51 @@ function decisionForFinding(decisions, findingId) {
   return decisions.find((decision) => decision?.finding_id === findingId)?.value;
 }
 
-async function waitUntilPrepared(reviewId) {
+async function waitUntilPrepared(reviewId, { signal } = {}) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    const operation = await fetchAgenticReviewStatus(reviewId);
+    throwIfAborted(signal);
+    const operation = await fetchAgenticReviewStatus(reviewId, { signal });
     const state = readState(operation);
     if (state === 'confirmation_required' || isComplete(state)) return operation;
     if (isFailed(state) || state === 'dispatch_unknown') throw new Error('Review preparation stopped');
-    await new Promise((resolve) => window.setTimeout(resolve, 500));
+    await abortableDelay(500, signal);
   }
   throw new Error('Review preparation timed out');
+}
+
+function beginPageAction(generationRef, abortRef) {
+  abortRef.current?.abort();
+  const controller = new AbortController();
+  abortRef.current = controller;
+  return { generation: ++generationRef.current, signal: controller.signal };
+}
+
+function isCurrentPageAction(generationRef, action) {
+  return generationRef.current === action.generation && !action.signal.aborted;
+}
+
+function isCurrentReviewAction(generationRef, reviewIdRef, reviewId, action) {
+  return reviewIdRef.current === reviewId && isCurrentPageAction(generationRef, action);
+}
+
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  throw signal.reason ?? new DOMException('The page action was cancelled.', 'AbortError');
+}
+
+function abortableDelay(delayMs, signal) {
+  throwIfAborted(signal);
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(finish, delayMs);
+    signal?.addEventListener('abort', cancel, { once: true });
+    function finish() {
+      signal?.removeEventListener('abort', cancel);
+      resolve();
+    }
+    function cancel() {
+      window.clearTimeout(timer);
+      signal?.removeEventListener('abort', cancel);
+      reject(signal.reason ?? new DOMException('The page action was cancelled.', 'AbortError'));
+    }
+  });
 }

@@ -22508,6 +22508,16 @@ function normalizeConnectionBinding(value) {
       : safeId(value.provider_effort_request_field),
     provider_capability_hash: safeHash(value.provider_capability_hash),
     executable_identity_hash: safeHash(value.executable_identity_hash, { optional: true }),
+    profile_revision: value.profile_revision === null || value.profile_revision === undefined
+      ? null
+      : Number(value.profile_revision),
+    configuration_identity_hash: safeHash(value.configuration_identity_hash, { optional: true }),
+    credential_generation: value.credential_generation === null || value.credential_generation === undefined
+      ? null
+      : safeId(value.credential_generation),
+    runtime_instance_id: value.runtime_instance_id === null || value.runtime_instance_id === undefined
+      ? null
+      : safeId(value.runtime_instance_id),
     semantic_capability_hash: safeHash(value.semantic_capability_hash),
     capability_revision: Number(value.capability_revision),
     observed_at: typeof value.observed_at === 'string' && Number.isFinite(Date.parse(value.observed_at)) ? value.observed_at : null,
@@ -22523,6 +22533,18 @@ function normalizeConnectionBinding(value) {
     || normalized.capability_revision < 1
     || (normalized.provider_effort_request_field && !normalized.provider_effort)) {
     return connectionBindingError('AGENTIC_REVIEW_CONNECTION_BINDING_INVALID', 'The approved AI connection binding is incomplete.');
+  }
+  const runtimeFields = [
+    normalized.profile_revision,
+    normalized.configuration_identity_hash,
+    normalized.credential_generation,
+    normalized.runtime_instance_id
+  ];
+  const runtimeFieldCount = runtimeFields.filter((item) => item !== null).length;
+  if (runtimeFieldCount !== 0 && (runtimeFieldCount !== runtimeFields.length
+    || !Number.isSafeInteger(normalized.profile_revision)
+    || normalized.profile_revision < 1)) {
+    return connectionBindingError('AGENTIC_REVIEW_CONNECTION_BINDING_INVALID', 'The approved AI connection runtime binding is incomplete.');
   }
   return { ok: true, value: normalized };
 }

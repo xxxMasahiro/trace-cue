@@ -9,11 +9,15 @@ import { tmpdir } from 'node:os';
 import {
   buildControlCenterAiReadiness,
   buildControlCenterAiDestinationFingerprint,
+  CONTROL_CENTER_AI_REFRESH_CONFIRM,
+  CONTROL_CENTER_AI_SELECTION_CONFIRM,
   createControlCenterAiConnectionRecord,
   getSchema,
   agenticProviderCapabilityHash,
   projectControlCenterAiConnections,
   readControlCenterPreferences,
+  runControlCenterAiConnectionsRefresh,
+  runControlCenterAiSelectionSave,
   runControlCenterAgenticReviewCancel,
   runControlCenterAgenticReviewConfirmation,
   runControlCenterAgenticReviewDecision,
@@ -27,8 +31,13 @@ import {
   resolveAgenticHumanReviewProvider,
   startControlCenterServer
 } from '../src/api.js';
+import { createControlCenterAiSetupRuntime } from '../src/control-center-ai-setup-runtime.js';
 import { captureProcessIdentity, createSafeLocalStore } from '../src/safe-local-store.js';
 import { createControlCenterTestAssetRoot } from './helpers/control-center-test-assets.js';
+
+function repeatIdempotencyKey(character) {
+  return character.repeat(43);
+}
 
 async function runConfirmedExternalReview(harness) {
   const prepared = reviewData(await runControlCenterAgenticReviewPrepare(withHarnessAi(harness, {
@@ -338,6 +347,9 @@ test('Control Center executes one external review only after one-time disclosure
   assert.equal(completed.dispatch.provider_call_performed, true);
   assert.equal(completed.dispatch.retry_automatic, false);
   assert.equal(completed.boundary.raw_provider_response_included, false);
+  assert.equal(completed.boundary.provider_credential_source, 'none');
+  assert.equal(completed.boundary.provider_credentials_env_only, false);
+  assert.equal(completed.boundary.internal_adapter_credentials_env_only, false);
 
   const decided = reviewData(await runControlCenterAgenticReviewDecision({
     operation_id: id,
@@ -349,13 +361,189 @@ test('Control Center executes one external review only after one-time disclosure
 
   const repeated = reviewData(await runControlCenterAgenticReviewRepeat({
     operation_id: id,
-    mode: 'recheck'
+    mode: 'recheck',
+    idempotency_key: repeatIdempotencyKey('a')
   }, harness.context));
   assert.notEqual(repeated.operation.id, id);
   assert.equal(repeated.operation.parent_review.id, id);
   assert.equal(repeated.operation.parent_review.repeat_mode, 'recheck');
   await harness.drain();
   assert.equal(harness.calls.review, 2);
+});
+
+test('Control Center repeat is exactly-once across concurrent replay, history, and bounded capacity', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-repeat-idempotency-'));
+  const harness = createHarness(cwd);
+  const completed = await runConfirmedExternalReview(harness);
+  const key = repeatIdempotencyKey('g');
+  const payload = {
+    operation_id: completed.id,
+    mode: 'recheck',
+    idempotency_key: key
+  };
+
+  const missing = await runControlCenterAgenticReviewRepeat({
+    operation_id: completed.id,
+    mode: 'recheck'
+  }, harness.context);
+  assert.equal(missing.status, 'error');
+  assert.equal(missing.errors[0].code, 'CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_IDEMPOTENCY_REQUIRED');
+  const invalid = await runControlCenterAgenticReviewRepeat({
+    ...payload,
+    idempotency_key: 'not-a-valid-key'
+  }, harness.context);
+  assert.equal(invalid.status, 'error');
+  assert.equal(invalid.errors[0].code, 'CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_IDEMPOTENCY_INVALID');
+
+  const concurrent = await Promise.all(Array.from(
+    { length: 8 },
+    () => runControlCenterAgenticReviewRepeat(payload, harness.context)
+  ));
+  assert.equal(
+    concurrent.every((result) => result.status === 'ok'),
+    true,
+    JSON.stringify(concurrent.filter((result) => result.status !== 'ok'))
+  );
+  const projections = concurrent.map((result) => result.data.control_center_agentic_review);
+  assert.equal(new Set(projections.map((result) => result.operation.id)).size, 1);
+  assert.equal(projections.filter((result) => result.background_work_started === true).length, 1);
+  const childId = projections[0].operation.id;
+  await harness.drain();
+  assert.equal(harness.calls.review, 2);
+
+  const replay = reviewData(await runControlCenterAgenticReviewRepeat(payload, harness.context));
+  assert.equal(replay.operation.id, childId);
+  assert.equal(replay.idempotent_replay, true);
+  assert.equal(replay.background_work_started, false);
+
+  const fallbackStore = createSafeLocalStore({
+    workspaceRoot: cwd,
+    relativeRoot: '.browser-debug/control-center-agentic-reviews',
+    namespace: 'control-center-agentic-review-operations',
+    maxRecordBytes: 1024 * 1024,
+    maxEntries: 4096
+  });
+  let hideExistingChildOnce = true;
+  let hideExistingChildHistoryOnce = true;
+  let timeOutAdmissionOnce = true;
+  const fallbackEvents = [];
+  const fallbackStoreAdapter = {
+    ...fallbackStore,
+    async readJson(relativePath, options) {
+      fallbackEvents.push(`read:${relativePath}`);
+      if (hideExistingChildOnce && relativePath === `${childId}/operation.json`) {
+        hideExistingChildOnce = false;
+        const error = new Error('Simulated read race before admission.');
+        error.code = 'ENOENT';
+        throw error;
+      }
+      if (!hideExistingChildOnce
+        && hideExistingChildHistoryOnce
+        && relativePath.startsWith('history/')
+        && relativePath.endsWith(`/${childId}.json`)) {
+        hideExistingChildHistoryOnce = false;
+        const error = new Error('Simulated history miss before admission.');
+        error.code = 'ENOENT';
+        throw error;
+      }
+      return fallbackStore.readJson(relativePath, options);
+    },
+    async withLock(name, run, options) {
+      fallbackEvents.push(`lock:${name}`);
+      if (timeOutAdmissionOnce && name === 'operation-admission') {
+        timeOutAdmissionOnce = false;
+        const error = new Error('Simulated admission lock timeout after another writer committed.');
+        error.code = 'SAFE_STORE_LOCK_TIMEOUT';
+        throw error;
+      }
+      return fallbackStore.withLock(name, run, options);
+    }
+  };
+  const callsBeforeLockTimeoutReplay = harness.calls.review;
+  const lockTimeoutResult = await runControlCenterAgenticReviewRepeat(payload, {
+    ...harness.context,
+    createControlCenterAgenticReviewStore: () => {
+      fallbackEvents.push('factory');
+      return fallbackStoreAdapter;
+    }
+  });
+  assert.equal(lockTimeoutResult.status, 'ok', JSON.stringify({ lockTimeoutResult, fallbackEvents }));
+  const lockTimeoutReplay = reviewData(lockTimeoutResult);
+  assert.equal(lockTimeoutReplay.operation.id, childId);
+  assert.equal(lockTimeoutReplay.idempotent_replay, true);
+  assert.equal(lockTimeoutReplay.background_work_started, false);
+  assert.equal(hideExistingChildOnce, false);
+  assert.equal(hideExistingChildHistoryOnce, false);
+  assert.equal(timeOutAdmissionOnce, false);
+  assert.equal(harness.calls.review, callsBeforeLockTimeoutReplay);
+
+  const changedMode = await runControlCenterAgenticReviewRepeat({
+    ...payload,
+    mode: 'deeper'
+  }, harness.context);
+  assert.equal(changedMode.status, 'error');
+  assert.equal(changedMode.errors[0].code, 'CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_IDEMPOTENCY_CONFLICT');
+  const changedSelection = await runControlCenterAgenticReviewRepeat({
+    ...payload,
+    ...harness.aiSelection,
+    effort_option_id: 'changed-effort'
+  }, harness.context);
+  assert.equal(changedSelection.status, 'error');
+  assert.equal(changedSelection.errors[0].code, 'CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_IDEMPOTENCY_CONFLICT');
+
+  const another = reviewData(await runControlCenterAgenticReviewRepeat({
+    ...payload,
+    idempotency_key: repeatIdempotencyKey('h')
+  }, harness.context));
+  assert.notEqual(another.operation.id, childId);
+  await harness.drain();
+
+  const storedPath = path.join(
+    cwd,
+    '.browser-debug',
+    'control-center-agentic-reviews',
+    childId,
+    'operation.json'
+  );
+  const storedText = await readFile(storedPath, 'utf8');
+  assert.doesNotMatch(storedText, new RegExp(key));
+  assert.doesNotMatch(JSON.stringify(projections), new RegExp(key));
+  const stored = JSON.parse(storedText);
+  assert.match(stored.internal.repeat_idempotency.key_hash, /^[a-f0-9]{64}$/u);
+  assert.match(stored.internal.repeat_idempotency.request_hash, /^[a-f0-9]{64}$/u);
+
+  const confirmation = reviewData(await runControlCenterAgenticReviewConfirmation({
+    operation_id: childId
+  }, harness.context)).confirmation;
+  reviewData(await runControlCenterAgenticReviewStart({
+    operation_id: childId,
+    nonce: confirmation.nonce,
+    revision: confirmation.revision,
+    execute_confirmed: true
+  }, harness.context));
+  await harness.drain();
+  const store = createSafeLocalStore({
+    workspaceRoot: cwd,
+    relativeRoot: '.browser-debug/control-center-agentic-reviews',
+    namespace: 'control-center-agentic-review-operations',
+    maxRecordBytes: 1024 * 1024,
+    maxEntries: 4096
+  });
+  await store.withLock('operation-admission', () => store.withLock(childId, async () => {
+    const current = await store.readJson(`${childId}/operation.json`, { maxBytes: 1024 * 1024 });
+    const digest = createHash('sha256').update(childId).digest('hex');
+    await store.writeJson(`history/${digest.slice(0, 2)}/${digest.slice(2, 4)}/${childId}.json`, current, {
+      maxBytes: 1024 * 1024
+    });
+    await store.removeDirectory(childId, { maxEntries: 8 });
+  }));
+
+  const callsBeforeArchivedReplay = harness.calls.review;
+  const restartedContext = { ...harness.context, agenticReviewActiveEntries: 1 };
+  const archivedReplay = reviewData(await runControlCenterAgenticReviewRepeat(payload, restartedContext));
+  assert.equal(archivedReplay.operation.id, childId);
+  assert.equal(archivedReplay.idempotent_replay, true);
+  assert.equal(harness.calls.review, callsBeforeArchivedReplay);
 });
 
 test('Control Center completes the same consent and repeat flow with a subscription AI connection', async () => {
@@ -405,6 +593,9 @@ test('Control Center completes the same consent and repeat flow with a subscript
   assert.equal(completed.dispatch.provider_call_performed, true);
   assert.equal(completed.dispatch.api_call_performed, false);
   assert.equal(completed.dispatch.external_evidence_transfer, true);
+  assert.equal(completed.boundary.provider_credential_source, 'subscription_session');
+  assert.equal(completed.boundary.provider_credentials_env_only, false);
+  assert.equal(completed.boundary.internal_adapter_credentials_env_only, false);
 
   reviewData(await runControlCenterAgenticReviewDecision({
     operation_id: ready.id,
@@ -414,6 +605,7 @@ test('Control Center completes the same consent and repeat flow with a subscript
   const repeated = reviewData(await runControlCenterAgenticReviewRepeat({
     operation_id: ready.id,
     mode: 'deeper',
+    idempotency_key: repeatIdempotencyKey('b'),
     ...harness.aiSelection
   }, harness.context)).operation;
   await harness.drain();
@@ -442,6 +634,7 @@ test('Control Center completes the same consent and repeat flow with a subscript
   const rechecked = reviewData(await runControlCenterAgenticReviewRepeat({
     operation_id: repeatedReady.id,
     mode: 'recheck',
+    idempotency_key: repeatIdempotencyKey('c'),
     ...harness.aiSelection
   }, harness.context)).operation;
   await harness.drain();
@@ -490,7 +683,8 @@ test('Control Center repeat accepts the current opaque AI choice after capabilit
   harness.context.controlCenterAiConnectionRecord = refreshedRecord;
   const staleRepeat = await runControlCenterAgenticReviewRepeat({
     operation_id: completed.id,
-    mode: 'recheck'
+    mode: 'recheck',
+    idempotency_key: repeatIdempotencyKey('d')
   }, harness.context);
   assert.equal(staleRepeat.status, 'error');
   assert.equal(staleRepeat.errors[0].code, 'CONTROL_CENTER_AI_CONNECTION_REVISION_CHANGED');
@@ -499,6 +693,7 @@ test('Control Center repeat accepts the current opaque AI choice after capabilit
   const repeated = reviewData(await runControlCenterAgenticReviewRepeat({
     operation_id: completed.id,
     mode: 'recheck',
+    idempotency_key: repeatIdempotencyKey('e'),
     connection_option_id: projection.selection.connection_option_id,
     model_option_id: projection.selection.model_option_id,
     effort_option_id: projection.selection.effort_option_id,
@@ -548,6 +743,7 @@ test('Control Center repeats a legacy AI review with the current opaque AI choic
   const repeated = reviewData(await runControlCenterAgenticReviewRepeat({
     operation_id: id,
     mode: 'recheck',
+    idempotency_key: repeatIdempotencyKey('f'),
     ...harness.aiSelection
   }, harness.context)).operation;
   assert.notEqual(repeated.id, id);
@@ -592,6 +788,9 @@ test('Control Center keeps local review local and rejects browser authority fiel
   assert.equal(harness.calls.propose, 0);
   assert.equal(harness.calls.plan, 0);
   assert.equal(harness.calls.run, 0);
+  assert.equal(completed.boundary.provider_credential_source, 'none');
+  assert.equal(completed.boundary.provider_credentials_env_only, false);
+  assert.equal(completed.boundary.internal_adapter_credentials_env_only, false);
 });
 
 test('Control Center operations honor a workspace-confined configured artifact root', async () => {
@@ -952,6 +1151,9 @@ test('Control Center destination confirmation binds the effective runtime model 
     url: 'https://example.jp/', purpose: 'Check the next action.', effort: 'standard',
     viewport: 'desktop', ai_suggestions: true
   }), harness.context));
+  assert.equal(prepared.operation.boundary.provider_credential_source, 'environment');
+  assert.equal(prepared.operation.boundary.provider_credentials_env_only, true);
+  assert.equal(prepared.operation.boundary.internal_adapter_credentials_env_only, false);
   await harness.drain();
   const confirmation = reviewData(await runControlCenterAgenticReviewConfirmation({
     operation_id: prepared.operation.id
@@ -976,6 +1178,185 @@ test('Control Center destination confirmation binds the effective runtime model 
     viewport: 'desktop', ai_suggestions: false
   }, harness.context);
   assert.equal(replacement.status, 'ok');
+});
+
+test('Control Center carries one session credential generation from GUI setup through exact review dispatch', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-session-runtime-dispatch-'));
+  const credentialValue = ['runtime', 'fixture', 'value', '123456789'].join('-');
+  let managedFetch = null;
+  let adapterToken = null;
+  let adapterId = 0;
+  let responseCalls = 0;
+  const runtime = await createControlCenterAiSetupRuntime({
+    instanceId: 'agentic_review_session_runtime_1234567890'
+  }, {
+    async controlCenterAiUpstreamFetch(url, options = {}) {
+      if (String(url) === 'https://api.openai.com/v1/models') {
+        assert.equal(options.headers.authorization, `Bearer ${credentialValue}`);
+        return new Response(JSON.stringify({ data: [
+          { id: 'gpt-5.6-sol' },
+          { id: 'gpt-5.6-terra' }
+        ] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      assert.equal(String(url), 'https://api.openai.com/v1/responses');
+      assert.equal(options.headers.authorization, `Bearer ${credentialValue}`);
+      const request = JSON.parse(options.body);
+      assert.equal(request.model, 'gpt-5.6-terra');
+      assert.equal(request.reasoning.effort, 'max');
+      responseCalls += 1;
+      return new Response(JSON.stringify({ id: 'response-fixture', output: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    },
+    async startControlCenterResponsesAdapter(_options, adapterContext) {
+      adapterId += 1;
+      managedFetch = adapterContext.fetch;
+      adapterToken = adapterContext.env.AGENTIC_HUMAN_REVIEW_API_TOKEN;
+      return {
+        url: `http://127.0.0.1:${35700 + adapterId}/agentic-human-review`,
+        async close() {}
+      };
+    }
+  });
+  try {
+    const service = runtime.projection().services.find((item) => item.kind === 'api');
+    const intent = runtime.createApiSubmission({ service_option_id: service.option_id, expected_revision: 0 });
+    const credential = Buffer.from(credentialValue);
+    const preparedConnection = await runtime.prepareApiConnection(intent.submission_id, credential);
+    credential.fill(0);
+    assert.equal(preparedConnection.ok, true);
+    assert.equal((await runtime.beginPromotion(preparedConnection.pending).commit()).ok, true);
+
+    const harness = createHarness(cwd, {
+      agenticReviewServiceName: 'OpenAI',
+      agenticReviewProviderId: 'generic-api-provider',
+      agenticReviewModelId: 'gpt-5.6-terra',
+      controlCenterAiConnections: [],
+      async discoverControlCenterAiConnections() {
+        return {
+          connections: runtime.connections(),
+          selection: null,
+          boundary: { process_spawned: false, network_used: false, credential_values_read: false }
+        };
+      },
+      controlCenterAiSetupRuntime: runtime
+    });
+    delete harness.context.controlCenterAiConnectionRecord;
+    const originalRun = harness.context.runAgenticHumanReviewRun;
+    harness.context.runAgenticHumanReviewRun = async (options, executionContext) => {
+      assert.equal(executionContext.controlCenterAiExecutionGeneration, preparedConnection.connection.credential_generation);
+      assert.equal(executionContext.env.AGENTIC_HUMAN_REVIEW_API_ENDPOINT, preparedConnection.pending.adapter.url);
+      assert.equal(executionContext.env.AGENTIC_HUMAN_REVIEW_API_TOKEN, adapterToken);
+      assert.notEqual(adapterToken, credentialValue);
+      const planOptions = harness.calls.planOptions.at(-1);
+      await managedFetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${adapterToken}` },
+        body: JSON.stringify({
+          model: planOptions.model,
+          reasoning: { effort: planOptions['provider-effort'] }
+        })
+      });
+      return originalRun(options, executionContext);
+    };
+
+    const refreshed = await runControlCenterAiConnectionsRefresh({
+      confirm: CONTROL_CENTER_AI_REFRESH_CONFIRM,
+      expected_revision: 0
+    }, harness.context);
+    assert.equal(refreshed.status, 'ok', JSON.stringify(refreshed.errors));
+    const runtimeConnection = refreshed.data.ai_connections.connections.find((connection) => connection.name === 'OpenAI');
+    const terra = runtimeConnection.models.find((model) => model.name === 'GPT-5.6 Terra');
+    assert.ok(terra, JSON.stringify(refreshed.data.ai_connections.connections));
+    const max = terra.efforts.find((effort) => effort.name === 'Max');
+    const selectionInput = {
+      connection_option_id: runtimeConnection.option_id,
+      model_option_id: terra.option_id,
+      effort_option_id: max.option_id,
+      capability_revision: refreshed.data.ai_connections.revision,
+      capability_token: refreshed.data.ai_connections.capability_token,
+      expected_revision: refreshed.data.ai_connections.storage_revision,
+      confirm: CONTROL_CENTER_AI_SELECTION_CONFIRM
+    };
+    const selected = await runControlCenterAiSelectionSave(selectionInput, harness.context);
+    assert.equal(selected.status, 'ok');
+    const currentSelection = {
+      ...selectionInput,
+      capability_revision: selected.data.ai_connections.revision,
+      capability_token: selected.data.ai_connections.capability_token
+    };
+
+    const first = reviewData(await runControlCenterAgenticReviewPrepare({
+      url: 'https://example.jp/runtime-dispatch',
+      purpose: 'Keep the selected AI model and processing level exact.',
+      effort: 'deep',
+      viewport: 'desktop',
+      ai_suggestions: true,
+      ...currentSelection
+    }, harness.context));
+    assert.equal(first.operation.boundary.credentials_env_only, false);
+    assert.equal(first.operation.boundary.provider_credential_source, 'control_center_session');
+    assert.equal(first.operation.boundary.provider_credentials_env_only, false);
+    assert.equal(first.operation.boundary.internal_adapter_credentials_env_only, true);
+    await harness.drain();
+    const firstConfirmation = reviewData(await runControlCenterAgenticReviewConfirmation({
+      operation_id: first.operation.id
+    }, harness.context)).confirmation;
+    assert.equal(harness.calls.planOptions[0].model, 'gpt-5.6-terra');
+    assert.equal(harness.calls.planOptions[0]['provider-effort'], 'max');
+    assert.equal(harness.calls.planOptions[0]['connection-binding'].credential_generation, preparedConnection.connection.credential_generation);
+    const firstStarted = await runControlCenterAgenticReviewStart({
+      operation_id: first.operation.id,
+      nonce: firstConfirmation.nonce,
+      revision: firstConfirmation.revision,
+      execute_confirmed: true
+    }, harness.context);
+    assert.equal(firstStarted.status, 'ok');
+    await harness.drain();
+    assert.equal(responseCalls, 1);
+
+    const stale = reviewData(await runControlCenterAgenticReviewPrepare({
+      url: 'https://example.jp/runtime-stale',
+      purpose: 'Reject an old confirmation after the session connection changes.',
+      effort: 'standard',
+      viewport: 'desktop',
+      ai_suggestions: true,
+      ...currentSelection
+    }, harness.context));
+    await harness.drain();
+    const staleConfirmation = reviewData(await runControlCenterAgenticReviewConfirmation({
+      operation_id: stale.operation.id
+    }, harness.context)).confirmation;
+
+    const replacementIntent = runtime.createApiSubmission({ service_option_id: service.option_id, expected_revision: 2 });
+    const replacementCredential = Buffer.from(credentialValue);
+    const replacement = await runtime.prepareApiConnection(replacementIntent.submission_id, replacementCredential);
+    replacementCredential.fill(0);
+    assert.equal(replacement.ok, true);
+    const replacementTransaction = runtime.beginPromotion(replacement.pending);
+    const replaced = await runControlCenterAiConnectionsRefresh({
+      confirm: CONTROL_CENTER_AI_REFRESH_CONFIRM,
+      expected_revision: selected.data.ai_connections.storage_revision
+    }, {
+      ...harness.context,
+      controlCenterAiConnectionSnapshot: replacementTransaction.connectionSnapshot
+    });
+    assert.equal(replaced.status, 'ok');
+    assert.equal((await replacementTransaction.commit()).ok, true);
+
+    const refused = await runControlCenterAgenticReviewStart({
+      operation_id: stale.operation.id,
+      nonce: staleConfirmation.nonce,
+      revision: staleConfirmation.revision,
+      execute_confirmed: true
+    }, harness.context);
+    assert.equal(refused.status, 'error');
+    assert.match(refused.errors[0].code, /^CONTROL_CENTER_(?:AI_BINDING_CHANGED|AGENTIC_REVIEW_DESTINATION_CHANGED)$/u);
+    assert.equal(responseCalls, 1);
+  } finally {
+    await runtime.dispose();
+  }
 });
 
 test('Control Center bounds active review admission and preserves an archived id collision', async () => {
@@ -1109,6 +1490,11 @@ test('Control Center agentic review schema is exported', () => {
   assert.equal(schema.properties.type.const, 'control_center_agentic_review');
   assert.deepEqual(schema.properties.target.type, ['string', 'null']);
   assert.equal(schema.properties.external_send_confirmation_required.const, true);
+  assert.deepEqual(schema.properties.boundary.properties.provider_credential_source.enum, [
+    'none', 'environment', 'control_center_session', 'subscription_session'
+  ]);
+  assert.equal(schema.properties.boundary.required.includes('provider_credentials_env_only'), true);
+  assert.equal(schema.properties.boundary.required.includes('internal_adapter_credentials_env_only'), true);
 });
 
 test('Control Center server exposes agentic review separately from the original action allowlist', async () => {
@@ -1129,13 +1515,14 @@ test('Control Center server exposes agentic review separately from the original 
     assert.equal(started.metadata.agentic_review_endpoints.includes('/api/agentic-review/recover'), true);
     const dashboard = await fetch(new URL('/api/dashboard', started.url));
     const actionToken = (await dashboard.json()).data.control_center.action_security.token;
+    const actionHeaders = {
+      'Content-Type': 'application/json',
+      Origin: started.url.slice(0, -1),
+      'X-Trace-Cue-Action-Token': actionToken
+    };
     const preparedResponse = await fetch(new URL('/api/agentic-review/prepare', started.url), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Origin: started.url.slice(0, -1),
-        'X-Trace-Cue-Action-Token': actionToken
-      },
+      headers: actionHeaders,
       body: JSON.stringify(withHarnessAi(harness, {
         url: 'https://example.jp/', purpose: '予約の分かりやすさを確認する', effort: 'standard', viewport: 'both', ai_suggestions: true
       }))
@@ -1148,6 +1535,43 @@ test('Control Center server exposes agentic review separately from the original 
     const status = (await statusResponse.json()).data.control_center_agentic_review.operation;
     assert.equal(status.state, 'confirmation_required');
     assert.equal(status.service.name, 'Example Review AI');
+    const confirmation = reviewData(await runControlCenterAgenticReviewConfirmation({
+      operation_id: prepared.operation.id
+    }, harness.context)).confirmation;
+    reviewData(await runControlCenterAgenticReviewStart({
+      operation_id: prepared.operation.id,
+      nonce: confirmation.nonce,
+      revision: confirmation.revision,
+      execute_confirmed: true
+    }, harness.context));
+    await harness.drain();
+    const repeatKey = repeatIdempotencyKey('k');
+    const repeatedResponse = await fetch(new URL('/api/agentic-review/repeat', started.url), {
+      method: 'POST',
+      headers: actionHeaders,
+      body: JSON.stringify({
+        operation_id: prepared.operation.id,
+        mode: 'recheck',
+        idempotency_key: repeatKey
+      })
+    });
+    assert.equal(repeatedResponse.status, 202);
+    const repeated = (await repeatedResponse.json()).data.control_center_agentic_review;
+    assert.equal(repeated.operation.parent_review.id, prepared.operation.id);
+    const conflictResponse = await fetch(new URL('/api/agentic-review/repeat', started.url), {
+      method: 'POST',
+      headers: actionHeaders,
+      body: JSON.stringify({
+        operation_id: prepared.operation.id,
+        mode: 'deeper',
+        idempotency_key: repeatKey
+      })
+    });
+    assert.equal(conflictResponse.status, 409);
+    assert.equal(
+      (await conflictResponse.json()).errors[0].code,
+      'CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_IDEMPOTENCY_CONFLICT'
+    );
   } finally {
     await new Promise((resolve) => started.server.close(resolve));
   }
@@ -1452,6 +1876,49 @@ test('Control Center history maintenance does not keep a completed child process
     releaseRetention();
     await holder;
   }
+});
+
+test('Control Center repeat admission stays exactly-once across Node processes', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-repeat-process-'));
+  const id = 'control-center-agentic-review-repeat-process-parent';
+  const key = repeatIdempotencyKey('j');
+  const store = createSafeLocalStore({
+    workspaceRoot: cwd,
+    relativeRoot: '.browser-debug/control-center-agentic-reviews',
+    namespace: 'control-center-agentic-review-operations',
+    maxRecordBytes: 1024 * 1024,
+    maxEntries: 4096
+  });
+  await store.writeJson(`${id}/operation.json`, {
+    schema_version: '2.0.0', type: 'control_center_agentic_review_operation', id,
+    state: 'completed', stage: 'complete', created_at: '2026-07-14T00:00:00.000Z',
+    updated_at: '2026-07-14T00:00:00.000Z', started_at: null,
+    completed_at: '2026-07-14T00:00:00.000Z', relationship: null,
+    request: { purpose: 'Repeat once', effort: 'standard', viewport: 'desktop', ai_suggestions: false },
+    service: { name: 'Local review', external_ai: false }, dispatch: { attempt: 0 },
+    decisions: [], result: { findings: [] }, error: null,
+    internal: { target_url: 'https://example.test/repeat-process', connection_selection: null }
+  });
+
+  const workerPath = path.resolve('tests/fixtures/control-center-repeat-worker.mjs');
+  const workers = Array.from({ length: 4 }, () => spawn(process.execPath, [workerPath, cwd, id, key]));
+  const outputs = await Promise.all(workers.map((worker) => settleWithin(collectProcess(worker), 10_000)));
+  assert.equal(workers.every((worker) => worker.exitCode === 0), true, outputs.join('\n'));
+  const results = outputs.map((output) => JSON.parse(output.trim()));
+  assert.equal(new Set(results.map((result) => result.operation_id)).size, 1);
+  assert.equal(results.filter((result) => result.background_work_started === true).length, 1);
+  assert.equal(results.filter((result) => result.idempotent_replay === true).length, 3);
+  const listed = reviewData(await runControlCenterAgenticReviewList({}, { cwd }));
+  assert.equal(listed.operations.filter((operation) => operation.parent_review?.id === id).length, 1);
+  const childId = results[0].operation_id;
+  const childText = await readFile(path.join(
+    cwd,
+    '.browser-debug',
+    'control-center-agentic-reviews',
+    childId,
+    'operation.json'
+  ), 'utf8');
+  assert.doesNotMatch(childText, new RegExp(key));
 });
 
 async function settleWithin(promise, timeoutMs = 5000) {

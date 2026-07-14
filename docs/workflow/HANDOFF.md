@@ -88,7 +88,7 @@ Playwright Test regression evidence integration is implemented as a disabled-by-
 
 Control Center operations persist under the configured workspace-confined
 artifact root, defaulting to `.browser-debug/control-center-agentic-reviews/`.
-Public output contains no local paths, hashes, provider/model ids, credential values, request bodies, or raw provider responses. Credentials remain environment-only. Duplicate starts fail, a restart during uncertain dispatch becomes `dispatch_unknown` without automatic retry, decisions persist per finding, and recheck/deeper create linked operations with new browser evidence. AI output remains advisory and cannot mutate deterministic findings, proof contracts, owner authority, or release gates.
+Public output contains no local paths, hashes, provider/model ids, credential values, request bodies, or raw provider responses. Legacy preconfigured API credentials remain environment-only; the paired fixed-catalog Control Center setup added later uses only its bounded server-owned session vault. Duplicate starts fail, a restart during uncertain dispatch becomes `dispatch_unknown` without automatic retry, decisions persist per finding, and recheck/deeper create linked operations with new browser evidence. AI output remains advisory and cannot mutate deterministic findings, proof contracts, owner authority, or release gates.
 
 Agentic Human Review dogfood evidence-pack summarization and review-pack projection are implemented as read-only owner-review surfaces. `agentic review dogfood evidence-pack summarize` accepts a workspace-confined dogfood evidence-pack manifest, evidence-set manifest, evidence-set output, or supported runtime wrapper, reuses evidence-set, claim-readiness, longitudinal-quality, claim-standard-gate, and owner-review-context logic, and emits `agentic_human_review_dogfood_evidence_pack_summary` with matrix status, owner-review digest, claim-review status, and advisory regeneration handoff. `agentic review dogfood evidence-pack review-pack` reuses the same preparation path and emits `agentic_human_review_dogfood_review_pack` with owner-facing status, standard/deep/xhigh matrix badges, grouped blockers, top owner actions, trust/safety flags, and pathless advanced references. The outputs suppress detailed result paths, source paths, raw hash values in review packs, raw provider responses, credential values, full source text, chunk text, candidate/reference prose, and concrete rerun commands. They do not call providers, read credentials, transfer evidence externally, write artifacts, launch browsers, expose MCP execution, automatically rerun commands, mutate deterministic findings, change release gates, satisfy proof contracts, or authorize human-equivalent or human-superior claims.
 
@@ -697,3 +697,45 @@ revision. Complete clean-HEAD release evidence, authenticated CI proof, and the
 read-only parent authority result are refreshed against that exact synchronized
 revision in the ignored evidence store, so recording them cannot make their own
 revision stale.
+
+## Completed Work: Control Center AI Setup And Response-Loss Hardening
+
+Phase 182-187 is complete in TraceCue only. New Review and Settings use one
+plain-language dialog that lets a non-engineer connect an existing supported
+Codex subscription or a supported API service without editing files,
+environment variables, or terminal commands. TraceCue review method remains
+independent from the exact provider model and native effort. Setup never starts
+a review or transfers evidence automatically.
+
+Production launch uses a one-use pairing token, a memory-only session bearer,
+and a separate CSRF value. Direct serve stays read-only. API keys use a bounded
+octet-stream channel and a server-owned session vault; they are excluded from
+JSON, URLs, browser storage, process environments, workspace files, receipts,
+logs, artifacts, and public projections. Codex sign-in uses only the audited
+fixed device-login lifecycle. Provider, model, effort, configuration, runtime,
+and credential-generation drift fails closed without fallback.
+
+Every browser request has an end-to-end response deadline covering pairing,
+token bootstrap, fetch, and body parsing. Empty or malformed successful
+mutation responses remain uncertain and reconcile only from authoritative
+state. Page-owned cancellation and generation guards stop late preparation,
+status, and repeat responses from changing a newer route. Repeat uses a
+memory-only 256-bit key, digest-only storage, deterministic child identity, and
+locked admission. Same-process, cross-process, active, history, restart,
+capacity, malformed-response, response-loss, and admission-timeout paths all
+return one child and start background work once.
+
+The Phase 181, pre-recovery Phase 186, and pre-alignment Phase 187 mocks remain
+archived. The active HTML/CSS mock and 23 desktop/mobile PNG references are
+synchronized with the React/Vite implementation and pass their interaction,
+responsive, RTL, and zoom checks. The complete local suite passes 422/422
+no-browser tests and 25/25 TraceCue Playwright browser tests. Structure,
+documents, security, CI contract, design system, workflow, package dry-run,
+packed install, repository, and product gates pass. Independent contract,
+exact-once, and browser-concurrency reviews report no remaining findings.
+
+The tracked commit containing this completion record is the final Phase
+182-187 revision. The autonomous completion flow then confirms exact GitHub CI,
+clean local/remote equality, and exact-HEAD release, CI-proof, and read-only
+parent-authority evidence without modifying the parent repository or making the
+tracked revision stale.

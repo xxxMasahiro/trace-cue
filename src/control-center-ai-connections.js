@@ -15,7 +15,8 @@ export function createControlCenterAiConnectionRecord({
   previousSettingsRevision = previousRevision,
   observedAt = new Date(),
   ttlMs = CONTROL_CENTER_AI_CAPABILITY_TTL_MS,
-  selection = null
+  selection = null,
+  preferredConnectionId = null
 } = {}) {
   const observed = materializeDate(observedAt);
   const normalizedConnections = normalizeConnections(connections);
@@ -26,8 +27,11 @@ export function createControlCenterAiConnectionRecord({
     schema_version: CONTROL_CENTER_AI_CONNECTION_SCHEMA_VERSION,
     connections: normalizedConnections.map(semanticConnection)
   });
-  const normalizedSelection = normalizeStoredSelection(selection, normalizedConnections, semanticCapabilityHash, {
-    selectDefaultWhenMissing: normalizeRevision(previousRevision) === 0
+  const preferredSelection = preferredConnectionId
+    ? defaultSelection(normalizedConnections.filter((connection) => connection.id === preferredConnectionId), semanticCapabilityHash)
+    : null;
+  const normalizedSelection = normalizeStoredSelection(preferredSelection ?? selection, normalizedConnections, semanticCapabilityHash, {
+    selectDefaultWhenMissing: !preferredConnectionId && normalizeRevision(previousRevision) === 0
   });
   const base = {
     schema_version: CONTROL_CENTER_AI_CONNECTION_SCHEMA_VERSION,
@@ -88,12 +92,19 @@ export function projectControlCenterAiConnections(value, options = {}) {
   const { record, fresh } = validation;
   const connections = record.connections
     .filter((connection) => connection.status !== 'hidden')
-    .map((connection) => ({
+    .map((connection) => {
+      const runtimeAvailable = typeof options.isConnectionRuntimeAvailable === 'function'
+        ? options.isConnectionRuntimeAvailable(connection)
+        : true;
+      const status = fresh && runtimeAvailable ? connection.status : runtimeAvailable ? 'stale' : 'setup_required';
+      return ({
       option_id: connection.option_id,
       name: connection.display_name,
       kind: connection.connection_type,
-      status: fresh ? connection.status : 'stale',
-      status_message: fresh ? connection.status_message : 'Update availability before using this AI service.',
+      status,
+      status_message: runtimeAvailable
+        ? (fresh ? connection.status_message : 'Update availability before using this AI service.')
+        : 'Connect this AI service again before using it.',
       models: connection.models.map((model) => ({
         option_id: model.option_id,
         name: model.display_name,
@@ -105,7 +116,8 @@ export function projectControlCenterAiConnections(value, options = {}) {
         default_effort_option_id: model.native_efforts.find((item) => item.id === model.default_native_effort_id)?.option_id ?? null
       })),
       default_model_option_id: connection.models.find((item) => item.id === connection.default_model_id)?.option_id ?? null
-    }));
+    });
+    });
   const selection = projectSelection(record, connections);
   const usableCount = connections.filter((item) => item.status === 'available').length;
   return {
@@ -184,6 +196,10 @@ export function resolveControlCenterAiSelection(recordValue, selection = {}, opt
       provider_effort_request_field: connection.provider_effort_request_field,
       provider_capability_hash: connection.provider_capability_hash,
       executable_identity_hash: connection.executable_identity_hash,
+      profile_revision: connection.profile_revision,
+      configuration_identity_hash: connection.configuration_identity_hash,
+      credential_generation: connection.credential_generation,
+      runtime_instance_id: connection.runtime_instance_id,
       semantic_capability_hash: record.semantic_capability_hash,
       capability_revision: record.revision,
       observed_at: record.observed_at,
@@ -247,7 +263,7 @@ function normalizeConnection(value, seen) {
   const models = normalizeModels(value.models, optionId);
   const defaultModelId = cleanString(value.default_model_id);
   if (!models.some((item) => item.id === defaultModelId)) throw new Error('Default AI model is invalid.');
-  return {
+  const connection = {
     id,
     option_id: optionId,
     display_name: boundedLabel(value.display_name, 'AI service'),
@@ -265,6 +281,11 @@ function normalizeConnection(value, seen) {
     default_model_id: defaultModelId,
     models
   };
+  if (value.profile_revision !== undefined) connection.profile_revision = optionalRevision(value.profile_revision);
+  if (value.configuration_identity_hash !== undefined) connection.configuration_identity_hash = safeHash(value.configuration_identity_hash);
+  if (value.credential_generation !== undefined) connection.credential_generation = safeId(value.credential_generation, 'credential generation');
+  if (value.runtime_instance_id !== undefined) connection.runtime_instance_id = safeId(value.runtime_instance_id, 'runtime instance');
+  return connection;
 }
 
 function normalizeModels(value, connectionOptionId) {
@@ -326,7 +347,7 @@ function defaultSelection(connections, semanticCapabilityHash) {
   const connection = connections.find((item) => item.status === 'available');
   const model = connection?.models.find((item) => item.id === connection.default_model_id) ?? connection?.models[0];
   const effort = model?.native_efforts.find((item) => item.id === model.default_native_effort_id) ?? model?.native_efforts[0];
-  return connection && model && effort ? {
+  return connection?.status === 'available' && model && effort ? {
     connection_option_id: connection.option_id,
     model_option_id: model.option_id,
     effort_option_id: effort.option_id,
@@ -339,7 +360,7 @@ function projectSelection(record, publicConnections) {
   const connection = publicConnections.find((item) => item.option_id === selected?.connection_option_id);
   const model = connection?.models.find((item) => item.option_id === selected?.model_option_id);
   const effort = model?.efforts.find((item) => item.option_id === selected?.effort_option_id);
-  return connection && model && effort ? {
+  return connection?.status === 'available' && model && effort ? {
     connection_option_id: connection.option_id,
     connection_name: connection.name,
     model_option_id: model.option_id,
@@ -353,7 +374,7 @@ function projectSelection(record, publicConnections) {
 }
 
 function semanticConnection(connection) {
-  return {
+  const semantic = {
     id: connection.id,
     adapter_id: connection.adapter_id,
     adapter_version: connection.adapter_version,
@@ -371,6 +392,11 @@ function semanticConnection(connection) {
       native_efforts: model.native_efforts.map((effort) => effort.id)
     }))
   };
+  if (Number.isSafeInteger(connection.profile_revision)) semantic.profile_revision = connection.profile_revision;
+  if (connection.configuration_identity_hash) semantic.configuration_identity_hash = connection.configuration_identity_hash;
+  if (connection.credential_generation) semantic.credential_generation = connection.credential_generation;
+  if (connection.runtime_instance_id) semantic.runtime_instance_id = connection.runtime_instance_id;
+  return semantic;
 }
 
 function emptyProjection(status, message, extra = {}) {
@@ -437,6 +463,13 @@ function cleanString(value) {
 function normalizeRevision(value) {
   const revision = Number(value ?? 0);
   return Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
+}
+
+function optionalRevision(value) {
+  if (value === undefined || value === null) return null;
+  const revision = Number(value);
+  if (!Number.isSafeInteger(revision) || revision < 1) throw new Error('Profile revision is invalid.');
+  return revision;
 }
 
 function normalizeTtl(value) {

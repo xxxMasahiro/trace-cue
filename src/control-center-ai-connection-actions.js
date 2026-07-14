@@ -13,6 +13,7 @@ import {
   CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NAME_ENV
 } from './control-center-agentic-review-config.js';
 import {
+  createControlCenterAiConnectionRecord,
   emptyControlCenterAiConnectionsProjection,
   projectControlCenterAiConnections,
   resolveControlCenterAiSelection
@@ -38,10 +39,29 @@ export async function runControlCenterAiConnectionsRefresh(input = {}, context =
   }
   const discovered = await discoverControlCenterAiConnections(context);
   if (!discovered.ok) return actionError(discovered.error.code, discovered.error.message);
+  const preferredConnectionId = cleanString(context.controlCenterAiPreferredConnectionId);
+  if (preferredConnectionId) {
+    let preferredSelection = null;
+    try {
+      preferredSelection = createControlCenterAiConnectionRecord({
+        connections: discovered.connections,
+        preferredConnectionId,
+        observedAt: materializeNow(context.now)
+      }).selection;
+    } catch {}
+    if (!preferredSelection) {
+      return actionError(
+        'CONTROL_CENTER_AI_PREFERRED_CONNECTION_UNAVAILABLE',
+        'The selected AI service is not ready yet. Try again.'
+      );
+    }
+  }
   const saved = await replaceControlCenterAiConnections({
     connections: discovered.connections,
     expectedRevision,
-    selection: discovered.selection
+    selection: discovered.selection,
+    preferredConnectionId,
+    finalize: context.controlCenterAiRefreshFinalize
   }, context);
   if (!saved.ok) return actionError(saved.error.code, saved.error.message, saved.error.details);
   return actionOk({
@@ -57,11 +77,40 @@ export async function runControlCenterAiSelectionSave(input = {}, context = {}) 
   if (String(input.confirm ?? '') !== CONTROL_CENTER_AI_SELECTION_CONFIRM) {
     return actionError('CONTROL_CENTER_AI_SELECTION_CONFIRM_REQUIRED', 'Saving the AI choice requires an explicit action.');
   }
-  const saved = await saveControlCenterAiSelection(input, context);
-  if (!saved.ok) return actionError(saved.error.code, saved.error.message, saved.error.details);
+  let disconnectTransaction = null;
+  const runtime = context.controlCenterAiSetupRuntime;
+  if (runtime?.connections?.().length > 0) {
+    const loaded = await readControlCenterAiConnectionRecord(context);
+    const selected = loaded.ok
+      ? loaded.record?.connections?.find((connection) => connection.option_id === input.connection_option_id)
+      : null;
+    if (!selected?.runtime_instance_id || !runtime.isConnectionAvailable(selected)) {
+      const staged = runtime.beginDisconnect();
+      if (!staged.ok) return actionError(staged.error.code, staged.error.message);
+      disconnectTransaction = staged;
+    }
+  }
+  let saved;
+  try {
+    saved = await saveControlCenterAiSelection(input, context);
+  } catch (error) {
+    await disconnectTransaction?.rollback();
+    throw error;
+  }
+  if (!saved.ok) {
+    await disconnectTransaction?.rollback();
+    return actionError(saved.error.code, saved.error.message, saved.error.details);
+  }
+  await disconnectTransaction?.commit();
+  const projection = disconnectTransaction
+    ? projectControlCenterAiConnections(saved.record, {
+        now: materializeNow(context.now),
+        isConnectionRuntimeAvailable: (connection) => runtime.isConnectionAvailable(connection)
+      })
+    : saved.projection;
   return actionOk({
     ai_connections: {
-      ...saved.projection,
+      ...projection,
       storage_revision: saved.record.settings_revision
     },
     boundary: selectionBoundary()
@@ -71,7 +120,12 @@ export async function runControlCenterAiSelectionSave(input = {}, context = {}) 
 export async function readControlCenterAiConnections(context = {}) {
   const stored = await readControlCenterAiConnectionRecord(context);
   if (stored.ok && stored.record) {
-    const projection = projectControlCenterAiConnections(stored.record, { now: materializeNow(context.now) });
+    const projection = projectControlCenterAiConnections(stored.record, {
+      now: materializeNow(context.now),
+      isConnectionRuntimeAvailable: (connection) => (
+        context.controlCenterAiSetupRuntime?.isConnectionAvailable(connection) ?? !connection.runtime_instance_id
+      )
+    });
     return { ...projection, storage_revision: stored.record.settings_revision };
   }
   if (!stored.ok) return readControlCenterAiConnectionsProjection(context);
@@ -81,13 +135,18 @@ export async function readControlCenterAiConnections(context = {}) {
 export async function resolveControlCenterAiBinding(input = {}, context = {}) {
   const loaded = await loadAuthoritativeOrConfiguredRecord(context);
   if (!loaded.ok) return loaded;
-  return resolveControlCenterAiSelection(loaded.record, {
+  const resolved = resolveControlCenterAiSelection(loaded.record, {
     connection_option_id: input.connection_option_id,
     model_option_id: input.model_option_id,
     effort_option_id: input.effort_option_id,
     capability_revision: input.capability_revision,
     capability_token: input.capability_token
   }, { now: materializeNow(context.now) });
+  if (resolved.ok && resolved.binding.runtime_instance_id
+    && !context.controlCenterAiSetupRuntime?.validateBinding(resolved.binding)) {
+    return actionValidationError('CONTROL_CENTER_AI_BINDING_CHANGED', 'Connect this AI service again before starting a review.');
+  }
+  return resolved;
 }
 
 export async function revalidateControlCenterAiBinding(binding, context = {}) {
@@ -107,6 +166,10 @@ export async function revalidateControlCenterAiBinding(binding, context = {}) {
   const expected = binding.execution_binding;
   if (!expected || canonicalTuple(expected) !== canonicalTuple(resolved.binding)) {
     return actionValidationError('CONTROL_CENTER_AI_BINDING_CHANGED', 'AI availability changed. Review the send details again.');
+  }
+  if (resolved.binding.runtime_instance_id
+    && !context.controlCenterAiSetupRuntime?.validateBinding(resolved.binding)) {
+    return actionValidationError('CONTROL_CENTER_AI_BINDING_CHANGED', 'Connect this AI service again before continuing.');
   }
   const provider = resolveAgenticHumanReviewProvider({ providerId: resolved.binding.provider_id, context });
   if (!provider.ok || agenticProviderCapabilityHash(provider.provider) !== resolved.binding.provider_capability_hash) {
@@ -131,7 +194,10 @@ export async function discoverControlCenterAiConnections(context = {}) {
   }
   const configured = await discoverConfiguredConnections(context);
   if (!configured.ok) return configured;
-  const connections = [...configured.connections];
+  const runtimeConnections = Array.isArray(context.controlCenterAiConnectionSnapshot)
+    ? context.controlCenterAiConnectionSnapshot
+    : context.controlCenterAiSetupRuntime?.connections?.() ?? [];
+  const connections = [...configured.connections, ...runtimeConnections];
   const codex = await probeCodexSubscriptionCli(context);
   if (codex.ok) {
     const provider = resolveAgenticHumanReviewProvider({ providerId: CODEX_SUBSCRIPTION_ADAPTER_ID, context });
@@ -266,6 +332,10 @@ function canonicalTuple(value) {
     provider_effort_request_field: value.provider_effort_request_field,
     provider_capability_hash: value.provider_capability_hash,
     executable_identity_hash: value.executable_identity_hash,
+    profile_revision: value.profile_revision ?? null,
+    configuration_identity_hash: value.configuration_identity_hash ?? null,
+    credential_generation: value.credential_generation ?? null,
+    runtime_instance_id: value.runtime_instance_id ?? null,
     semantic_capability_hash: value.semantic_capability_hash,
     capability_revision: value.capability_revision
   });

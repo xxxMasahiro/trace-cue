@@ -940,9 +940,9 @@ form submits one combined payload so validation completes before one file
 replacement. Legacy dedicated setting endpoints remain compatible and use
 serialized read-modify-write updates so unrelated local branches survive.
 
-The React surface lives under `control-center/`. It imports the product-local design-system JSON from `docs/design-system/`, maps those tokens to CSS custom properties, and uses the same read model that the CLI emits. The ordinary UI has three destinations: Confirm, In progress, and Settings. New review accepts a web URL, a plain-language purpose, and one of three purpose-led review choices. Settings combines display language, default viewport, a plain-language automated-check choice, AI suggestions, a compact user-facing AI service/model selection, optional provider-native effort details, and mandatory send confirmation. The footer save atomically applies only the general settings payload. A changed AI choice is applied by its nearby explicit action against the capability-store revision; a conflict retains the draft and offers the latest choices. Playwright and CI remain implementation details rather than ordinary setting labels; raw provider/adapter ids, endpoints, credentials, executable paths, and technical artifact controls are not ordinary UI.
+The React surface lives under `control-center/`. It imports the product-local design-system JSON from `docs/design-system/`, maps those tokens to CSS custom properties, and uses the same read model that the CLI emits. The ordinary UI has three destinations: Confirm, In progress, and Settings. New review accepts a web URL, a plain-language purpose, and one of three purpose-led review choices. Settings combines display language, default viewport, a plain-language automated-check choice, AI suggestions, a compact user-facing AI service/model selection, optional provider-native effort details, and mandatory send confirmation. The footer save atomically applies only the general settings payload. A changed AI choice is applied by its nearby explicit action against the capability-store revision; a conflict retains the draft and offers the latest choices. Playwright and CI remain implementation details rather than ordinary setting labels; raw provider/adapter ids, endpoints, executable paths, and technical artifact controls are not ordinary UI. Credential entry exists only inside the paired, bounded AI setup dialog and is never an ordinary provider control.
 
-The browser surface is intentionally not a landing page, generic command launcher, schema browser, provider console, artifact browser, or raw JSON viewer. It is an execution plane only for its dedicated page-review operation contract. Shell, cleanup, MCP write/execute, credential entry, arbitrary provider authority, raw artifact serving, CI mutation, and gate-affecting authority remain excluded.
+The browser surface is intentionally not a landing page, generic command launcher, schema browser, provider console, artifact browser, or raw JSON viewer. It is an execution plane only for its dedicated page-review operation contract. Shell, cleanup, MCP write/execute, arbitrary credential or provider controls, raw artifact serving, CI mutation, and gate-affecting authority remain excluded. The only credential input is the fixed-catalog, session-only API setup channel described below.
 
 ### Purpose-Led Control Center Projection
 
@@ -1022,6 +1022,41 @@ calling the provider again. `decision` upserts one `fix`, `later`, or `ask` valu
 for a returned finding. `repeat` always creates a new operation and browser
 review, links it to the previous operation, and either keeps the effort for
 `recheck` or advances it for `deeper`.
+
+The browser creates one random 32-byte base64url idempotency key for each
+pending `repeat` action and retains the key and exact request only in memory.
+It retries that request once only after transport loss and reuses the retained
+request for an explicit user retry after a second transport failure. The server
+hashes the raw key, derives the child operation id from the parent scope and key
+digest, and binds the digest to a canonical request hash covering the parent,
+repeat mode, and effective opaque AI selection. Admission is serialized before
+capacity evaluation. A matching active or historical operation is returned
+without starting background work; a different request for the same key returns
+`409 Conflict`. The raw key is absent from URLs, storage, operation records,
+projections, results, and artifacts. This local admission reconciliation does
+not authorize retry of an uncertain provider dispatch.
+
+Control Center browser requests use centrally declared response-bound classes:
+ordinary local requests use the default bound and AI connection discovery uses
+a longer bound that exceeds its bounded provider and fixed-process probes. The
+deadline starts before pairing and action-token bootstrap and covers response
+headers plus JSON body parsing. The wrapper both aborts the underlying fetch and
+races the whole operation with an explicit rejecting timer, because an
+intercepted, stalled-body, or partially lost response is not guaranteed to
+settle from abort alone. Empty, truncated, or malformed JSON on a successful
+HTTP status throws transport uncertainty without a server error envelope.
+
+Review status polling is paused synchronously while a user mutation and its
+state reconciliation are in flight, so a periodic read cannot supersede the
+authoritative post-action read. Timeout is treated as transport uncertainty:
+settings, connection refresh and selection, API setup and disconnect,
+subscription setup, review start, cancel, and repeat flows read current server
+state according to their action contract and never resubmit a credential or
+retry uncertain provider execution. The repeat flow retains its memory-only key
+until it receives a complete valid child projection. New Review preparation
+waits and Review Workspace repeat requests carry page-owned abort signals and
+operation generations; component cleanup cancels their fetch and delay, and
+every post-await navigation requires the same live generation.
 
 ## Document Sync Contract
 
@@ -1430,13 +1465,15 @@ Those observations are monotonic across result reading and normalization, so
 an unexpected post-dispatch failure remains an uncertain external dispatch and
 cannot be offered as a safe implicit retry.
 
-The generic API connection is configured through environment-only endpoint,
-credential, model, service display name, and optional provider-native effort
-values. Passive GET requests never inspect credential values. An explicit
-server-side availability refresh checks only whether the configured value is
-nonempty, and neither returns nor persists the value. The confirmation digest
-binds the user-visible service/model/native-effort selection and a non-secret
-destination fingerprint.
+The legacy preconfigured generic API connection is configured through
+environment-only endpoint, credential, model, service display name, and
+optional provider-native effort values. It remains distinct from the paired,
+fixed-catalog, session-managed Control Center API setup contract below.
+Passive GET requests never inspect credential values. An explicit server-side
+availability refresh checks only whether a preconfigured value is nonempty,
+and neither returns nor persists the value. The confirmation digest binds the
+user-visible service/model/native-effort selection and a non-secret destination
+fingerprint.
 Dispatch recalculates the capability and destination identity immediately
 before the provider request. A failure after request transmission starts is
 uncertain unless a provider contract both declares and honors stable
@@ -1492,3 +1529,99 @@ Remote status accepts no workflow, workflow-path, or remote override outside
 that policy. Release recording temporarily reserves bounded receipt admission
 for the complete source set, verifies it fits active count and byte limits, and
 performs semantic retention after the batch is committed.
+
+### Control Center AI setup contract
+
+Production launch uses a pairing-authority mode. A launcher-owned management
+capability creates a bounded one-time 256-bit pairing token bound to the current
+runtime instance and expiry. The server stores only its digest. The browser
+removes the token from the URL fragment before rendering, exchanges it once,
+and retains the returned session bearer and session-specific CSRF value only in
+module memory. Reuse, expiry, a foreign instance, a foreign Origin, and an
+unpaired mutation fail closed. Direct `control-center serve` remains readable
+but does not grant privileged browser actions. The runtime protocol version
+changes whenever this authorization contract changes.
+
+The browser caches one pairing exchange promise because the fragment token is
+one-use and removed before rendering. Any pairing timeout, unreadable body, or
+invalid exchange response is therefore classified as reopen-required. The UI
+does not offer an in-place retry that would reuse a consumed or
+acceptance-ambiguous token.
+
+The management capability is separate from public `server.json`, is created in
+the existing private runtime namespace, and is never returned by health,
+launcher results, stderr, or read-model APIs. The current URL opener passes the
+short-lived fragment through a child-process argument; therefore root/admin,
+the same operating-system user, process-table observers, browser extensions,
+developer tools, swap, and process dumps are outside this feature's protection
+boundary. Remote and cross-origin callers, stale sessions, replay, accidental
+file/log disclosure, redirects, and unpaired browsers remain in scope.
+
+API setup is a two-step mutation. A paired JSON intent resolves one opaque
+service choice from the installed catalog and creates a short-lived one-use
+submission id. A dedicated `application/octet-stream` request then accepts one
+bounded UTF-8 key after validating Origin, session, CSRF, content type, content
+encoding, declared length, timeout, control characters, and replay before or
+during body admission. The initial credential store is server-owned memory
+with fixed entry, total-byte, key-length, idle, and absolute limits. Idle expiry
+removes the active connection and refuses new leases but lets an already
+acquired immutable execution lease finish before disposal. Absolute expiry is
+hard: it disables the generation, aborts the in-flight provider transport,
+clears the owned credential buffer best-effort, and closes the adapter even if
+a lease remains. Explicit replace, disconnect, and shutdown retire or clear
+their owned buffers best-effort. A restart without the matching in-memory
+credential always projects `setup_required`, even if an older cache said
+`available`.
+
+The built-in API catalog permits only audited HTTPS destinations and fixed
+verification/model-discovery requests. It rejects redirects and browser-provided
+endpoints, headers, payloads, and model ids. Remote models are intersected with
+the installed catalog before becoming opaque options. Verification occurs only
+after an explicit user action, uses bounded transport, includes no review
+evidence, and never retries or falls back automatically.
+
+API setup response-loss reconciliation compares the authoritative connection
+storage revision with the revision captured before intent creation. An existing
+unchanged API connection cannot satisfy a replacement attempt. Only an advanced
+revision with an active API session may present the reconciled connected choice;
+otherwise the dialog remains open with a truthful retryable error.
+
+The key is absent from the browser request URL and headers and from every
+persisted or projected value. The server may use it only as the outbound
+provider authorization value inside the audited model-discovery and review
+transport. That boundary never logs, records, reflects, or copies the value into
+an execution environment.
+
+The public review boundary reports `provider_credential_source` as `none`,
+`environment`, `control_center_session`, or `subscription_session`. It reports
+provider environment-only handling separately from the internal loopback
+adapter token. For a session API connection, `provider_credentials_env_only`
+and its compatibility alias are false while
+`internal_adapter_credentials_env_only` is true. No credential value or private
+runtime identifier is exposed by this projection.
+
+Subscription setup uses a separate audited write-capable Codex login adapter.
+It accepts only the supported official CLI descriptor and fixed
+`login --device-auth` operation, permits one login operation for the user at a
+time, and incrementally parses only a bounded official verification URL and
+user code. It stores no raw output, device token, provider token, or auth file
+content. Cancellation, timeout, opener failure, server shutdown, and ambiguous
+exit reconcile through the fixed login-status probe. Its owner-only lock binds
+the manager before child creation and binds the exact child after spawn. A
+dead-owner `not_started` lock with no child is stale after safe inode
+revalidation and can be recovered during the same boot. A crash in the narrow
+`pending` child-binding interval remains fail-closed during the same kernel
+boot. Version 1.1 locks record a validated Linux boot identity; a pending lock
+requires a dead owner, absent child, stable safe lock inode, and a different
+valid current boot identity before automatic stale removal. Legacy, missing,
+malformed, or unreadable boot identities cannot acquire that pending-state
+proof retroactively and remain closed for a separate trusted local repair. Only
+a valid same-boot version 1.1 pending lock is surfaced as a computer-restart
+recovery action.
+
+Each Control Center server owns exactly one AI setup runtime. It exposes no
+module-global credential map and never mutates `process.env` or caller-owned
+environment objects. Execution uses immutable generation snapshots. The
+private binding adds profile revision, configuration identity, credential
+generation, and runtime instance identity to the existing exact connection,
+model, effort, capability, and executable tuple.
