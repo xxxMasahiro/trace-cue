@@ -12,6 +12,11 @@ const state = {
   source: query.get("source") || "website",
   decision: null,
   aiSuggestions: true,
+  aiEditorOpen: query.get("ai") === "change",
+  aiDetailsOpen: query.get("ai") === "change",
+  aiDraftEffort: query.get("effort") || "medium",
+  aiAppliedEffort: "medium",
+  aiActionStatus: "",
   settingsSaved: query.get("saved") === "1",
 };
 
@@ -118,7 +123,11 @@ function renderNew() {
           <input class="text-control" name="purpose" value="初めての人が迷わず使えるか" aria-label="特に何を確かめますか" required />
         </label>` : ""}
       </section>
-      ${state.source === "website" ? '<p class="ai-ready">✓ AIからの改善提案を利用できます</p>' : ''}
+      ${state.source === "website" ? `<section class="ai-review-choice" aria-label="利用するAI">
+        <div><strong>AIからの提案</strong><p>Codex · Review Model</p></div>
+        <button class="button text" type="button" data-action="toggle-new-ai" aria-expanded="${state.aiEditorOpen}">変更</button>
+        ${state.aiEditorOpen ? `<div class="ai-connection-editor"><details class="ai-details" open><summary>AIの詳細</summary><label>AIの考え方の深さ<select id="mock-new-ai-effort" class="select-control" aria-label="AIの考え方の深さ"><option value="low"${state.aiDraftEffort === "low" ? " selected" : ""}>Low</option><option value="medium"${state.aiDraftEffort === "medium" ? " selected" : ""}>Medium · おすすめ</option><option value="high"${state.aiDraftEffort === "high" ? " selected" : ""}>High</option></select><small>TraceCueの確認方法とは別の設定です。</small></label></details></div>` : ""}
+      </section>` : ''}
       ${needsReviewGoal ? `<section class="form-section" aria-labelledby="method-title">
         <h2 id="method-title">どんな結果が必要ですか</h2>
         <div class="method-options">
@@ -262,7 +271,8 @@ function renderSettings() {
       </section>
       <section class="settings-group" aria-labelledby="ai-settings">
         <h2 id="ai-settings">AIとプライバシー</h2>
-        ${settingToggle("AIの提案を使う", "利用できます。改善案を分かりやすく整理します。", "ai-suggestions", state.aiSuggestions, false)}
+        ${settingToggle("AIの提案を使う", "改善案を分かりやすく整理します。", "ai-suggestions", state.aiSuggestions, false)}
+        ${settingAiService()}
         ${settingToggle("外部へ送る前に確認する", "送信先と内容を毎回表示します。この保護はオフにできません。", "send-confirmation", true, true)}
       </section>
       ${state.settingsSaved ? '<div class="inline-notice success" role="status"><strong>設定を保存しました</strong></div>' : ''}
@@ -277,6 +287,20 @@ function settingSelect(title, description, current, choices) {
 
 function settingToggle(title, description, id, checked, locked) {
   return `<div class="setting-row"><div class="setting-copy"><strong>${title}</strong><span>${description}</span></div><div>${locked ? `<span class="locked-note">✓ 常に確認</span>` : `<label class="toggle" aria-label="${title}"><input id="${id}" type="checkbox" ${checked ? "checked" : ""} /><span class="toggle-track"></span></label>`}</div></div>`;
+}
+
+function settingAiService() {
+  const effortNames = { low: "Low", medium: "Medium", high: "High" };
+  const effortOptions = Object.entries(effortNames).map(([value, label]) => `<option value="${value}"${state.aiDraftEffort === value ? " selected" : ""}>${label}${value === "medium" ? " · おすすめ" : ""}</option>`).join("");
+  const editor = state.aiEditorOpen ? `<div class="ai-connection-editor">
+    <details class="ai-details"${state.aiDetailsOpen ? " open" : ""}>
+      <summary>AIの詳細</summary>
+      <label>AIの考え方の深さ<select id="mock-ai-effort" class="select-control" aria-label="AIの考え方の深さ">${effortOptions}</select><small>TraceCueの確認方法とは別の設定です。</small></label>
+    </details>
+    ${state.aiDraftEffort !== state.aiAppliedEffort ? '<button class="button primary compact" type="button" data-action="apply-ai">このAIを使う</button>' : ""}
+    ${state.aiActionStatus ? `<p class="ai-action-status" role="status">${state.aiActionStatus}</p>` : ""}
+  </div>` : "";
+  return `<div class="setting-row ai-setting-row"><div class="setting-copy"><strong>利用するAI</strong><span>改善提案に利用するAIを選びます。</span></div><div class="ai-connection-setting"><div class="ai-connection-summary"><span class="ai-status">利用できます</span><span class="ai-connection-name"><strong>Codex</strong><small>Review Model</small></span></div><div class="compact-actions"><button class="button text" type="button" data-action="toggle-ai" aria-expanded="${state.aiEditorOpen}">変更</button><button class="button secondary compact" type="button" data-action="refresh-ai">利用状況を更新</button></div>${editor}</div></div>`;
 }
 
 function setActiveNav() {
@@ -360,10 +384,38 @@ document.addEventListener("click", (event) => {
     navigate("progress");
   }
   if (action === "show-evidence") showToast("画面内の位置と確認結果を表示します");
+  if (action === "toggle-ai") {
+    state.aiEditorOpen = !state.aiEditorOpen;
+    state.aiActionStatus = "";
+    renderSettings();
+  }
+  if (action === "toggle-new-ai") {
+    state.aiEditorOpen = !state.aiEditorOpen;
+    renderNew();
+  }
+  if (action === "refresh-ai") showToast("利用できるAIを確認しました");
+  if (action === "apply-ai") {
+    state.aiAppliedEffort = state.aiDraftEffort;
+    state.aiActionStatus = "利用するAIを変更しました。";
+    renderSettings();
+  }
   if (action === "decision-complete") {
     navigate("result");
     showToast("対応方針を保存しました");
   }
+});
+
+document.addEventListener("change", (event) => {
+  if (event.target.id === "mock-new-ai-effort") {
+    state.aiDraftEffort = event.target.value;
+    renderNew();
+    return;
+  }
+  if (event.target.id !== "mock-ai-effort") return;
+  state.aiDraftEffort = event.target.value;
+  state.aiDetailsOpen = true;
+  state.aiActionStatus = "";
+  renderSettings();
 });
 
 document.addEventListener("submit", (event) => {

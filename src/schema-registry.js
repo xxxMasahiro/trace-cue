@@ -1,4 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { SCHEMA_VERSION } from './constants.js';
+
+const controlCenterAiConnectionsSchema = JSON.parse(readFileSync(
+  new URL('../schemas/control-center-ai-connections.schema.json', import.meta.url),
+  'utf8'
+));
 
 const baseEnvelopeProperties = {
   schema_version: { type: 'string' },
@@ -232,6 +238,7 @@ const schemas = Object.freeze({
       activity: controlCenterActivitySchema,
       operator_flow: controlCenterOperatorFlowSchema,
       agentic_review: { type: 'object' },
+      ai_connections: { type: 'object' },
       review: { type: 'object' },
       evidence: { type: 'object' },
       findings: { type: 'object' },
@@ -258,6 +265,7 @@ const schemas = Object.freeze({
     },
     additionalProperties: true
   }),
+  control_center_ai_connections: Object.freeze(controlCenterAiConnectionsSchema),
   control_center_agentic_review: Object.freeze({
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     $id: 'https://trace-cue.local/schemas/control-center-agentic-review.schema.json',
@@ -281,7 +289,7 @@ const schemas = Object.freeze({
       schema_version: { type: 'string' },
       type: { const: 'control_center_agentic_review' },
       id: { type: 'string' },
-      state: { enum: ['preparing', 'confirmation_required', 'dispatching', 'validating', 'completed', 'failed', 'dispatch_unknown', 'cancelled'] },
+      state: { enum: ['preparing', 'confirmation_required', 'dispatching', 'validating', 'completed', 'failed', 'needs_attention', 'dispatch_unknown', 'cancelled'] },
       stage: { enum: ['prepare', 'review', 'decide', 'recheck', 'complete'] },
       purpose: { type: 'string' },
       target: { type: ['string', 'null'] },
@@ -2631,6 +2639,13 @@ const schemas = Object.freeze({
       role_efforts: { type: 'array' },
       sub_agents: { type: 'array' },
       rounds: { type: 'array' },
+      orchestration_contract: { type: 'object' },
+      effort_execution_contract: { type: 'object' },
+      provider_effort_binding: { type: 'object' },
+      connection_binding: { type: ['object', 'null'] },
+      strict_output_contract: { type: 'object' },
+      repair_retry_contract: { type: 'object' },
+      xhigh_multi_step_contract: { type: 'object' },
       transfer_permissions: { type: 'object' },
       disclosure: { type: 'object' },
       provider: { type: 'object' },
@@ -2776,6 +2791,8 @@ const schemas = Object.freeze({
       transfer_flags: { type: 'array' },
       provider_id: { type: ['string', 'null'] },
       model_id: { type: ['string', 'null'] },
+      connection_binding: { type: ['object', 'null'] },
+      provider_effort_binding: { type: ['object', 'null'] },
       status: { type: 'string' },
       provider_call_performed: { type: 'boolean' },
       api_call_performed: { type: 'boolean' },

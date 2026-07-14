@@ -37,6 +37,12 @@ required `any_of` groups require at least one listed alternative.
   persistent browser sessions, evidence contracts, evaluation, and claims
   require product, verification, and security synchronization. These policy
   rules are not exemptible.
+- The provider/external-send classification explicitly includes the Control
+  Center AI connection schema, private connection actions and store, audited
+  subscription adapters and their version contracts, the fixed process runner,
+  and the runtime schema-subset validator. Adding a provider-specific adapter is
+  additive implementation work, not an exemption from product, verification,
+  and security synchronization.
 - Dashboard shared defaults and local persistence implementation require the
   same product, verification, and security synchronization.
 - Temporary developer/session memory, ignored local dashboard overrides, ignored browser

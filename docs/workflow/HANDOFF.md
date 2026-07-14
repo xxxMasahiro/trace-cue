@@ -641,3 +641,51 @@ containing this paragraph is the final Git revision;
 authenticated CI proof, complete release evidence, and the read-only parent
 authority result are refreshed against that exact clean synchronized HEAD in
 the ignored evidence store rather than causing another tracked-file change.
+
+## Completed Work: Control Center AI Connection Parity
+
+The current TraceCue-only slice makes subscription CLI and API-backed AI review
+available through the same non-engineer Control Center workflow. The browser
+selects only opaque options and sees bounded service, model, connection-type,
+and provider-native effort labels. Internal provider/adapter ids, endpoints,
+credential data, executable paths, commands, hashes, and raw discovery/provider
+output remain private. TraceCue review method (`standard`, `deep`, or `xhigh`)
+is an independent contract and is never inferred from provider-native effort.
+
+Dashboard reads are passive. Availability discovery is an explicit protected
+action backed by a revisioned private capability store; prepare and dispatch
+re-resolve the exact connection/model/native-effort tuple and refuse capability,
+configuration, or executable drift without fallback. API credentials remain
+environment-only. The first subscription adapter uses an already-authenticated
+Codex CLI through a verified native binary, fixed `shell: false` argv, safe
+environment, private staging, disabled web/MCP/shell authority, bounded I/O and
+time, process-group cancellation, and strict normalized output.
+
+The React/Vite UI and active production mock now share the compact AI summary,
+explicit availability refresh/change flow, optional choices only when real
+alternatives exist, secondary AI-details disclosure, and send confirmation that
+prioritizes transferred evidence, destination, and TraceCue review method. The
+previous active mock is preserved under `archive/phase-176/`.
+
+Focused AI-connection and Agentic Human Review contracts pass 41/41, the
+complete no-browser suite passes 379/379, and the production build, active mock,
+and 20-flow browser suite pass locally. The browser suite includes late-route
+response refusal, cancellation response-loss reconciliation without a false
+warning, cancelled-next exclusion, settings feedback reset, and AI readiness
+recovery. Contract, determinism/security, and concurrency/browser independent
+reviews all pass. Browser and CI regression use injected deterministic adapters
+and do not consume a live subscription or API credential.
+
+The complete `release:check`, 317-file package dry-run, packed-install smoke,
+repository test, and product gate pass. TraceCue self-review of New Review at
+1440x980 and Settings at 1440x980 reports zero findings. The first 390x844
+Settings review found one low-severity 32-pixel-wide text action; the shared
+design-system touch target was raised to 44 by 44 pixels, the active 18-image
+mock was regenerated, and the final mobile review reports zero findings,
+overlap, clipping, horizontal overflow, console errors, or failed requests.
+
+The tracked commit containing this paragraph is the final Phase 177-181 Git
+revision. Complete clean-HEAD release evidence, authenticated CI proof, and the
+read-only parent authority result are refreshed against that exact synchronized
+revision in the ignored evidence store, so recording them cannot make their own
+revision stale.

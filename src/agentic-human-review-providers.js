@@ -3,6 +3,10 @@ import { SCHEMA_VERSION } from './constants.js';
 import { filterPersistableFailureDiagnosticDetails } from './failure-diagnostics.js';
 import { nodeHttpFetch } from './http-transport.js';
 import { redact, truncateText } from './redaction.js';
+import {
+  CODEX_SUBSCRIPTION_ADAPTER_ID,
+  runCodexSubscriptionReview
+} from './codex-subscription-adapter.js';
 
 export const AGENTIC_REVIEW_API_ENDPOINT_ENV = 'AGENTIC_HUMAN_REVIEW_API_ENDPOINT';
 export const AGENTIC_REVIEW_API_CREDENTIAL_ENV = 'AGENTIC_HUMAN_REVIEW_API_TOKEN';
@@ -19,8 +23,8 @@ const CAPABILITY_CONTRACT_VERSION = '2.0.0';
 const EFFORT_CAPABILITY_CONTRACT_VERSION = '1.0.0';
 const REAL_PROVIDER_ADAPTER_CONTRACT_VERSION = '1.0.0';
 const LIVE_DOGFOOD_GATE_VERSION = '1.0.0';
-const KNOWN_PROVIDER_KINDS = new Set(['fake_provider', 'injected_runner', 'api_provider']);
-const KNOWN_TRANSPORTS = new Set(['local_function', 'local_callback', 'provider_api']);
+const KNOWN_PROVIDER_KINDS = new Set(['fake_provider', 'injected_runner', 'api_provider', 'subscription_cli']);
+const KNOWN_TRANSPORTS = new Set(['local_function', 'local_callback', 'provider_api', 'subscription_cli']);
 const KNOWN_TRANSFER_CLASSES = new Set(['raw_pixels', 'page_text', 'dom_summary', 'url', 'artifact_refs', 'accessibility_summary']);
 const KNOWN_REVIEW_EFFORTS = new Set(['quick', 'standard', 'deep', 'xhigh']);
 const SENSITIVE_ENDPOINT_QUERY_PARAMS = new Set([
@@ -162,6 +166,48 @@ export const AGENTIC_HUMAN_REVIEW_PROVIDERS = Object.freeze([
       true_multi_step_execution_supported: false,
       true_multi_step_execution_default: false,
       execution_surface: 'approved_agentic_review_run_only'
+    })
+  }),
+  Object.freeze({
+    id: CODEX_SUBSCRIPTION_ADAPTER_ID,
+    display_name: 'Codex',
+    kind: 'subscription_cli',
+    transport: 'subscription_cli',
+    implemented: true,
+    credential_mode: 'cli_owned_session',
+    default_model: 'codex-model-selection-required',
+    abstract_model_ids: Object.freeze(['codex-model-selection-required']),
+    model_resolution_policy: 'explicit_plan_model_required',
+    supported_modalities: Object.freeze(['metadata', 'text_summary', 'artifact_references']),
+    transferable_evidence_classes: Object.freeze(['page_text', 'url', 'artifact_refs', 'accessibility_summary']),
+    external_evidence_transfer: true,
+    api_call_performed: false,
+    raw_provider_response_stored: false,
+    timeout_ms: 5 * 60 * 1000,
+    max_attempts: 1,
+    max_request_bytes: DEFAULT_MAX_REQUEST_BYTES,
+    max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
+    cost_policy: 'subscription_usage_subject_to_service_plan',
+    supported_review_efforts: Object.freeze(['quick', 'standard', 'deep', 'xhigh']),
+    native_effort_binding: Object.freeze({
+      supported: true,
+      request_field: 'model_reasoning_effort',
+      effort_map: Object.freeze({}),
+      supported_values: Object.freeze(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
+      dynamic_catalog_authoritative: true,
+      unsupported_behavior: 'block_before_provider_execution'
+    }),
+    structured_output_contract: Object.freeze({
+      json_schema_supported: true,
+      strict_schema_supported: false,
+      tracecue_post_validation_required: true
+    }),
+    xhigh_execution_contract: Object.freeze({
+      single_call_multi_role_output_supported: true,
+      repair_retry_supported: false,
+      true_multi_step_execution_supported: false,
+      true_multi_step_execution_default: false,
+      execution_surface: 'approved_subscription_cli_adapter_only'
     })
   })
 ]);
@@ -892,6 +938,126 @@ export async function executeAgenticHumanReviewApiProvider({
   };
 }
 
+export async function executeAgenticHumanReviewSubscriptionProvider({
+  provider,
+  model,
+  surface,
+  plan,
+  planPath,
+  reviewPackage,
+  transferFlags,
+  execution,
+  stageExecution = null,
+  context = {}
+}) {
+  const modelResolution = resolveAgenticHumanReviewProviderModel({ provider, model, context });
+  if (!modelResolution.ok) {
+    return providerFailure({
+      status: 'blocked',
+      code: modelResolution.error.code,
+      message: modelResolution.error.message,
+      details: modelResolution.error.details,
+      provider
+    });
+  }
+  const request = buildAgenticApiPayload({
+    plan,
+    planPath,
+    reviewPackage,
+    transferFlags,
+    provider,
+    model: modelResolution.model,
+    surface,
+    execution,
+    modelResolution: modelResolution.resolution,
+    stageExecution
+  });
+  const runner = context.agenticReviewSubscriptionRunners?.[provider.id]
+    ?? (provider.id === CODEX_SUBSCRIPTION_ADAPTER_ID ? runCodexSubscriptionReview : null);
+  if (typeof runner !== 'function') {
+    return providerFailure({
+      status: 'blocked',
+      code: 'AGENTIC_REVIEW_SUBSCRIPTION_ADAPTER_UNAVAILABLE',
+      message: 'No safe subscription adapter is available for the approved provider.',
+      details: { provider: provider.id },
+      provider
+    });
+  }
+  const providerEffort = plan.provider_effort_binding?.native_effort_applied_value ?? null;
+  const executableIdentityHash = plan.connection_binding?.executable_identity_hash ?? null;
+  if (!providerEffort || !executableIdentityHash) {
+    return providerFailure({
+      status: 'blocked',
+      code: 'AGENTIC_REVIEW_SUBSCRIPTION_BINDING_MISSING',
+      message: 'The approved subscription model selection is incomplete.',
+      details: { provider: provider.id },
+      provider
+    });
+  }
+  let result;
+  try {
+    result = await runner({
+      traceCueRequest: request,
+      model: modelResolution.model.id,
+      providerEffort,
+      executableIdentityHash,
+      maxRequestBytes: provider.max_request_bytes,
+      maxResponseBytes: provider.max_response_bytes,
+      context
+    });
+  } catch {
+    result = {
+      ok: false,
+      error: {
+        code: 'AGENTIC_REVIEW_SUBSCRIPTION_RUNNER_FAILED',
+        message: 'The subscription adapter failed before returning a verified result.',
+        details: {}
+      },
+      dispatch_may_have_occurred: true
+    };
+  }
+  if (!result.ok) {
+    const mayHaveDispatched = result.dispatch_may_have_occurred === true;
+    return providerFailure({
+      status: mayHaveDispatched ? 'failed' : 'blocked',
+      code: result.error?.code ?? 'AGENTIC_REVIEW_SUBSCRIPTION_RUNNER_FAILED',
+      message: result.error?.message ?? 'The subscription adapter did not return a verified result.',
+      details: {
+        provider: provider.id,
+        dispatch_may_have_occurred: mayHaveDispatched,
+        shell_used: false,
+        raw_provider_response_stored: false
+      },
+      provider,
+      providerCallPerformed: mayHaveDispatched,
+      apiCallPerformed: false,
+      externalEvidenceTransfer: mayHaveDispatched
+    });
+  }
+  const boundary = providerBoundary({
+    provider,
+    providerCallPerformed: true,
+    apiCallPerformed: false,
+    externalEvidenceTransfer: true,
+    requestBytes: result.request_bytes,
+    responseBytes: result.response_bytes,
+    rawPixelsTransferred: false,
+    pageTextTransferred: transferFlags.supplied_flags?.includes('allow-page-text') === true,
+    domSummaryTransferred: transferFlags.supplied_flags?.includes('allow-dom-summary') === true,
+    urlMetadataTransferred: transferFlags.supplied_flags?.includes('allow-url') === true,
+    artifactRefsTransferred: transferFlags.supplied_flags?.includes('allow-artifact-refs') === true,
+    accessibilitySummaryTransferred: transferFlags.supplied_flags?.includes('allow-accessibility-summary') === true,
+    modelResolution: modelResolution.resolution
+  });
+  return {
+    ok: true,
+    status: 'completed',
+    input: result.input,
+    boundary,
+    warnings: []
+  };
+}
+
 export function providerBoundary({
   provider,
   providerCallPerformed,
@@ -1056,6 +1222,10 @@ function normalizeNativeEffortBinding(value) {
     supported: source.supported === true,
     request_field: typeof source.request_field === 'string' && source.request_field.trim() ? source.request_field.trim() : null,
     effort_map: normalizedMap,
+    supported_values: uniqueSorted((Array.isArray(source.supported_values) ? source.supported_values : Object.values(normalizedMap))
+      .filter((item) => typeof item === 'string' && item.trim()))
+      .map((item) => item.trim()),
+    dynamic_catalog_authoritative: source.dynamic_catalog_authoritative === true,
     unsupported_behavior: typeof source.unsupported_behavior === 'string' && source.unsupported_behavior.trim()
       ? source.unsupported_behavior.trim()
       : 'record_not_supported_and_continue_with_tracecue_contract_validation'

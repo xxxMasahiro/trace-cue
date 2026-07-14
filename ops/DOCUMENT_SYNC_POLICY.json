@@ -200,9 +200,14 @@
         "any_of": [
           "bin/trace-cue-ahr-responses-adapter.js",
           "schemas/agentic-human-review-*.schema.json",
+          "schemas/control-center-ai-connections.schema.json",
           "src/agent-execution*.js",
           "src/agentic-human-review*.js",
-          "src/control-center-agentic-review-actions.js"
+          "src/codex-subscription*.js",
+          "src/control-center-agentic-review-actions.js",
+          "src/control-center-ai-*.js",
+          "src/fixed-process-runner.js",
+          "src/json-schema-subset.js"
         ]
       },
       "required_groups": ["product_core", "verification", "security"],

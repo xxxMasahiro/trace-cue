@@ -62,6 +62,7 @@ test('document sync policy validates and bounded glob matching stays path-aware'
   assert.equal(policy.schema_version, '1.0.0');
   assert.equal(policySchema.properties.schema_version.const, policy.schema_version);
   assert.equal(policySchema.additionalProperties, false);
+  assert.equal(policySchema.$defs.pathList.minItems, 1);
   assert.equal(globToRegExp('src/mcp*.js').test('src/mcp-http-transport.js'), true);
   assert.equal(globToRegExp('src/mcp*.js').test('src/nested/mcp.js'), false);
   assert.equal(globToRegExp('schemas/**').test('schemas/nested/example.json'), true);
@@ -83,6 +84,20 @@ test('sensitive runtime changes fail without the full product, verification, and
   assert.equal(settingsFailed.status, 'fail');
   assert.equal(settingsFailed.matched_rules.some((rule) => rule.id === 'dashboard-settings-persistence'), true);
   assert.equal(evaluateDocumentSync(policy, ['src/dashboard-settings-store.js', ...productCore, ...verification, ...security]).status, 'pass');
+
+  for (const protectedPath of [
+    'schemas/control-center-ai-connections.schema.json',
+    'src/codex-subscription-adapter.js',
+    'src/control-center-ai-connection-store.js',
+    'src/fixed-process-runner.js',
+    'src/json-schema-subset.js'
+  ]) {
+    const protectedResult = evaluateDocumentSync(policy, [protectedPath]);
+    assert.equal(protectedResult.status, 'fail', protectedPath);
+    assert.equal(protectedResult.matched_rules.some((rule) => rule.id === 'agentic-human-review-and-provider-boundaries'), true, protectedPath);
+    assert.equal(protectedResult.missing_all_of.includes('docs/workflow/SECURITY.md'), true, protectedPath);
+    assert.equal(protectedResult.missing_all_of.includes('docs/workflow/VERIFICATION.md'), true, protectedPath);
+  }
 });
 
 test('MCP, browser session, and evidence rules combine requirements without weakening each other', () => {

@@ -302,7 +302,7 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Completed: `agent execution plan --package <path> --surface <id> --provider <id> --model <id> --json` creates a local no-network dry-run plan and receipt for subscription or API execution.
 - Completed: `agent execution run --execution <path> --package <path> --surface <id> --provider <id> --model <id> --execute --json` requires a prior dry-run execution plan, rejects execution without explicit `--execute`, validates package/surface/provider/model plan consistency, and records local run receipts.
 - Completed: `agent execution status --execution <path> --json` and `agent execution list --json` report local execution state, normalized advisory-result paths, dashboard status fields, and aggregate boundary flags without launching browsers, mutating review artifacts, or changing deterministic gates.
-- Completed: subscription-style execution supports configured local runner callbacks through provider/model identifiers and rejects free-form shell input or SaaS web UI automation.
+- Completed: subscription-style execution supports configured local runner callbacks and audited fixed CLI adapters through exact provider/model/native-effort bindings while rejecting free-form shell input, browser-supplied commands, and SaaS web UI automation.
 - Completed: deterministic fake-provider execution covers no-browser provider success paths and advisory-result normalization.
 - Completed: API-style execution reads endpoint and credential values only from named environment variables, supports injected fetch transports for tests, records that an API call occurred, and never records credential values.
 - Completed: execution plans and receipts record `api_call_performed`, `external_evidence_transfer`, `automatic_upload`, `credential_values_recorded`, `credential_storage`, `persistent_credential_storage`, `raw_response_stored`, `raw_provider_response_stored`, `existing_review_mutated`, `mcp_execution_exposed`, and `gate_effect`.
@@ -419,7 +419,7 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - The server may expose only approved bounded local POST actions for Control Center workflows. The existing eight action endpoint paths remain unchanged. Separate namespaced endpoints may persist ordinary Control Center preferences and prepare, confirm, start, decide, or repeat one dedicated page review. External AI execution requires a fresh one-time confirmation bound to the prepared disclosure and plan.
 - Source intake must create only local non-executing proposal artifacts from workspace-confined source text; it must not run providers, call APIs, use shell commands, expose MCP execution, transfer evidence externally, store full source text, store chunk text, mutate review gates, or execute plans.
 - Display-language settings must write only the ignored TraceCue-local user override and must not mutate tracked shared defaults, translate source evidence, provider output, generated review text, or artifact output language.
-- The UI must stay minimal and follow the accepted prototype typography, spacing, and narrow settings layout. The ordinary Settings page contains display language, default review screen size, a plain-language automated-check choice, AI suggestions, immutable send-before-confirmation, and one save action. Implementation names such as Playwright or CI, technical locale state, providers, models, credentials, storage paths, diagnostics, regression import forms, and boundary badges must not appear there.
+- The UI must stay minimal and follow the accepted prototype typography, spacing, and narrow settings layout. The ordinary Settings page contains display language, default review screen size, a plain-language automated-check choice, AI suggestions, the user-facing AI service, model, provider-native effort when selectable, and immutable send-before-confirmation. General settings use one atomic save action; a changed AI connection choice uses one nearby explicit apply action with compare-and-swap recovery so neither operation can be presented as a partially successful combined save. Implementation names such as Playwright or CI, technical locale state, provider or adapter ids, endpoints, credentials, storage paths, diagnostics, regression import forms, and boundary badges must not appear there.
 
 ### Purpose-Led Production Navigation Criteria
 
@@ -433,11 +433,20 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 
 ### Control Center Agentic Review Execution Criteria
 
-- Review state must persist under the local artifact root so closing the page does not lose prepared, running, completed, failed, or decision state. Public projections must omit local paths, hashes, provider/model identifiers, credentials, request bodies, and raw provider responses.
-- Browser input may choose only URL, purpose, purpose-led effort, viewport, and whether AI suggestions are used. Provider, model, endpoint, token, plan, hash, transfer flags, artifact root, and execute authority must be rejected if supplied by the browser.
+- Review state must persist under the local artifact root so closing the page does not lose prepared, running, completed, failed, or decision state. Public projections must omit local paths, hashes, internal provider and adapter identifiers, credentials, request bodies, and raw provider responses. They may expose only opaque AI option ids and bounded user-facing service, model, connection type, and provider-native effort labels.
+- Browser input may choose URL, purpose, purpose-led TraceCue effort, viewport, whether AI suggestions are used, and one server-issued opaque AI selection. Raw provider or adapter ids, model ids outside that opaque selection, endpoints, tokens, plans, hashes, transfer flags, artifact roots, and execute authority must be rejected if supplied by the browser.
 - External service credentials stay in environment/provider configuration. The browser must never accept, read back, or persist credential values.
 - Confirmation must name the configured external service and enumerate what evidence will be sent. Its nonce is one-time, time-bounded, stored only as a hash, and invalidated when the disclosure or prepared plan changes.
 - After dispatch begins, TraceCue must never retry automatically. If a restart makes completion uncertain, status becomes `dispatch_unknown`; the UI must explain the uncertainty and avoid a duplicate provider call.
+- Process-start, possible-dispatch, temporary-raw-output, and credential-read
+  observations must accumulate monotonically across subscription discovery and
+  execution. A later parse, validation, cleanup, or unexpected failure must not
+  erase an earlier indication that external transfer may have started.
+- The browser must ignore status and dashboard responses that belong to an
+  older review or request generation. Status polling must not overlap. If a
+  cancellation response is lost, the browser must close the stale confirmation
+  and reconcile stored status; it shows a read warning only when reconciliation
+  itself fails, and a cancelled review must not become the suggested next task.
 - Findings are advisory. Each finding may receive `fix`, `later`, or `ask`; these choices and AI output must not mutate deterministic findings, proof contracts, owner authority, or release gates.
 - `recheck` and `deeper` create new operations and new browser evidence. `deeper` advances `standard` to `deep` and `deep` to `xhigh`; it is unavailable after `xhigh`.
 
@@ -493,6 +502,10 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - The ordinary Settings page must validate display language, default viewport,
   AI suggestions, and Playwright Test mode before one atomic save. A failed save
   must not leave a partially applied combination.
+- AI connection selection is persisted independently through its contextual
+  apply action and capability-store revision. A selection conflict must retain
+  the user's draft, offer the latest choices, and never imply that the general
+  settings save also changed the AI connection.
 - Local settings must not disable external-send confirmation or enable provider,
   credential, browser, shell, MCP, translation, destructive, or release-gate
   authority. Malformed, oversized, non-regular, symlinked, or workspace-escaping
@@ -678,10 +691,34 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   when the coordinated release window expires. A nonce- and process-identity-
   matched owner may remove only its own unchanged lock; changed ownership or
   unsafe state must fail closed.
-- Ordinary AI state must say only whether suggestions are available, need
-  setup, or are unavailable, together with a user-facing service name and a
-  safe next step. Provider, model, endpoint, credential name/value, destination
-  fingerprint, and configuration hash are not ordinary UI content.
+- Ordinary AI state must say whether suggestions are available, need setup, or
+  are unavailable, together with the selected user-facing service, model, and
+  provider-native effort when that choice is meaningful. Subscription CLI and
+  API connections must use the same review workflow and result contract;
+  connection-specific capability differences may change only the offered
+  choices and truthful availability state.
+- TraceCue review method (`standard`, `deep`, or `xhigh`) and provider-native
+  effort are independent selections. Changing either must preserve and bind
+  the other exact value; one must never be inferred from or silently replace
+  the other.
+- The browser may select only server-issued opaque connection, model, and
+  native-effort option ids. Internal provider and adapter ids, endpoints,
+  credential names or values, executable paths, binary hashes, destination
+  fingerprints, configuration hashes, command arguments, and raw discovery
+  output are not ordinary UI content.
+- Dashboard and other read-only GET requests must not probe a CLI, start a
+  process, contact a provider, or mutate connection state. Availability refresh
+  is an explicit Origin- and CSRF-protected action. Cached capability data may
+  support display but must never authorize dispatch; prepare and dispatch must
+  re-resolve the opaque selection and dispatch must revalidate the exact
+  connection type, adapter, provider, model, native effort, capability revision,
+  configuration identity, and executable identity where applicable.
+- Subscription execution must use an audited fixed adapter for a supported
+  already-authenticated CLI. API execution must use environment-only endpoint,
+  credential, and configured model data. Neither path may accept credentials,
+  executable paths, arbitrary arguments, or commands from the browser, persist
+  credential values, or silently fall back to another connection, model, or
+  effort.
 - External AI execution continues to require a fresh concrete disclosure and
   one-time confirmation. Input identity, evidence classes, service identity,
   and a non-secret destination configuration fingerprint must remain unchanged
@@ -706,7 +743,10 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   evidence transfer. A thrown runner or a missing/partial boundary is uncertain
   and must remain `dispatch_unknown`.
 - The UI must show purpose and standard/deep/xhigh only when the selected engine
-  uses them. It must follow the approved production mock and design tokens,
+  uses them. AI service and model remain a compact summary; connection choice,
+  model choice, and provider-native effort appear only when a real alternative
+  exists, with provider-native effort in a secondary AI-details disclosure. It
+  must follow the approved production mock and design tokens,
   preserve visible keyboard focus, show safe actionable errors, translate the
   representative RTL flow, and avoid overlap or horizontal overflow at the
   verified mobile, tablet, and desktop widths.

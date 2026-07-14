@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added Control Center AI connection parity for already-authenticated Codex subscription CLI and environment-configured API use, with opaque user-facing service/model/native-effort selection, independent TraceCue standard/deep/xhigh review methods, passive dashboard reads, explicit capability refresh, exact no-fallback dispatch revalidation, a fixed shell-disabled native CLI adapter, synchronized production mock/UI, mobile-safe text action targets, and no browser credential or command input.
 - Closed the same-id intake reservation/admission race by keeping non-owner requests bounded while the exact reserved owner remains live, returning a prompt retryable result without ownership takeover when that owner rejects or exits, and verifying one executor plus one shared result with deterministic cross-process scheduling, state-driven lease assertions, bounded worker cleanup, and fully settled causal maintenance tests instead of load-sensitive sleeps.
 - Kept Control Center list projection available during an authorized atomic record replacement by retrying only transient not-found and stable-read change signals within a fixed bound, with deterministic retry/refusal tests and a fresh-page browser assertion for the dashboard reload after a lost start response.
 - Hardened safe-store history moves so internal quarantine directories cannot be mistaken for product record ids, vanished directory entries are skipped safely, and bounded unreferenced maintenance retries converge without delaying primary actions or process exit.

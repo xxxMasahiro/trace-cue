@@ -29,6 +29,7 @@
         "validating",
         "completed",
         "failed",
+        "needs_attention",
         "dispatch_unknown",
         "cancelled"
       ]

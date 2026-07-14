@@ -40,7 +40,7 @@
     {
       "id": "control-center-ai-send-confirmation",
       "tokens": ["surface", "line", "foreground", "muted", "accent", "warning"],
-      "contract": ["Before every external AI send, show what will be sent, the configured destination in ordinary language, and where the result will be saved; require explicit agreement and do not provide an ordinary setting that disables this protection."]
+      "contract": ["Before every external AI send, prioritize what will be sent, the user-facing service/model destination, and the TraceCue review method; place provider-native effort in secondary AI details, require explicit agreement, and do not provide an ordinary setting that disables this protection."]
     },
     {
       "id": "control-center-ai-review-progress",
@@ -55,7 +55,7 @@
     {
       "id": "control-center-preference-settings",
       "tokens": ["background", "surface", "line", "foreground", "muted", "accent", "success"],
-      "contract": ["Use one continuous prototype-style form for display language, default review screen, plain-language automated checks, AI suggestions, and mandatory external-send confirmation, with one 設定を保存 action."]
+      "contract": ["Use one continuous prototype-style form for display language, default review screen, plain-language automated checks, AI suggestions, a compact user-facing AI service/model summary with explicit availability refresh and change actions, provider-native effort under secondary AI details, and mandatory external-send confirmation; 設定を保存 applies the general settings atomically, while a changed AI choice uses one nearby explicit apply action with conflict recovery; text-link actions keep at least a 44 by 44 pixel touch area on mobile."]
     },
     {
       "id": "control-center-success-feedback",
@@ -75,7 +75,12 @@
     {
       "id": "control-center-ai-readiness",
       "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "warning"],
-      "contract": ["Show only AI suggestions available, setup needed, or unavailable with a user-facing service name and next action; keep provider, model, endpoint, credentials, hashes, and fingerprints out of ordinary UI, and offer a clear continue-without-AI choice."]
+      "contract": ["Show AI suggestions available, setup needed, or unavailable with the selected user-facing service and model plus a safe next action; keep internal provider/adapter ids, endpoints, credentials, executable paths, commands, hashes, fingerprints, and raw discovery output out of ordinary UI, and offer direct Open AI settings and Continue without AI actions when setup is needed."]
+    },
+    {
+      "id": "control-center-ai-connection-choice",
+      "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "warning"],
+      "contract": ["Use server-issued opaque options to choose a user-facing AI service and model only when alternatives exist; keep provider-native effort in a collapsed AI details disclosure, keep TraceCue standard/deep/xhigh visibly separate, refresh availability only by explicit action, and never expose or accept credentials, endpoints, executable paths, commands, or raw provider controls."]
     },
     {
       "id": "control-center-recovery",

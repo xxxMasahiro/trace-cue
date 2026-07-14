@@ -82,6 +82,16 @@ export async function setControlCenterPreferences(payload) {
   return envelope.data?.control_center_preferences ?? envelope.data?.control_center ?? envelope.data ?? envelope;
 }
 
+export async function refreshAiConnections(payload) {
+  const envelope = await requestJson('/api/settings/ai-connections/refresh', postOptions(payload));
+  return envelope.data?.ai_connections ?? envelope.data;
+}
+
+export async function saveAiConnectionSelection(payload) {
+  const envelope = await requestJson('/api/settings/ai-connections/selection', postOptions(payload));
+  return envelope.data?.ai_connections ?? envelope.data;
+}
+
 export async function createSourceIntakeProposal(payload) {
   const body = await postJson('/api/source-intake/proposal', payload);
   if (!body.ok || body.envelope.status === 'error') {

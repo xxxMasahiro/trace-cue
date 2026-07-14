@@ -69,11 +69,13 @@ export {
   AGENTIC_REVIEW_API_ENDPOINT_ENV,
   AGENTIC_REVIEW_API_TIMEOUT_ENV,
   AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
+  AGENTIC_REVIEW_RESPONSES_ADAPTER_MODEL_ENV,
   agenticProviderCapabilityContract,
   agenticProviderCapabilityHash,
   buildAgenticLiveDogfoodExecutionGate,
   buildAgenticProviderReadiness,
   executeAgenticHumanReviewApiProvider,
+  executeAgenticHumanReviewSubscriptionProvider,
   validateAgenticProviderDescriptor,
   resolveAgenticHumanReviewProvider
 } from './agentic-human-review-providers.js';
@@ -343,6 +345,34 @@ export {
   buildControlCenterAiReadiness,
   buildControlCenterAiDestinationFingerprint
 } from './control-center-ai-readiness.js';
+export {
+  CONTROL_CENTER_AI_CAPABILITY_TTL_MS,
+  CONTROL_CENTER_AI_CONNECTION_SCHEMA_VERSION,
+  CONTROL_CENTER_AI_CONNECTION_TYPES,
+  applyControlCenterAiSelection,
+  createControlCenterAiConnectionRecord,
+  emptyControlCenterAiConnectionsProjection,
+  projectControlCenterAiConnections,
+  resolveControlCenterAiSelection,
+  validateControlCenterAiConnectionRecord
+} from './control-center-ai-connections.js';
+export {
+  CONTROL_CENTER_AI_REFRESH_CONFIRM,
+  CONTROL_CENTER_AI_SELECTION_CONFIRM,
+  discoverControlCenterAiConnections,
+  readControlCenterAiConnections,
+  resolveControlCenterAiBinding,
+  revalidateControlCenterAiBinding,
+  runControlCenterAiConnectionsRefresh,
+  runControlCenterAiSelectionSave
+} from './control-center-ai-connection-actions.js';
+export {
+  controlCenterAiConnectionStoreBoundary,
+  readControlCenterAiConnectionRecord,
+  readControlCenterAiConnectionsProjection,
+  replaceControlCenterAiConnections,
+  saveControlCenterAiSelection
+} from './control-center-ai-connection-store.js';
 export {
   CONTROL_CENTER_INTAKE_KINDS,
   CONTROL_CENTER_INTAKE_TTL_MS,

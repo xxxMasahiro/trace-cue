@@ -5,7 +5,16 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { executeCli } from '../src/cli.js';
-import { startControlCenterServer } from '../src/api.js';
+import {
+  AGENTIC_REVIEW_API_CREDENTIAL_ENV,
+  AGENTIC_REVIEW_API_ENDPOINT_ENV,
+  AGENTIC_REVIEW_RESPONSES_ADAPTER_MODEL_ENV,
+  startControlCenterServer
+} from '../src/api.js';
+import {
+  agenticProviderCapabilityHash,
+  resolveAgenticHumanReviewProvider
+} from '../src/agentic-human-review-providers.js';
 import { createSafeLocalStore } from '../src/safe-local-store.js';
 import { createBrowserTestWorkspace } from './helpers/browser-test-workspace.js';
 
@@ -48,12 +57,23 @@ function assertCloseMetric(actual, expected, tolerance, label) {
 
 function controlCenterReviewContext(cwd) {
   let operationId = 0;
-  return {
+  const providerId = 'generic-api-provider';
+  const modelId = 'browser-review-model';
+  const providerResolution = resolveAgenticHumanReviewProvider({ providerId, context: {} });
+  if (!providerResolution.ok) throw new Error('Browser test provider is unavailable.');
+  const provider = providerResolution.provider;
+  const providerCapabilityHash = agenticProviderCapabilityHash(provider);
+  const context = {
     cwd,
     now: () => new Date(fixedNow),
     createId: () => `control-center-agentic-review-browser-${++operationId}`,
     agenticReviewServiceName: 'Example Review AI',
-    agenticReviewProviderId: 'fake-agent',
+    agenticReviewProviderId: providerId,
+    env: {
+      [AGENTIC_REVIEW_API_ENDPOINT_ENV]: 'https://review.example.test/v1/responses',
+      [AGENTIC_REVIEW_API_CREDENTIAL_ENV]: 'browser-test-secret',
+      [AGENTIC_REVIEW_RESPONSES_ADAPTER_MODEL_ENV]: modelId
+    },
     async runReview() {
       return {
         status: 'ok', data: { findings: [] }, warnings: [], errors: [],
@@ -73,9 +93,9 @@ function controlCenterReviewContext(cwd) {
           agentic_human_review_plan: {
             plan_hash: 'browser-plan-hash',
             package_hash: 'browser-package-hash',
-            provider_capability_hash: 'browser-capability-hash',
-            provider: { id: 'fake-agent' },
-            model: { id: 'fake-model' },
+            provider_capability_hash: providerCapabilityHash,
+            provider: { id: providerId },
+            model: { id: modelId },
             surface: { id: 'browser-smoke' },
             transfer_permissions: {
               required_flags: ['allow-page-text', 'allow-url'],
@@ -136,8 +156,8 @@ function controlCenterReviewContext(cwd) {
         agentic_human_review_action_plan: { suggested_fixes: ['Move the booking action higher.'] },
         agentic_human_review_readiness: { advisory_only: true, gate_effect: 'none' },
         owner_decision_requests: [],
-        provider: { id: 'fake-agent' },
-        model: { id: 'fake-model' },
+        provider: { id: providerId },
+        model: { id: modelId },
         transfer_permissions: { required_flags: ['allow-page-text', 'allow-url'] },
         execution: {
           id: 'browser-execution',
@@ -168,6 +188,37 @@ function controlCenterReviewContext(cwd) {
       };
     }
   };
+  context.discoverControlCenterAiConnections = async () => ({
+    connections: [{
+      id: 'browser-api-connection',
+      display_name: 'Example Review AI',
+      connection_type: 'api',
+      status: 'available',
+      status_message: 'BACKEND_STATUS_SENTINEL',
+      adapter_id: 'browser-api-adapter',
+      adapter_version: '1.0.0',
+      provider_id: providerId,
+      transport: provider.transport,
+      execution_strategy: 'one-shot',
+      provider_effort_request_field: provider.effort_capability.native_effort_binding.request_field,
+      provider_capability_hash: providerCapabilityHash,
+      executable_identity_hash: null,
+      models: [{
+        id: modelId,
+        display_name: modelId,
+        native_efforts: [
+          { id: 'low', display_name: 'Low' },
+          { id: 'medium', display_name: 'Medium' },
+          { id: 'high', display_name: 'High' }
+        ],
+        default_native_effort_id: 'medium'
+      }],
+      default_model_id: modelId
+    }],
+    selection: null,
+    boundary: { process_spawned: false, network_used: false, credential_values_read: false }
+  });
+  return context;
 }
 
 test('observe captures a local file page with Playwright', { skip: !runBrowserSmoke }, async (t) => {
@@ -255,6 +306,20 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     await page.locator('[data-testid="tc-cc-home"]').waitFor();
     await page.getByRole('button', { name: /New review/ }).click();
     await page.locator('[data-testid="tc-cc-new-review"]').waitFor();
+    const setupChoice = page.locator('.ai-choice');
+    assert.match(await setupChoice.innerText(), /AI suggestions need setup/);
+    assert.doesNotMatch(await setupChoice.innerText(), /provider|endpoint|API token|CLI command|file path/i);
+    await setupChoice.getByRole('button', { name: 'Open AI settings' }).click();
+    const initialSettings = page.locator('[data-testid="tc-cc-settings"]');
+    await initialSettings.waitFor();
+    await initialSettings.getByRole('button', { name: 'Update availability' }).click();
+    await initialSettings.getByText('Available', { exact: true }).waitFor();
+    assert.match(await initialSettings.innerText(), /Example Review AI[\s\S]*browser-review-model/);
+    assert.doesNotMatch(await initialSettings.innerText(), /BACKEND_STATUS_SENTINEL/);
+    await page.goto(started.url, { waitUntil: 'networkidle' });
+    await page.locator('[data-testid="tc-cc-home"]').waitFor();
+    await page.getByRole('button', { name: /New review/ }).click();
+    await page.locator('[data-testid="tc-cc-new-review"]').waitFor();
     const methodSelector = page.locator('.method-grid');
     assert.equal(await methodSelector.getByRole('radio').count(), 3);
     assert.equal(await methodSelector.getByRole('radio', { name: /improvements that matter most/i }).isChecked(), true);
@@ -292,14 +357,38 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     assert.equal(productionVisual.purposeTag, mockVisual.purposeTag);
     assertCloseMetric(productionVisual.purposeHeight, mockVisual.purposeHeight, 2, 'review purpose input height');
     assert.equal(productionVisual.footerJustify, mockVisual.footerJustify);
+    await mockPage.getByRole('button', { name: '変更', exact: true }).click();
+    await mockPage.getByText('AIの詳細', { exact: true }).waitFor();
     await mockPage.close();
     await page.getByLabel('URL to review').fill('https://example.jp/reserve');
     await page.getByLabel('What do you want to make easier?').fill('Help first-time visitors complete a booking without getting lost.');
     await page.getByRole('button', { name: 'Prepare review', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Start this review?' });
     await dialog.waitFor();
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+    const cancelledOperations = await page.evaluate(async () => (
+      await (await fetch('/api/agentic-review/list')).json()
+    ).data.control_center_agentic_review.operations.filter((operation) => operation.state === 'cancelled'));
+    assert.equal(cancelledOperations.length, 1);
+    assert.equal(cancelledOperations[0].dispatch.provider_call_performed, false);
+
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.locator('[data-testid="tc-cc-home"]').waitFor();
+    await page.getByRole('heading', { name: 'No reviews yet', exact: true }).waitFor();
+    assert.equal(await page.getByText('Not sent', { exact: true }).count(), 1);
+    await page.getByRole('button', { name: 'New review', exact: true }).click();
+    await page.getByLabel('URL to review').fill('https://example.jp/reserve');
+    await page.getByLabel('What do you want to make easier?').fill('Help first-time visitors complete a booking without getting lost.');
+
+    await page.getByRole('button', { name: 'Prepare review', exact: true }).click();
+    await dialog.waitFor();
     assert.match(await dialog.innerText(), /Example Review AI/);
+    await dialog.getByText('AI settings', { exact: true }).click();
+    assert.match(await dialog.innerText(), /browser-review-model/);
+    assert.match(await dialog.innerText(), /Essential review/);
     assert.match(await dialog.innerText(), /Visible page text/);
+    assert.match(await dialog.innerText(), /Saved on this computer/);
     const dialogBox = await dialog.boundingBox();
     const workspaceBox = await page.locator('.workspace').boundingBox();
     assert.ok(Math.abs((dialogBox.x + (dialogBox.width / 2)) - (workspaceBox.x + (workspaceBox.width / 2))) <= 2);
@@ -331,6 +420,20 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     });
     assert.equal(repeatedOperation.review_effort, 'deep');
     assert.equal(repeatedOperation.parent_review.repeat_mode, 'deeper');
+
+    await page.getByRole('button', { name: 'Review and start', exact: true }).click();
+    const repeatedDialog = page.getByRole('dialog', { name: 'Start this review?' });
+    await repeatedDialog.waitFor();
+    await page.route('**/api/agentic-review/cancel', async (route) => {
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      await route.abort('failed');
+    }, { times: 1 });
+    await repeatedDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await repeatedDialog.waitFor({ state: 'hidden' });
+    await page.getByRole('heading', { name: 'This review was not sent', exact: true }).waitFor();
+    assert.equal(await page.getByRole('dialog', { name: 'Start this review?' }).count(), 0);
+    assert.equal(await page.getByText('The latest status could not be read.').count(), 0);
 
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     const settingsHub = page.locator('[data-testid="tc-cc-settings"]');
@@ -365,7 +468,21 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     await mockSettingsPage.close();
     const settingsText = await settingsHub.innerText();
     assert.doesNotMatch(settingsText, /Language state|Settings storage|Diagnostics|Target policy|Max age hours/);
+    assert.doesNotMatch(settingsText, /provider|endpoint|API token|CLI command|file path/i);
     assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
+
+    await page.getByRole('button', { name: 'Change', exact: true }).click();
+    await page.getByText('AI details', { exact: true }).click();
+    await page.getByLabel('AI processing level').selectOption({ label: 'High' });
+    const applyAi = page.getByRole('button', { name: 'Use this AI', exact: true });
+    const applyAiBox = await applyAi.boundingBox();
+    assert.ok(applyAiBox.height >= 44);
+    await applyAi.click();
+    await page.getByText('AI choice updated.', { exact: true }).waitFor();
+    await page.getByLabel('AI processing level').selectOption({ label: 'Low' });
+    assert.equal(await page.getByText('AI choice updated.', { exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Use this AI', exact: true }).count(), 1);
+    await page.getByLabel('AI processing level').selectOption({ label: 'High' });
 
     await page.getByLabel('Automated checks').selectOption('local_run');
     assert.equal(await page.getByRole('button', { name: /run/i }).count(), 0);
@@ -388,21 +505,261 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     assert.equal(savedNoticeStyle.successSoft, '#eaf7ee');
     const savedDashboard = await page.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
     assert.equal(savedDashboard.settings.display_language.current_locale, 'ja');
+    assert.equal(savedDashboard.ai_connections.selection.effort_name, 'High');
     assert.equal(savedDashboard.settings.playwright_test.selected_mode, 'local_run');
     assert.equal(savedDashboard.settings.control_center.external_send_confirmation_required, true);
     assert.match(await settingsHub.innerText(), /いつも確認する画面[\s\S]*自動確認[\s\S]*AIの提案を使う[\s\S]*外部へ送る前に確認する/);
+    await page.getByLabel('いつも確認する画面').selectOption('desktop');
+    assert.equal(await page.locator('.inline-notice.success').filter({ hasText: '設定を保存しました' }).count(), 0);
 
     await page.setViewportSize({ width: 390, height: 844 });
+    const mobileChangeBox = await page.getByRole('button', { name: '変更', exact: true }).boundingBox();
+    assert.ok(mobileChangeBox.width >= 44);
+    assert.ok(mobileChangeBox.height >= 44);
     await page.getByRole('button', { name: '確認', exact: true }).click();
     await page.getByRole('button', { name: /新しく確認/ }).click();
     await page.locator('[data-testid="tc-cc-new-review"]').waitFor();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert.equal(overflow, 0);
-    assert.equal(consoleErrors.length, 0);
+    assert.deepEqual(
+      consoleErrors.filter((message) => !/Failed to load resource: net::ERR_FAILED/u.test(message)),
+      []
+    );
   } finally {
     if (browser) {
       await browser.close();
     }
+    await closeServer(started.server);
+  }
+});
+
+test('review workspace ignores a late status response from the previous route', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-review-status-ordering-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
+  await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  const started = await startControlCenterServer({ port: 0 }, controlCenterReviewContext(cwd));
+  testWorkspace.trackServer(started.server);
+  let browser = null;
+  let releaseOldResponse;
+  let observeOldRequest;
+  const oldResponseGate = new Promise((resolve) => { releaseOldResponse = resolve; });
+  const oldRequestObserved = new Promise((resolve) => { observeOldRequest = resolve; });
+  const oldId = 'control-center-agentic-review-browser-old';
+  const newId = 'control-center-agentic-review-browser-new';
+  const operation = (id, target) => ({
+    schema_version: '2.0.0',
+    type: 'control_center_agentic_review',
+    id,
+    state: 'completed',
+    stage: 'complete',
+    created_at: fixedNow,
+    updated_at: fixedNow,
+    completed_at: fixedNow,
+    target,
+    purpose: `Review ${target}`,
+    review_effort: 'standard',
+    ai_suggestions: false,
+    service: { name: 'Local review', external_ai: false },
+    decisions: [],
+    result: { findings: [] }
+  });
+  try {
+    browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const consoleErrors = [];
+    page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    await page.route('**/api/agentic-review/status?*', async (route) => {
+      const id = new URL(route.request().url()).searchParams.get('id');
+      if (id === oldId) {
+        observeOldRequest();
+        await oldResponseGate;
+      }
+      const selected = id === oldId ? operation(oldId, 'OLD REVIEW') : operation(newId, 'NEW REVIEW');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          data: { control_center_agentic_review: { operation: selected } },
+          warnings: [],
+          errors: [],
+          artifacts: []
+        })
+      });
+    });
+
+    await page.goto(`${started.url}?view=work&item=${oldId}`, { waitUntil: 'domcontentloaded' });
+    await oldRequestObserved;
+    await page.evaluate((id) => {
+      window.history.pushState(null, '', `/?view=work&item=${encodeURIComponent(id)}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, newId);
+    await page.getByRole('heading', { name: 'NEW REVIEW', exact: true }).waitFor();
+    releaseOldResponse();
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator('[data-page-heading]').innerText(), 'NEW REVIEW');
+    assert.equal(new URL(page.url()).searchParams.get('item'), newId);
+    assert.equal(consoleErrors.length, 0, JSON.stringify(consoleErrors));
+  } finally {
+    releaseOldResponse?.();
+    if (browser) await browser.close();
+    await closeServer(started.server);
+  }
+});
+
+test('review center preserves an AI choice draft when another settings page wins the revision', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-ai-settings-conflict-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
+  await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  const started = await startControlCenterServer({ port: 0 }, controlCenterReviewContext(cwd));
+  testWorkspace.trackServer(started.server);
+  let browser = null;
+  try {
+    browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
+    const first = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const second = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const consoleErrors = [];
+    first.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    second.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+
+    await first.goto(started.url, { waitUntil: 'networkidle' });
+    await first.getByRole('button', { name: 'Settings', exact: true }).click();
+    await first.getByRole('button', { name: 'Update availability', exact: true }).click();
+    await first.getByText('Available', { exact: true }).waitFor();
+
+    await second.goto(started.url, { waitUntil: 'networkidle' });
+    await second.getByRole('button', { name: 'Settings', exact: true }).click();
+    await second.locator('[data-testid="tc-cc-settings"]').waitFor();
+
+    await first.getByRole('button', { name: 'Change', exact: true }).click();
+    await first.getByText('AI details', { exact: true }).click();
+    await first.getByLabel('AI processing level').selectOption({ label: 'High' });
+
+    await second.getByRole('button', { name: 'Change', exact: true }).click();
+    await second.getByText('AI details', { exact: true }).click();
+    await second.getByLabel('AI processing level').selectOption({ label: 'Low' });
+    await second.getByRole('button', { name: 'Use this AI', exact: true }).click();
+    await second.getByText('AI choice updated.', { exact: true }).waitFor();
+
+    await first.getByRole('button', { name: 'Save settings', exact: true }).click();
+    const conflict = first.locator('.inline-notice.warning').filter({ hasText: 'AI settings could not be updated' });
+    await conflict.waitFor();
+    assert.equal(await first.getByLabel('AI processing level').locator('option:checked').innerText(), 'High');
+    assert.equal(await conflict.getByRole('button', { name: 'Load latest choices', exact: true }).count(), 1);
+    assert.equal(await first.getByRole('button', { name: 'Use this AI', exact: true }).isDisabled(), true);
+    assert.doesNotMatch(await first.locator('[data-testid="tc-cc-settings"]').innerText(), /browser-test-secret|review\.example\.test|generic-api-provider|browser-api-adapter/i);
+
+    await conflict.getByRole('button', { name: 'Load latest choices', exact: true }).click();
+    await conflict.waitFor({ state: 'detached' });
+    assert.equal(await first.getByLabel('AI processing level').locator('option:checked').innerText(), 'Low');
+    const savedDashboard = await first.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
+    assert.equal(savedDashboard.ai_connections.selection.effort_name, 'Low');
+
+    await first.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await first.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+    const compactHeights = await first.locator('.primary-action.compact, .secondary-action.compact').evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().height));
+    assert.equal(compactHeights.every((height) => height >= 44), true);
+    assert.equal(consoleErrors.length, 0, JSON.stringify(consoleErrors));
+  } finally {
+    if (browser) await browser.close();
+    await closeServer(started.server);
+  }
+});
+
+test('review center preserves a new-review draft when another page refreshes AI availability', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-ai-prepare-refresh-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
+  await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  const started = await startControlCenterServer({ port: 0 }, controlCenterReviewContext(cwd));
+  testWorkspace.trackServer(started.server);
+  let browser = null;
+  try {
+    browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
+    const reviewPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const settingsPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+
+    await settingsPage.goto(`${started.url}?page=settings`, { waitUntil: 'networkidle' });
+    const firstRefresh = settingsPage.waitForResponse((response) => response.url().endsWith('/api/settings/ai-connections/refresh') && response.request().method() === 'POST');
+    await settingsPage.getByRole('button', { name: 'Update availability', exact: true }).click();
+    await firstRefresh;
+    await settingsPage.getByText('Available', { exact: true }).waitFor();
+
+    await reviewPage.goto(`${started.url}?view=new`, { waitUntil: 'networkidle' });
+    await reviewPage.getByLabel('URL to review').fill('https://example.jp/preserved');
+    await reviewPage.getByLabel('What do you want to make easier?').fill('Keep this review goal while AI availability changes.');
+
+    const secondRefresh = settingsPage.waitForResponse((response) => response.url().endsWith('/api/settings/ai-connections/refresh') && response.request().method() === 'POST');
+    await settingsPage.getByRole('button', { name: 'Update availability', exact: true }).click();
+    const secondRefreshResponse = await secondRefresh;
+    assert.equal(secondRefreshResponse.ok(), true);
+    await reviewPage.getByRole('button', { name: 'Prepare review', exact: true }).click();
+    await reviewPage.getByText('AI availability changed. Your review details are still here; check the current choice and prepare again.', { exact: true }).waitFor();
+    assert.equal(await reviewPage.getByLabel('URL to review').inputValue(), 'https://example.jp/preserved');
+    assert.equal(await reviewPage.getByLabel('What do you want to make easier?').inputValue(), 'Keep this review goal while AI availability changes.');
+
+    await reviewPage.getByRole('button', { name: 'Prepare review', exact: true }).click();
+    const dialog = reviewPage.getByRole('dialog', { name: 'Start this review?' });
+    await dialog.waitFor();
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+  } finally {
+    if (browser) await browser.close();
+    await closeServer(started.server);
+  }
+});
+
+test('review center ignores an older dashboard response that finishes after a newer save', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-dashboard-order-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
+  await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  const started = await startControlCenterServer({ port: 0 }, controlCenterReviewContext(cwd));
+  testWorkspace.trackServer(started.server);
+  let browser = null;
+  try {
+    browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.goto(`${started.url}?page=settings`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Update availability', exact: true }).click();
+    await page.getByText('Available', { exact: true }).waitFor();
+
+    let releaseOlder;
+    let olderCaptured;
+    const releaseOlderPromise = new Promise((resolve) => { releaseOlder = resolve; });
+    const olderCapturedPromise = new Promise((resolve) => { olderCaptured = resolve; });
+    let dashboardReads = 0;
+    await page.route('**/api/dashboard', async (route) => {
+      dashboardReads += 1;
+      if (dashboardReads !== 1) {
+        await route.continue();
+        return;
+      }
+      const response = await route.fetch();
+      olderCaptured();
+      await releaseOlderPromise;
+      await route.fulfill({ response });
+    });
+
+    await page.getByRole('button', { name: 'Update availability', exact: true }).click();
+    await olderCapturedPromise;
+    await page.getByLabel('Display language').selectOption('ja');
+    await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+    await page.getByText('設定を保存しました', { exact: true }).waitFor();
+    releaseOlder();
+    await page.getByRole('button', { name: '利用状況を更新', exact: true }).waitFor();
+    await page.waitForTimeout(100);
+    assert.equal(await page.getByRole('heading', { name: '設定', exact: true }).count(), 1);
+    const dashboard = await page.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
+    assert.equal(dashboard.settings.display_language.current_locale, 'ja');
+  } finally {
+    if (browser) await browser.close();
     await closeServer(started.server);
   }
 });
@@ -659,6 +1016,33 @@ test('review center handles every intake type, no-AI continuation, recovery, key
     const rtlText = await page.locator('[data-testid="tc-cc-settings"]').innerText();
     assert.doesNotMatch(rtlText, /Settings|Everyday use|Display language|Default screen size|Automated checks|AI suggestions|Confirm before sending|Save settings/);
     assert.match(rtlText, /الإعدادات/);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.evaluate(() => { document.documentElement.style.zoom = '2'; });
+    await page.getByRole('button', { name: 'تحديث التوفر', exact: true }).click();
+    await page.getByText('متاحة', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'تغيير', exact: true }).click();
+    await page.getByText('تفاصيل الذكاء الاصطناعي', { exact: true }).click();
+    const rtlAiText = await page.locator('[data-testid="tc-cc-settings"]').innerText();
+    assert.doesNotMatch(rtlAiText, /Use this AI|AI choice updated|AI processing level|Load latest choices/);
+    await page.goto(`${started.url}?view=new`, { waitUntil: 'networkidle' });
+    await page.locator('#review-url').fill('https://example.jp/rtl');
+    await page.locator('#review-purpose').fill('توضيح الخطوة التالية للزائر');
+    await page.locator('[data-testid="tc-cc-new-review"] button[type="submit"]').click();
+    const rtlDialog = page.locator('dialog.send-dialog');
+    await rtlDialog.waitFor();
+    const rtlDialogText = await rtlDialog.innerText();
+    assert.match(rtlDialogText, /النص الظاهر في الصفحة/);
+    assert.match(rtlDialogText, /تحفظ النتيجة في مساحة العمل المحلية/);
+    assert.doesNotMatch(rtlDialogText, /Visible page text|Page address|Saved on this computer|AI settings/);
+    const zoomLayout = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      viewport: window.innerWidth
+    }));
+    assert.equal(zoomLayout.overflow, 0);
+    assert.ok((await rtlDialog.boundingBox()).width <= zoomLayout.viewport);
+    await rtlDialog.locator('.secondary-action').click();
+    await rtlDialog.waitFor({ state: 'hidden' });
+    await page.evaluate(() => { document.documentElement.style.zoom = '1'; });
     await page.goto(`${started.url}?view=work&item=${encodeURIComponent(savedResultId)}`, { waitUntil: 'networkidle' });
     const rtlResult = page.locator('[data-testid="tc-cc-intake-result"]');
     await rtlResult.waitFor();
@@ -734,6 +1118,10 @@ test('review center keeps one intake and redirects to truthful status after resp
       });
     });
 
+    await page.goto(started.url, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Update availability', exact: true }).click();
+    await page.getByText('Available', { exact: true }).waitFor();
     await page.goto(`${started.url}?view=new`, { waitUntil: 'networkidle' });
     await page.getByRole('radio', { name: /^Image/ }).check();
     const fileInput = page.locator('#review-file');
@@ -793,22 +1181,42 @@ test('review center keeps one intake and redirects to truthful status after resp
     await freshPage.getByRole('button', { name: 'Prepare review' }).click();
     const rejectedDialog = freshPage.getByRole('dialog', { name: 'Start this review?' });
     await rejectedDialog.waitFor({ timeout: 10_000 });
-    await freshPage.route('**/api/agentic-review/start', async (route) => route.fulfill({
-      status: 400,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        status: 'error', data: { control_center_agentic_review: null }, warnings: [], artifacts: [],
-        errors: [{
-          code: 'CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED',
-          message: 'The AI review connection changed. Start a new review.',
-          details: {}
-        }]
-      })
-    }), { times: 1 });
+    const pendingOperationId = await freshPage.evaluate(async () => {
+      const response = await (await fetch('/api/agentic-review/list')).json();
+      return response.data.control_center_agentic_review.operations.find((operation) => operation.state === 'confirmation_required')?.id;
+    });
+    assert.ok(pendingOperationId);
+    const driftPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await driftPage.goto(`${started.url}?page=settings`, { waitUntil: 'networkidle' });
+    await driftPage.getByRole('button', { name: 'Update availability', exact: true }).click();
+    await driftPage.getByText('Available', { exact: true }).waitFor();
+    await driftPage.close();
     await rejectedDialog.getByRole('button', { name: 'Start review', exact: true }).click();
-    await freshPage.getByText('The AI review connection changed. Start a new review.').waitFor();
+    await freshPage.getByText('The AI choice changed before anything was sent. Update availability, then prepare this review again.').waitFor();
+    assert.equal(await freshPage.getByRole('button', { name: 'Open AI settings', exact: true }).count(), 1);
     assert.equal(await freshPage.locator('[data-testid="tc-cc-new-review"]').count(), 1);
     assert.equal(new URL(freshPage.url()).searchParams.get('view'), 'new');
+    const attention = await freshPage.evaluate(async (id) => (
+      await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json()
+    ).data.control_center_agentic_review.operation, pendingOperationId);
+    assert.equal(attention.state, 'needs_attention');
+    assert.equal(attention.dispatch.provider_call_performed, false);
+    await freshPage.getByRole('button', { name: 'Open AI settings', exact: true }).click();
+    await freshPage.locator('[data-testid="tc-cc-settings"]').waitFor();
+    await freshPage.getByRole('button', { name: 'Update availability', exact: true }).click();
+    await freshPage.getByText('Available', { exact: true }).waitFor();
+    await freshPage.goto(`${started.url}?view=work&item=${encodeURIComponent(pendingOperationId)}`, { waitUntil: 'networkidle' });
+    await freshPage.getByRole('heading', { name: 'The AI choice changed', exact: true }).waitFor();
+    await freshPage.getByRole('button', { name: 'Prepare again', exact: true }).click();
+    await freshPage.getByRole('heading', { name: 'The review is ready to start', exact: true }).waitFor({ timeout: 20_000 });
+    const preparedAgainId = new URL(freshPage.url()).searchParams.get('item');
+    assert.notEqual(preparedAgainId, pendingOperationId);
+    const preparedAgain = await freshPage.evaluate(async (id) => (
+      await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json()
+    ).data.control_center_agentic_review.operation, preparedAgainId);
+    assert.equal(preparedAgain.state, 'confirmation_required');
+    assert.equal(preparedAgain.parent_review.id, pendingOperationId);
+    assert.equal(preparedAgain.parent_review.repeat_mode, 'recheck');
   } finally {
     if (browser) await browser.close();
     await closeServer(started.server);

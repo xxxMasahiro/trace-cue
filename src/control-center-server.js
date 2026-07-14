@@ -22,6 +22,11 @@ import { runControlCenterSetPreferences } from './control-center-preferences.js'
 import { runControlCenterSaveSettings } from './control-center-settings.js';
 import { buildControlCenterAiReadiness } from './control-center-ai-readiness.js';
 import {
+  readControlCenterAiConnections,
+  runControlCenterAiConnectionsRefresh,
+  runControlCenterAiSelectionSave
+} from './control-center-ai-connection-actions.js';
+import {
   completeControlCenterIntake,
   getControlCenterIntakeResult,
   listControlCenterIntakeResults,
@@ -218,6 +223,11 @@ export async function handleControlCenterRequest(request, response, config, cont
       return;
     }
     const result = await runControlCenterStatus(config.readModelOptions, { ...context, cwd: config.cwd });
+    const aiConnections = await readControlCenterAiConnections({
+      ...context,
+      cwd: config.cwd,
+      artifactRoot: config.readModelOptions['artifact-root']
+    });
     const dashboardData = {
       ...result.data,
       control_center: {
@@ -227,7 +237,8 @@ export async function handleControlCenterRequest(request, response, config, cont
           header: CONTROL_CENTER_CSRF_HEADER,
           expires_on_restart: true
         },
-        ai_readiness: buildControlCenterAiReadiness(context)
+        ai_readiness: compatibilityAiReadiness(aiConnections, context),
+        ai_connections: aiConnections
       }
     };
     const envelope = createEnvelope({
@@ -442,6 +453,35 @@ export async function handleControlCenterRequest(request, response, config, cont
       now: context.now
     });
     sendJson(response, result.status === 'ok' ? 200 : 400, envelope);
+    return;
+  }
+  if (url.pathname === '/api/settings/ai-connections/refresh' || url.pathname === '/api/settings/ai-connections/selection') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_AI_CONNECTIONS_POST_ONLY', 'AI settings only accept POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const refresh = url.pathname.endsWith('/refresh');
+    const result = await (refresh ? runControlCenterAiConnectionsRefresh : runControlCenterAiSelectionSave)(body.value, {
+      ...context,
+      cwd: config.cwd,
+      artifactRoot: config.readModelOptions['artifact-root']
+    });
+    const envelope = createEnvelope({
+      command: refresh ? 'control-center settings ai-connections refresh' : 'control-center settings ai-connections selection',
+      status: result.status,
+      data: result.data,
+      warnings: result.warnings,
+      errors: result.errors,
+      artifacts: result.artifacts,
+      now: context.now
+    });
+    const conflict = result.errors?.[0]?.code === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT';
+    sendJson(response, result.status === 'ok' ? 200 : conflict ? 409 : 400, envelope);
     return;
   }
   if (url.pathname === '/api/playwright-test/mode') {
@@ -842,13 +882,37 @@ function controlCenterServerMetadata(config, url) {
       '/api/review-intake/results',
       '/api/review-intake/result'
     ],
-    control_center_preference_endpoints: ['/api/settings/control-center'],
+    control_center_preference_endpoints: [
+      '/api/settings/control-center',
+      '/api/settings/ai-connections/refresh',
+      '/api/settings/ai-connections/selection'
+    ],
     agentic_review_endpoints: Object.values(CONTROL_CENTER_AGENTIC_REVIEW_ENDPOINTS),
     agentic_review_execution_requires_explicit_external_send_confirmation: true,
     mcp_json_rpc_exposed: false,
     cors_wildcard: false,
     cache_policy: 'no-store',
     boundary: controlCenterBoundary()
+  };
+}
+
+function compatibilityAiReadiness(aiConnections, context) {
+  if (!aiConnections || typeof aiConnections !== 'object') return buildControlCenterAiReadiness(context);
+  const selected = aiConnections.selection;
+  const status = aiConnections.status === 'available'
+    ? 'available'
+    : aiConnections.status === 'error'
+      ? 'unavailable'
+      : 'setup_required';
+  return {
+    status,
+    service_name: selected?.connection_name ?? null,
+    next_action: status === 'available'
+      ? 'AI suggestions can be used after you review what will be sent.'
+      : aiConnections.status_message,
+    network_checked: false,
+    can_continue_without_ai: true,
+    technical_details_included: false
   };
 }
 

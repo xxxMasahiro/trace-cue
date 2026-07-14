@@ -588,3 +588,29 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
   Exact clean-HEAD release and authenticated CI evidence is written to the
   ignored authority store after this completion-state commit so recording it
   cannot make its own revision stale.
+
+## Control Center AI Connection Parity
+
+- [x] Complete Gate A proposal and Gate B implementation-plan reviews with
+  independent contract, determinism/security, and concurrency/browser reviewers.
+- [x] Define one private exact-tuple capability contract and opaque public
+  projection for subscription CLI and API connections.
+- [x] Add the private revisioned connection store, passive dashboard reads,
+  protected explicit refresh/selection actions, TTL handling, CAS conflicts,
+  integrity binding, and no-fallback dispatch revalidation.
+- [x] Add the fixed Codex subscription adapter with native executable identity,
+  fixed probes and execution argv, safe environment, private staging, bounded
+  I/O/time, process-group cancellation, disabled web/MCP/shell authority, and
+  no raw-output or credential persistence.
+- [x] Keep TraceCue `standard`, `deep`, and `xhigh` independent from the exact
+  provider-native effort and carry both selections through plan, receipt,
+  operation, confirmation, execution, and drift validation.
+- [x] Synchronize the React/Vite New Review, Settings, and send-confirmation
+  flows plus the versioned production mock while hiding technical provider,
+  endpoint, credential, executable, command, hash, and path data.
+- [x] Complete canonical-document, design-system, schema, repository, security,
+  and test-manifest synchronization.
+- [x] Pass focused, complete no-browser, production build, mock, package,
+  TraceCue browser, release, product, and independent post-implementation gates.
+- [x] Commit, push, pass exact GitHub CI, confirm local/remote equality and a
+  clean worktree, then refresh exact-HEAD authority evidence.

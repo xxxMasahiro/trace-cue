@@ -35,6 +35,8 @@
     "transfer_flags": { "type": "array" },
     "provider_id": { "type": ["string", "null"] },
     "model_id": { "type": ["string", "null"] },
+    "connection_binding": { "type": ["object", "null"] },
+    "provider_effort_binding": { "type": ["object", "null"] },
     "status": { "type": "string" },
     "provider_call_performed": { "type": "boolean" },
     "api_call_performed": { "type": "boolean" },

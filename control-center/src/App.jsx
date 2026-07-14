@@ -9,9 +9,11 @@ import {
   listReviewIntakeResults,
   prepareAgenticReview,
   recoverAgenticReview,
+  refreshAiConnections,
   repeatAgenticReview,
   resumeAgenticReview,
   saveAgenticReviewDecision,
+  saveAiConnectionSelection,
   setControlCenterPreferences,
   startAgenticReview,
   uploadReviewIntake
@@ -42,11 +44,13 @@ export default function App() {
   const [intakeResults, setIntakeResults] = useState([]);
   const [intakeLoadError, setIntakeLoadError] = useState(false);
   const [locale, setLocale] = useState('en');
+  const dashboardRequestGeneration = useRef(0);
   const { route, navigate } = useControlCenterRoute();
   const t = useMemo(() => createTranslator(locale).t, [locale]);
   const style = useMemo(() => designSystemStyle(), []);
 
   async function loadDashboard({ quiet = false } = {}) {
+    const generation = ++dashboardRequestGeneration.current;
     if (!quiet) setLoading(true);
     setLoadError(false);
     try {
@@ -56,6 +60,7 @@ export default function App() {
       ]);
       if (dashboardResult.status === 'rejected') throw dashboardResult.reason;
       const next = dashboardResult.value;
+      if (generation !== dashboardRequestGeneration.current) return null;
       setDashboard(next);
       if (intakeResult.status === 'fulfilled') {
         setIntakeResults(intakeResult.value);
@@ -64,10 +69,12 @@ export default function App() {
         setIntakeLoadError(true);
       }
       setLocale(readLocale(next));
+      return next;
     } catch {
-      setLoadError(true);
+      if (generation === dashboardRequestGeneration.current) setLoadError(true);
+      return null;
     } finally {
-      if (!quiet) setLoading(false);
+      if (!quiet && generation === dashboardRequestGeneration.current) setLoading(false);
     }
   }
 
@@ -140,7 +147,7 @@ function ControlCenter({ dashboard, items, intakeResults, intakeLoadError, local
     if (/^[a-f0-9]{32}$/u.test(route.itemId)) {
       return <SavedIntakeResultPage resultId={route.itemId} locale={locale} navigate={navigate} t={t} />;
     }
-    return <ReviewWorkspace reviewId={route.itemId} navigate={navigate} reload={reload} t={t} />;
+    return <ReviewWorkspace reviewId={route.itemId} dashboard={dashboard} navigate={navigate} reload={reload} t={t} />;
   }
   return <HomePage items={items} intakeLoadError={intakeLoadError} navigate={navigate} reload={reload} t={t} />;
 }
@@ -149,7 +156,8 @@ function HomePage({ items, intakeLoadError, navigate, reload, t }) {
   const active = items.filter((item) => isActive(item.state));
   const needsDecision = items.filter((item) => isComplete(item.state) && item.remaining > 0);
   const finished = items.filter((item) => isComplete(item.state) && item.remaining === 0);
-  const next = needsDecision[0] ?? active[0] ?? items[0] ?? null;
+  const actionableItems = items.filter((item) => item.state !== 'cancelled');
+  const next = needsDecision[0] ?? active[0] ?? actionableItems[0] ?? null;
   return (
     <div className="screen" data-testid="tc-cc-home">
       <PageHeading
@@ -194,8 +202,15 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
   const [localResult, setLocalResult] = useState(null);
   const [prepared, setPrepared] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
+  const [needsAiRefresh, setNeedsAiRefresh] = useState(false);
+  const [aiDraft, setAiDraft] = useState(() => readAiSelection(dashboard?.ai_connections));
+  const [aiEditorOpen, setAiEditorOpen] = useState(false);
   const startButtonRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    setAiDraft(readAiSelection(dashboard?.ai_connections));
+  }, [dashboard?.ai_connections?.capability_token, dashboard?.ai_connections?.settings_revision]);
 
   function update(field, value) { setForm((current) => ({ ...current, [field]: value })); }
   function clearFileSelection() {
@@ -212,6 +227,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
     if (localResult) return;
     setBusy(true);
     setError(null);
+    setNeedsAiRefresh(false);
     setLocalResult(null);
     try {
       if (form.source_kind !== 'website') {
@@ -235,8 +251,9 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
         return;
       }
       const preferences = readPreferences(dashboard);
-      const aiReadiness = dashboard?.ai_readiness?.status ?? 'unavailable';
-      if (preferences.aiSuggestions && aiReadiness !== 'available' && !form.continue_without_ai) {
+      const aiConnections = dashboard?.ai_connections ?? {};
+      const aiAvailable = aiConnections.status === 'available' && Boolean(aiDraft?.connection_option_id);
+      if (preferences.aiSuggestions && !aiAvailable && !form.continue_without_ai) {
         throw new Error('AI choice required');
       }
       const next = await prepareAgenticReview({
@@ -247,7 +264,14 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
         effort: form.review_method,
         default_viewport: readPreferences(dashboard).defaultViewport,
         viewport: readPreferences(dashboard).defaultViewport,
-        ai_suggestions: preferences.aiSuggestions && aiReadiness === 'available' && !form.continue_without_ai
+        ai_suggestions: preferences.aiSuggestions && aiAvailable && !form.continue_without_ai,
+        ...(preferences.aiSuggestions && aiAvailable && !form.continue_without_ai ? {
+          connection_option_id: aiDraft.connection_option_id,
+          model_option_id: aiDraft.model_option_id,
+          effort_option_id: aiDraft.effort_option_id,
+          capability_revision: aiConnections.revision,
+          capability_token: aiConnections.capability_token
+        } : {})
       });
       const reviewId = readReviewId(next);
       if (!reviewId) throw new Error('Missing review');
@@ -262,7 +286,14 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
       setConfirmation(disclosure);
     } catch (caught) {
       if (!sameIntakeRetryAvailable(caught)) setPendingIntakeId(null);
-      setError(uiErrorMessage(caught, t));
+      if (requiresAiProjectionRefresh(apiErrorCode(caught))) {
+        const nextDashboard = await reload({ quiet: true });
+        setAiDraft(readAiSelection(nextDashboard?.ai_connections));
+        setNeedsAiRefresh(true);
+        setError(t('review.ai.changedBeforePrepare', 'AI availability changed. Your review details are still here; check the current choice and prepare again.'));
+      } else {
+        setError(uiErrorMessage(caught, t));
+      }
     } finally {
       setBusy(false);
     }
@@ -280,10 +311,11 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
       ? '.txt,.md,.markdown,.json'
       : '.json,.xml';
   const preferences = readPreferences(dashboard);
-  const aiReadiness = dashboard?.ai_readiness ?? { status: 'unavailable', service_name: null };
+  const aiConnections = dashboard?.ai_connections ?? { status: 'not_checked', connections: [], selection: null };
+  const selectedAiSummary = describeAiSelection(aiConnections, aiDraft);
   const needsAiChoice = form.source_kind === 'website'
     && preferences.aiSuggestions
-    && aiReadiness.status !== 'available';
+    && (aiConnections.status !== 'available' || !selectedAiSummary);
   const needsReviewGoal = form.source_kind === 'website' || form.source_kind === 'document_text';
   async function start() {
     setBusy(true);
@@ -304,11 +336,38 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
       navigate({ page: 'confirm', view: 'work', itemId: reviewId });
     } catch (caught) {
       setConfirmation(null);
-      if (!caught?.envelope) {
+      if (apiErrorCode(caught) === 'CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED') {
+        setPrepared(null);
+        setNeedsAiRefresh(true);
+        const nextDashboard = await reload({ quiet: true });
+        setAiDraft(readAiSelection(nextDashboard?.ai_connections));
+        setError(t('review.ai.changedBeforeSend', 'The AI choice changed before anything was sent. Update availability, then prepare this review again.'));
+      } else if (!caught?.envelope) {
         navigate({ page: 'confirm', view: 'work', itemId: prepared.review_id });
       } else {
         setError(uiErrorMessage(caught, t));
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelPreparedReview() {
+    const reviewId = prepared?.review_id;
+    if (!reviewId) {
+      setConfirmation(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      await cancelAgenticReview(reviewId);
+      setConfirmation(null);
+      setPrepared(null);
+      await reload({ quiet: true });
+    } catch {
+      setConfirmation(null);
+      await reload({ quiet: true });
+      navigate({ page: 'confirm', view: 'work', itemId: reviewId });
     } finally {
       setBusy(false);
     }
@@ -360,6 +419,31 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
         {needsReviewGoal ? <><label className="field-label" htmlFor="review-purpose">{t('review.purpose.question', 'What do you want to make easier?')}</label>
         <input id="review-purpose" className="text-input" type="text" required maxLength="1200" placeholder={t('review.purpose.placeholder', 'For example: Help first-time visitors complete a reservation without getting lost.')} value={form.purpose} onChange={(event) => update('purpose', event.target.value)} /></> : null}
 
+        {needsAiChoice ? (
+          <div className="ai-choice">
+            <div><strong>{t('review.ai.notReady', 'AI suggestions need setup')}</strong><p>{aiSetupGuidance(aiConnections, t)}</p></div>
+            {aiConnections.status === 'available' && firstAvailableAiSelection(aiConnections) ? (
+              <AiConnectionEditor aiConnections={aiConnections} value={aiDraft} onChange={(value) => { setAiDraft(value); update('continue_without_ai', false); }} t={t} compact />
+            ) : null}
+            <div className="ai-choice-actions">
+              {aiConnections.status === 'available' && !selectedAiSummary && firstAvailableAiSelection(aiConnections) ? (
+                <button className="primary-action compact" type="button" onClick={() => { setAiDraft(firstAvailableAiSelection(aiConnections)); update('continue_without_ai', false); }}>{t('review.ai.useShown', 'Use this AI')}</button>
+              ) : <button className="secondary-action compact" type="button" onClick={() => navigate({ page: 'settings', view: 'settings' })}>{t('review.ai.openSettings', 'Open AI settings')}</button>}
+              <label className="check-option">
+                <input type="checkbox" aria-label={t('review.ai.continueLocal', 'Continue without AI')} checked={form.continue_without_ai} onChange={(event) => update('continue_without_ai', event.target.checked)} />
+                <span className="check-option-mark" aria-hidden="true" />
+                <span>{t('review.ai.continueLocal', 'Continue without AI')}</span>
+              </label>
+            </div>
+          </div>
+        ) : null}
+        {form.source_kind === 'website' && preferences.aiSuggestions && aiConnections.status === 'available' && selectedAiSummary ? (
+          <section className="ai-review-choice" aria-labelledby="review-ai-summary">
+            <div><strong id="review-ai-summary">{t('review.ai.summary', 'AI suggestions')}</strong><p>{selectedAiSummary.connection.name} · {selectedAiSummary.model.name}</p></div>
+            {hasAlternativeAiSelection(aiConnections, aiDraft) ? <button className="link-action" type="button" onClick={() => setAiEditorOpen((value) => !value)} aria-expanded={aiEditorOpen}>{t('common.change', 'Change')}</button> : null}
+            {aiEditorOpen ? <AiConnectionEditor aiConnections={aiConnections} value={aiDraft} onChange={(value) => { setAiDraft(value); update('continue_without_ai', false); }} t={t} compact /> : null}
+          </section>
+        ) : null}
         {needsReviewGoal ? <fieldset className="choice-fieldset">
           <legend>{t('review.method.legend', 'What kind of result do you need?')}</legend>
           <p className="field-hint">{t('review.method.hint', 'Choose the result closest to your goal.')}</p>
@@ -376,21 +460,8 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
             })}
           </div>
         </fieldset> : null}
-        {needsAiChoice ? (
-          <div className="ai-choice">
-            <div><strong>{t('review.ai.notReady', 'AI suggestions need setup')}</strong><p>{t('review.ai.notReadyText', 'You can continue with the local review now.')}</p></div>
-            <label className="check-option">
-              <input type="checkbox" aria-label={t('review.ai.continueLocal', 'Continue without AI')} checked={form.continue_without_ai} onChange={(event) => update('continue_without_ai', event.target.checked)} />
-              <span className="check-option-mark" aria-hidden="true" />
-              <span>{t('review.ai.continueLocal', 'Continue without AI')}</span>
-            </label>
-          </div>
-        ) : null}
-        {form.source_kind === 'website' && preferences.aiSuggestions && aiReadiness.status === 'available' ? (
-          <p className="ai-ready"><span aria-hidden="true">✓</span>{t('review.ai.available', 'AI suggestions are available')}{aiReadiness.service_name ? ` · ${aiReadiness.service_name}` : ''}</p>
-        ) : null}
         {localResult ? <IntakeResult result={localResult} onOpen={() => navigate({ page: 'confirm', view: 'work', itemId: localResult.id })} t={t} /> : null}
-        {error ? <InlineNotice tone="danger" title={t('review.prepareFailed', 'The review could not be prepared')} text={error} /> : null}
+        {error ? <InlineNotice tone="danger" title={t('review.prepareFailed', 'The review could not be prepared')} text={error} action={needsAiRefresh ? <button className="link-action" type="button" onClick={() => navigate({ page: 'settings', view: 'settings' })}>{t('review.ai.openSettings', 'Open AI settings')}</button> : null} /> : null}
         <div className="form-actions">
           <button className="secondary-action" type="button" onClick={() => navigate({ page: 'confirm', view: 'list' })}>{t('common.back', 'Back')}</button>
           {localResult
@@ -403,7 +474,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
         confirmation={confirmation}
         busy={busy}
         returnFocusRef={startButtonRef}
-        onCancel={() => setConfirmation(null)}
+        onCancel={cancelPreparedReview}
         onConfirm={start}
         t={t}
       />
@@ -530,20 +601,109 @@ function sourceActionLabel(sourceKind, t) {
   return t('review.action.start', 'Prepare review');
 }
 
-function aiReadinessLabel(readiness, t) {
-  if (readiness.status === 'available') return t('settings.aiAvailable', 'Available');
-  if (readiness.status === 'setup_required') return t('settings.aiSetupRequired', 'Setup needed');
-  return t('settings.aiUnavailable', 'Unavailable');
+function AiConnectionEditor({ aiConnections, value, onChange, t, compact = false, disabled: disabledByAction = false }) {
+  const connections = Array.isArray(aiConnections?.connections) ? aiConnections.connections : [];
+  const selected = describeAiSelection(aiConnections, value) ?? describeAiSelection(aiConnections, readAiSelection(aiConnections));
+  const connection = selected?.connection ?? connections.find((item) => item.status === 'available') ?? connections[0];
+  const model = selected?.model ?? connection?.models?.find((item) => item.option_id === connection.default_model_option_id) ?? connection?.models?.[0];
+  const effort = selected?.effort ?? model?.efforts?.find((item) => item.option_id === model.default_effort_option_id) ?? model?.efforts?.[0];
+  const disabled = disabledByAction || aiConnections?.status !== 'available';
+  function chooseConnection(optionId) {
+    const nextConnection = connections.find((item) => item.option_id === optionId);
+    const nextModel = nextConnection?.models?.find((item) => item.option_id === nextConnection.default_model_option_id) ?? nextConnection?.models?.[0];
+    const nextEffort = nextModel?.efforts?.find((item) => item.option_id === nextModel.default_effort_option_id) ?? nextModel?.efforts?.[0];
+    if (nextConnection && nextModel && nextEffort) onChange(aiSelectionValue(nextConnection, nextModel, nextEffort));
+  }
+  function chooseModel(optionId) {
+    const nextModel = connection?.models?.find((item) => item.option_id === optionId);
+    const nextEffort = nextModel?.efforts?.find((item) => item.option_id === nextModel.default_effort_option_id) ?? nextModel?.efforts?.[0];
+    if (connection && nextModel && nextEffort) onChange(aiSelectionValue(connection, nextModel, nextEffort));
+  }
+  function chooseEffort(optionId) {
+    const nextEffort = model?.efforts?.find((item) => item.option_id === optionId);
+    if (connection && model && nextEffort) onChange(aiSelectionValue(connection, model, nextEffort));
+  }
+  if (!connection || !model || !effort) return <p className="muted">{t('settings.aiNoService', 'No AI service is ready yet.')}</p>;
+  const choiceCount = connections.filter((item) => item.status === 'available').length + model.efforts.length + connection.models.length;
+  return (
+    <div className={`ai-connection-editor${compact ? ' compact' : ''}`}>
+      {connections.filter((item) => item.status === 'available').length > 1 ? <label><span>{t('settings.aiService', 'AI service')}</span><select disabled={disabled} value={connection.option_id} onChange={(event) => chooseConnection(event.target.value)}>{connections.map((item) => <option key={item.option_id} value={item.option_id} disabled={item.status !== 'available'}>{item.name}</option>)}</select></label> : null}
+      {connection.models.length > 1 ? <label><span>{t('settings.aiModel', 'AI model')}</span><select disabled={disabled} value={model.option_id} onChange={(event) => chooseModel(event.target.value)}>{connection.models.map((item) => <option key={item.option_id} value={item.option_id}>{item.name}</option>)}</select></label> : null}
+      {model.efforts.length > 1 ? <details className="ai-details"><summary>{t('settings.aiDetails', 'AI details')}</summary><label><span>{t('settings.aiProcessingLevel', 'AI processing level')}</span><select disabled={disabled} value={effort.option_id} onChange={(event) => chooseEffort(event.target.value)}>{model.efforts.map((item) => <option key={item.option_id} value={item.option_id}>{item.name}{item.recommended ? ` · ${t('common.recommended', 'Recommended')}` : ''}</option>)}</select><small>{t('settings.aiProcessingHint', 'This is separate from TraceCue’s review method.')}</small></label></details> : null}
+      {choiceCount <= 3 ? <p className="muted compact-copy">{model.name}</p> : null}
+    </div>
+  );
 }
 
-function aiReadinessDescription(readiness, t) {
-  if (readiness.status === 'available') {
-    return readiness.service_name
-      ? t('settings.aiAvailableService', 'Suggestions are ready through {service}.').replace('{service}', readiness.service_name)
-      : t('settings.aiAvailableHint', 'Suggestions are ready to use.');
-  }
-  if (readiness.status === 'setup_required') return t('settings.aiSetupHint', 'Finish the private connection setup, or continue without AI.');
-  return t('settings.aiUnavailableHint', 'Local reviews remain available without AI.');
+function aiConnectionStatusLabel(value, t) {
+  if (value?.status === 'available') return t('settings.aiAvailable', 'Available');
+  if (value?.status === 'stale') return t('settings.aiStale', 'Update needed');
+  if (value?.status === 'setup_required') return t('settings.aiSetupRequired', 'Setup needed');
+  if (value?.status === 'error') return t('settings.aiUnavailable', 'Unavailable');
+  return t('settings.aiNotChecked', 'Not checked');
+}
+
+function aiConnectionDescription(value, t) {
+  if (value?.status === 'available') return t('settings.aiAvailableHint', 'Suggestions are ready to use.');
+  if (value?.status === 'stale') return t('settings.aiStaleHint', 'Update availability before starting a new AI review.');
+  if (value?.status === 'setup_required') return t('settings.aiSetupHint', 'Finish the private connection setup, or continue without AI.');
+  if (value?.status === 'error') return t('settings.aiUnavailableHint', 'Local reviews remain available without AI.');
+  return t('settings.aiNotCheckedHint', 'Check the AI services available on this computer.');
+}
+
+function aiSetupGuidance(value, t) {
+  return aiConnectionDescription(value, t);
+}
+
+function readAiSelection(aiConnections) {
+  const selection = aiConnections?.selection;
+  return selection ? {
+    connection_option_id: selection.connection_option_id,
+    model_option_id: selection.model_option_id,
+    effort_option_id: selection.effort_option_id
+  } : null;
+}
+
+function describeAiSelection(aiConnections, value) {
+  if (!value) return null;
+  const connection = aiConnections?.connections?.find((item) => item.option_id === value.connection_option_id);
+  const model = connection?.models?.find((item) => item.option_id === value.model_option_id);
+  const effort = model?.efforts?.find((item) => item.option_id === value.effort_option_id);
+  return connection && model && effort ? { connection, model, effort } : null;
+}
+
+function aiSelectionValue(connection, model, effort) {
+  return {
+    connection_option_id: connection.option_id,
+    model_option_id: model.option_id,
+    effort_option_id: effort.option_id
+  };
+}
+
+function firstAvailableAiSelection(aiConnections) {
+  const connection = aiConnections?.connections?.find((item) => item.status === 'available');
+  const model = connection?.models?.find((item) => item.option_id === connection.default_model_option_id) ?? connection?.models?.[0];
+  const effort = model?.efforts?.find((item) => item.option_id === model.default_effort_option_id) ?? model?.efforts?.[0];
+  return connection && model && effort ? aiSelectionValue(connection, model, effort) : null;
+}
+
+function hasAlternativeAiSelection(aiConnections, value) {
+  const selected = describeAiSelection(aiConnections, value) ?? describeAiSelection(aiConnections, readAiSelection(aiConnections));
+  const availableConnections = aiConnections?.connections?.filter((item) => item.status === 'available') ?? [];
+  return availableConnections.length > 1
+    || (selected?.connection?.models?.length ?? 0) > 1
+    || (selected?.model?.efforts?.length ?? 0) > 1;
+}
+
+function sameAiSelection(left, right) {
+  return Boolean(left && right)
+    && left.connection_option_id === right.connection_option_id
+    && left.model_option_id === right.model_option_id
+    && left.effort_option_id === right.effort_option_id;
+}
+
+function aiProjectionVersion(value) {
+  return `${value?.capability_token ?? ''}:${value?.settings_revision ?? value?.storage_revision ?? 0}`;
 }
 
 function SendConfirmationDialog({ open, confirmation, busy, returnFocusRef, onCancel, onConfirm, t }) {
@@ -553,8 +713,8 @@ function SendConfirmationDialog({ open, confirmation, busy, returnFocusRef, onCa
     if (open && !dialog.open) dialog.showModal();
     if (!open && dialog.open) dialog.close();
   }, [open]);
-  function close() {
-    onCancel();
+  async function close() {
+    await onCancel();
     window.requestAnimationFrame(() => returnFocusRef.current?.focus());
   }
   const disclosure = readDisclosure(confirmation, t);
@@ -562,16 +722,18 @@ function SendConfirmationDialog({ open, confirmation, busy, returnFocusRef, onCa
     <dialog ref={dialogRef} className="send-dialog" aria-labelledby="send-dialog-title" onCancel={(event) => { event.preventDefault(); close(); }} onClose={() => returnFocusRef.current?.focus()}>
       <div className="dialog-heading">
         <div><p className="eyebrow">{t('send.eyebrow', 'Before sending')}</p><h2 id="send-dialog-title">{t('send.title', 'Start this review?')}</h2></div>
-        <button className="icon-action" type="button" onClick={close} aria-label={t('common.close', 'Close')}>×</button>
+        <button className="icon-action" type="button" onClick={close} disabled={busy} aria-label={t('common.close', 'Close')}>×</button>
       </div>
       <p>{t('send.description', 'TraceCue will send the following information to the configured AI service.')}</p>
       <dl className="send-summary">
         <div><dt>{t('send.content', 'Information sent')}</dt><dd>{disclosure.items.join(', ') || t('send.contentFallback', 'The page and your review goal')}</dd></div>
         <div><dt>{t('send.destination', 'Sent to')}</dt><dd>{disclosure.destination || t('send.destinationFallback', 'Your configured AI service')}</dd></div>
+        {disclosure.reviewMethod ? <div><dt>{t('send.reviewMethod', 'Review method')}</dt><dd>{reviewMethodCopy(t, disclosure.reviewMethod).label}</dd></div> : null}
         <div><dt>{t('send.storage', 'Saved for')}</dt><dd>{disclosure.storage || t('send.storageFallback', 'This review')}</dd></div>
       </dl>
+      {disclosure.model || disclosure.processingLevel ? <details className="send-ai-details"><summary>{t('send.aiSettings', 'AI settings')}</summary><p>{[disclosure.model, disclosure.processingLevel].filter(Boolean).join(' · ')}</p></details> : null}
       <div className="dialog-actions">
-        <button className="secondary-action" type="button" onClick={close}>{t('review.action.cancel', 'Cancel')}</button>
+        <button className="secondary-action" type="button" onClick={close} disabled={busy}>{t('review.action.cancel', 'Cancel')}</button>
         <button className="primary-action" type="button" disabled={busy} onClick={onConfirm}>{busy ? t('send.starting', 'Starting...') : t('review.action.startExecuting', 'Start review')}</button>
       </div>
     </dialog>
@@ -591,7 +753,7 @@ function RunningPage({ items, navigate, reload, t }) {
   );
 }
 
-function ReviewWorkspace({ reviewId, navigate, reload, t }) {
+function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
   const [operation, setOperation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [statusError, setStatusError] = useState(false);
@@ -599,30 +761,56 @@ function ReviewWorkspace({ reviewId, navigate, reload, t }) {
   const [saving, setSaving] = useState(false);
   const [decisions, setDecisions] = useState({});
   const [confirmation, setConfirmation] = useState(null);
+  const [needsAiRefresh, setNeedsAiRefresh] = useState(false);
   const startButtonRef = useRef(null);
+  const reviewIdRef = useRef(reviewId);
+  const statusRequestGeneration = useRef(0);
+  reviewIdRef.current = reviewId;
 
   async function refresh({ quiet = false } = {}) {
+    const requestedReviewId = reviewId;
+    const generation = ++statusRequestGeneration.current;
     if (!quiet) setLoading(true);
     try {
-      const next = await fetchAgenticReviewStatus(reviewId);
+      const next = await fetchAgenticReviewStatus(requestedReviewId);
+      if (generation !== statusRequestGeneration.current || reviewIdRef.current !== requestedReviewId) return false;
       setOperation(next);
       setStatusError(false);
+      return true;
     } catch {
+      if (generation !== statusRequestGeneration.current || reviewIdRef.current !== requestedReviewId) return false;
       setStatusError(true);
+      return false;
     } finally {
-      if (!quiet) setLoading(false);
+      if (!quiet && generation === statusRequestGeneration.current && reviewIdRef.current === requestedReviewId) setLoading(false);
     }
   }
   useEffect(() => {
+    statusRequestGeneration.current += 1;
     setOperation(null);
+    setLoading(true);
+    setStatusError(false);
     setFindingIndex(0);
     setDecisions({});
+    setConfirmation(null);
+    setNeedsAiRefresh(false);
+    setSaving(false);
     refresh();
+    return () => { statusRequestGeneration.current += 1; };
   }, [reviewId]);
   useEffect(() => {
     if (!operation || !isActive(readState(operation))) return undefined;
-    const timer = window.setInterval(() => refresh({ quiet: true }), 2000);
-    return () => window.clearInterval(timer);
+    let cancelled = false;
+    let timer = null;
+    const poll = async () => {
+      await refresh({ quiet: true });
+      if (!cancelled) timer = window.setTimeout(poll, 2000);
+    };
+    timer = window.setTimeout(poll, 2000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [operation, reviewId]);
 
   const state = readState(operation);
@@ -636,105 +824,151 @@ function ReviewWorkspace({ reviewId, navigate, reload, t }) {
 
   async function decide(decision) {
     if (!currentFinding) return;
+    const requestedReviewId = reviewId;
+    const findingId = currentFinding.id;
     setSaving(true);
     setStatusError(false);
     try {
-      await saveAgenticReviewDecision({ review_id: reviewId, finding_id: currentFinding.id, decision });
-      setDecisions((current) => ({ ...current, [currentFinding.id]: decision }));
+      await saveAgenticReviewDecision({ review_id: requestedReviewId, finding_id: findingId, decision });
+      if (reviewIdRef.current !== requestedReviewId) return;
+      setDecisions((current) => ({ ...current, [findingId]: decision }));
       if (findingIndex < findings.length - 1) setFindingIndex(findingIndex + 1);
       else await refresh({ quiet: true });
     } catch {
-      setStatusError(true);
+      if (reviewIdRef.current === requestedReviewId) setStatusError(true);
     } finally {
-      setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) setSaving(false);
     }
   }
   async function repeat(kind) {
+    const requestedReviewId = reviewId;
     setSaving(true);
     setStatusError(false);
+    setNeedsAiRefresh(false);
     try {
-      const next = await repeatAgenticReview({ review_id: reviewId, repeat_kind: kind });
+      const latestDashboard = await reload({ quiet: true });
+      if (reviewIdRef.current !== requestedReviewId) return;
+      const aiConnections = latestDashboard?.ai_connections ?? dashboard?.ai_connections;
+      const currentSelection = readAiSelection(aiConnections);
+      const next = await repeatAgenticReview({
+        review_id: requestedReviewId,
+        repeat_kind: kind,
+        ...(operation?.ai_suggestions && currentSelection ? {
+          ...currentSelection,
+          capability_revision: aiConnections.revision,
+          capability_token: aiConnections.capability_token
+        } : {})
+      });
       const nextId = readReviewId(next);
       if (!nextId) throw new Error('Missing review');
+      if (reviewIdRef.current !== requestedReviewId) return;
       await reload({ quiet: true });
+      if (reviewIdRef.current !== requestedReviewId) return;
       navigate({ page: 'confirm', view: 'work', itemId: nextId });
-    } catch {
-      setStatusError(true);
+    } catch (caught) {
+      if (reviewIdRef.current === requestedReviewId) {
+        if (requiresAiProjectionRefresh(apiErrorCode(caught))) setNeedsAiRefresh(true);
+        setStatusError(true);
+      }
     } finally {
-      setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) setSaving(false);
     }
   }
   async function requestStartConfirmation() {
+    const requestedReviewId = reviewId;
     setSaving(true);
     setStatusError(false);
     try {
-      setConfirmation(await fetchAgenticReviewConfirmation(reviewId));
+      const next = await fetchAgenticReviewConfirmation(requestedReviewId);
+      if (reviewIdRef.current === requestedReviewId) setConfirmation(next);
     } catch {
-      setStatusError(true);
+      if (reviewIdRef.current === requestedReviewId) setStatusError(true);
     } finally {
-      setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) setSaving(false);
     }
   }
   async function resumeStart() {
+    const requestedReviewId = reviewId;
     setSaving(true);
     setStatusError(false);
     try {
       const consent = readConsent(confirmation);
       await startAgenticReview({
-        review_id: reviewId,
+        review_id: requestedReviewId,
         consent_token: consent.token,
         consent_revision: consent.revision,
         nonce: consent.token,
         revision: consent.revision,
         execute_confirmed: true
       });
+      if (reviewIdRef.current !== requestedReviewId) return;
       setConfirmation(null);
       await refresh({ quiet: true });
       await reload({ quiet: true });
-    } catch {
+    } catch (caught) {
+      if (reviewIdRef.current !== requestedReviewId) return;
       setConfirmation(null);
-      setStatusError(true);
+      if (apiErrorCode(caught) === 'CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED') {
+        setNeedsAiRefresh(true);
+        await refresh({ quiet: true });
+        await reload({ quiet: true });
+        setStatusError(false);
+      } else {
+        setStatusError(true);
+      }
     } finally {
-      setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) setSaving(false);
     }
   }
   async function resumePreparation() {
+    const requestedReviewId = reviewId;
     setSaving(true);
     setStatusError(false);
     try {
-      await resumeAgenticReview(reviewId);
+      await resumeAgenticReview(requestedReviewId);
+      if (reviewIdRef.current !== requestedReviewId) return;
       await refresh({ quiet: true });
       await reload({ quiet: true });
     } catch {
-      setStatusError(true);
+      if (reviewIdRef.current === requestedReviewId) setStatusError(true);
     } finally {
-      setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) setSaving(false);
     }
   }
   async function cancelBeforeSend() {
+    const requestedReviewId = reviewId;
     setSaving(true);
     setStatusError(false);
     try {
-      await cancelAgenticReview(reviewId);
+      await cancelAgenticReview(requestedReviewId);
+      if (reviewIdRef.current !== requestedReviewId) return;
+      setConfirmation(null);
       await refresh({ quiet: true });
       await reload({ quiet: true });
     } catch {
-      setStatusError(true);
+      if (reviewIdRef.current !== requestedReviewId) return;
+      setConfirmation(null);
+      const statusReconciled = await refresh({ quiet: true });
+      await reload({ quiet: true });
+      if (reviewIdRef.current === requestedReviewId && !statusReconciled) setStatusError(true);
     } finally {
-      setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) setSaving(false);
     }
   }
   async function checkRecoveryStatus() {
+    const requestedReviewId = reviewId;
     setSaving(true);
     setStatusError(false);
     try {
-      const next = await recoverAgenticReview(reviewId);
+      const next = await recoverAgenticReview(requestedReviewId);
+      if (reviewIdRef.current !== requestedReviewId) return;
+      statusRequestGeneration.current += 1;
       setOperation(next);
       await reload({ quiet: true });
     } catch {
-      setStatusError(true);
+      if (reviewIdRef.current === requestedReviewId) setStatusError(true);
     } finally {
-      setSaving(false);
+      if (reviewIdRef.current === requestedReviewId) setSaving(false);
     }
   }
 
@@ -746,10 +980,11 @@ function ReviewWorkspace({ reviewId, navigate, reload, t }) {
       <BackButton onClick={() => navigate({ page: 'confirm', view: 'list' })} t={t} />
       <PageHeading eyebrow={t('work.eyebrow', 'Review')} title={reviewTitle(operation)} />
       <WorkflowSteps state={state} hasFindings={findings.length > 0} allDecided={allDecided} t={t} />
-      {statusError ? <InlineNotice tone="warning" title={t('status.updateFailed', 'The latest status could not be read')} text={t('status.updateFailedText', 'The information already shown is still available. Try refreshing.')} action={<button className="link-action" type="button" onClick={() => refresh({ quiet: true })}>{t('app.refresh', 'Refresh')}</button>} /> : null}
+      {statusError ? <InlineNotice tone="warning" title={needsAiRefresh ? t('review.ai.choiceChangedTitle', 'The AI choice changed') : t('status.updateFailed', 'The latest status could not be read')} text={needsAiRefresh ? t('review.ai.repeatNeedsCurrent', 'Nothing was sent. Update AI availability, then try again with the current choice.') : t('status.updateFailedText', 'The information already shown is still available. Try refreshing.')} action={needsAiRefresh ? <button className="link-action" type="button" onClick={() => navigate({ page: 'settings', view: 'settings' })}>{t('review.ai.openSettings', 'Open AI settings')}</button> : <button className="link-action" type="button" onClick={() => refresh({ quiet: true })}>{t('app.refresh', 'Refresh')}</button>} /> : null}
       {state === 'confirmation_required' ? <StatePanel title={t('confirmationReady.title', 'The review is ready to start')} text={t('confirmationReady.text', 'Check what will be sent before starting the review.')} action={<div className="button-row"><button className="secondary-action" type="button" disabled={saving} onClick={cancelBeforeSend}>{t('review.action.cancelBeforeSend', 'Do not continue')}</button><button ref={startButtonRef} className="primary-action" type="button" disabled={saving} onClick={requestStartConfirmation}>{t('confirmationReady.action', 'Review and start')}</button></div>} /> : null}
       {state === 'preparing' && operation.recovery?.available ? <StatePanel tone="warning" title={t('recovery.preparingTitle', 'Preparation was interrupted')} text={t('recovery.preparingText', 'Your review details are saved. Resume the local preparation when you are ready.')} action={<button className="primary-action" type="button" disabled={saving} onClick={resumePreparation}>{t('recovery.resume', 'Resume preparation')}</button>} /> : null}
       {state === 'dispatch_unknown' ? <UnknownDispatch onRefresh={checkRecoveryStatus} t={t} /> : null}
+      {state === 'needs_attention' ? <StatePanel tone="warning" title={t('review.ai.choiceChangedTitle', 'The AI choice changed')} text={t('review.ai.choiceChangedText', 'Nothing was sent. Update AI availability, then prepare this review again.')} action={<div className="button-row"><button className="secondary-action" type="button" onClick={() => navigate({ page: 'settings', view: 'settings' })}>{t('review.ai.openSettings', 'Open AI settings')}</button><button className="primary-action" type="button" disabled={saving} onClick={() => repeat('recheck')}>{t('review.ai.prepareAgain', 'Prepare again')}</button></div>} /> : null}
       {state === 'cancelled' ? <StatePanel title={t('recovery.cancelledTitle', 'This review was not sent')} text={t('recovery.cancelledText', 'Nothing was sent to the AI service. You can start a new review at any time.')} /> : null}
       {isFailed(state) ? <FailedReview onRepeat={() => repeat('recheck')} busy={saving} t={t} /> : null}
       {isActive(state) && !(state === 'preparing' && operation.recovery?.available) ? <ProgressView operation={operation} onCheckStatus={checkRecoveryStatus} checking={saving} t={t} /> : null}
@@ -768,7 +1003,7 @@ function ReviewWorkspace({ reviewId, navigate, reload, t }) {
           t={t}
         />
       ) : null}
-      <SendConfirmationDialog open={Boolean(confirmation)} confirmation={confirmation} busy={saving} returnFocusRef={startButtonRef} onCancel={() => setConfirmation(null)} onConfirm={resumeStart} t={t} />
+      <SendConfirmationDialog open={Boolean(confirmation)} confirmation={confirmation} busy={saving} returnFocusRef={startButtonRef} onCancel={cancelBeforeSend} onConfirm={resumeStart} t={t} />
     </div>
   );
 }
@@ -836,15 +1071,119 @@ function ResultsView({ findings, findingIndex, setFindingIndex, decisions, onDec
 
 function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
   const defaults = readPreferences(dashboard);
-  const aiReadiness = dashboard?.ai_readiness ?? { status: 'unavailable', service_name: null };
+  const initialAiConnections = dashboard?.ai_connections ?? { status: 'not_checked', connections: [], selection: null, storage_revision: 0 };
   const [form, setForm] = useState(() => ({ locale, ...defaults }));
+  const [aiConnections, setAiConnections] = useState(initialAiConnections);
+  const [aiDraft, setAiDraft] = useState(() => readAiSelection(initialAiConnections));
+  const [aiEditorOpen, setAiEditorOpen] = useState(false);
+  const [aiActionState, setAiActionState] = useState('idle');
+  const [aiErrorMessage, setAiErrorMessage] = useState(null);
   const [state, setState] = useState('idle');
-  const [errorMessage, setErrorMessage] = useState(null);
-  function update(field, value) { setForm((current) => ({ ...current, [field]: value })); }
+  const [settingsErrorMessage, setSettingsErrorMessage] = useState(null);
+  const aiRequestGeneration = useRef(0);
+  const aiDraftDirty = Boolean(aiDraft) && !sameAiSelection(aiDraft, aiConnections.selection);
+  const aiDraftDirtyRef = useRef(aiDraftDirty);
+  aiDraftDirtyRef.current = aiDraftDirty;
+  const aiVersionRef = useRef(aiProjectionVersion(initialAiConnections));
+  const aiBusy = aiActionState === 'refreshing' || aiActionState === 'saving' || aiActionState === 'loading';
+  const selectedAi = describeAiSelection(aiConnections, aiDraft);
+  const showAiEditor = aiConnections.status === 'available'
+    && Boolean(aiConnections.connections?.length)
+    && (aiEditorOpen || !selectedAi);
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+    setState('idle');
+    setSettingsErrorMessage(null);
+  }
+  useEffect(() => {
+    const next = dashboard?.ai_connections ?? initialAiConnections;
+    const versionChanged = aiVersionRef.current !== aiProjectionVersion(next);
+    if (!aiDraftDirtyRef.current) {
+      setAiConnections(next);
+      setAiDraft(readAiSelection(next));
+      aiVersionRef.current = aiProjectionVersion(next);
+    } else if (versionChanged) {
+      setAiActionState('conflict');
+      setAiErrorMessage(t('settings.aiChangedWhileEditing', 'AI availability changed while you were choosing. Load the latest choices before applying.'));
+    }
+  }, [dashboard?.ai_connections?.capability_token, dashboard?.ai_connections?.settings_revision, dashboard?.ai_connections?.storage_revision, t]);
+  function changeAiDraft(value) {
+    setAiDraft(value);
+    if (aiActionState !== 'conflict') {
+      setAiActionState('idle');
+      setAiErrorMessage(null);
+    }
+  }
+  async function refreshAvailability() {
+    const generation = ++aiRequestGeneration.current;
+    setAiActionState('refreshing');
+    setAiErrorMessage(null);
+    try {
+      const next = await refreshAiConnections({
+        confirm: 'refresh-ai-availability',
+        expected_revision: aiConnections.storage_revision ?? 0
+      });
+      if (generation !== aiRequestGeneration.current) return;
+      setAiConnections(next);
+      setAiDraft(readAiSelection(next));
+      aiVersionRef.current = aiProjectionVersion(next);
+      setAiEditorOpen(next.selection === null);
+      setAiActionState('ready');
+      await reload({ quiet: true });
+    } catch (caught) {
+      if (generation !== aiRequestGeneration.current) return;
+      setAiActionState(apiErrorCode(caught) === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT' ? 'conflict' : 'error');
+      setAiErrorMessage(uiErrorMessage(caught, t));
+    }
+  }
+  async function applyAiSelection(selection = aiDraft) {
+    if (!selection || !describeAiSelection(aiConnections, selection)) return;
+    const generation = ++aiRequestGeneration.current;
+    setAiActionState('saving');
+    setAiErrorMessage(null);
+    try {
+      const next = await saveAiConnectionSelection({
+        ...selection,
+        capability_revision: aiConnections.revision,
+        capability_token: aiConnections.capability_token,
+        expected_revision: aiConnections.storage_revision,
+        confirm: 'save-ai-selection'
+      });
+      if (generation !== aiRequestGeneration.current) return;
+      setAiConnections(next);
+      setAiDraft(readAiSelection(next));
+      aiVersionRef.current = aiProjectionVersion(next);
+      setAiActionState('saved');
+      await reload({ quiet: true });
+    } catch (caught) {
+      if (generation !== aiRequestGeneration.current) return;
+      setAiActionState(apiErrorCode(caught) === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT' ? 'conflict' : 'error');
+      setAiErrorMessage(uiErrorMessage(caught, t));
+    }
+  }
+  async function loadLatestAiSettings() {
+    const generation = ++aiRequestGeneration.current;
+    setAiActionState('loading');
+    try {
+      const nextDashboard = await reload({ quiet: true });
+      if (generation !== aiRequestGeneration.current) return;
+      const next = nextDashboard?.ai_connections;
+      if (!next) throw new Error('AI settings unavailable');
+      setAiConnections(next);
+      setAiDraft(readAiSelection(next));
+      aiVersionRef.current = aiProjectionVersion(next);
+      setAiErrorMessage(null);
+      setAiActionState('idle');
+    } catch (caught) {
+      if (generation !== aiRequestGeneration.current) return;
+      setAiActionState('error');
+      setAiErrorMessage(uiErrorMessage(caught, t));
+    }
+  }
   async function save(event) {
     event.preventDefault();
     setState('saving');
-    setErrorMessage(null);
+    setSettingsErrorMessage(null);
     try {
       await setControlCenterPreferences({
         locale: form.locale,
@@ -857,7 +1196,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
       setLocale(form.locale);
       setState('saved');
     } catch (caught) {
-      setErrorMessage(uiErrorMessage(caught, t));
+      setSettingsErrorMessage(uiErrorMessage(caught, t));
       setState('error');
     }
   }
@@ -890,10 +1229,24 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
         </section>
         <section className="settings-group" aria-labelledby="ai-settings-title">
           <h2 id="ai-settings-title">{t('settings.aiPrivacyTitle', 'AI and privacy')}</h2>
-          <SettingRow title={t('settings.aiSuggestions', 'AI suggestions')} text={aiReadinessDescription(aiReadiness, t)}>
-            <div className="ai-setting-control">
-              <span className={`ai-status ${aiReadiness.status}`}>{aiReadinessLabel(aiReadiness, t)}</span>
-              <Toggle checked={form.aiSuggestions} onChange={(checked) => update('aiSuggestions', checked)} label={t('settings.aiSuggestions', 'AI suggestions')} />
+          <SettingRow title={t('settings.aiSuggestions', 'AI suggestions')} text={t('settings.aiSuggestionsHint', 'Organize improvements in clear language when an AI service is ready.')}>
+            <Toggle checked={form.aiSuggestions} onChange={(checked) => update('aiSuggestions', checked)} label={t('settings.aiSuggestions', 'AI suggestions')} />
+          </SettingRow>
+          <SettingRow title={t('settings.aiService', 'AI service')} text={aiSetupGuidance(aiConnections, t)} topAligned>
+            <div className="ai-connection-setting" aria-busy={aiBusy}>
+              <div className="ai-connection-summary">
+                <span className={`ai-status ${aiConnections.status}`} aria-live="polite">{aiConnectionStatusLabel(aiConnections, t)}</span>
+                {selectedAi ? <span className="ai-connection-name"><strong>{selectedAi.connection.name}</strong><small>{selectedAi.model.name}</small></span> : null}
+              </div>
+              <div className="compact-actions">
+                {selectedAi && hasAlternativeAiSelection(aiConnections, aiDraft) ? <button className="link-action" type="button" onClick={() => setAiEditorOpen((value) => !value)} aria-expanded={aiEditorOpen}>{t('common.change', 'Change')}</button> : null}
+                <button className="secondary-action compact" type="button" onClick={refreshAvailability} disabled={aiBusy || aiDraftDirty}>{aiActionState === 'refreshing' ? t('settings.aiRefreshing', 'Updating...') : t('settings.aiRefresh', 'Update availability')}</button>
+              </div>
+              {showAiEditor ? <AiConnectionEditor aiConnections={aiConnections} value={aiDraft} onChange={changeAiDraft} t={t} disabled={aiBusy} /> : null}
+              {showAiEditor && !selectedAi && firstAvailableAiSelection(aiConnections) ? <button className="primary-action compact" type="button" disabled={aiBusy} onClick={() => applyAiSelection(firstAvailableAiSelection(aiConnections))}>{aiActionState === 'saving' ? t('settings.aiSaving', 'Applying...') : t('settings.aiApply', 'Use this AI')}</button> : null}
+              {aiDraftDirty ? <button className="primary-action compact" type="button" disabled={aiBusy || aiActionState === 'conflict' || !describeAiSelection(aiConnections, aiDraft)} onClick={() => applyAiSelection()}>{aiActionState === 'saving' ? t('settings.aiSaving', 'Applying...') : t('settings.aiApply', 'Use this AI')}</button> : null}
+              {aiActionState === 'saved' ? <p className="ai-action-status" role="status">{t('settings.aiSaved', 'AI choice updated.')}</p> : null}
+              {aiErrorMessage ? <InlineNotice tone="warning" title={t('settings.aiUpdateFailed', 'AI settings could not be updated')} text={aiErrorMessage} action={aiActionState === 'conflict' || aiActionState === 'loading' ? <button className="link-action" type="button" onClick={loadLatestAiSettings} disabled={aiBusy}>{t('settings.aiLoadLatest', 'Load latest choices')}</button> : <button className="link-action" type="button" onClick={refreshAvailability} disabled={aiBusy || aiDraftDirty}>{t('common.retry', 'Try again')}</button>} /> : null}
             </div>
           </SettingRow>
           <SettingRow title={t('settings.sendConfirmation', 'Confirm before sending')} text={t('settings.sendConfirmationHint', 'Always show what will be sent before a review starts.')}>
@@ -901,7 +1254,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
           </SettingRow>
         </section>
         {state === 'saved' ? <InlineNotice tone="success" title={t('settings.saved', 'Settings saved')} /> : null}
-        {state === 'error' ? <InlineNotice tone="danger" title={t('settings.saveFailed', 'Settings could not be saved')} text={errorMessage} /> : null}
+        {state === 'error' ? <InlineNotice tone="danger" title={t('settings.saveFailed', 'Settings could not be saved')} text={settingsErrorMessage} /> : null}
         <div className="form-actions"><button className="primary-action" type="submit" disabled={state === 'saving'}>{state === 'saving' ? t('settings.saving', 'Saving...') : t('settings.saveAll', 'Save settings')}</button></div>
       </form>
     </div>
@@ -935,6 +1288,8 @@ function ReviewList({ items, onOpen, t }) {
 function StatusBadge({ state, t }) {
   const label = state === 'dispatch_unknown'
     ? t('status.checking', 'Checking status')
+    : state === 'cancelled'
+      ? t('status.notSent', 'Not sent')
     : isActive(state)
       ? t('running.title', 'In progress')
       : isComplete(state)
@@ -979,8 +1334,8 @@ function NoFindings({ onRepeat, busy, t }) {
   return <StatePanel tone="success" title={t('review.state.noFindingsTitle', 'No major improvements were found')} text={t('noFindings.text', 'This review is complete. You can run a more detailed review if needed.')} action={<button className="secondary-action" type="button" disabled={busy} onClick={onRepeat}>{t('review.followUp.open', 'Review in more detail')}</button>} />;
 }
 
-function SettingRow({ title, text, children }) {
-  return <div className="setting-row"><div><h2>{title}</h2><p>{text}</p></div><div className="setting-control">{children}</div></div>;
+function SettingRow({ title, text, children, topAligned = false }) {
+  return <div className={`setting-row${topAligned ? ' top-aligned' : ''}`}><div><h2>{title}</h2><p>{text}</p></div><div className="setting-control">{children}</div></div>;
 }
 
 function Toggle({ checked, disabled = false, onChange = () => {}, label }) {
@@ -1082,7 +1437,10 @@ function readDisclosure(value, t) {
   return {
     items,
     destination: source.destination_label ?? source.service_label ?? source.service_name ?? '',
-    storage: source.storage_label ?? source.retention_label ?? ''
+    storage: source.storage_label ?? source.retention_label ?? '',
+    model: source.model_name ?? '',
+    processingLevel: source.processing_level_name ?? '',
+    reviewMethod: source.review_method ?? ''
   };
 }
 
@@ -1171,6 +1529,24 @@ function uiErrorMessage(error, t) {
   return t('action.genericError', 'Check the information and try again.');
 }
 
+function apiErrorCode(error) {
+  return error?.envelope?.errors?.[0]?.code
+    ?? error?.envelope?.error?.code
+    ?? null;
+}
+
+function requiresAiProjectionRefresh(code) {
+  return new Set([
+    'CONTROL_CENTER_AI_CONNECTION_NOT_CHECKED',
+    'CONTROL_CENTER_AI_CONNECTION_STALE',
+    'CONTROL_CENTER_AI_SELECTION_INCOMPLETE',
+    'CONTROL_CENTER_AI_CONNECTION_REVISION_CHANGED',
+    'CONTROL_CENTER_AI_CONNECTION_UNAVAILABLE',
+    'CONTROL_CENTER_AI_MODEL_UNAVAILABLE',
+    'CONTROL_CENTER_AI_EFFORT_UNAVAILABLE'
+  ]).has(code);
+}
+
 function sameIntakeRetryAvailable(error) {
   if (!error?.envelope) return true;
   return error.envelope?.errors?.[0]?.details?.same_intake_retry_available === true;
@@ -1194,6 +1570,7 @@ function stateTone(state) {
 function stateDescription(state, t) {
   if (isActive(state)) return t('running.title', 'In progress');
   if (isComplete(state)) return t('review.state.completeTitle', 'Review complete');
+  if (state === 'cancelled') return t('status.notSent', 'Not sent');
   if (state === 'evidence_missing') return t('status.noEvidence', 'No result');
   if (isFailed(state) || state === 'needs_attention') return t('status.needsHelp', 'Needs attention');
   if (PREPARED_STATES.has(state)) return t('status.prepared', 'Prepared');

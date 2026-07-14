@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/control-center-ai-connections.schema.json",
+  "title": "TraceCue Control Center AI Connections Projection",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "status_message",
+    "revision",
+    "settings_revision",
+    "capability_token",
+    "observed_at",
+    "expires_at",
+    "fresh",
+    "connections",
+    "selection",
+    "can_continue_without_ai",
+    "technical_details_included"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "status": { "enum": ["not_checked", "available", "setup_required", "stale", "error"] },
+    "status_message": { "type": "string" },
+    "revision": { "type": "integer", "minimum": 0 },
+    "settings_revision": { "type": "integer", "minimum": 0 },
+    "storage_revision": { "type": "integer", "minimum": 0 },
+    "capability_token": { "type": ["string", "null"], "pattern": "^capability_[a-f0-9]{20}$" },
+    "observed_at": { "type": ["string", "null"], "format": "date-time" },
+    "expires_at": { "type": ["string", "null"], "format": "date-time" },
+    "fresh": { "type": "boolean" },
+    "connections": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "required": ["option_id", "name", "kind", "status", "status_message", "models", "default_model_option_id"],
+        "properties": {
+          "option_id": { "type": "string", "pattern": "^connection_[a-f0-9]{20}$" },
+          "name": { "type": "string" },
+          "kind": { "enum": ["subscription", "api", "local"] },
+          "status": { "enum": ["available", "setup_required", "unavailable", "stale"] },
+          "status_message": { "type": "string" },
+          "models": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "required": ["option_id", "name", "efforts", "default_effort_option_id"],
+              "properties": {
+                "option_id": { "type": "string", "pattern": "^model_[a-f0-9]{20}$" },
+                "name": { "type": "string" },
+                "efforts": {
+                  "type": "array",
+                  "maxItems": 24,
+                  "items": {
+                    "type": "object",
+                    "required": ["option_id", "name", "recommended"],
+                    "properties": {
+                      "option_id": { "type": "string", "pattern": "^effort_[a-f0-9]{20}$" },
+                      "name": { "type": "string" },
+                      "recommended": { "type": "boolean" }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "default_effort_option_id": { "type": ["string", "null"] }
+              },
+              "additionalProperties": false
+            }
+          },
+          "default_model_option_id": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "selection": {
+      "type": ["object", "null"],
+      "properties": {
+        "connection_option_id": { "type": "string" },
+        "connection_name": { "type": "string" },
+        "model_option_id": { "type": "string" },
+        "model_name": { "type": "string" },
+        "effort_option_id": { "type": "string" },
+        "effort_name": { "type": "string" },
+        "effort_is_recommended": { "type": "boolean" },
+        "capability_revision": { "type": "integer", "minimum": 1 },
+        "capability_token": { "type": "string", "pattern": "^capability_[a-f0-9]{20}$" }
+      },
+      "required": [
+        "connection_option_id",
+        "connection_name",
+        "model_option_id",
+        "model_name",
+        "effort_option_id",
+        "effort_name",
+        "effort_is_recommended",
+        "capability_revision",
+        "capability_token"
+      ],
+      "additionalProperties": false
+    },
+    "can_continue_without_ai": { "const": true },
+    "technical_details_included": { "const": false },
+    "error_code": { "type": "string" },
+    "transient_configuration": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

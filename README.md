@@ -92,8 +92,22 @@ want to review. No frontend build step is required:
 
 ```bash
 cd /path/to/workspace
+trace-cue-control-center
+```
+
+On native Linux, an already-signed-in official Codex CLI can be found with
+**Update availability** in Settings; no API key is entered in the browser. The
+initial audited adapter accepts `@openai/codex` 0.144.1 with `/usr/bin/bwrap`
+and fails closed for other CLI versions. Other subscription CLIs require their
+own audited adapter. To use the generic API connection instead, configure it
+before launch:
+
+```bash
 TRACE_CUE_CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NAME="Review AI" \
 TRACE_CUE_CONTROL_CENTER_AGENTIC_REVIEW_PROVIDER="generic-api-provider" \
+AGENTIC_HUMAN_REVIEW_API_ENDPOINT="https://provider.example/v1/review" \
+AGENTIC_HUMAN_REVIEW_API_TOKEN="<tok>" \
+AGENTIC_HUMAN_REVIEW_OPENAI_MODEL="<model>" \
 trace-cue-control-center
 ```
 
@@ -101,12 +115,15 @@ The launcher reuses a healthy local instance. If the operating system cannot
 open a browser, it prints the safe loopback URL. Repository development may
 still use `npm run control-center:build` and `control-center serve` directly.
 
-When AI suggestions are enabled, configure the existing Agentic Human Review
-provider boundary separately with its environment variables. The browser UI
-does not accept credentials, provider ids, model ids, endpoints, paths, hashes,
-or transfer flags. It displays the configured service and transferable evidence
-before issuing a single-use confirmation. Choosing to continue without AI keeps
-the page review local. New review accepts a website URL, a local image, a UTF-8
+When AI suggestions are enabled, the browser chooses only server-issued opaque
+options. It shows the user-facing service, model, and AI processing level but
+does not accept credentials, provider/adapter ids, raw model ids, endpoints,
+executable paths, commands, hashes, or transfer flags. TraceCue review method
+(`standard`, `deep`, or `xhigh`) is separate from the AI model's processing
+level. Before sending, the UI displays the service, model, review method, and
+transferable evidence and requires a single-use confirmation. Choosing to
+continue without AI keeps the page review local. New review accepts a website
+URL, a local image, a UTF-8
 text/Markdown/JSON document, or a saved Playwright JSON/JUnit result through the
 browser picker; it never accepts an arbitrary local file path.
 Purpose and standard/deep/xhigh choices appear only for inputs whose review

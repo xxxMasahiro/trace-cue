@@ -9,8 +9,12 @@ import { tmpdir } from 'node:os';
 import {
   buildControlCenterAiReadiness,
   buildControlCenterAiDestinationFingerprint,
+  createControlCenterAiConnectionRecord,
   getSchema,
+  agenticProviderCapabilityHash,
+  projectControlCenterAiConnections,
   readControlCenterPreferences,
+  runControlCenterAgenticReviewCancel,
   runControlCenterAgenticReviewConfirmation,
   runControlCenterAgenticReviewDecision,
   runControlCenterAgenticReviewList,
@@ -20,19 +24,20 @@ import {
   runControlCenterAgenticReviewStart,
   runControlCenterAgenticReviewStatus,
   runControlCenterSetPreferences,
+  resolveAgenticHumanReviewProvider,
   startControlCenterServer
 } from '../src/api.js';
 import { captureProcessIdentity, createSafeLocalStore } from '../src/safe-local-store.js';
 import { createControlCenterTestAssetRoot } from './helpers/control-center-test-assets.js';
 
 async function runConfirmedExternalReview(harness) {
-  const prepared = reviewData(await runControlCenterAgenticReviewPrepare({
+  const prepared = reviewData(await runControlCenterAgenticReviewPrepare(withHarnessAi(harness, {
     url: 'https://example.jp/',
     purpose: '確認する',
     effort: 'standard',
     viewport: 'desktop',
     ai_suggestions: true
-  }, harness.context));
+  }), harness.context));
   await harness.drain();
   const confirmation = reviewData(await runControlCenterAgenticReviewConfirmation({
     operation_id: prepared.operation.id
@@ -51,7 +56,7 @@ async function runConfirmedExternalReview(harness) {
 
 function createHarness(cwd, overrides = {}) {
   const tasks = [];
-  const calls = { review: 0, propose: 0, plan: 0, run: 0 };
+  const calls = { review: 0, propose: 0, plan: 0, run: 0, planOptions: [], runOptions: [] };
   let id = 0;
   const context = {
     cwd,
@@ -82,18 +87,26 @@ function createHarness(cwd, overrides = {}) {
         artifacts: [{ type: 'agentic_human_review_proposal', path: '.browser-debug/proposal.json' }]
       };
     },
-    async runAgenticHumanReviewPlan() {
+    async runAgenticHumanReviewPlan(options = {}) {
       calls.plan += 1;
+      calls.planOptions.push(structuredClone(options));
+      const providerId = context.agenticReviewProviderId ?? 'injected-runner';
+      const modelId = context.agenticReviewModelId ?? 'injected-local-model';
       return {
         status: 'ok',
         data: {
           agentic_human_review_plan: {
             plan_hash: 'private-plan-hash',
             package_hash: 'private-package-hash',
-            provider_capability_hash: 'private-capability-hash',
-            provider: { id: 'injected-runner' },
-            model: { id: 'injected-local-model' },
+            provider_capability_hash: options['connection-binding']?.provider_capability_hash ?? 'private-capability-hash',
+            provider: { id: providerId },
+            model: { id: modelId },
             surface: { id: 'private-surface' },
+            provider_effort_binding: {
+              requested_review_effort: options.effort,
+              native_effort_applied_value: options['provider-effort'] ?? null
+            },
+            connection_binding: options['connection-binding'] ?? null,
             transfer_permissions: {
               required_flags: ['allow-page-text', 'allow-url'],
               classes: {
@@ -108,9 +121,13 @@ function createHarness(cwd, overrides = {}) {
         artifacts: [{ type: 'agentic_human_review_plan', path: '.browser-debug/plan.json' }]
       };
     },
-    async runAgenticHumanReviewRun() {
+    async runAgenticHumanReviewRun(options = {}) {
       calls.run += 1;
+      calls.runOptions.push(structuredClone(options));
       const resultPath = '.browser-debug/advisory.json';
+      const providerId = context.agenticReviewProviderId ?? 'injected-runner';
+      const modelId = context.agenticReviewModelId ?? 'injected-local-model';
+      const apiCallPerformed = context.agenticReviewApiCallPerformed !== false;
       await mkdir(path.join(cwd, '.browser-debug'), { recursive: true });
       await writeFile(path.join(cwd, resultPath), `${JSON.stringify({
         schema_version: '1.0.0',
@@ -147,19 +164,19 @@ function createHarness(cwd, overrides = {}) {
         agentic_human_review_action_plan: { suggested_fixes: ['Move the main action higher.'] },
         agentic_human_review_readiness: { advisory_only: true, gate_effect: 'none' },
         owner_decision_requests: [],
-        provider: { id: 'injected-runner' },
-        model: { id: 'injected-local-model' },
+        provider: { id: providerId },
+        model: { id: modelId },
         transfer_permissions: { required_flags: ['allow-page-text', 'allow-url'] },
         execution: {
           id: 'test-execution',
           result_path: resultPath,
           provider_call_performed: true,
-          api_call_performed: true,
+          api_call_performed: apiCallPerformed,
           external_evidence_transfer: true
         },
         boundary: {
           provider_call_performed: true,
-          api_call_performed: true,
+          api_call_performed: apiCallPerformed,
           external_evidence_transfer: true
         }
       })}\n`, 'utf8');
@@ -169,7 +186,7 @@ function createHarness(cwd, overrides = {}) {
           agentic_human_review_execution: {
             boundary: {
               provider_call_performed: true,
-              api_call_performed: true,
+              api_call_performed: apiCallPerformed,
               external_evidence_transfer: true
             }
           }
@@ -181,13 +198,81 @@ function createHarness(cwd, overrides = {}) {
     },
     ...overrides
   };
+  const ai = createHarnessAiConnection(context);
+  if (ai && !context.controlCenterAiConnectionRecord) context.controlCenterAiConnectionRecord = ai.record;
   return {
     context,
     calls,
+    aiSelection: ai?.selection ?? null,
     async drain() {
       while (tasks.length > 0) await tasks.shift();
     }
   };
+}
+
+function createHarnessAiConnection(context) {
+  if (!context.agenticReviewServiceName || !context.agenticReviewProviderId) return null;
+  const resolved = resolveAgenticHumanReviewProvider({ providerId: context.agenticReviewProviderId, context });
+  if (!resolved.ok) return null;
+  const provider = resolved.provider;
+  const native = provider.native_effort_binding ?? provider.effort_capability?.native_effort_binding ?? {};
+  const effortValues = native.supported === true
+    ? [...new Set([...(native.supported_values ?? []), ...Object.values(native.effort_map ?? {})]
+        .filter((value) => typeof value === 'string' && value.length > 0))]
+    : ['not-applicable'];
+  const efforts = effortValues.length > 0 ? effortValues : ['not-applicable'];
+  const modelId = context.agenticReviewModelId
+    ?? context.env?.[provider.runtime_model_env]
+    ?? provider.default_model;
+  const connection = {
+    id: `test-${provider.id}`,
+    display_name: context.agenticReviewServiceName,
+    connection_type: provider.transport === 'provider_api'
+      ? 'api'
+      : (provider.transport === 'subscription_cli' ? 'subscription' : 'local'),
+    status: 'available',
+    status_message: 'Ready to use.',
+    adapter_id: `test-${provider.kind}`,
+    adapter_version: '1.0.0',
+    provider_id: provider.id,
+    transport: provider.transport,
+    execution_strategy: 'one-shot',
+    provider_effort_request_field: native.supported === true ? native.request_field : null,
+    provider_capability_hash: agenticProviderCapabilityHash(provider),
+    executable_identity_hash: provider.transport === 'subscription_cli'
+      ? context.agenticReviewExecutableIdentityHash
+      : null,
+    models: [{
+      id: modelId,
+      display_name: modelId,
+      native_efforts: efforts.map((id) => ({ id, display_name: id })),
+      default_native_effort_id: efforts.includes(context.agenticReviewNativeEffort)
+        ? context.agenticReviewNativeEffort
+        : efforts[0]
+    }],
+    default_model_id: modelId
+  };
+  const record = createControlCenterAiConnectionRecord({
+    connections: [connection],
+    observedAt: typeof context.now === 'function' ? context.now() : new Date()
+  });
+  const projection = projectControlCenterAiConnections(record, {
+    now: typeof context.now === 'function' ? context.now() : new Date()
+  });
+  return {
+    record,
+    selection: {
+      connection_option_id: projection.selection.connection_option_id,
+      model_option_id: projection.selection.model_option_id,
+      effort_option_id: projection.selection.effort_option_id,
+      capability_revision: projection.revision,
+      capability_token: projection.capability_token
+    }
+  };
+}
+
+function withHarnessAi(harness, input) {
+  return input.ai_suggestions === true ? { ...input, ...harness.aiSelection } : input;
 }
 
 function reviewData(result) {
@@ -198,13 +283,13 @@ function reviewData(result) {
 test('Control Center executes one external review only after one-time disclosure confirmation', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-agentic-'));
   const harness = createHarness(cwd);
-  const prepared = reviewData(await runControlCenterAgenticReviewPrepare({
+  const prepared = reviewData(await runControlCenterAgenticReviewPrepare(withHarnessAi(harness, {
     url: 'https://example.jp/reserve?private=query',
     purpose: '初めての利用者が迷わず予約を完了できるか知りたい',
     effort: 'deep',
     viewport: 'both',
     ai_suggestions: true
-  }, harness.context));
+  }), harness.context));
   const id = prepared.operation.id;
   assert.equal(prepared.operation.state, 'preparing');
   assert.equal(harness.calls.run, 0);
@@ -216,7 +301,8 @@ test('Control Center executes one external review only after one-time disclosure
   assert.equal(ready.disclosure.service_name, 'Example Review AI');
   assert.equal(ready.disclosure.items.find((item) => item.id === 'page_text').sent, true);
   assert.equal(JSON.stringify(ready).includes('private-plan-hash'), false);
-  assert.equal(JSON.stringify(ready).includes('injected-local-model'), false);
+  assert.equal(ready.service.model_name, 'injected-local-model');
+  assert.equal(ready.disclosure.model_name, 'injected-local-model');
   assert.equal(JSON.stringify(ready).includes('.browser-debug'), false);
   assert.equal(ready.target.includes('?private=query'), false);
   assert.equal(harness.calls.run, 0);
@@ -272,6 +358,206 @@ test('Control Center executes one external review only after one-time disclosure
   assert.equal(harness.calls.review, 2);
 });
 
+test('Control Center completes the same consent and repeat flow with a subscription AI connection', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-subscription-flow-'));
+  const executableIdentityHash = 'c'.repeat(64);
+  const harness = createHarness(cwd, {
+    agenticReviewServiceName: 'Example Subscription AI',
+    agenticReviewProviderId: 'codex-subscription-cli',
+    agenticReviewModelId: 'provider/review-model',
+    agenticReviewNativeEffort: 'ultra',
+    agenticReviewExecutableIdentityHash: executableIdentityHash,
+    agenticReviewApiCallPerformed: false
+  });
+  const prepared = reviewData(await runControlCenterAgenticReviewPrepare(withHarnessAi(harness, {
+    url: 'https://example.jp/subscription',
+    purpose: 'Make the next action easy to understand.',
+    effort: 'deep',
+    viewport: 'desktop',
+    ai_suggestions: true
+  }), harness.context));
+  await harness.drain();
+
+  const ready = reviewData(await runControlCenterAgenticReviewStatus({
+    id: prepared.operation.id
+  }, harness.context)).operation;
+  assert.equal(ready.state, 'confirmation_required');
+  assert.equal(ready.review_effort, 'deep');
+  assert.equal(ready.service.name, 'Example Subscription AI');
+  assert.equal(ready.service.model_name, 'provider/review-model');
+  assert.equal(ready.service.processing_level_name, 'ultra');
+  assert.equal(harness.calls.planOptions[0]['connection-binding'].connection_type, 'subscription');
+  assert.equal(harness.calls.planOptions[0]['connection-binding'].executable_identity_hash, executableIdentityHash);
+  assert.equal(harness.calls.planOptions[0]['provider-effort'], 'ultra');
+
+  const confirmation = reviewData(await runControlCenterAgenticReviewConfirmation({
+    operation_id: ready.id
+  }, harness.context)).confirmation;
+  reviewData(await runControlCenterAgenticReviewStart({
+    operation_id: ready.id,
+    nonce: confirmation.nonce,
+    revision: confirmation.revision,
+    execute_confirmed: true
+  }, harness.context));
+  await harness.drain();
+  const completed = reviewData(await runControlCenterAgenticReviewStatus({ id: ready.id }, harness.context)).operation;
+  assert.equal(completed.state, 'completed');
+  assert.equal(completed.dispatch.provider_call_performed, true);
+  assert.equal(completed.dispatch.api_call_performed, false);
+  assert.equal(completed.dispatch.external_evidence_transfer, true);
+
+  reviewData(await runControlCenterAgenticReviewDecision({
+    operation_id: ready.id,
+    finding_id: 'finding-primary-action',
+    decision: 'fix'
+  }, harness.context));
+  const repeated = reviewData(await runControlCenterAgenticReviewRepeat({
+    operation_id: ready.id,
+    mode: 'deeper',
+    ...harness.aiSelection
+  }, harness.context)).operation;
+  await harness.drain();
+  const repeatedReady = reviewData(await runControlCenterAgenticReviewStatus({
+    id: repeated.id
+  }, harness.context)).operation;
+  assert.equal(repeatedReady.state, 'confirmation_required');
+  assert.equal(repeatedReady.review_effort, 'xhigh');
+  assert.equal(repeatedReady.service.processing_level_name, 'ultra');
+
+  const repeatedConfirmation = reviewData(await runControlCenterAgenticReviewConfirmation({
+    operation_id: repeatedReady.id
+  }, harness.context)).confirmation;
+  reviewData(await runControlCenterAgenticReviewStart({
+    operation_id: repeatedReady.id,
+    nonce: repeatedConfirmation.nonce,
+    revision: repeatedConfirmation.revision,
+    execute_confirmed: true
+  }, harness.context));
+  await harness.drain();
+  const repeatedCompleted = reviewData(await runControlCenterAgenticReviewStatus({
+    id: repeatedReady.id
+  }, harness.context)).operation;
+  assert.equal(repeatedCompleted.state, 'completed');
+
+  const rechecked = reviewData(await runControlCenterAgenticReviewRepeat({
+    operation_id: repeatedReady.id,
+    mode: 'recheck',
+    ...harness.aiSelection
+  }, harness.context)).operation;
+  await harness.drain();
+  const recheckedReady = reviewData(await runControlCenterAgenticReviewStatus({
+    id: rechecked.id
+  }, harness.context)).operation;
+  assert.equal(recheckedReady.state, 'confirmation_required');
+  assert.equal(recheckedReady.review_effort, 'xhigh');
+  assert.equal(recheckedReady.parent_review.repeat_mode, 'recheck');
+  assert.equal(recheckedReady.service.processing_level_name, 'ultra');
+  assert.equal(harness.calls.run, 2);
+});
+
+test('Control Center cancels a prepared review and releases bounded active capacity', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-cancel-capacity-'));
+  const harness = createHarness(cwd, { agenticReviewActiveEntries: 1 });
+  const prepared = reviewData(await runControlCenterAgenticReviewPrepare(withHarnessAi(harness, {
+    url: 'https://example.jp/cancel', purpose: 'Check the next action.', effort: 'standard',
+    viewport: 'desktop', ai_suggestions: true
+  }), harness.context));
+  await harness.drain();
+  assert.equal(reviewData(await runControlCenterAgenticReviewStatus({ id: prepared.operation.id }, harness.context)).operation.state, 'confirmation_required');
+  const cancelled = reviewData(await runControlCenterAgenticReviewCancel({ id: prepared.operation.id }, harness.context)).operation;
+  assert.equal(cancelled.state, 'cancelled');
+  assert.equal(cancelled.dispatch.provider_call_performed, false);
+
+  const replacement = await runControlCenterAgenticReviewPrepare({
+    url: 'https://example.jp/replacement', purpose: 'Check the replacement.', effort: 'standard',
+    viewport: 'desktop', ai_suggestions: false
+  }, harness.context);
+  assert.equal(replacement.status, 'ok');
+});
+
+test('Control Center repeat accepts the current opaque AI choice after capability refresh', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-repeat-refresh-'));
+  const harness = createHarness(cwd);
+  const completed = await runConfirmedExternalReview(harness);
+  const previousRecord = harness.context.controlCenterAiConnectionRecord;
+  const refreshedRecord = createControlCenterAiConnectionRecord({
+    connections: previousRecord.connections,
+    previousRevision: previousRecord.revision,
+    previousSettingsRevision: previousRecord.settings_revision,
+    selection: previousRecord.selection,
+    observedAt: new Date('2026-07-11T01:00:00.000Z')
+  });
+  harness.context.controlCenterAiConnectionRecord = refreshedRecord;
+  const staleRepeat = await runControlCenterAgenticReviewRepeat({
+    operation_id: completed.id,
+    mode: 'recheck'
+  }, harness.context);
+  assert.equal(staleRepeat.status, 'error');
+  assert.equal(staleRepeat.errors[0].code, 'CONTROL_CENTER_AI_CONNECTION_REVISION_CHANGED');
+
+  const projection = projectControlCenterAiConnections(refreshedRecord, { now: harness.context.now() });
+  const repeated = reviewData(await runControlCenterAgenticReviewRepeat({
+    operation_id: completed.id,
+    mode: 'recheck',
+    connection_option_id: projection.selection.connection_option_id,
+    model_option_id: projection.selection.model_option_id,
+    effort_option_id: projection.selection.effort_option_id,
+    capability_revision: projection.revision,
+    capability_token: projection.capability_token
+  }, harness.context));
+  assert.notEqual(repeated.operation.id, completed.id);
+  assert.equal(repeated.operation.purpose, completed.purpose);
+  assert.equal(repeated.operation.parent_review.id, completed.id);
+});
+
+test('Control Center repeats a legacy AI review with the current opaque AI choice', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-legacy-repeat-'));
+  const harness = createHarness(cwd);
+  const id = 'control-center-agentic-review-legacy-ai';
+  const store = createSafeLocalStore({
+    workspaceRoot: cwd,
+    relativeRoot: '.browser-debug/control-center-agentic-reviews',
+    namespace: 'control-center-agentic-review-operations',
+    maxRecordBytes: 1024 * 1024,
+    maxEntries: 4096
+  });
+  await store.writeJson(`${id}/operation.json`, {
+    schema_version: '1.0.0',
+    type: 'control_center_agentic_review_operation',
+    id,
+    state: 'completed',
+    stage: 'complete',
+    created_at: '2026-07-10T00:00:00.000Z',
+    updated_at: '2026-07-10T00:00:00.000Z',
+    started_at: '2026-07-10T00:00:00.000Z',
+    completed_at: '2026-07-10T00:00:00.000Z',
+    request: {
+      purpose: 'Keep this legacy review repeatable.',
+      effort: 'standard',
+      viewport: 'desktop',
+      ai_suggestions: true
+    },
+    service: { name: 'Example Review AI', external_ai: true },
+    dispatch: { attempt: 1, provider_call_performed: true },
+    decisions: [],
+    result: { findings: [] },
+    error: null,
+    internal: { target_url: 'https://example.jp/legacy' }
+  });
+
+  const repeated = reviewData(await runControlCenterAgenticReviewRepeat({
+    operation_id: id,
+    mode: 'recheck',
+    ...harness.aiSelection
+  }, harness.context)).operation;
+  assert.notEqual(repeated.id, id);
+  assert.equal(repeated.parent_review.id, id);
+  assert.equal(repeated.purpose, 'Keep this legacy review repeatable.');
+  assert.equal(repeated.ai_suggestions, true);
+  await harness.drain();
+  assert.equal(reviewData(await runControlCenterAgenticReviewStatus({ id: repeated.id }, harness.context)).operation.state, 'confirmation_required');
+});
+
 test('Control Center keeps local review local and rejects browser authority fields', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-local-review-'));
   const harness = createHarness(cwd, { agenticReviewServiceName: undefined });
@@ -287,6 +573,13 @@ test('Control Center keeps local review local and rejects browser authority fiel
   }, harness.context);
   assert.equal(forbidden.status, 'error');
   assert.equal(forbidden.errors[0].code, 'CONTROL_CENTER_AGENTIC_REVIEW_BROWSER_AUTHORITY_REJECTED');
+
+  const internalHash = await runControlCenterAgenticReviewPrepare({
+    url: 'https://example.jp/', purpose: '確認する', effort: 'standard', viewport: 'desktop', ai_suggestions: false,
+    semantic_capability_hash: 'a'.repeat(64)
+  }, harness.context);
+  assert.equal(internalHash.status, 'error');
+  assert.equal(internalHash.errors[0].code, 'CONTROL_CENTER_AGENTIC_REVIEW_BROWSER_AUTHORITY_REJECTED');
 
   const local = reviewData(await runControlCenterAgenticReviewPrepare({
     url: 'https://example.jp/', purpose: '確認する', effort: 'standard', viewport: 'mobile', ai_suggestions: false
@@ -634,6 +927,7 @@ test('Control Center destination confirmation binds the effective runtime model 
   env.AGENTIC_HUMAN_REVIEW_OPENAI_MODEL = 'review-model-a';
   const harness = createHarness(cwd, {
     agenticReviewProviderId: 'generic-api-provider',
+    agenticReviewActiveEntries: 1,
     env,
     async runAgenticHumanReviewPlan() {
       return {
@@ -654,10 +948,10 @@ test('Control Center destination confirmation binds the effective runtime model 
       };
     }
   });
-  const prepared = reviewData(await runControlCenterAgenticReviewPrepare({
+  const prepared = reviewData(await runControlCenterAgenticReviewPrepare(withHarnessAi(harness, {
     url: 'https://example.jp/', purpose: 'Check the next action.', effort: 'standard',
     viewport: 'desktop', ai_suggestions: true
-  }, harness.context));
+  }), harness.context));
   await harness.drain();
   const confirmation = reviewData(await runControlCenterAgenticReviewConfirmation({
     operation_id: prepared.operation.id
@@ -672,6 +966,16 @@ test('Control Center destination confirmation binds the effective runtime model 
   assert.equal(started.status, 'error');
   assert.equal(started.errors[0].code, 'CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED');
   assert.equal(harness.calls.run, 0);
+  const attention = reviewData(await runControlCenterAgenticReviewStatus({
+    id: prepared.operation.id
+  }, harness.context)).operation;
+  assert.equal(attention.state, 'needs_attention');
+  assert.equal(attention.dispatch.provider_call_performed, false);
+  const replacement = await runControlCenterAgenticReviewPrepare({
+    url: 'https://example.jp/replacement', purpose: 'Check the replacement.', effort: 'standard',
+    viewport: 'desktop', ai_suggestions: false
+  }, harness.context);
+  assert.equal(replacement.status, 'ok');
 });
 
 test('Control Center bounds active review admission and preserves an archived id collision', async () => {
@@ -832,9 +1136,9 @@ test('Control Center server exposes agentic review separately from the original 
         Origin: started.url.slice(0, -1),
         'X-Trace-Cue-Action-Token': actionToken
       },
-      body: JSON.stringify({
+      body: JSON.stringify(withHarnessAi(harness, {
         url: 'https://example.jp/', purpose: '予約の分かりやすさを確認する', effort: 'standard', viewport: 'both', ai_suggestions: true
-      })
+      }))
     });
     assert.equal(preparedResponse.status, 202);
     const prepared = (await preparedResponse.json()).data.control_center_agentic_review;
@@ -1082,10 +1386,10 @@ test('Control Center history maintenance cannot block a confirmed external revie
   const harness = createHarness(cwd, {
     createControlCenterAgenticReviewStore: () => deferredRetention.store
   });
-  const prepared = reviewData(await runControlCenterAgenticReviewPrepare({
+  const prepared = reviewData(await runControlCenterAgenticReviewPrepare(withHarnessAi(harness, {
     url: 'https://example.jp/', purpose: 'Check the next action.', effort: 'standard',
     viewport: 'desktop', ai_suggestions: true
-  }, harness.context));
+  }), harness.context));
   await harness.drain();
   const confirmation = reviewData(await runControlCenterAgenticReviewConfirmation({
     operation_id: prepared.operation.id

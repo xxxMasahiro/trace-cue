@@ -20,11 +20,13 @@ import {
   runAgenticHumanReviewSourceTextQuality
 } from '../src/agentic-human-review.js';
 import {
+  agenticProviderCapabilityHash,
   AGENTIC_REVIEW_API_CREDENTIAL_ENV,
   AGENTIC_REVIEW_API_ENDPOINT_ENV,
   AGENTIC_REVIEW_API_TIMEOUT_ENV,
   AGENTIC_REVIEW_LIVE_DOGFOOD_ENV,
-  AGENTIC_REVIEW_RESPONSES_ADAPTER_MODEL_ENV
+  AGENTIC_REVIEW_RESPONSES_ADAPTER_MODEL_ENV,
+  resolveAgenticHumanReviewProvider
 } from '../src/agentic-human-review-providers.js';
 import {
   buildOpenAiResponsesRequest,
@@ -42,6 +44,98 @@ import {
   jsonResponse,
   minimalPngBuffer
 } from './helpers/agentic-human-review-fixtures.js';
+
+test('agentic human review carries an approved subscription model and native effort through the real plan and run path', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-subscription-plan-run-'));
+  await writeFile(path.join(cwd, 'screen.png'), minimalPngBuffer(120, 80));
+  const imageReview = await executeCli(['review', '--image', 'screen.png', '--json'], {
+    cwd,
+    now: fixedNow,
+    createId: () => 'image-review-subscription-plan-run'
+  });
+  assert.equal(imageReview.exitCode, 0);
+
+  const provider = resolveAgenticHumanReviewProvider({ providerId: 'codex-subscription-cli' });
+  assert.equal(provider.ok, true);
+  const modelId = 'provider/review-model';
+  const executableIdentityHash = 'c'.repeat(64);
+  const plan = await runAgenticHumanReviewPlan({
+    'review-index': '.browser-debug/review-artifacts/image-review-subscription-plan-run.json',
+    intent: 'Check whether the next action is clear to a first-time visitor.',
+    effort: 'deep',
+    provider: 'codex-subscription-cli',
+    model: modelId,
+    'provider-effort': 'ultra',
+    'connection-binding': {
+      schema_version: '1.0.0',
+      connection_id: 'approved-subscription',
+      connection_type: 'subscription',
+      adapter_id: 'codex-subscription-cli',
+      adapter_version: '1.0.0',
+      provider_id: 'codex-subscription-cli',
+      transport: 'subscription_cli',
+      execution_strategy: 'one-shot',
+      model_id: modelId,
+      provider_effort: 'ultra',
+      provider_effort_request_field: 'model_reasoning_effort',
+      provider_capability_hash: agenticProviderCapabilityHash(provider.provider),
+      executable_identity_hash: executableIdentityHash,
+      semantic_capability_hash: 'd'.repeat(64),
+      capability_revision: 1,
+      observed_at: '2026-07-14T00:00:00.000Z',
+      expires_at: '2026-07-15T00:00:00.000Z'
+    }
+  }, {
+    cwd,
+    now: fixedNow,
+    createId: () => 'agentic-subscription-plan-run'
+  });
+  assert.equal(plan.status, 'ok');
+  assert.equal(plan.data.agentic_human_review_plan.review_effort.mode, 'deep');
+  assert.equal(plan.data.agentic_human_review_plan.provider_effort_binding.native_effort_applied_value, 'ultra');
+
+  const calls = [];
+  const flags = Object.fromEntries(
+    plan.data.agentic_human_review_plan.transfer_permissions.required_flags.map((flag) => [flag, true])
+  );
+  const run = await runAgenticHumanReviewRun({
+    plan: plan.artifacts.find((artifact) => artifact.type === 'agentic_human_review_plan').path,
+    'plan-hash': plan.data.plan_hash,
+    execute: true,
+    ...flags
+  }, {
+    cwd,
+    now: fixedNow,
+    createId: (prefix) => prefix === 'agentic-human-review-execution'
+      ? 'agentic-subscription-execution'
+      : 'agentic-subscription-result',
+    agenticReviewSubscriptionRunners: {
+      'codex-subscription-cli': async (request) => {
+        calls.push(request);
+        return {
+          ok: true,
+          input: { summary: 'The approved subscription review completed.' },
+          request_bytes: 128,
+          response_bytes: 64,
+          process_started: true,
+          dispatch_may_have_occurred: true,
+          credential_values_read: true,
+          credential_values_recorded: false,
+          raw_output_stored: false,
+          shell_used: false
+        };
+      }
+    }
+  });
+  assert.equal(run.status, 'ok');
+  assert.equal(run.data.boundary.provider_call_performed, true);
+  assert.equal(run.data.boundary.api_call_performed, false);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].model, modelId);
+  assert.equal(calls[0].providerEffort, 'ultra');
+  assert.equal(calls[0].executableIdentityHash, executableIdentityHash);
+  assert.equal(calls[0].traceCueRequest.plan.review_effort.mode, 'deep');
+});
 
 test('agentic human review enforces plan approval, transfer flags, and advisory-only output', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-agentic-review-'));
@@ -1328,6 +1422,8 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
     'generic-api-provider',
     '--model',
     'api-model',
+    '--provider-effort',
+    'high',
     '--json'
   ], {
     cwd,
@@ -1344,7 +1440,9 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiPlanBody.data.agentic_human_review_plan.provider_capability_contract.timeout_env, AGENTIC_REVIEW_API_TIMEOUT_ENV);
   assert.equal(apiPlanBody.data.agentic_human_review_plan.provider_capability_contract.timeout_ms, 90000);
   assert.equal(apiPlanBody.data.agentic_human_review_plan.provider_capability_contract.effort_capability.native_effort_binding.request_field, 'reasoning.effort');
-  assert.equal(apiPlanBody.data.agentic_human_review_plan.provider_effort_binding.native_effort_applied_value, 'medium');
+  assert.equal(apiPlanBody.data.agentic_human_review_plan.review_effort.mode, 'standard');
+  assert.equal(apiPlanBody.data.agentic_human_review_plan.provider_effort_binding.native_effort_applied_value, 'high');
+  assert.equal(apiPlanBody.data.agentic_human_review_plan.provider_effort_binding.selection_source, 'explicit_provider_effort');
   const apiRequiredFlags = apiPlanBody.data.agentic_human_review_plan.transfer_permissions.required_flags.slice().sort();
   assert.deepEqual(apiRequiredFlags, ['allow-accessibility-summary', 'allow-artifact-refs', 'allow-page-text']);
   assert.equal(apiPlanBody.data.agentic_human_review_plan.transfer_permissions.default_external_transfer, true);
@@ -1352,6 +1450,66 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiPlanBody.data.agentic_human_review_plan.video_evidence.status, 'available');
   assert.equal(apiPlanBody.data.agentic_human_review_plan.source_understanding_review.status, 'completed');
   assert.equal(apiPlanBody.data.agentic_human_review_plan.disclosure.source_understanding_review_included, true);
+
+  const apiProvider = resolveAgenticHumanReviewProvider({
+    providerId: 'generic-api-provider',
+    context: { env: { [AGENTIC_REVIEW_API_TIMEOUT_ENV]: '90000' } }
+  });
+  assert.equal(apiProvider.ok, true);
+  const boundPlan = await runAgenticHumanReviewPlan({
+    'review-index': reviewIndexPath,
+    intent: 'Verify that the approved AI connection cannot be changed to staged execution.',
+    provider: 'generic-api-provider',
+    model: 'api-model',
+    'provider-effort': 'high',
+    'connection-binding': {
+      schema_version: '1.0.0',
+      connection_id: 'configured-api',
+      connection_type: 'api',
+      adapter_id: 'configured-api-adapter',
+      adapter_version: '1.0.0',
+      provider_id: 'generic-api-provider',
+      transport: 'provider_api',
+      execution_strategy: 'one-shot',
+      model_id: 'api-model',
+      provider_effort: 'high',
+      provider_effort_request_field: 'reasoning.effort',
+      provider_capability_hash: agenticProviderCapabilityHash(apiProvider.provider),
+      executable_identity_hash: null,
+      semantic_capability_hash: 'b'.repeat(64),
+      capability_revision: 1,
+      observed_at: '2026-07-14T00:00:00.000Z',
+      expires_at: '2026-07-15T00:00:00.000Z'
+    }
+  }, {
+    cwd,
+    now: fixedNow,
+    createId: () => 'agentic-bound-plan',
+    env: { [AGENTIC_REVIEW_API_TIMEOUT_ENV]: '90000' }
+  });
+  assert.equal(boundPlan.status, 'ok');
+  const boundPlanBody = boundPlan.data.agentic_human_review_plan;
+  const boundPlanPath = boundPlan.artifacts.find((artifact) => artifact.type === 'agentic_human_review_plan').path;
+  const boundFlags = Object.fromEntries(boundPlanBody.transfer_permissions.required_flags.map((flag) => [flag, true]));
+  const stagedOverride = await runAgenticHumanReviewRun({
+    plan: boundPlanPath,
+    'plan-hash': boundPlan.data.plan_hash,
+    execute: true,
+    'execution-mode': 'staged',
+    ...boundFlags
+  }, {
+    cwd,
+    now: fixedNow,
+    env: {
+      [AGENTIC_REVIEW_API_ENDPOINT_ENV]: 'https://provider.example/review',
+      [AGENTIC_REVIEW_API_CREDENTIAL_ENV]: 'api-secret-value',
+      [AGENTIC_REVIEW_API_TIMEOUT_ENV]: '90000'
+    },
+    fetch: async () => { throw new Error('provider must not be called for an execution-strategy mismatch'); }
+  });
+  assert.equal(stagedOverride.status, 'error');
+  assert.equal(stagedOverride.errors[0].code, 'AGENTIC_REVIEW_PLAN_EXECUTION_STRATEGY_MISMATCH');
+  assert.equal(stagedOverride.errors[0].details.provider_call_performed, false);
 
   let apiRequestPayload = null;
   let apiFetchCount = 0;
@@ -1630,6 +1788,7 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.equal(apiRunBody.data.agentic_human_review_execution.page_text_transferred, true);
   assert.equal(apiRunBody.data.agentic_human_review_execution.artifact_refs_transferred, true);
   assert.equal(apiRunBody.data.agentic_human_review_execution.accessibility_summary_transferred, true);
+  assert.equal(apiRunBody.data.agentic_human_review_execution.provider_effort_binding.native_effort_applied_value, 'high');
   assert.equal(apiRequestPayload.disclosure_policy.page_text_summary_included, true);
   assert.equal(apiRequestPayload.disclosure_policy.source_understanding_review_included, true);
   assert.equal(apiRequestPayload.disclosure_policy.artifact_references_included, true);
@@ -1688,6 +1847,10 @@ test('agentic human review enforces plan approval, transfer flags, and advisory-
   assert.doesNotMatch(JSON.stringify(apiRequestPayload.package.source_understanding_review), /source-transcript\.txt|chunk:|FULL SOURCE|excerpt":/u);
   assert.doesNotMatch(apiRunResult.stdout, /api-secret-value|provider\.example/);
   const apiResultFile = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'agentic-human-review-results', 'agentic-execution-api', 'result.json'), 'utf8'));
+  const apiApprovalReceipt = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'receipts', 'agentic-execution-api-agentic-approval.json'), 'utf8'));
+  const apiRunReceipt = JSON.parse(await readFile(path.join(cwd, '.browser-debug', 'receipts', 'agentic-execution-api-agentic-run.json'), 'utf8'));
+  assert.equal(apiApprovalReceipt.provider_effort_binding.native_effort_applied_value, 'high');
+  assert.equal(apiRunReceipt.provider_effort_binding.native_effort_applied_value, 'high');
   assert.equal(apiResultFile.review_claims.some((claim) => /human[- ]superior|human[- ]equivalent|better than human/i.test(claim.claim)), false);
   assert.equal(apiResultFile.claim_integrity.rejected_claim_count, 1);
   assert.equal(apiResultFile.claim_integrity.rejected_claims[0].source, 'provider_review_claim');
@@ -6787,7 +6950,7 @@ test('agentic human review responses adapter converts requests without leaking c
     now: fixedNow
   });
 
-  assert.equal(result.statusCode, 200);
+  assert.equal(result.statusCode, 200, JSON.stringify(result.body));
   assert.equal(result.headers['cache-control'], 'no-store');
   assert.equal(result.body.summary, 'The adapter provider produced a human-facing review.');
   assert.equal(result.body.role_opinions.length, request.plan.sub_agents.length);
@@ -6939,7 +7102,7 @@ test('agentic human review responses adapter accepts staged claims supported by 
     now: fixedNow
   });
 
-  assert.equal(result.statusCode, 200);
+  assert.equal(result.statusCode, 200, JSON.stringify(result.body));
   assert.deepEqual(result.body.review_claims.map((claim) => claim.id), ['prior-role-supported-claim']);
   assert.deepEqual(result.body.review_claims[0].supported_by_roles, ['content_reviewer']);
   assert.equal(result.body.adapter_claim_filtering.original_claim_count, 2);
@@ -7041,7 +7204,7 @@ test('agentic human review responses adapter repairs staged summary-placeholder 
     now: fixedNow
   });
 
-  assert.equal(result.statusCode, 200);
+  assert.equal(result.statusCode, 200, JSON.stringify(result.body));
   assert.equal(observedRequests.length, 2);
   const repairInput = JSON.parse(observedRequests[1].input);
   assert.equal(repairInput.contract_repair_request.missing_roles.includes('content_reviewer'), true);
@@ -7720,7 +7883,7 @@ test('agentic human review responses adapter aggregates benchmark and owner-base
     now: fixedNow
   });
 
-  assert.equal(result.statusCode, 200);
+  assert.equal(result.statusCode, 200, JSON.stringify(result.body));
   assert.equal(observedRequests.length, 2);
   const repairInput = JSON.parse(observedRequests[1].input);
   const repairRequest = repairInput.contract_repair_request;

@@ -12,14 +12,15 @@ TraceCue is primarily a command-line tool. The product may later generate HTML o
 
 TraceCue now includes a React + Vite local review center surface under `control-center/`. The surface imports `docs/design-system/tokens.json` and `docs/design-system/components.json` so colors, spacing, radius, fonts, and component contracts remain product-local design-system inputs instead of hard-coded one-off UI policy.
 
-The browser surface follows the accepted Control Center prototype. Desktop uses a 232px navigation rail, an 1120px ordinary content width, and a 760px narrow form/settings width. The UI font stack is the operating-system sans serif stack with `Noto Sans JP`; body text is 16px, page titles are 30px, settings section titles are 19px, and supporting copy is 14px. Ordinary pages use white space and divider lines instead of stacked cards. It must not add decorative backgrounds, nested cards, marketing layout, raw JSON-first pages, command launchers, provider selectors, or execution controls.
+The browser surface follows the accepted Control Center prototype. Desktop uses a 232px navigation rail, an 1120px ordinary content width, and a 760px narrow form/settings width. The UI font stack is the operating-system sans serif stack with `Noto Sans JP`; body text is 16px, page titles are 30px, settings section titles are 19px, and supporting copy is 14px. Ordinary pages use white space and divider lines instead of stacked cards. It must not add decorative backgrounds, nested cards, marketing layout, raw JSON-first pages, command launchers, raw provider configuration, or generic execution controls.
 
 ## Approved Production Mock
 
 The durable HTML mock and its desktop/mobile PNG captures live under
 `docs/design-system/mockups/control-center/`. They define the approved ordinary
 Control Center flow used by the React production surface: start from
-a user goal, choose review depth in everyday language, explicitly confirm an
+a user goal, choose review depth in everyday language, choose a user-facing AI
+service/model when alternatives exist, explicitly confirm an
 external AI send, follow progress, decide what to do with findings, and manage
 the small set of ordinary preferences. Query-string screen states are stable so
 the same design can be reviewed and recaptured without relying on transient
@@ -61,8 +62,11 @@ only after a concrete service/evidence disclosure and one-time confirmation.
 Ordinary screens follow a focused source/action/result pattern: one current
 goal, one primary safe action, adjacent status, and one clear result or empty
 state. Settings follows one continuous form: display language, default screen
-size, plain-language automated checks, AI suggestions, mandatory send confirmation,
-and one save action. Status badges, duplicate
+size, plain-language automated checks, AI suggestions, a compact AI service and
+model summary with an explicit change action, provider-native effort under
+secondary AI details, mandatory send confirmation, one general-settings save
+action, and a contextual explicit apply action while the AI choice is being
+changed. Status badges, duplicate
 headings, storage paths, locale codes, text-direction values, translation state,
 trust-boundary badges, and diagnostic disclosures stay out of this page.
 
@@ -72,16 +76,18 @@ border; the quiet green surface communicates completion without competing with
 the next action.
 
 The send-confirmation dialog is centered in the work area, not the full browser
-viewport. It names the configured service and the evidence classes that will be
-sent. Finding decisions start unselected. Provider/model/credential controls,
-paths, hashes, commands, and raw artifacts never appear in the ordinary UI.
+viewport. It prioritizes the evidence classes that will be sent, the user-facing
+service/model destination, and the TraceCue review method. Provider-native
+effort remains under secondary AI details. Finding decisions start unselected.
+Raw provider/adapter ids, endpoint and credential controls, executable paths,
+hashes, commands, and raw artifacts never appear in the ordinary UI.
 
 ## Goal Completion Screens
 
-The Phase 168 production mock extends the approved baseline without changing
+The Phase 177 production mock extends the approved baseline without changing
 its typography, 232px rail, 1120px work area, 760px form width, spacing scale,
-or ordinary one-pixel borders. The previous baseline remains archived at
-`mockups/control-center/archive/phase-155/`.
+or ordinary one-pixel borders. Prior baselines remain archived at
+`mockups/control-center/archive/phase-155/`, `phase-168/`, and `phase-176/`.
 
 `New review` begins with four icon-led source choices: website, image, document,
 and test result. Only the fields needed for the selected source appear. Files
@@ -117,9 +123,15 @@ status words, current steps expose `aria-current`, decision choices expose
 
 AI readiness appears as one quiet settings row and, when relevant, one inline
 choice in the flow: available, setup needed, or unavailable. The user may
-explicitly continue without AI where the local outcome supports it. Technical
-provider, endpoint, environment, model, credential, and fingerprint details are
-absent. External send confirmation remains a work-area-centered dialog.
+explicitly continue without AI where the local outcome supports it. Service and
+model names are user-facing; connection/model choices appear only when real
+alternatives exist, and provider-native effort stays in collapsed AI details.
+TraceCue `standard`, `deep`, and `xhigh` remain separate. Internal provider and
+adapter ids, endpoints, environment names, credentials, executable paths,
+commands, hashes, and fingerprints are absent. Availability refresh is an
+explicit action. External send confirmation remains a work-area-centered dialog.
+Text-link actions such as the AI choice change control retain the quiet visual
+style while exposing at least a 44 by 44 pixel touch area on mobile.
 
 Recovery replaces generic status with one plain-language next action. Safe
 local preparation offers Resume; expired confirmation offers Review and send;

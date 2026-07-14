@@ -10,9 +10,12 @@ import {
 import { runReview } from './review.js';
 import { getSchema } from './schema-registry.js';
 import {
-  buildControlCenterAiDestinationFingerprint,
-  buildControlCenterAiReadiness
+  buildControlCenterAiDestinationFingerprint
 } from './control-center-ai-readiness.js';
+import {
+  resolveControlCenterAiBinding,
+  revalidateControlCenterAiBinding
+} from './control-center-ai-connection-actions.js';
 import {
   CONTROL_CENTER_AGENTIC_REVIEW_PROVIDER_ENV,
   CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NAME_ENV
@@ -24,7 +27,7 @@ import {
   readStableBoundedFileHandle
 } from './safe-local-store.js';
 
-export const CONTROL_CENTER_AGENTIC_REVIEW_SCHEMA_VERSION = '1.0.0';
+export const CONTROL_CENTER_AGENTIC_REVIEW_SCHEMA_VERSION = '2.0.0';
 export const CONTROL_CENTER_AGENTIC_REVIEW_ARTIFACT_DIR = 'control-center-agentic-reviews';
 export {
   CONTROL_CENTER_AGENTIC_REVIEW_PROVIDER_ENV,
@@ -64,7 +67,7 @@ const LIST_READ_RETRY_LIMIT = 4;
 const LIST_READ_RETRY_DELAY_MS = 10;
 const DEFAULT_OPERATION_LOCK_TIMEOUT_MS = 10_000;
 const MAX_OPERATION_LOCK_TIMEOUT_MS = 120_000;
-const HISTORY_ELIGIBLE_STATES = new Set(['completed', 'failed', 'cancelled']);
+const HISTORY_ELIGIBLE_STATES = new Set(['completed', 'failed', 'cancelled', 'needs_attention']);
 const OPERATION_ID_PATTERN = /^control-center-agentic-review-[a-zA-Z0-9._-]{1,160}$/;
 const ACTIVE_DISPATCHES = new Set();
 const OPERATION_HISTORY_RETENTION = new Map();
@@ -90,11 +93,23 @@ export async function runControlCenterAgenticReviewPrepare(input = {}, context =
     return actionError(validation.code, validation.message, validation.details);
   }
 
-  if (validation.value.ai_suggestions && !configuredServiceName(context)) {
-    return actionError('CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NOT_CONFIGURED', 'Choose and configure the external AI review service before enabling AI suggestions.', {});
-  }
-  if (validation.value.ai_suggestions && buildControlCenterAiReadiness(context).status !== 'available') {
-    return actionError('CONTROL_CENTER_AGENTIC_REVIEW_SETUP_NOT_READY', 'Finish the private AI connection setup, or continue without AI.', {});
+  let aiBinding = null;
+  if (validation.value.ai_suggestions) {
+    const resolved = await resolveControlCenterAiBinding(validation.value.ai_selection, context);
+    if (!resolved.ok) {
+      if (resolved.error.code === 'CONTROL_CENTER_AI_CONNECTION_NOT_CHECKED' && !configuredServiceName(context)) {
+        return actionError(
+          'CONTROL_CENTER_AGENTIC_REVIEW_SERVICE_NOT_CONFIGURED',
+          'Choose the AI review service before starting an AI-assisted review.',
+          {}
+        );
+      }
+      return actionError(resolved.error.code, resolved.error.message, resolved.error.details);
+    }
+    aiBinding = {
+      ...resolved.selection,
+      execution_binding: resolved.binding
+    };
   }
 
   const now = materializeNow(context.now);
@@ -103,7 +118,8 @@ export async function runControlCenterAgenticReviewPrepare(input = {}, context =
     input: validation.value,
     now,
     context,
-    relationship: normalizeRelationship(input.relationship)
+    relationship: normalizeRelationship(input.relationship),
+    aiBinding
   });
 
   try {
@@ -209,12 +225,14 @@ export async function runControlCenterAgenticReviewStart(input = {}, context = {
     if (computeConsentDigest(operation) !== operation.internal.consent_digest) {
       return actionError('CONTROL_CENTER_AGENTIC_REVIEW_PLAN_CHANGED', 'The prepared review changed after confirmation and cannot be started.', {});
     }
-    if (buildControlCenterAiDestinationFingerprint(context, {
-      providerId: operation.internal.provider_id,
-      serviceName: operation.service.name,
-      modelId: operation.internal.model_id
-    }) !== operation.internal.destination_fingerprint) {
-      return actionError('CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED', 'The AI review connection changed. Review the current send details again.', {});
+    if (operation.schema_version === CONTROL_CENTER_AGENTIC_REVIEW_SCHEMA_VERSION && operation.request?.ai_suggestions === true) {
+      const binding = await revalidateControlCenterAiBinding(operation.internal.connection_selection, context);
+      if (!binding.ok) {
+        return markConnectionSelectionChanged(operation, context);
+      }
+    }
+    if (destinationFingerprintForOperation(operation, context) !== operation.internal.destination_fingerprint) {
+      return markConnectionSelectionChanged(operation, context);
     }
 
     confirmation.used_at = now.toISOString();
@@ -243,6 +261,25 @@ export async function runControlCenterAgenticReviewStart(input = {}, context = {
     await dispatchOperation(id.value, context);
   });
   return prepared;
+}
+
+async function markConnectionSelectionChanged(operation, context) {
+  const now = materializeNow(context.now).toISOString();
+  operation.state = 'needs_attention';
+  operation.stage = 'attention';
+  operation.updated_at = now;
+  operation.completed_at = now;
+  operation.confirmation = null;
+  operation.error = {
+    code: 'CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED',
+    message: 'The AI service choice changed. Update availability and prepare a new review before sending anything.'
+  };
+  await saveOperation(operation, context);
+  return actionError(
+    'CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED',
+    operation.error.message,
+    { state: 'needs_attention', prepare_new_review: true, provider_call_performed: false }
+  );
 }
 
 export async function runControlCenterAgenticReviewStatus(input = {}, context = {}) {
@@ -366,7 +403,7 @@ export async function runControlCenterAgenticReviewRepeat(input = {}, context = 
   const loaded = await loadOperationResult(id.value, context, { recoverDispatch: true });
   if (!loaded.ok) return loaded.result;
   const previous = loaded.operation;
-  if (!['completed', 'failed', 'dispatch_unknown'].includes(previous.state)) {
+  if (!['completed', 'failed', 'dispatch_unknown', 'needs_attention'].includes(previous.state)) {
     return actionError('CONTROL_CENTER_AGENTIC_REVIEW_REPEAT_NOT_AVAILABLE', 'A new review can be prepared after the current review finishes.', {
       state: previous.state
     });
@@ -376,12 +413,28 @@ export async function runControlCenterAgenticReviewRepeat(input = {}, context = 
     return actionError('CONTROL_CENTER_AGENTIC_REVIEW_ALREADY_DEEPEST', 'This review already uses the most thorough review method.', {});
   }
 
+  const replacementSelection = {
+    connection_option_id: boundedString(input.connection_option_id ?? input.connectionOptionId, 160),
+    model_option_id: boundedString(input.model_option_id ?? input.modelOptionId, 160),
+    effort_option_id: boundedString(input.effort_option_id ?? input.effortOptionId, 160),
+    capability_revision: input.capability_revision ?? input.capabilityRevision,
+    capability_token: boundedString(input.capability_token ?? input.capabilityToken, 160)
+  };
+  const hasReplacementSelection = Object.values(replacementSelection).some((value) => value !== null && value !== undefined);
+  const selectedBinding = hasReplacementSelection ? replacementSelection : previous.internal.connection_selection;
   return runControlCenterAgenticReviewPrepare({
     url: previous.internal.target_url,
     purpose: previous.request.purpose,
     effort,
     viewport: previous.request.viewport,
     ai_suggestions: previous.request.ai_suggestions,
+    ...(previous.request.ai_suggestions && selectedBinding ? {
+      connection_option_id: selectedBinding.connection_option_id,
+      model_option_id: selectedBinding.model_option_id,
+      effort_option_id: selectedBinding.effort_option_id,
+      capability_revision: selectedBinding.capability_revision,
+      capability_token: selectedBinding.capability_token
+    } : {}),
     relationship: {
       kind: mode.value,
       previous_operation_id: previous.id
@@ -488,6 +541,7 @@ async function prepareOperation(id, context) {
       effort: operation.request.effort,
       'review-index': reviewIndexPath,
       provider: operation.internal.provider_id,
+      model: operation.internal.model_id,
       'artifact-root': artifactRoot(context)
     }, executionContext(context));
     if (proposal?.status !== 'ok') {
@@ -502,6 +556,9 @@ async function prepareOperation(id, context) {
     const planResult = await planRunner({
       proposal: proposalPath,
       provider: operation.internal.provider_id,
+      model: operation.internal.model_id,
+      ...(operation.internal.provider_effort ? { 'provider-effort': operation.internal.provider_effort } : {}),
+      'connection-binding': operation.internal.connection_binding,
       effort: operation.request.effort,
       'artifact-root': artifactRoot(context)
     }, executionContext(context));
@@ -528,14 +585,12 @@ async function prepareOperation(id, context) {
       current.internal.provider_capability_hash = plan.provider_capability_hash ?? null;
       current.internal.provider_id = plan.provider?.id ?? current.internal.provider_id;
       current.internal.model_id = plan.model?.id ?? null;
+      current.internal.provider_effort = plan.provider_effort_binding?.native_effort_applied_value ?? current.internal.provider_effort;
+      current.internal.connection_binding = plan.connection_binding ?? current.internal.connection_binding;
       current.internal.surface_id = plan.surface?.id ?? null;
       current.internal.required_transfer_flags = normalizeStrings(plan.transfer_permissions?.required_flags);
       current.internal.transfer_classes = normalizeTransferClasses(plan.transfer_permissions?.classes);
-      current.internal.destination_fingerprint = buildControlCenterAiDestinationFingerprint(context, {
-        providerId: current.internal.provider_id,
-        serviceName: current.service.name,
-        modelId: current.internal.model_id
-      });
+      current.internal.destination_fingerprint = destinationFingerprintForOperation(current, context);
       current.disclosure = buildDisclosure(current);
       current.internal.consent_digest = computeConsentDigest(current);
       await saveOperation(current, context);
@@ -555,11 +610,11 @@ async function dispatchOperation(id, context) {
   try {
     const operation = await loadOperation(id, context);
     if (operation.state !== 'dispatching') return;
-    if (buildControlCenterAiDestinationFingerprint(context, {
-      providerId: operation.internal.provider_id,
-      serviceName: operation.service.name,
-      modelId: operation.internal.model_id
-    }) !== operation.internal.destination_fingerprint) {
+    if (operation.schema_version === CONTROL_CENTER_AGENTIC_REVIEW_SCHEMA_VERSION && operation.request?.ai_suggestions === true) {
+      const binding = await revalidateControlCenterAiBinding(operation.internal.connection_selection, context);
+      if (!binding.ok) throw codedError(binding.error.code, binding.error.message);
+    }
+    if (destinationFingerprintForOperation(operation, context) !== operation.internal.destination_fingerprint) {
       throw codedError('CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED', 'The AI review connection changed before dispatch.');
     }
     const runOptions = {
@@ -674,10 +729,10 @@ async function dispatchOperation(id, context) {
   }
 }
 
-async function createOperation({ id, input, now, context, relationship }) {
-  const providerId = configuredProvider(context);
+async function createOperation({ id, input, now, context, relationship, aiBinding = null }) {
+  const providerId = aiBinding?.execution_binding?.provider_id ?? configuredProvider(context);
   const serviceName = input.ai_suggestions
-    ? configuredServiceName(context)
+    ? aiBinding?.execution_binding?.connection_display_name ?? configuredServiceName(context)
     : 'TraceCue local review';
   return {
     schema_version: CONTROL_CENTER_AGENTIC_REVIEW_SCHEMA_VERSION,
@@ -701,7 +756,9 @@ async function createOperation({ id, input, now, context, relationship }) {
     },
     service: {
       name: serviceName,
-      external_ai: input.ai_suggestions
+      external_ai: input.ai_suggestions,
+      model_name: aiBinding?.execution_binding?.model_display_name ?? null,
+      processing_level_name: aiBinding?.execution_binding?.provider_effort_display_name ?? null
     },
     relationship,
     disclosure: null,
@@ -720,7 +777,10 @@ async function createOperation({ id, input, now, context, relationship }) {
     internal: {
       target_url: input.url,
       provider_id: providerId,
-      model_id: null,
+      model_id: aiBinding?.execution_binding?.model_id ?? null,
+      provider_effort: aiBinding?.execution_binding?.provider_effort ?? null,
+      connection_selection: aiBinding,
+      connection_binding: aiBinding?.execution_binding ?? null,
       surface_id: null,
       review_index_path: null,
       proposal_path: null,
@@ -732,7 +792,14 @@ async function createOperation({ id, input, now, context, relationship }) {
       transfer_classes: {},
       consent_digest: null,
       destination_fingerprint: input.ai_suggestions
-        ? buildControlCenterAiDestinationFingerprint(context, { providerId, serviceName })
+        ? buildControlCenterAiDestinationFingerprint(context, {
+            providerId,
+            serviceName,
+            modelId: aiBinding?.execution_binding?.model_id,
+            providerEffort: aiBinding?.execution_binding?.provider_effort,
+            adapterId: aiBinding?.execution_binding?.adapter_id,
+            capabilityHash: aiBinding?.execution_binding?.semantic_capability_hash
+          })
         : null,
       execution_path: null,
       result_path: null,
@@ -770,7 +837,9 @@ function projectOperation(operation) {
     ai_suggestions: operation.request?.ai_suggestions === true,
     service: {
       name: operation.service?.name ?? 'Local TraceCue review',
-      external_ai: operation.service?.external_ai === true
+      external_ai: operation.service?.external_ai === true,
+      model_name: operation.service?.model_name ?? null,
+      processing_level_name: operation.service?.processing_level_name ?? null
     },
     parent_review: operation.relationship ? {
       id: operation.relationship.previous_operation_id,
@@ -780,6 +849,9 @@ function projectOperation(operation) {
       revision: operation.disclosure.revision,
       external_transfer: operation.disclosure.external_transfer === true,
       service_name: operation.disclosure.service_name,
+      model_name: operation.disclosure.model_name ?? null,
+      processing_level_name: operation.disclosure.processing_level_name ?? null,
+      review_method: operation.disclosure.review_method ?? operation.request?.effort ?? null,
       items: operation.disclosure.items.map((item) => ({
         id: item.id,
         label: item.label,
@@ -850,9 +922,14 @@ function buildDisclosure(operation) {
     sent: transferClassEnabled(classes[id], operation.internal.required_transfer_flags, id)
   }));
   const body = {
-    version: '1.0.0',
+    version: operation.schema_version === CONTROL_CENTER_AGENTIC_REVIEW_SCHEMA_VERSION ? '2.0.0' : '1.0.0',
     external_transfer: true,
     service_name: operation.service.name,
+    ...(operation.schema_version === CONTROL_CENTER_AGENTIC_REVIEW_SCHEMA_VERSION ? {
+      model_name: operation.service.model_name,
+      processing_level_name: operation.service.processing_level_name,
+      review_method: operation.request.effort
+    } : {}),
     items,
     raw_provider_response_stored: false,
     credential_values_stored: false
@@ -864,7 +941,7 @@ function buildDisclosure(operation) {
 }
 
 function computeConsentDigest(operation) {
-  return sha256(canonicalStringify({
+  const body = {
     plan_hash: operation.internal.plan_hash,
     package_hash: operation.internal.package_hash,
     provider_capability_hash: operation.internal.provider_capability_hash,
@@ -875,7 +952,29 @@ function computeConsentDigest(operation) {
     required_transfer_flags: [...operation.internal.required_transfer_flags].sort(),
     transfer_classes: operation.internal.transfer_classes,
     disclosure: operation.disclosure
-  }));
+  };
+  if (operation.schema_version === CONTROL_CENTER_AGENTIC_REVIEW_SCHEMA_VERSION) {
+    body.provider_effort = operation.internal.provider_effort ?? null;
+    body.connection_binding = operation.internal.connection_binding ?? null;
+  }
+  return sha256(canonicalStringify(body));
+}
+
+function destinationFingerprintForOperation(operation, context) {
+  const base = {
+    providerId: operation.internal.provider_id,
+    serviceName: operation.service.name,
+    modelId: operation.internal.model_id
+  };
+  if (operation.schema_version !== CONTROL_CENTER_AGENTIC_REVIEW_SCHEMA_VERSION) {
+    return buildControlCenterAiDestinationFingerprint(context, base);
+  }
+  return buildControlCenterAiDestinationFingerprint(context, {
+    ...base,
+    providerEffort: operation.internal.provider_effort,
+    adapterId: operation.internal.connection_binding?.adapter_id,
+    capabilityHash: operation.internal.connection_binding?.semantic_capability_hash
+  });
 }
 
 function validatePrepareInput(input) {
@@ -911,7 +1010,14 @@ function validatePrepareInput(input) {
       purpose,
       effort: effort.value,
       viewport: viewport.value,
-      ai_suggestions: aiSuggestions === true
+      ai_suggestions: aiSuggestions === true,
+      ai_selection: {
+        connection_option_id: boundedString(input.connection_option_id ?? input.connectionOptionId, 160),
+        model_option_id: boundedString(input.model_option_id ?? input.modelOptionId, 160),
+        effort_option_id: boundedString(input.effort_option_id ?? input.effortOptionId, 160),
+        capability_revision: input.capability_revision ?? input.capabilityRevision,
+        capability_token: boundedString(input.capability_token ?? input.capabilityToken, 160)
+      }
     }
   };
 }
@@ -1569,7 +1675,7 @@ function findBrowserAuthorityFields(input) {
     'plan', 'plan_path', 'planPath', 'plan_hash', 'planHash', 'package_hash', 'packageHash',
     'surface', 'surface_id', 'surfaceId', 'transfer_flags', 'transferFlags', 'flags',
     'endpoint', 'credential', 'token', 'api_key', 'apiKey', 'artifact_root', 'artifactRoot',
-    'execute', 'execution_mode', 'executionMode'
+    'execute', 'execution_mode', 'executionMode', 'semantic_capability_hash', 'semanticCapabilityHash'
   ]);
   return Object.keys(input).filter((key) => forbidden.has(key) || key.startsWith('allow-')).sort();
 }

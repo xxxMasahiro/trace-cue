@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { SCHEMA_VERSION } from './constants.js';
 import { nodeHttpFetch } from './http-transport.js';
+import { validateJsonSchemaSubset } from './json-schema-subset.js';
 import { redact, redactString, truncateText } from './redaction.js';
 
 export const AGENTIC_HUMAN_REVIEW_RESPONSES_ADAPTER_VERSION = '1.0.0';
@@ -531,6 +532,14 @@ export async function handleAgenticHumanReviewResponsesAdapterRequest({
     const contractValidation = validateAdapterAdvisoryAgainstTraceCueContract(advisoryForValidation, payload);
     if (contractValidation.ok) {
       const normalizedAdvisory = normalizeAdvisoryForTraceCue(advisoryForValidation, payload);
+      const normalizedShape = validateJsonSchemaSubset(omitNullValues(normalizedAdvisory), buildAdvisoryResponseSchema(payload));
+      if (!normalizedShape.ok) {
+        return normalizedAdvisoryShapeError(normalizedShape, {
+          boundary,
+          providerResult,
+          contractRepairAttemptsPerformed
+        });
+      }
       return {
         statusCode: 200,
         headers: adapterHeaders(),
@@ -569,6 +578,14 @@ export async function handleAgenticHumanReviewResponsesAdapterRequest({
       });
       if (coveragePatchRepair.ok) {
         const normalizedAdvisory = normalizeAdvisoryForTraceCue(coveragePatchRepair.advisory, payload);
+        const normalizedShape = validateJsonSchemaSubset(omitNullValues(normalizedAdvisory), buildAdvisoryResponseSchema(payload));
+        if (!normalizedShape.ok) {
+          return normalizedAdvisoryShapeError(normalizedShape, {
+            boundary,
+            providerResult,
+            contractRepairAttemptsPerformed
+          });
+        }
         return {
           statusCode: 200,
           headers: adapterHeaders(),
@@ -611,6 +628,25 @@ export async function handleAgenticHumanReviewResponsesAdapterRequest({
     boundary,
     contract_repair_attempts_performed: contractRepairAttemptsPerformed
   });
+}
+
+function normalizedAdvisoryShapeError(shape, { boundary, providerResult, contractRepairAttemptsPerformed }) {
+  return adapterError(502, 'AHR_RESPONSES_ADAPTER_PROVIDER_OUTPUT_SCHEMA_MISMATCH', 'The normalized provider output did not match the required TraceCue advisory schema.', {
+    boundary,
+    provider_status_code: providerResult.providerStatusCode,
+    response_bytes: providerResult.responseBytes,
+    contract_repair_attempts_performed: contractRepairAttemptsPerformed,
+    path: shape.error.path,
+    keyword: shape.error.keyword
+  });
+}
+
+function omitNullValues(value) {
+  if (Array.isArray(value)) return value.map(omitNullValues);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([, child]) => child !== null)
+    .map(([key, child]) => [key, omitNullValues(child)]));
 }
 
 export function buildOpenAiResponsesRequest({ traceCueRequest, model, generatedAt, repairContext = null }) {
@@ -665,6 +701,24 @@ export function buildOpenAiResponsesRequest({ traceCueRequest, model, generatedA
     tracecue_contract_validation_required: 'true'
   };
   return request;
+}
+
+export function validateAndNormalizeTraceCueAdvisory(advisory, traceCueRequest) {
+  const shape = validateJsonSchemaSubset(advisory, buildAdvisoryResponseSchema(traceCueRequest));
+  if (!shape.ok) {
+    return {
+      ok: false,
+      code: 'AHR_RESPONSES_ADAPTER_PROVIDER_OUTPUT_SCHEMA_MISMATCH',
+      message: 'Provider output did not match the required TraceCue advisory schema.',
+      details: {
+        path: shape.error.path,
+        keyword: shape.error.keyword
+      }
+    };
+  }
+  const contract = validateAdapterAdvisoryAgainstTraceCueContract(advisory, traceCueRequest);
+  if (!contract.ok) return contract;
+  return { ok: true, value: normalizeAdvisoryForTraceCue(advisory, traceCueRequest) };
 }
 
 function buildOpenAiResponsesCoveragePatchRequest({
@@ -2866,6 +2920,7 @@ function normalizeAdvisoryForTraceCue(advisory, traceCueRequest) {
     role_opinions: Array.isArray(advisory.role_opinions) ? advisory.role_opinions : [],
     findings,
     agentic_human_review_findings: findings,
+    owner_baseline_findings: normalizeAdapterOwnerBaselineFindings(advisory, evidenceCatalog),
     strengths: normalizeStringArray(advisory.strengths),
     improvement_suggestions: normalizeStringArray(advisory.improvement_suggestions ?? advisory.suggested_fixes),
     suggested_fixes: normalizeStringArray(advisory.suggested_fixes ?? advisory.improvement_suggestions),

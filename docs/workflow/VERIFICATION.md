@@ -477,7 +477,7 @@ Optional acceptance checks against local application servers may run only when t
 
 - Latest prototype-alignment evidence: `site-review-2026-07-10T21-21-03-242Z-d0950f43` reviewed the Japanese Settings page at desktop 1440x980 and mobile 390x844 with screenshots; findings 0, failed routes 0, failed page expectations 0, data bindings 2/2, user questions 4/4, rubric 1/1, content UX passed, and local release gate passed.
 - Purpose-led browser checks verify exactly three ordinary top-level destinations for `確認` (`confirm`), `進行中` (`running`), and `設定` (`settings`), plus five visible stages for `準備` (`prepare`), `確認` (`review`), `判断` (`decide`), `再確認` (`recheck`), and `完了` (`complete`).
-- Settings browser checks verify the accepted prototype geometry and hierarchy: 760px desktop content width, system/Noto Sans JP font stack, 30px page title, 19px section title, 14px supporting copy, 48px selects, divider-based rows, one save action, mobile stacking without overflow, and no cards, status badges, persistence paths, locale internals, diagnostics, regression-import/CI-policy forms, or trust-boundary badges.
+- Settings browser checks verify the accepted prototype geometry and hierarchy: 760px desktop content width, system/Noto Sans JP font stack, 30px page title, 19px section title, 14px supporting copy, 48px selects, divider-based rows, one general-settings save action plus a contextual AI-choice apply action while editing, mobile stacking without overflow, and no cards, status badges, persistence paths, locale internals, diagnostics, regression-import/CI-policy forms, or trust-boundary badges.
 - Effort-selection checks verify the approved purpose titles and short labels map exactly to `standard`, `deep`, and `xhigh`, the existing source-intake proposal payload preserves the selected canonical value, and the UI never describes proposal creation as provider execution, browser execution, review execution, or completion.
 - No-regression checks freeze the existing eight action endpoint paths and confirmation/execute boundaries, prove no generic action endpoint was added, and exercise the retained source-intake, display-language, Playwright Test mode/import/external-CI suggestion/approval/fetch actions through their existing server contracts.
 - Truthfulness checks fail if the ordinary client introduces timers, simulated percentages, sample findings, synthetic decisions, synthetic recheck results, or completion without structured local evidence. Proposal readiness, advisory-only state, missing evidence, unresolved blockers, and `gate_effect=none` alone must never render a completed workflow.
@@ -760,6 +760,70 @@ list refresh retains existing work with retry; keeps visible status text on
 mobile; checks current-step and decision accessibility state; and verifies the
 saved-result page plus mirrored directional symbols in the representative RTL
 locale. Intake-only results must have no website-review completion stepper.
+
+Control Center AI connection parity adds focused no-browser coverage for the
+private capability record, canonical integrity hash, distinct capability and
+settings revisions, TTL/fresh/stale projection, opaque browser option ids,
+schema registry parity, cross-process-safe store, compare-and-swap refresh and
+selection, configured-API projection, and exact tuple resolution. Tests must
+reject tampered records, stale dispatch authority, forged or mismatched opaque
+options, capability/configuration/executable drift, unsupported native effort,
+credential/path/hash/raw-output leakage, and any implicit connection, model, or
+effort fallback.
+
+Read-only dashboard tests inject a process runner and network transport that
+fail if called, proving GET performs no discovery, spawn, provider contact, or
+store mutation. Explicit refresh and selection tests require the existing
+Origin/CSRF mutation boundary and prove conflict responses preserve the winning
+revision. Subscription/API parity tests require the same plan, confirmation,
+execution, normalized result, decision, recheck, and deeper-review shape while
+retaining their distinct truthful connection type and API-call boundary.
+
+Fixed-process tests prove `shell: false`, fixed argv, bounded
+stdin/stdout/stderr, timeout and abort handling, inherited-descriptor mapping,
+and descendant process-group termination. Codex tests reject a self-declared
+package layout whose ELF bytes do not match the centrally pinned official size
+and SHA-256 contract, validate strict dynamic model catalogs without fallback,
+inspect the exact bubblewrap/prlimit argv, and execute a static binary through
+the real local bubblewrap boundary when user namespaces are available. A local
+availability-only probe additionally verifies the installed official binary,
+login state, feature catalog, and seven-model catalog with discovery networking
+disabled; it sends no review content. The tests also prove TraceCue review
+method remains unchanged when provider-native effort changes. No automated test
+performs a live external AI send or consumes a real subscription/API allowance.
+
+Browser verification uses injected deterministic provider runners with a
+user-facing service and model. It checks compact New Review AI summary,
+setup-needed recovery, explicit availability update, settings change flow,
+provider-native effort under secondary AI details, an explicit AI-choice apply
+action separate from the atomic general-settings save, two-page compare-and-swap
+conflict recovery with the draft retained, and send confirmation that shows
+transferred evidence, destination, and TraceCue review method. It must also prove provider/adapter ids, endpoint, token, CLI command,
+executable path, file path, and technical authority fields are absent, and must
+retain the existing responsive, focus, RTL, overlap, clipping, console, failed-
+request, and horizontal-overflow checks. The active versioned mock is verified
+and its previous Phase 176 state remains archived.
+
+Current 2026-07-14 pre-commit local evidence for Phase 177-181 is 379/379
+complete no-browser tests, 41/41 focused AI-connection and Agentic Human Review
+tests, and 20/20 built React/Vite browser tests. The browser regression covers
+late review-route responses, cancellation response loss with successful status
+reconciliation and no false warning, cancelled-item next-work exclusion,
+settings saved-state reset, and setup-needed availability recovery. Concurrent
+private-staging admission permits only the configured bound and fails closed;
+the fixed-process descendant test waits for readiness before cancellation; the
+real bubblewrap invocation and availability-only installed Codex probe pass.
+The complete `release:check`, 317-file package dry-run, packed-install smoke,
+repository test, and `product-gate` pass. Three independent post-implementation
+reviews pass. TraceCue self-review ids
+`review-2026-07-14T10-47-32-966Z-6cc72aa5` (desktop New Review),
+`review-2026-07-14T10-47-43-624Z-6089c075` (desktop Settings), and
+`review-2026-07-14T10-50-34-947Z-235c8957` (mobile Settings after the detected
+text-action touch target was raised to 44 by 44 pixels) each report zero final
+findings, failed requests, console errors, overlap, clipping, or horizontal
+overflow. These checks use no live external AI send and do not consume a
+subscription or API allowance. Exact clean-HEAD release and authenticated CI
+evidence remain post-commit evidence.
 
 Final 2026-07-13 local evidence for this slice is 357/357 no-browser tests,
 16/16 Playwright browser tests, a passing production build and versioned mock

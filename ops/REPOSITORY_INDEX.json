@@ -93,6 +93,38 @@
       "role": "manifest"
     },
     {
+      "path": "src/control-center-ai-connections.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/control-center-ai-connection-store.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/control-center-ai-connection-actions.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/codex-subscription-adapter.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/codex-subscription-cli-contract.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/fixed-process-runner.js",
+      "role": "manifest"
+    },
+    {
+      "path": "src/json-schema-subset.js",
+      "role": "manifest"
+    },
+    {
+      "path": "schemas/control-center-ai-connections.schema.json",
+      "role": "manifest"
+    },
+    {
       "path": "control-center/src/App.jsx",
       "role": "manifest"
     },
@@ -202,6 +234,10 @@
     },
     {
       "path": "tests/browser-smoke.test.js",
+      "role": "manifest"
+    },
+    {
+      "path": "tests/control-center-ai-connections.test.js",
       "role": "manifest"
     },
     {
@@ -1062,6 +1098,41 @@
       "legacy_alias_removed": false,
       "shell_used": false,
       "product_docs_promoted": false
+    }
+  },
+  "phase_177_181": {
+    "status": "complete",
+    "feature": "Control Center subscription and API AI connection parity",
+    "files": [
+      "src/control-center-ai-connections.js",
+      "src/control-center-ai-connection-store.js",
+      "src/control-center-ai-connection-actions.js",
+      "src/codex-subscription-adapter.js",
+      "src/codex-subscription-cli-contract.js",
+      "src/fixed-process-runner.js",
+      "src/json-schema-subset.js",
+      "src/control-center-agentic-review-actions.js",
+      "src/agentic-human-review.js",
+      "src/agentic-human-review-providers.js",
+      "schemas/control-center-ai-connections.schema.json",
+      "control-center/src/App.jsx",
+      "tests/control-center-ai-connections.test.js",
+      "tests/browser-smoke.test.js"
+    ],
+    "boundaries": {
+      "dashboard_get_spawns_process": false,
+      "dashboard_get_contacts_provider": false,
+      "browser_receives_opaque_ai_options_only": true,
+      "api_credentials_environment_only": true,
+      "subscription_authentication_cli_owned": true,
+      "fixed_cli_adapter_shell_used": false,
+      "raw_discovery_output_stored": false,
+      "raw_provider_response_stored": false,
+      "credential_values_recorded": false,
+      "connection_model_effort_fallback_allowed": false,
+      "tracecue_effort_independent": true,
+      "mcp_execution_exposed": false,
+      "gate_effect": "none"
     }
   }
 }

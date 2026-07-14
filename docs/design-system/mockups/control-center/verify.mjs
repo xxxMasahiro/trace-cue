@@ -18,6 +18,12 @@ try {
   assert.equal(await page.locator('input[name="source"]:checked').getAttribute('value'), 'website');
   assert.equal(await page.locator('input[name="method"]').count(), 3);
   assert.equal(await page.locator('input[name="method"]:checked').getAttribute('value'), 'standard');
+  await page.getByRole('button', { name: '変更', exact: true }).click();
+  await page.getByText('AIの詳細', { exact: true }).waitFor();
+  await page.getByLabel('AIの考え方の深さ').selectOption('high');
+  assert.equal(await page.getByLabel('AIの考え方の深さ').inputValue(), 'high');
+  await page.getByRole('button', { name: '変更', exact: true }).click();
+  assert.equal(await page.getByLabel('AIの考え方の深さ').count(), 0);
 
   await page.locator('input[name="source"][value="document_text"]').check();
   assert.equal(await page.locator('input[name="source"]:checked').getAttribute('value'), 'document_text');
@@ -44,7 +50,11 @@ try {
   await dialog.waitFor({ state: 'visible' });
   assert.equal(await dialog.getByText('送る内容', { exact: true }).count(), 1);
   assert.equal(await dialog.getByText('送信先', { exact: true }).count(), 1);
+  assert.equal(await dialog.getByText('確認方法', { exact: true }).count(), 1);
   assert.equal(await dialog.getByText('保存', { exact: true }).count(), 1);
+  assert.match(await dialog.innerText(), /Codex/);
+  await dialog.getByText('AIの設定', { exact: true }).click();
+  assert.match(await dialog.innerText(), /Review Model/);
 
   const mainBox = await page.locator('#main-content').boundingBox();
   const dialogBox = await dialog.boundingBox();
@@ -59,8 +69,16 @@ try {
   await page.getByRole('button', { name: '設定', exact: true }).first().click();
   await page.getByTestId('mock-settings').waitFor();
   await page.getByText('AIの提案を使う', { exact: true }).waitFor();
+  await page.getByText('利用するAI', { exact: true }).waitFor();
+  assert.match(await page.getByTestId('mock-settings').innerText(), /Codex/);
+  assert.match(await page.getByTestId('mock-settings').innerText(), /Review Model/);
   await page.getByText('外部へ送る前に確認する', { exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: '設定を保存' }).count(), 1);
+  await page.getByRole('button', { name: '変更', exact: true }).click();
+  await page.getByText('AIの詳細', { exact: true }).click();
+  await page.getByLabel('AIの考え方の深さ').selectOption('high');
+  await page.getByRole('button', { name: 'このAIを使う', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: '利用するAIを変更しました。' }).waitFor();
   await page.getByRole('button', { name: '設定を保存' }).click();
   const savedNotice = page.getByRole('status').filter({ hasText: '設定を保存しました' });
   await savedNotice.waitFor();
@@ -79,11 +97,13 @@ try {
   assert.equal(savedNoticeStyle.successSoft, '#eaf7ee');
 
   const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
-  await mobile.goto(`${entry}?screen=settings`);
+  await mobile.goto(`${entry}?screen=settings&ai=change&effort=high`);
   await mobile.getByTestId('mock-settings').waitFor();
   const hasHorizontalOverflow = await mobile.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
   assert.equal(hasHorizontalOverflow, false);
   assert.equal(await mobile.locator('.mobile-nav').isVisible(), true);
+  const compactActionHeights = await mobile.locator('.button.compact').evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().height));
+  assert.equal(compactActionHeights.every((height) => height >= 44), true);
   await mobile.close();
 
   const recovery = await browser.newPage({ viewport: { width: 1440, height: 1000 } });

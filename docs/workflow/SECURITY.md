@@ -47,7 +47,7 @@ TraceCue is local-first. It should operate on developer-approved URLs and write 
 - Keep Agentic Human Review provider model resolution fail-closed for live provider execution. Provider-neutral abstract model ids may appear in proposal and plan metadata, but generic API execution must resolve a concrete model from the approved plan/run request or the provider runtime model environment variable before fetch. If only an abstract model is available, the run must fail before provider calls, evidence transfer, raw response handling, or credential disclosure, and diagnostics may report only model ids, source labels, and environment variable names, never credential values.
 - Keep the Agentic Human Review generic API provider timeout env-only and contract-bound. Optional timeout overrides may change the provider capability hash and therefore require a fresh approved plan before execution, but they must not read credential values, store secrets, store raw provider responses, expose MCP execution, or weaken default size boundaries.
 - Keep the Agentic Human Review Responses adapter upstream timeout explicit and diagnostic-only. The adapter `--timeout` governs the adapter-to-provider request and remains separate from `AGENTIC_HUMAN_REVIEW_API_TIMEOUT_MS`, which governs the TraceCue generic provider request to the adapter. Long dogfood runs must align both timers explicitly, and the default packaged CLI path must keep the repository-local HTTP(S) transport on the configured timers instead of injecting bundled fetch header-timeout defaults. Startup metadata and failure responses may expose the effective timeout and safe duration/failure-class/cause-code fields, but must not expose credential values, raw provider responses, provider request bodies, stack traces, or credential-bearing endpoint strings.
-- Keep subscription-agent execution limited to configured local runner callbacks. Do not automate SaaS web UIs or accept free-form shell commands.
+- Keep subscription-agent execution limited to configured local runner callbacks or audited fixed CLI adapters. A fixed adapter may use an already-authenticated supported CLI only with a verified native executable identity, fixed arguments, `shell: false`, a safe allowlisted environment, private temporary state, bounded input/output/time, and process-group cancellation. Do not automate SaaS web UIs or accept browser-supplied executables, arguments, environment values, credentials, or free-form shell commands.
 - Keep execution output separate from review findings, metrics, existing action plans, release readiness, resource guard output, artifact cleanup behavior, and existing workflow status meanings.
 - Keep content UX advisory manifest opt-in, advisory-only, local-only, bounded to inline source data, limited to bounded review evidence summaries, and separate from existing review findings, action plans, metrics, and release gates.
 - Keep content UX page handoff and manifest-authoring output local, bounded, and non-mutating.
@@ -141,10 +141,10 @@ Current redaction is a defensive baseline for common secret-like strings and sen
 
 The control-center browser surface is a dedicated local review plane, not a generic control plane. `control-center status` builds a body-free read model and `/api/dashboard` remains GET-only. `control-center serve` is loopback-only, Host/Origin validated, cache-disabled with `Cache-Control: no-store`, and isolated in `src/control-center-server.js`. The original eight action endpoint paths remain unchanged. Separate namespaced endpoints may persist the bounded Control Center preferences and orchestrate one page-review operation through existing TraceCue browser review and Agentic Human Review APIs.
 
-Agentic review preparation accepts only URL, purpose, effort, viewport, and AI-suggestion preference. Browser-supplied provider, model, endpoint, credential, token, plan, hash, transfer flag, artifact root, or execute authority is rejected. Provider credentials remain environment-only. Before any external AI call, the user must see the concrete configured service and exact evidence classes and approve a fresh time-bounded nonce. The nonce is stored only as a hash and bound to the prepared disclosure and plan contract. It is single-use. Dispatch is never retried automatically; restart uncertainty becomes `dispatch_unknown` to avoid duplicate evidence transfer or provider billing.
+Agentic review preparation accepts only URL, purpose, effort, viewport, AI-suggestion preference, and a current server-issued opaque AI selection. Browser-supplied provider or adapter ids, model ids outside that opaque selection, endpoint, credential, token, plan, hash, transfer flag, artifact root, executable path, command, or execute authority is rejected. API credentials remain environment-only and subscription authentication remains owned by the supported CLI. Before any external AI call, the user must see the concrete configured service, model, TraceCue review method, and exact evidence classes and approve a fresh time-bounded nonce. The nonce is stored only as a hash and bound to the prepared disclosure and plan contract. It is single-use. Dispatch is never retried automatically; restart uncertainty becomes `dispatch_unknown` to avoid duplicate evidence transfer or provider billing.
 
 Operation files stay under the configured workspace-confined artifact root,
-defaulting to `.browser-debug/control-center-agentic-reviews/`. Browser projections are whitelist-only and omit query strings, paths, hashes, provider/model ids, credential values, request bodies, raw provider responses, and executable commands. Only normalized advisory findings and safe summaries are shown. AI output and user decisions do not mutate deterministic findings, proof contracts, owner authority, product gates, or release gates. The browser server still must not expose arbitrary actions, generic provider controls, MCP JSON-RPC, credential inputs, cleanup, shell execution, raw artifact serving, CI trigger/rerun/cancel, automatic retry, or external upload beyond the explicitly confirmed review disclosure. Design-system changes grant no runtime authority.
+defaulting to `.browser-debug/control-center-agentic-reviews/`. Browser projections are whitelist-only and omit query strings, paths, hashes, internal provider/adapter ids, endpoint data, credential values, request bodies, raw provider responses, and executable commands. They may show only server-issued opaque AI option ids and bounded user-facing service, model, connection-type, and provider-native effort labels. Only normalized advisory findings and safe summaries are shown. AI output and user decisions do not mutate deterministic findings, proof contracts, owner authority, product gates, or release gates. The browser server still must not expose arbitrary actions, generic provider controls, MCP JSON-RPC, credential inputs, cleanup, shell execution, raw artifact serving, CI trigger/rerun/cancel, automatic retry, or external upload beyond the explicitly confirmed review disclosure. Design-system changes grant no runtime authority.
 
 The purpose-led Control Center navigation is presentation-only authority. Its
 three ordinary destinations and five work-stage labels may route to existing
@@ -440,9 +440,58 @@ Security tests block unapproved use of persistent browser profiles, storageState
   through the same no-follow descriptor with a strict byte bound and final
   identity/size/time recheck. Path validation followed by an unrelated path
   read is not sufficient authority.
-- The ordinary AI projection never exposes provider/model/endpoint details,
-  credential names or values, fingerprints, hashes, raw provider responses,
-  absolute paths, or raw uploaded content. Readiness performs no network call.
+- The ordinary AI projection exposes only opaque option ids and bounded user-
+  facing connection type, service, model, and provider-native effort labels.
+  It never exposes internal provider/adapter ids, endpoints, credential names
+  or values, fingerprints, hashes, executable paths, command arguments, raw
+  discovery output, raw provider responses, absolute paths, or raw uploaded
+  content.
+- Dashboard and other read-only GET requests never probe a CLI, spawn a process,
+  contact a provider, or write capability state. Discovery is an explicit
+  exact-Origin and CSRF-protected POST with bounded work and output. Capability
+  cache expiry affects display only; cached state never grants dispatch
+  authority.
+- AI selection uses server-issued opaque ids. Prepare, confirmation, start, and
+  dispatch resolve the private exact connection/model/native-effort tuple again.
+  Capability revision, settings revision, configuration identity, and
+  executable identity remain separate bindings. Drift blocks before external
+  transfer; no connection, model, or effort fallback is allowed.
+- Private AI capability state and disposable subscription-adapter staging use
+  disjoint owned child directories. A markerless staging parent is never
+  adopted as a safe state store, and state creation never deletes or trusts
+  staged files. Staging admission and cleanup share one safe-store lock, enforce
+  bounded active and scan counts, and fail closed on capacity or lock
+  contention rather than reusing or deleting an unverified directory.
+- The fixed subscription CLI adapter accepts no browser-controlled executable,
+  path, argv, environment, working directory, or command. It resolves an
+  approved native POSIX binary, resolves installation symlinks to and validates
+  their final target, rejects shell scripts, Windows binaries, and unsafe
+  writable executables, and verifies the platform-specific byte length and
+  SHA-256 digest from the centralized official package contract. The open
+  descriptor and path identity are rechecked immediately before fixed
+  `shell: false` launch. Root-owned bubblewrap and `prlimit` isolate process,
+  user, mount, IPC, UTS, cgroup, and discovery-network namespaces; cap each
+  temporary filesystem at 16 MiB and each written file at 2 MiB; expose no host
+  workspace; and permit exactly one bounded result file during execution.
+  The safe environment, mode-0700 owned staging, disabled web/MCP/shell tools,
+  bounded stdin/stdout/stderr, timeout, and process-group TERM/KILL remain
+  mandatory. Discovery output is parsed in memory. The execution last-message
+  file is temporary private staging only, is strictly validated through a
+  no-follow bounded descriptor, and is removed after every attempt; no raw CLI
+  output is retained. Process-start, possible-dispatch, temporary-output, and
+  credential-read observations accumulate monotonically after execution; no
+  parse, validation, cleanup, or unexpected failure may reset an observed
+  external-transfer boundary to a safe pre-send state.
+- API credentials remain environment-only. Passive reads never inspect their
+  values; explicit server-side refresh and execution may test or consume them
+  only inside the private provider boundary without returning or persisting
+  them. Subscription login state remains
+  owned by the CLI. Neither connection type stores credential values in the
+  Control Center, sends them to the browser, or records them in receipts.
+- TraceCue `standard`, `deep`, and `xhigh` review contracts are independent of
+  provider-native effort. Both exact selections are integrity-bound through
+  the operation and plan so a provider capability change cannot silently alter
+  review depth or model reasoning effort.
 - Confirmation binds immutable input, disclosure classes, service identity,
   and a non-secret destination fingerprint. Dispatch rechecks the fingerprint.
   Only an explicit structured all-false transfer boundary proves a pre-send

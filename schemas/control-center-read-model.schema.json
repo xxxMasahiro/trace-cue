@@ -140,6 +140,7 @@
       },
       "additionalProperties": false
     },
+    "ai_connections": { "$ref": "control-center-ai-connections.schema.json" },
     "review": { "type": "object" },
     "evidence": { "type": "object" },
     "findings": { "type": "object" },

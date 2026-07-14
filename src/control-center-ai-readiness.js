@@ -53,7 +53,7 @@ export function buildControlCenterAiDestinationFingerprint(context = {}, overrid
       endpointUrl
     })
     : null;
-  return createHash('sha256').update(canonicalStringify({
+  const binding = {
     provider_id: providerId,
     service_name: serviceName,
     transport: provider?.transport ?? 'configured-runner',
@@ -62,7 +62,15 @@ export function buildControlCenterAiDestinationFingerprint(context = {}, overrid
     effective_model_id: modelResolution?.ok === true
       ? modelResolution.model?.id ?? null
       : 'unresolved'
-  })).digest('hex');
+  };
+  if (Object.hasOwn(overrides, 'providerEffort')
+    || Object.hasOwn(overrides, 'adapterId')
+    || Object.hasOwn(overrides, 'capabilityHash')) {
+    binding.provider_effort = cleanString(overrides.providerEffort);
+    binding.adapter_id = cleanString(overrides.adapterId);
+    binding.semantic_capability_hash = cleanString(overrides.capabilityHash);
+  }
+  return createHash('sha256').update(canonicalStringify(binding)).digest('hex');
 }
 
 function publicReadiness(status, serviceName, nextAction) {

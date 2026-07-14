@@ -44,6 +44,11 @@ npm run development-workflow:check
   `ops/DASHBOARD_SETTINGS.local.json` is a local exclusion.
 - AHR, external-send/provider, MCP, persistent-session, evidence, evaluation,
   and claim changes require security and verification synchronization.
+- Control Center AI connection schemas/actions/stores, audited subscription
+  adapters and version contracts, fixed process execution, and their runtime
+  schema validator are part of the external-send/provider classification; a
+  provider-specific file split does not bypass product, verification, or
+  security synchronization.
 - Dashboard shared defaults and local-settings persistence changes also require
   product, verification, and security synchronization.
 - Durable instruction and development workflow policy changes require the

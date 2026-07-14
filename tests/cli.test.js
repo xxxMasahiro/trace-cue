@@ -2172,6 +2172,7 @@ test('schema commands expose machine-readable contracts', async () => {
     ['e2e_result_review_material', '../schemas/e2e-result-review-material.schema.json'],
     ['playwright_test_local_run_plan', '../schemas/playwright-test-local-run-plan.schema.json'],
     ['playwright_test_external_ci', '../schemas/playwright-test-external-ci.schema.json'],
+    ['control_center_ai_connections', '../schemas/control-center-ai-connections.schema.json'],
     ['operation_registry', '../schemas/operation-registry.schema.json'],
     ['operation_roadmap', '../schemas/operation-roadmap.schema.json'],
     ['operation_contracts', '../schemas/operation-contracts.schema.json'],

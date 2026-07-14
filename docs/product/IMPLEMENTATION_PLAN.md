@@ -45,7 +45,8 @@ persistent operation schema and preferences; compose browser review with AHR
 propose/plan; bind a one-time confirmation to a concrete disclosure; execute once
 through the existing AHR run boundary; normalize results and persist finding
 decisions; create new operations for recheck/deeper; connect the React flow;
-keep Settings at the accepted 760px prototype width with one save action; extend
+keep Settings at the accepted 760px prototype width with one atomic general-
+settings save and one contextual AI-choice apply action; extend
 desktop/mobile, keyboard, focus, no-overflow, no-fake-progress, duplicate-start,
 restart-unknown, and disclosure tests; synchronize docs/manifests; then run all
 local, browser, package, product, and CI gates.
@@ -2076,11 +2077,65 @@ dependency itself, prove primary actions finish before its release, and await
 the deferred work until quiet, while lease tests observe an actual later expiry
 with unchanged token and owner instead of assuming a fixed scheduler delay.
 
+## Phase 177-181: Control Center AI Connection Parity
+
+1. Phase 177: define one private AI connection capability contract for
+   subscription CLI and API transports. Bind connection type, adapter,
+   provider, model, provider-native effort, capability revision, configuration
+   identity, and executable identity while projecting only opaque options and
+   user-facing labels to the browser.
+2. Phase 178: implement the revisioned private capability store, passive
+   dashboard projection, explicit protected refresh and selection actions,
+   compare-and-swap conflicts, TTL/freshness handling, integrity hashes, and
+   dispatch-time exact-tuple revalidation without fallback.
+3. Phase 179: add the first audited subscription adapter for an already-
+   authenticated Codex CLI. Resolve a supported official package layout and
+   verify the platform binary against the centrally versioned byte length and
+   SHA-256 contract before use. Run fixed probes and fixed execution argv with
+   `shell: false`, a safe environment, private owned staging, bubblewrap
+   namespaces, bounded tmpfs and file output, one writable result file, no
+   web/MCP/shell tools, bounded I/O, timeout, process-group cancellation, strict
+   JSON normalization, and no retained raw output or credential persistence.
+   Retain environment-only API credentials and the existing bounded generic API
+   adapter.
+4. Phase 180: carry the exact model and provider-native effort independently
+   from TraceCue `standard`, `deep`, and `xhigh` through plan, receipt,
+   confirmation, operation, execution, and drift validation. Synchronize the
+   React Settings, New Review, and send-confirmation flows with the active
+   production mock while keeping technical connection details out of ordinary
+   UI.
+5. Phase 181: add fake-adapter acceptance and refusal tests, fixed-process
+   timeout/output tests, passive-GET tests, opaque-selection and CAS tests,
+   model/effort drift tests, schema/API/package parity, and complete TraceCue
+   browser verification. Synchronize product, workflow, security, verification,
+   design-system, schema, test, repository, and package authorities; complete
+   independent post-implementation review, local gates, commit, push, exact CI,
+   and local/remote synchronization.
+
+Hardening completion for this range serializes and bounds private staging
+admission, preserves external-transfer observations monotonically through every
+post-execution failure, reports discovery process use from observation rather
+than assumption, and deterministically orders equal-priority model entries. The
+React workspace rejects late route/status responses, polls sequentially,
+reconciles cancellation response loss without a false warning, excludes
+cancelled reviews from next-work selection, and resets saved-setting feedback
+when a new edit begins. Focused contracts cover both subscription `recheck` and
+`deeper`, legacy repeat with a current opaque choice, the real plan-to-
+subscription-runner path, staging concurrency, descendant termination, and the
+browser recovery/concurrency states without a live external AI send.
+
+Additional providers are additive adapters. Their available models and native
+effort values come from safe provider-specific discovery or explicit
+environment configuration and never from browser-supplied commands or free-form
+provider configuration. No live external send is required for CI or browser
+regression; injected deterministic adapters prove the boundary without using a
+subscription allowance or API credential.
+
 Deferred: PDF/DOCX extraction, OCR, browser-side Playwright execution, remote
 CI trigger/cancel, provider retry or cancellation without a verified contract,
 signed native installers, automatic updates, startup registration, and OS
 credential-store integration. Rejected: arbitrary paths, generic commands,
-browser credentials, provider/model/endpoint selectors, raw uploads or HTML,
+browser credentials, raw provider/adapter/endpoint selectors, raw uploads or HTML,
 automatic uncertain retry, CI branch writeback, and parent or FrameCue edits.
 
 Rollback is a TraceCue-only Git revert. Intake artifacts are private ignored

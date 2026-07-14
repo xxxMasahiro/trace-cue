@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Excluded paths may contain ignored user overrides; tracked shared defaults, durable development workflow authorities, and verification orchestration authorities remain synchronized repository content.",
+  "$comment": "Excluded paths may contain ignored user overrides; tracked shared defaults, durable development workflow authorities, verification orchestration authorities, and Control Center AI connection/provider boundaries remain synchronized repository content. Trigger and requirement path lists that grant matching or satisfaction authority must be nonempty.",
   "title": "TraceCue document sync policy",
   "type": "object",
   "additionalProperties": false,
@@ -43,6 +43,7 @@
   "$defs": {
     "pathList": {
       "type": "array",
+      "minItems": 1,
       "items": { "type": "string", "minLength": 1 },
       "uniqueItems": true
     },

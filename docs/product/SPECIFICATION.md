@@ -578,6 +578,7 @@ Implemented providers:
 
 - `fake-agent`: deterministic local provider for no-browser provider success/failure and dashboard contract coverage. It performs no API call or external transfer.
 - `local-runner`: configured local runner callback boundary for subscription-style execution. It uses provider/model identifiers and package API context callbacks, not free-form shell input or SaaS web UI automation.
+- `subscription-cli`: audited fixed CLI adapter boundary for an already-authenticated supported CLI. It binds exact provider, model, provider-native effort, and executable identity; accepts no free-form executable, command, argv, environment, endpoint, or credential input; and returns normalized advisory data under the same Agentic Human Review contract.
 - `generic-api-provider`: one-shot provider API adapter. It reads endpoint and credential values only from `BROWSER_DEBUG_AGENT_API_ENDPOINT` and `BROWSER_DEBUG_AGENT_API_TOKEN`, never from CLI arguments, committed files, package artifacts, workflow files, reports, receipts, `.env` auto-loading, or persistent local storage. Tests use injected transports rather than live network calls.
 
 Execution may send only bounded package and prompt content allowed by the disclosure policy. By default, it must not transfer raw screenshots, trace contents, raw DOM, console payloads, network payloads, sourceData values, report bodies, cookies, storage state, existing browser profile data, or raw review artifacts. API execution must record that an API call occurred and which bounded evidence classes were sent, but it must not store raw provider responses. Runner/provider output is normalized into `agent_advisory_result` and remains untrusted advisory data.
@@ -922,7 +923,7 @@ When full replacement repair is exhausted and the remaining contract failure is 
 
 `control-center status --json` returns a `control_center` read model that composes existing read-only TraceCue status APIs. The model is body-free and summary-oriented: it includes source-intake capability metadata, display-language settings metadata, Playwright Test regression metadata, review readiness, next action, visual review counts, optional owner-review matrix data, findings counts, setup/safety summaries, source statuses, safe command handoff text, warnings, errors, and explicit boundary flags. It does not include raw artifact bodies, raw pixels, raw provider responses, credential values, browser traces, DOM payloads, network payloads, full source text, chunk text, or executable commands.
 
-`control-center serve` starts a loopback-only server. The server serves the built React + Vite bundle from `dist/control-center`, exposes `GET /api/health` plus GET-only `/api/dashboard`, and rejects non-loopback Host or Origin headers. The original eight bounded action paths remain unchanged and separately reported in server metadata. `/api/settings/control-center` atomically persists display language, default viewport, AI-suggestion preference, and Playwright Test mode to the ignored local override while keeping send confirmation immutable. The dedicated `/api/agentic-review/{prepare,confirmation,start,status,decision,repeat,list}` family orchestrates the existing browser review and Agentic Human Review proposal/plan/run APIs. It is not a generic action, command, provider, or artifact endpoint.
+`control-center serve` starts a loopback-only server. The server serves the built React + Vite bundle from `dist/control-center`, exposes `GET /api/health` plus GET-only `/api/dashboard`, and rejects non-loopback Host or Origin headers. The original eight bounded action paths remain unchanged and separately reported in server metadata. `/api/settings/control-center` atomically persists display language, default viewport, AI-suggestion preference, and Playwright Test mode to the ignored local override while keeping send confirmation immutable. The separate `/api/settings/ai-connections/{refresh,selection}` actions explicitly refresh private capability state or apply one opaque AI choice with compare-and-swap protection. The dedicated `/api/agentic-review/{prepare,confirmation,start,status,decision,repeat,list}` family orchestrates the existing browser review and Agentic Human Review proposal/plan/run APIs. None of these is a generic action, command, provider, or artifact endpoint.
 
 ### Layered Dashboard Settings Store
 
@@ -939,7 +940,7 @@ form submits one combined payload so validation completes before one file
 replacement. Legacy dedicated setting endpoints remain compatible and use
 serialized read-modify-write updates so unrelated local branches survive.
 
-The React surface lives under `control-center/`. It imports the product-local design-system JSON from `docs/design-system/`, maps those tokens to CSS custom properties, and uses the same read model that the CLI emits. The ordinary UI has three destinations: Confirm, In progress, and Settings. New review accepts a web URL, a plain-language purpose, and one of three purpose-led review choices. Settings combines display language, default viewport, a plain-language automated-check choice, AI suggestions, and mandatory send confirmation behind one save action. Playwright and CI remain implementation details rather than ordinary setting labels; provider/model/credential and technical artifact controls are not ordinary UI.
+The React surface lives under `control-center/`. It imports the product-local design-system JSON from `docs/design-system/`, maps those tokens to CSS custom properties, and uses the same read model that the CLI emits. The ordinary UI has three destinations: Confirm, In progress, and Settings. New review accepts a web URL, a plain-language purpose, and one of three purpose-led review choices. Settings combines display language, default viewport, a plain-language automated-check choice, AI suggestions, a compact user-facing AI service/model selection, optional provider-native effort details, and mandatory send confirmation. The footer save atomically applies only the general settings payload. A changed AI choice is applied by its nearby explicit action against the capability-store revision; a conflict retains the draft and offers the latest choices. Playwright and CI remain implementation details rather than ordinary setting labels; raw provider/adapter ids, endpoints, credentials, executable paths, and technical artifact controls are not ordinary UI.
 
 The browser surface is intentionally not a landing page, generic command launcher, schema browser, provider console, artifact browser, or raw JSON viewer. It is an execution plane only for its dedicated page-review operation contract. Shell, cleanup, MCP write/execute, credential entry, arbitrary provider authority, raw artifact serving, CI mutation, and gate-affecting authority remain excluded.
 
@@ -950,7 +951,10 @@ preserving the existing read-model fields and bounded backend actions. The top
 navigation contains `確認` (`confirm`), `進行中` (`running`), and `設定`
 (`settings`). The ordinary Settings page follows the accepted 760px-wide
 prototype form: display language, default viewport, one concise Playwright Test
-mode choice, AI suggestions, mandatory send confirmation, and one save action.
+mode choice, AI suggestions, one compact AI service/model summary with an
+explicit change action, optional provider-native effort under secondary AI
+details, mandatory send confirmation, one general-settings save action, and a
+contextual explicit apply action only while the AI choice is being changed.
 It omits cards, status badges, persistence paths, locale
 internals, diagnostics, trust badges, regression import forms, and CI policy
 forms. Those existing contracts remain available to backend, CLI, API, and
@@ -996,10 +1000,11 @@ Each operation is stored under the configured workspace-confined artifact root,
 defaulting to
 `.browser-debug/control-center-agentic-reviews/<operation-id>/operation.json`.
 The public `control_center_agentic_review` projection exposes goal, safe target
-label, effort, viewport, service display name, disclosure, state, decisions,
-safe result, and boundary flags. It excludes target query strings, artifact
-paths, hashes, provider/model ids, credential values, request bodies, and raw
-provider responses.
+label, TraceCue effort, viewport, opaque AI selection, user-facing service and
+model names, provider-native effort label, disclosure, state, decisions, safe
+result, and boundary flags. It excludes target query strings, artifact paths,
+hashes, internal provider and adapter ids, endpoint data, credential values,
+request bodies, raw discovery output, and raw provider responses.
 
 The state machine is `preparing -> confirmation_required -> dispatching ->
 validating -> completed`, with terminal `failed` and restart-recovery
@@ -1350,10 +1355,85 @@ boundary explicitly attests false for provider call, API call, and external
 evidence transfer. A thrown runner, missing boundary, partial boundary, any
 true transfer flag, or unverifiable result becomes `dispatch_unknown`.
 
-AI readiness performs no network request and exposes only
-`available`, `setup_required`, or `unavailable`, a configured service display
-name, and a safe next action. The confirmation digest also binds a non-secret
-destination fingerprint. Dispatch recalculates that fingerprint immediately
+AI connection projection is derived from a private revisioned capability store.
+It exposes `available`, `setup_required`, or `unavailable`, a safe next action,
+opaque option ids, connection-type labels, service display names, model display
+names, and supported provider-native effort labels. It never exposes internal
+provider or adapter ids, endpoint or credential metadata, executable paths,
+binary or configuration hashes, command arguments, or raw discovery output.
+The selected AI option is a tuple of connection type, adapter, provider, model,
+provider-native effort, capability revision, configuration identity, and, for a
+subscription CLI, executable identity. The private record binds that tuple by a
+canonical integrity hash and keeps the capability revision separate from the
+settings compare-and-swap revision.
+
+`GET /api/dashboard` and every other read-only request use stored capability
+state or a non-executing configured-API projection only. They never spawn a CLI,
+probe login, contact a provider, or mutate the capability store. Explicit
+`POST /api/settings/ai-connections/refresh` performs bounded discovery behind
+the normal exact-Origin and CSRF boundary. Explicit
+`POST /api/settings/ai-connections/selection` persists one current opaque
+selection with compare-and-swap conflict handling. A stale record may explain
+availability but is never dispatch authority. Preparation resolves the opaque
+selection server-side; start and dispatch re-resolve it and require the exact
+tuple and capability revision to remain current. Drift blocks before external
+transfer and never falls back to another connection, model, or effort.
+The safe connection-state store and the subscription adapter's disposable
+working directories use separate owned child namespaces under the artifact
+root. Either may be created first without adopting, deleting, or weakening the
+other namespace's ownership marker. Disposable-directory admission is
+serialized under the safe store, has a centrally bounded active capacity and
+bounded scan, removes only safely owned stale entries, and fails closed under
+capacity or lock contention. Cleanup uses the same admission lock so a new
+review cannot race a retiring private directory.
+
+Subscription and API connections feed the same Agentic Human Review plan,
+confirmation, execution, normalization, decision, recheck, and deeper-review
+contracts. Their capability adapters may expose different model and native-
+effort choices. TraceCue review effort (`standard`, `deep`, or `xhigh`) remains
+an independent plan contract and is never derived from provider-native effort.
+The exact two selections are carried separately through plan, receipt,
+operation, confirmation, and dispatch validation.
+
+The built-in subscription adapter supports an already-authenticated official
+native Linux Codex CLI. Its version and feature contract is an explicit audited
+allowlist; the initial adapter accepts `@openai/codex` 0.144.1 and fails closed
+for every unlisted version or feature catalog. Discovery resolves the package's
+native ELF executable through its official package layout, verifies its exact
+platform-specific byte length and SHA-256 digest against the centralized
+version contract, and keeps the verified descriptor open through each launch.
+It requires the fixed root-owned bubblewrap and `prlimit` executables, runs fixed
+version/login/feature/model probes with `shell: false`, a safe allowlisted
+environment, bounded output, and a timeout, then stores only normalized
+capability metadata. Execution uses a private temporary working directory,
+prompt stdin, a fixed `codex exec` argument set, isolated 16 MiB temporary
+filesystems, a 2 MiB file-size limit, a read-only schema bind, and exactly one
+writable bounded result-file bind. The sandbox has no host workspace mount, no
+MCP servers, no web search, no inherited shell environment, and receives only
+the explicit model and provider-native effort. The normalized result is read
+through a no-follow bounded descriptor and strict contract validation; the raw
+last-message file exists only in the private disposable staging directory and
+is removed after the attempt. Executable paths, commands, credentials, and raw
+output are never retained or sent to the browser. Other subscription CLIs
+require separate audited adapters; the common opaque connection contract does
+not claim they are already supported.
+
+Discovery reports process creation only when an actual probe process starts.
+Model catalogs use a deterministic code-unit tie break after provider priority.
+The execution adapter merges process-start, possible-dispatch, temporary-output,
+and credential-read observations immediately after the fixed process returns.
+Those observations are monotonic across result reading and normalization, so
+an unexpected post-dispatch failure remains an uncertain external dispatch and
+cannot be offered as a safe implicit retry.
+
+The generic API connection is configured through environment-only endpoint,
+credential, model, service display name, and optional provider-native effort
+values. Passive GET requests never inspect credential values. An explicit
+server-side availability refresh checks only whether the configured value is
+nonempty, and neither returns nor persists the value. The confirmation digest
+binds the user-visible service/model/native-effort selection and a non-secret
+destination fingerprint.
+Dispatch recalculates the capability and destination identity immediately
 before the provider request. A failure after request transmission starts is
 uncertain unless a provider contract both declares and honors stable
 idempotency.
@@ -1365,27 +1445,33 @@ results join the confirmation list and open by opaque id after reload. Agentic
 and intake items are sorted together by their newest available timestamp before
 the next action and recent list are derived. A failed result-list refresh keeps
 the already displayed items and shows a retryable warning rather than replacing
-  them with an empty list. Saved results render safe source-specific facts:
-  image format/dimensions/finding count, document method/character/section counts,
-  or automated-check total/pass/fail/timeout/skipped counts. Stored Playwright
-  classification and all decision-relevant counts survive projection. Failed,
-  timed-out, blocked, stale, or unreadable results use danger; empty or missing
-  evidence uses warning; only a nonempty passing result uses success. Image and
-  document preparation and imported evidence use prepared/result-ready states,
-  not review-complete state or the website-review completion stepper. The saved
-  timestamp uses the active display locale.
-  A successful file submission replaces its submit action with an explicit
-  prepare-another action, while the server's one-use receipt transaction remains
-  the authoritative duplicate-execution guard.
-  The purpose field remains the mock's one-line control, and new-review and
+them with an empty list. Saved results render safe source-specific facts:
+image format/dimensions/finding count, document method/character/section counts,
+or automated-check total/pass/fail/timeout/skipped counts. Stored Playwright
+classification and all decision-relevant counts survive projection. Failed,
+timed-out, blocked, stale, or unreadable results use danger; empty or missing
+evidence uses warning; only a nonempty passing result uses success. Image and
+document preparation and imported evidence use prepared/result-ready states,
+not review-complete state or the website-review completion stepper. The saved
+timestamp uses the active display locale.
+A successful file submission replaces its submit action with an explicit
+prepare-another action, while the server's one-use receipt transaction remains
+the authoritative duplicate-execution guard.
+The purpose field remains the mock's one-line control, and new-review and
 settings footer actions remain right aligned at desktop widths. The
 five-stage header, close/back actions, method-card geometry, grouped settings,
 mandatory send confirmation, typography, spacing, focus treatment, safe error
 copy, Japanese/English/Arabic resources, and responsive behavior are checked
-  against the versioned production mock and product design tokens.
-  Mobile lists retain a compact visible text badge in addition to color. Current
+against the versioned production mock and product design tokens.
+Mobile lists retain a compact visible text badge in addition to color. Current
   steps use `aria-current="step"`, decision buttons use `aria-pressed`, and
   directional symbols mirror under RTL without changing content order.
+Review workspaces bind every status response and mutation to the current review
+id and request generation, use sequential polling, and discard late responses
+from an older route. When a cancellation request succeeds but its response is
+lost, the confirmation closes and status is reconciled from storage. A stale-
+status warning appears only if that reconciliation fails; a reconciled
+cancelled review is labeled not sent and is excluded from the next-work choice.
 
 Release evidence refresh consumes one complete release-profile result with
 clean, unchanged before/after HEAD and tree snapshots. The batch binds policy,

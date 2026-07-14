@@ -262,6 +262,7 @@ h3 {
 }
 
 .button.text {
+  min-width: 44px;
   border: 0;
   background: transparent;
   color: var(--blue);
@@ -553,6 +554,29 @@ h3 {
   color: var(--green);
   font-size: 14px;
   font-weight: 700;
+}
+
+.ai-review-choice {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  margin: -10px 0 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--surface);
+}
+
+.ai-review-choice p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.ai-review-choice .ai-connection-editor {
+  grid-column: 1 / -1;
+  width: 100%;
 }
 
 .text-control,
@@ -946,6 +970,14 @@ h3 {
   padding: 14px 0;
 }
 
+.setting-row.ai-setting-row {
+  align-items: flex-start;
+}
+
+.setting-row.ai-setting-row > .setting-copy {
+  padding-top: 4px;
+}
+
 .setting-copy strong,
 .setting-copy span {
   display: block;
@@ -959,6 +991,96 @@ h3 {
 
 .setting-control {
   flex: 0 0 240px;
+}
+
+.ai-connection-setting {
+  width: min(360px, 48vw);
+}
+
+.ai-connection-summary,
+.compact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.ai-connection-name {
+  min-width: 0;
+  text-align: left;
+}
+
+.ai-connection-name strong,
+.ai-connection-name small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.ai-connection-name small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ai-status {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.button.compact {
+  min-height: 44px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.ai-connection-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  text-align: left;
+}
+
+.ai-connection-editor .button {
+  justify-self: end;
+}
+
+.ai-action-status {
+  margin: 0;
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ai-details,
+.send-ai-details {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.ai-details summary,
+.send-ai-details summary {
+  color: var(--blue-dark);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ai-details label,
+.ai-details small {
+  display: block;
+  margin-top: 10px;
+}
+
+.ai-details .select-control {
+  margin-top: 6px;
 }
 
 .toggle {
@@ -1112,6 +1234,10 @@ h3 {
 .send-summary dd {
   margin: 0;
   line-height: 1.6;
+}
+
+.send-ai-details p {
+  margin: 8px 0 0;
 }
 
 .dialog-actions {

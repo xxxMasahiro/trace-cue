@@ -12,6 +12,7 @@ states for review and screenshot generation:
 
 - `?screen=home`
 - `?screen=new`
+- `?screen=new&ai=change&effort=high` (AI processing choice in progress)
 - `?screen=new&source=document_text` (file intake)
 - `?screen=progress`
 - `?screen=recovery`
@@ -20,6 +21,7 @@ states for review and screenshot generation:
 - `?screen=finding`
 - `?screen=running`
 - `?screen=settings`
+- `?screen=settings&ai=change&effort=high` (AI choice in progress)
 - `?screen=settings&saved=1` (settings saved feedback)
 
 The send-confirmation dialog is opened from the New review screen or by adding
@@ -45,9 +47,9 @@ result content is representative interaction data. The React/Vite production
 implementation uses real persisted TraceCue state and does not simulate
 execution, findings, decisions, or completion.
 
-The Phase 155 baseline is preserved under `archive/phase-155/`, and the complete
-Phase 168 reference is preserved under `archive/phase-168/`. The active mock
-extends the Phase 168 goal-completion reference with truthful saved-result
-status, timeout and not-run counts, persistent mobile status text, and explicit
-selection/current-step semantics while retaining the approved layout and visual
+The Phase 155 baseline is preserved under `archive/phase-155/`, the complete
+Phase 168 reference is preserved under `archive/phase-168/`, and the accepted
+pre-connection reference is preserved under `archive/phase-176/`. The active
+mock adds the plain-language AI service choice, model-native processing detail,
+and complete send confirmation while retaining the approved layout and visual
 tokens.

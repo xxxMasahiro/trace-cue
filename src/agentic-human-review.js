@@ -24,6 +24,7 @@ import {
   buildAgenticDogfoodSetupReadiness,
   buildAgenticProviderReadiness,
   executeAgenticHumanReviewApiProvider,
+  executeAgenticHumanReviewSubscriptionProvider,
   providerBoundary as providerBoundaryRecord,
   resolveAgenticHumanReviewProvider
 } from './agentic-human-review-providers.js';
@@ -55,7 +56,7 @@ export const HUMAN_REVIEW_HUMAN_BASELINE_VERSION = '1.0.0';
 export const HUMAN_REVIEW_HUMAN_BASELINE_COMPARISON_VERSION = '1.0.0';
 export const HUMAN_REVIEW_HUMAN_BASELINE_OPERATIONS_VERSION = '1.0.0';
 export const HUMAN_REVIEW_EFFORT_CONTRACT_VERSION = '1.0.0';
-export const HUMAN_REVIEW_PROVIDER_EFFORT_BINDING_VERSION = '1.0.0';
+export const HUMAN_REVIEW_PROVIDER_EFFORT_BINDING_VERSION = '2.0.0';
 export const HUMAN_REVIEW_STRICT_OUTPUT_CONTRACT_VERSION = '1.0.0';
 export const HUMAN_REVIEW_REPAIR_RETRY_VERSION = '1.0.0';
 export const HUMAN_REVIEW_MULTI_STEP_XHIGH_VERSION = '1.0.0';
@@ -733,6 +734,17 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
     return errorResult(provider.error.code, provider.error.message, provider.error.details);
   }
   const model = { id: planOptions.model ?? provider.provider.default_model ?? DEFAULT_MODEL_ID };
+  const connectionBinding = normalizeConnectionBinding(planOptions['connection-binding']);
+  if (!connectionBinding.ok) {
+    return errorResult(connectionBinding.error.code, connectionBinding.error.message, connectionBinding.error.details);
+  }
+  if (connectionBinding.value && (connectionBinding.value.provider_id !== provider.provider.id
+    || connectionBinding.value.model_id !== model.id)) {
+    return errorResult('AGENTIC_REVIEW_CONNECTION_BINDING_MISMATCH', 'The approved AI connection does not match the requested provider and model.', {
+      provider: provider.provider.id,
+      model: model.id
+    });
+  }
   const surface = findSurface(planOptions.surface);
   if (!surface) {
     return errorResult('AGENTIC_REVIEW_SURFACE_NOT_FOUND', 'No agent surface matched the requested agentic review surface.', {
@@ -819,6 +831,17 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
   });
   const providerCapabilityContract = agenticProviderCapabilityContract(provider.provider);
   const providerCapabilityHash = agenticProviderCapabilityHash(provider.provider);
+  const optionProviderEffort = normalizeProviderEffortValue(planOptions['provider-effort']);
+  if (planOptions['provider-effort'] !== undefined && !optionProviderEffort) {
+    return errorResult('AGENTIC_REVIEW_PROVIDER_EFFORT_INVALID', 'The requested provider-native effort value is invalid.', {});
+  }
+  const requestedProviderEffort = connectionBinding.value?.provider_effort ?? optionProviderEffort;
+  const providerEffortValidation = validateExplicitProviderEffort(requestedProviderEffort, providerCapabilityContract, {
+    connectionBinding: connectionBinding.value
+  });
+  if (!providerEffortValidation.ok) {
+    return errorResult(providerEffortValidation.error.code, providerEffortValidation.error.message, providerEffortValidation.error.details);
+  }
   const roleInstructionContracts = buildRoleInstructionContracts({ orchestration, rubricProfile, evidencePlan });
   const orchestrationContract = buildOrchestrationContract({ orchestration, roleInstructionContracts });
   const effortExecutionContract = buildEffortExecutionContract({
@@ -827,6 +850,7 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
     providerCapabilityContract,
     provider: provider.provider,
     model,
+    requestedProviderEffort,
     benchmarkCase
   });
   const privacyDisclosureAudit = buildPrivacyDisclosureAudit({
@@ -891,6 +915,7 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
     orchestration_contract: orchestrationContract,
     effort_execution_contract: effortExecutionContract,
     provider_effort_binding: effortExecutionContract.provider_effort_binding,
+    connection_binding: connectionBinding.value,
     strict_output_contract: effortExecutionContract.strict_output_contract,
     repair_retry_contract: effortExecutionContract.repair_retry_contract,
     xhigh_multi_step_contract: effortExecutionContract.xhigh_multi_step_contract,
@@ -1033,6 +1058,8 @@ export async function runAgenticHumanReviewPlan(options = {}, context = {}) {
     package_path: packageRel,
     plan_hash: planHash,
     package_hash: plan.package_hash,
+    connection_binding: plan.connection_binding ?? null,
+    provider_effort_binding: plan.provider_effort_binding ?? null,
     status: 'planning_completed_execution_not_started',
     provider_call_performed: false,
     api_call_performed: false,
@@ -14148,6 +14175,7 @@ function buildEffortExecutionContract({
   providerCapabilityContract,
   provider,
   model,
+  requestedProviderEffort = null,
   benchmarkCase = null
 }) {
   const effort = orchestration.review_effort.mode;
@@ -14157,7 +14185,8 @@ function buildEffortExecutionContract({
     effort,
     providerCapabilityContract,
     provider,
-    model
+    model,
+    requestedProviderEffort
   });
   const strictOutputContract = buildStrictOutputContract({
     orchestration,
@@ -14207,24 +14236,27 @@ function buildEffortExecutionContract({
   });
 }
 
-function buildProviderEffortBinding({ effort, providerCapabilityContract, provider, model }) {
+function buildProviderEffortBinding({ effort, providerCapabilityContract, provider, model, requestedProviderEffort = null }) {
   const binding = providerCapabilityContract?.effort_capability?.native_effort_binding ?? {};
   const effortMap = binding.effort_map && typeof binding.effort_map === 'object' && !Array.isArray(binding.effort_map)
     ? binding.effort_map
     : {};
-  const appliedValue = typeof effortMap[effort] === 'string' && effortMap[effort].trim()
+  const explicitValue = normalizeProviderEffortValue(requestedProviderEffort);
+  const appliedValue = explicitValue ?? (typeof effortMap[effort] === 'string' && effortMap[effort].trim()
     ? effortMap[effort].trim()
-    : null;
+    : null);
   return {
     schema_version: SCHEMA_VERSION,
     binding_version: HUMAN_REVIEW_PROVIDER_EFFORT_BINDING_VERSION,
     requested_review_effort: effort,
     provider_id: provider?.id ?? providerCapabilityContract?.provider_id ?? null,
     model_id: model?.id ?? null,
+    selection_source: explicitValue ? 'explicit_provider_effort' : 'legacy_review_effort_mapping',
+    requested_provider_effort: explicitValue,
     native_effort_supported: binding.supported === true && Boolean(binding.request_field) && Boolean(appliedValue),
     native_effort_request_field: binding.request_field ?? null,
     native_effort_applied_value: appliedValue,
-    lossy_mapping: effort === 'xhigh' && appliedValue !== 'xhigh',
+    lossy_mapping: explicitValue ? false : effort === 'xhigh' && appliedValue !== 'xhigh',
     unsupported_behavior: binding.unsupported_behavior ?? 'record_not_supported_and_continue_with_tracecue_contract_validation',
     tracecue_contract_validation_required: true,
     advisory_only: true,
@@ -14584,6 +14616,54 @@ async function executeAgenticProvider({ provider, model, surface, plan, planPath
   }
   if (provider.id === 'injected-runner') {
     return injectedAgenticReviewResult({ provider, model, surface, plan, planPath, transferFlags, execution, resultId, now, context, languageSettings });
+  }
+  if (provider.transport === 'subscription_cli') {
+    const reviewPackageRead = await readReviewPackageForExecution({
+      cwd: context.cwd ?? process.cwd(),
+      plan,
+      maxBytes: maxBytes ?? DEFAULT_MAX_BYTES
+    });
+    if (!reviewPackageRead.ok) {
+      return providerFailure({
+        status: 'blocked',
+        code: reviewPackageRead.error.code,
+        message: reviewPackageRead.error.message,
+        details: reviewPackageRead.error.details,
+        provider
+      });
+    }
+    const providerResult = await executeAgenticHumanReviewSubscriptionProvider({
+      provider,
+      model,
+      surface,
+      plan,
+      planPath,
+      reviewPackage: reviewPackageRead.value,
+      transferFlags,
+      execution,
+      context
+    });
+    if (!providerResult.ok) return providerResult;
+    return {
+      ok: true,
+      status: providerResult.status,
+      result: normalizeAgenticAdvisoryResult({
+        id: resultId,
+        now,
+        plan,
+        planPath,
+        input: providerResult.input,
+        provider,
+        model,
+        surface,
+        transferFlags,
+        execution,
+        boundary: providerResult.boundary,
+        languageSettings
+      }),
+      boundary: providerResult.boundary,
+      warnings: providerResult.warnings
+    };
   }
   if (provider.transport === 'provider_api' || provider.external_evidence_transfer === true) {
     const reviewPackageRead = await readReviewPackageForExecution({
@@ -15900,6 +15980,8 @@ function buildExecutionRecord({
     package_path: plan.package_path,
     package_hash: plan.package_hash,
     provider_capability_hash: plan.provider_capability_hash ?? agenticProviderCapabilityHash(provider),
+    connection_binding: plan.connection_binding ?? null,
+    provider_effort_binding: plan.provider_effort_binding ?? null,
     provider,
     model,
     model_resolution: boundary.model_resolution ?? providerResult.model_resolution ?? null,
@@ -16133,6 +16215,16 @@ function validateRunRequest({ plan, planPath, suppliedPlanHash, options, context
       raw_provider_response_stored: false
     });
   }
+  if (plan.connection_binding?.execution_strategy
+    && plan.connection_binding.execution_strategy !== executionMode.value) {
+    return validationError('AGENTIC_REVIEW_PLAN_EXECUTION_STRATEGY_MISMATCH', 'The requested execution strategy does not match the approved AI connection.', {
+      approved_execution_strategy: plan.connection_binding.execution_strategy,
+      requested_execution_strategy: executionMode.value,
+      provider_call_performed: false,
+      api_call_performed: false,
+      raw_provider_response_stored: false
+    });
+  }
   const currentCapabilityHash = agenticProviderCapabilityHash(provider.provider);
   if (plan.provider_capability_hash && plan.provider_capability_hash !== currentCapabilityHash) {
     return validationError('AGENTIC_REVIEW_PROVIDER_CAPABILITY_DRIFT', 'The current provider capability contract no longer matches the approved plan.', {
@@ -16211,6 +16303,8 @@ function buildApprovalReceipt({ execution, transferFlags }) {
     transfer_flags: transferFlags.supplied_flags,
     provider_id: execution.provider?.id ?? null,
     model_id: execution.model?.id ?? null,
+    connection_binding: execution.connection_binding ?? null,
+    provider_effort_binding: execution.provider_effort_binding ?? null,
     surface_id: execution.surface?.id ?? null,
     external_evidence_transfer_authorized: execution.external_evidence_transfer,
     required_transfer_flags: transferFlags.required_flags,
@@ -16237,6 +16331,8 @@ function buildRunReceipt({ execution, providerResult }) {
     staged_execution: execution.staged_execution ?? null,
     provider_id: execution.provider?.id ?? null,
     model_id: execution.model?.id ?? null,
+    connection_binding: execution.connection_binding ?? null,
+    provider_effort_binding: execution.provider_effort_binding ?? null,
     model_resolution: execution.model_resolution ?? null,
     provider_call_performed: execution.provider_call_performed,
     api_call_performed: execution.api_call_performed,
@@ -22380,6 +22476,83 @@ function summarizeExecutions(executions) {
     summary.mcp_execution_exposed ||= Boolean(execution.mcp_execution_exposed);
   }
   return summary;
+}
+
+function normalizeConnectionBinding(value) {
+  if (value === undefined || value === null) return { ok: true, value: null };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return connectionBindingError('AGENTIC_REVIEW_CONNECTION_BINDING_INVALID', 'The approved AI connection binding is invalid.');
+  }
+  const safeId = (candidate) => {
+    const text = typeof candidate === 'string' ? candidate.trim() : '';
+    return /^[a-zA-Z0-9._:/@+-]{1,160}$/u.test(text) ? text : null;
+  };
+  const safeHash = (candidate, { optional = false } = {}) => {
+    if (optional && (candidate === null || candidate === undefined || candidate === '')) return null;
+    const text = typeof candidate === 'string' ? candidate.trim() : '';
+    return /^[a-f0-9]{64}$/u.test(text) ? text : null;
+  };
+  const normalized = {
+    schema_version: typeof value.schema_version === 'string' ? value.schema_version : '1.0.0',
+    connection_id: safeId(value.connection_id),
+    connection_type: safeId(value.connection_type),
+    adapter_id: safeId(value.adapter_id),
+    adapter_version: safeId(value.adapter_version),
+    provider_id: safeId(value.provider_id),
+    transport: safeId(value.transport),
+    execution_strategy: safeId(value.execution_strategy),
+    model_id: safeId(value.model_id),
+    provider_effort: normalizeProviderEffortValue(value.provider_effort),
+    provider_effort_request_field: value.provider_effort_request_field === null
+      ? null
+      : safeId(value.provider_effort_request_field),
+    provider_capability_hash: safeHash(value.provider_capability_hash),
+    executable_identity_hash: safeHash(value.executable_identity_hash, { optional: true }),
+    semantic_capability_hash: safeHash(value.semantic_capability_hash),
+    capability_revision: Number(value.capability_revision),
+    observed_at: typeof value.observed_at === 'string' && Number.isFinite(Date.parse(value.observed_at)) ? value.observed_at : null,
+    expires_at: typeof value.expires_at === 'string' && Number.isFinite(Date.parse(value.expires_at)) ? value.expires_at : null
+  };
+  const required = [
+    'connection_id', 'connection_type', 'adapter_id', 'adapter_version', 'provider_id',
+    'transport', 'execution_strategy', 'model_id', 'provider_capability_hash',
+    'semantic_capability_hash', 'observed_at', 'expires_at'
+  ];
+  if (required.some((field) => !normalized[field])
+    || !Number.isSafeInteger(normalized.capability_revision)
+    || normalized.capability_revision < 1
+    || (normalized.provider_effort_request_field && !normalized.provider_effort)) {
+    return connectionBindingError('AGENTIC_REVIEW_CONNECTION_BINDING_INVALID', 'The approved AI connection binding is incomplete.');
+  }
+  return { ok: true, value: normalized };
+}
+
+function validateExplicitProviderEffort(value, providerCapabilityContract, { connectionBinding = null } = {}) {
+  if (!value) return { ok: true };
+  const binding = providerCapabilityContract?.effort_capability?.native_effort_binding ?? {};
+  const supportedValues = Array.isArray(binding.supported_values) ? binding.supported_values : [];
+  const catalogBound = binding.dynamic_catalog_authoritative === true
+    && connectionBinding?.provider_id === providerCapabilityContract?.provider_id
+    && connectionBinding?.provider_effort === value
+    && connectionBinding?.provider_effort_request_field === binding.request_field;
+  if (binding.supported !== true || !binding.request_field || (!catalogBound && !supportedValues.includes(value))) {
+    return connectionBindingError(
+      'AGENTIC_REVIEW_PROVIDER_EFFORT_UNSUPPORTED',
+      'The selected AI processing level is not supported by the approved provider.',
+      { provider_effort: value }
+    );
+  }
+  return { ok: true };
+}
+
+function normalizeProviderEffortValue(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const text = typeof value === 'string' ? value.trim() : '';
+  return /^[a-zA-Z0-9._:/@+-]{1,160}$/u.test(text) ? text : null;
+}
+
+function connectionBindingError(code, message, details = {}) {
+  return { ok: false, error: { code, message, details } };
 }
 
 function normalizeReviewEffort(value) {
