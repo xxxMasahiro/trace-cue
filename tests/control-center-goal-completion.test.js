@@ -322,7 +322,7 @@ test('intake history archives the oldest completed result without deleting direc
   await waitUntil(async () => {
     listed = await listControlCenterIntakeResults({}, { cwd });
     return listed.data.control_center_intake.results.length === 2;
-  });
+  }, WORKER_COORDINATION_TIMEOUT_MS);
   assert.equal(listed.status, 'ok');
   assert.equal(listed.data.control_center_intake.results.length, 2);
   assert.equal(listed.data.control_center_intake.results.some((result) => result.id === ids[0]), false);
