@@ -1177,3 +1177,16 @@ passive dashboard read. Commit `e846fc4` preserves the single mutation request,
 retries only that passive read, and makes the sequence deterministic in the
 browser suite. The replacement PR run and exact-main run passed without
 weakening the one-key exact-once mutation boundary.
+
+The completion-record PR retained two further non-authoritative failed runs as
+diagnostic evidence rather than rerunning either attempt. Run `29663625344`
+exposed an 80 ms test-only private-store acquisition window under Node 22 load;
+commit `b173930` keeps the same release-fallback assertion with a bounded one
+second window and passes the no-browser suite. Run `29663862863` then exposed a
+real pairing classification race: the enclosing dashboard deadline could win
+the same-time exchange deadline and incorrectly offer Try again for a consumed
+one-use token. Commit `e49437b` classifies either deadline as reopen-required,
+adds a unit fixture that deliberately makes the outer deadline win, and keeps
+the browser fixture active, single-page, body-free, and safely diagnosable. No
+production timeout, pairing capability, retry authority, or media behavior was
+broadened.

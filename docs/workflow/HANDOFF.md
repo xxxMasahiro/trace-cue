@@ -884,3 +884,14 @@ main revision `f535b9d`; push CI run `29663474478` passed the same eight-job
 graph for that revision. The superseded PR run `29662929621` is retained as the
 evidence that triggered the passive-read recovery hardening rather than being
 reused as release proof.
+
+Completion-record CI also found two pre-existing timing assumptions without
+changing the prepared-audio design. Failed run `29663625344` led to test-only
+commit `b173930`, which preserves the private-store release-fallback contract
+while allowing one second for loaded Node 22 filesystems. Failed run
+`29663862863` showed that the outer dashboard deadline could beat the pairing
+exchange deadline and display a futile retry for an already consumed one-use
+token. Commit `e49437b` now classifies both outcomes as reopen-required, covers
+the losing timer order directly, and makes the browser evidence deterministic.
+Neither failed run is reused as release proof, and no product timeout,
+authorization capability, or unrelated workflow was relaxed.

@@ -716,6 +716,10 @@ no regression / no tradeoff.
 - [x] Preserve exactly-one repeat mutation when its committed response and the
   first passive reconciliation read both fail; retry only the passive read and
   cover the sequence deterministically in the browser suite.
+- [x] Preserve the reopen-required boundary when the enclosing dashboard
+  deadline wins the one-use pairing exchange deadline; cover the timer order
+  directly and keep the loaded-filesystem release-fallback test bounded and
+  deterministic (`b173930`, `e49437b`).
 - [x] Phase 201: synchronize all authorities and manifests; pass focused, live,
   no-browser, browser, package, document, security, release, Product Gate, and
   three independent reviews. Implementation commits `d8245ff` and `e846fc4`
