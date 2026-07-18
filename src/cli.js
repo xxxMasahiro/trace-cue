@@ -87,6 +87,14 @@ import { runCaptureHandoff } from './capture-handoff.js';
 import { buildCapturePlan } from './capture-plan.js';
 import { buildCaptureReadiness } from './capture-readiness.js';
 import {
+  cleanupMediaReview,
+  executeMediaReview,
+  inspectMediaReviewReadiness,
+  inspectMediaReviewSource,
+  MEDIA_REVIEW_RIGHTS_CONFIRMATION,
+  planMediaReview
+} from './media-review-service.js';
+import {
   runLanguageSettings,
   runLanguageSettingsPolicy,
   runSettingsShow
@@ -611,6 +619,26 @@ export async function executeCli(argv, context = {}) {
       return runtimeResult(parsed.command, captureReadiness, parsed.json, now);
     }
 
+    if (parsed.command === 'media source inspect') {
+      return runtimeResult(parsed.command, await (context.mediaReviewSourceRunner ?? inspectMediaReviewSource)(normalizeMediaReviewOptions(parsed.options), context), parsed.json, now);
+    }
+
+    if (parsed.command === 'media review readiness') {
+      return runtimeResult(parsed.command, await (context.mediaReviewReadinessRunner ?? inspectMediaReviewReadiness)(normalizeMediaReviewOptions(parsed.options), context), parsed.json, now);
+    }
+
+    if (parsed.command === 'media review plan') {
+      return runtimeResult(parsed.command, await (context.mediaReviewPlanRunner ?? planMediaReview)(normalizeMediaReviewOptions(parsed.options), context), parsed.json, now);
+    }
+
+    if (parsed.command === 'media review run') {
+      return runtimeResult(parsed.command, await (context.mediaReviewRunRunner ?? executeMediaReview)(normalizeMediaReviewOptions(parsed.options), context), parsed.json, now);
+    }
+
+    if (parsed.command === 'media review cleanup') {
+      return runtimeResult(parsed.command, await (context.mediaReviewCleanupRunner ?? cleanupMediaReview)(normalizeMediaReviewOptions(parsed.options), context), parsed.json, now);
+    }
+
     if (parsed.command === 'capture run') {
       const captureRun = captureRunUnavailableInfo(parsed.options, { now });
       return runtimeResult(parsed.command, captureRun, parsed.json, now);
@@ -852,7 +880,9 @@ function formatResult(envelope, json, exitCode, textOutput = '') {
 }
 
 function errorText(envelope) {
-  const [error] = envelope.errors;
+  const [error] = Array.isArray(envelope.errors) && envelope.errors.length
+    ? envelope.errors
+    : [{ code: 'RUNTIME_ERROR', message: 'The command did not complete successfully.' }];
   return `Error ${error.code}: ${error.message}\n`;
 }
 
@@ -888,7 +918,34 @@ function classifyRuntimeError(error) {
   return 'RUNTIME_ERROR';
 }
 
+function normalizeMediaReviewOptions(options = {}) {
+  return {
+    input: options.input,
+    url: options.url,
+    rightsDeclared: options['rights-confirm'] === MEDIA_REVIEW_RIGHTS_CONFIRMATION,
+    retention: options.retention,
+    planHash: options['plan-hash'],
+    execute: options.execute === true,
+    confirm: options.confirm,
+    operationId: options['operation-id'],
+    artifactRoot: options['artifact-root'],
+    resourceGuard: options['resource-guard']
+  };
+}
+
 function usageText(topic) {
+  if (topic === 'media' || topic?.startsWith('media ')) {
+    return [
+      `Usage: ${CLI_NAME} media source inspect (--input <workspace-video> | --url <https-url>) [--rights-confirm ${MEDIA_REVIEW_RIGHTS_CONFIRMATION}] [--json]`,
+      `       ${CLI_NAME} media review readiness [--json]`,
+      `       ${CLI_NAME} media review plan (--input <workspace-video> | --url <https-url>) [--retention ephemeral|project-retained] [--rights-confirm ${MEDIA_REVIEW_RIGHTS_CONFIRMATION}] [--json]`,
+      `       ${CLI_NAME} media review run --input <workspace-video> --rights-confirm ${MEDIA_REVIEW_RIGHTS_CONFIRMATION} --plan-hash <sha256> --execute --confirm execute-media-review [--retention ephemeral|project-retained] [--json]`,
+      `       ${CLI_NAME} media review cleanup --operation-id <id> --retention project-retained --execute --confirm cleanup-media-review [--json]`,
+      '',
+      'URL inspection is network-free and never downloads media. Full analysis accepts only an authorized local workspace file.',
+      'Deterministic measurements and advisory findings remain separate; raw media, frames, absolute paths, and the full transcript are not included in public results.'
+    ].join('\n');
+  }
   if (topic === 'observe') {
     return [
       `Usage: ${CLI_NAME} observe --url <url> [--json]`,
@@ -1369,6 +1426,10 @@ function usageText(topic) {
     '  final readiness --json',
     '  capture readiness --json',
     '  capture plan --json',
+    '  media source inspect --url <https-url> --json',
+    '  media review readiness --json',
+    '  media review plan --input <workspace-video> --rights-confirm use-owned-or-authorized-media --json',
+    '  media review run --input <workspace-video> --rights-confirm use-owned-or-authorized-media --plan-hash <sha256> --execute --confirm execute-media-review --json',
     '  capture handoff --image <path> --json',
     '  settings show --json',
     '  settings language --json',

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/media-timeline.schema.json",
+  "title": "TraceCue Media Review Timeline",
+  "type": "object",
+  "required": ["schema_version", "type", "timebase", "items", "semantic_change_points", "source_item_count", "item_count", "semantic_change_count", "truncated", "limitations", "boundary"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "type": { "const": "media_review_timeline" },
+    "timebase": { "const": "microseconds" },
+    "items": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object", "required": ["id", "kind", "start_us", "end_us", "evidence"],
+            "properties": { "id": { "type": "string", "pattern": "^shot:" }, "kind": { "const": "shot" }, "start_us": { "type": "integer", "minimum": 0 }, "end_us": { "type": "integer", "minimum": 0 }, "evidence": { "type": "object", "required": ["classification", "cut_score"], "properties": { "classification": { "const": "deterministic_measurement" }, "cut_score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 } }, "additionalProperties": false } },
+            "additionalProperties": false
+          },
+          {
+            "type": "object", "required": ["id", "kind", "start_us", "end_us", "evidence"],
+            "properties": { "id": { "type": "string", "pattern": "^speech:" }, "kind": { "const": "speech" }, "start_us": { "type": "integer", "minimum": 0 }, "end_us": { "type": "integer", "minimum": 0 }, "evidence": { "type": "object", "required": ["classification", "timed", "body_included", "text_identity", "word_count"], "properties": { "classification": { "const": "provider_measurement" }, "timed": { "const": true }, "body_included": { "const": false }, "text_identity": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "word_count": { "type": "integer", "minimum": 0 } }, "additionalProperties": false } },
+            "additionalProperties": false
+          },
+          {
+            "type": "object", "required": ["id", "kind", "start_us", "end_us", "evidence"],
+            "properties": { "id": { "type": "string", "pattern": "^subtitle:" }, "kind": { "const": "subtitle" }, "start_us": { "type": "integer", "minimum": 0 }, "end_us": { "type": "integer", "minimum": 0 }, "evidence": { "type": "object", "required": ["classification", "duration_sufficient", "body_included"], "properties": { "classification": { "const": "deterministic_measurement" }, "duration_sufficient": { "type": "boolean" }, "body_included": { "const": false } }, "additionalProperties": false } },
+            "additionalProperties": false
+          },
+          {
+            "type": "object", "required": ["id", "kind", "start_us", "end_us", "evidence"],
+            "properties": { "id": { "type": "string", "pattern": "^semantic_change:" }, "kind": { "const": "semantic_change" }, "start_us": { "type": "integer", "minimum": 0 }, "end_us": { "type": "integer", "minimum": 0 }, "evidence": { "type": "object", "required": ["classification", "method", "similarity", "body_included"], "properties": { "classification": { "const": "advisory_evaluation" }, "method": { "const": "token_jaccard_heuristic" }, "similarity": { "type": "number", "minimum": 0, "maximum": 1 }, "body_included": { "const": false } }, "additionalProperties": false } },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "semantic_change_points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "at_us", "previous_segment_id", "current_segment_id", "similarity", "method", "classification", "confidence", "limitation"],
+        "properties": {
+          "id": { "type": "string" },
+          "at_us": { "type": "integer", "minimum": 0 },
+          "previous_segment_id": { "type": "string" },
+          "current_segment_id": { "type": "string" },
+          "similarity": { "type": "number", "minimum": 0, "maximum": 1 },
+          "method": { "const": "token_jaccard_heuristic" },
+          "classification": { "const": "advisory_evaluation" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "limitation": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "source_item_count": { "type": "integer", "minimum": 0 },
+    "item_count": { "type": "integer", "minimum": 0 },
+    "semantic_change_count": { "type": "integer", "minimum": 0 },
+    "truncated": { "type": "boolean" },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "boundary": {
+      "type": "object",
+      "required": ["full_transcript_included", "raw_media_included", "raw_frames_included", "absolute_paths_included", "advisory_and_deterministic_separated"],
+      "properties": {
+        "full_transcript_included": { "const": false },
+        "raw_media_included": { "const": false },
+        "raw_frames_included": { "const": false },
+        "absolute_paths_included": { "const": false },
+        "advisory_and_deterministic_separated": { "const": true }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

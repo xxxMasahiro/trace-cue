@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/media-transcript-provider-profile.schema.json",
+  "title": "TraceCue Local Transcript Provider Profile",
+  "type": "object",
+  "required": ["schema_version", "adapter_contract", "runtime", "engine"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "adapter_contract": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,80}$" },
+    "runtime": {
+      "type": "object",
+      "required": ["node_executable", "node_sha256", "entrypoint", "entrypoint_sha256", "package_root", "git_executable", "git_sha256", "expected_revision", "require_clean_tree"],
+      "properties": {
+        "node_executable": { "type": "string", "pattern": "^/" },
+        "node_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "entrypoint": { "type": "string", "pattern": "^/" },
+        "entrypoint_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "package_root": { "type": "string", "pattern": "^/" },
+        "git_executable": { "type": "string", "pattern": "^/" },
+        "git_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "expected_revision": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "require_clean_tree": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "engine": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,79}$" },
+    "environment": {
+      "type": "object",
+      "propertyNames": { "enum": ["FRAMECUE_LOCAL_ASR_MODEL", "FRAMECUE_LOCAL_ASR_MODEL_CACHE", "HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "UV_CACHE_DIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"] },
+      "additionalProperties": { "type": "string", "maxLength": 4096, "pattern": "^[^\\u0000-\\u001f\\u007f]*$" }
+    }
+  },
+  "additionalProperties": false
+}

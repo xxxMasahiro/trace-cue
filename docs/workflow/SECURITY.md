@@ -630,3 +630,68 @@ the same operating-system user, process-table observers, browser extensions or
 developer tools, swap, core dumps, and a compromised supported provider CLI are
 outside the boundary. Memory clearing is best-effort and is never described as
 complete erasure.
+
+## Media Review Security Boundary
+
+Media review uses an operation-specific private root separate from the normal
+workspace artifact root. The root must be unpredictable, outside Git, owned by
+the current UID, mode 0700, realpath-stable, marker-owned, device/inode-bound,
+and entry/byte/depth bounded. Private files are mode 0600. Absolute locators are
+stored only in the private server store and never projected to CLI JSON,
+Control Center, ordinary reports, provider payloads, or MCP.
+
+Source identity uses a stable no-follow descriptor and streaming SHA-256 before
+processing. Staging and provider-import copies must match that digest. Symlink,
+hardlink, special file, owner, mode, signature, containment, inode, device, or
+digest drift fails closed. The original source is never deleted by media
+cleanup.
+
+Provider execution binds a trusted interpreter, entrypoint, package root,
+allowlisted full revision, clean tracked tree, adapter contract, and engine.
+Every stage revalidates identity before fixed `shell: false` execution. Browser
+input cannot supply executable, path, argv, cwd, environment, engine, model,
+root, or provider id. Setup, download, URL ingest, cloud ASR, external send, and
+MCP operations are unreachable. Mock output is never production success.
+Offline enforcement is application-level: fixed local-file-only argv, trusted
+provider identity, offline readiness, and environment restrictions are checked,
+but TraceCue does not install a network namespace, firewall, or other kernel-
+enforced egress isolation. `network_performed: false` records the supported
+orchestration path, not an OS observation of a compromised provider; a
+compromised trusted provider or root process remains outside the guarantee.
+The trusted checkout identity also does not bind an external provider's
+untracked Python environment, installed ASR dependency bytes, or model-weight
+bytes. Media results must retain this limitation until the provider exposes a
+verified dependency/model identity contract; TraceCue must not infer it by
+scanning arbitrary provider-private runtime state.
+
+Normalized transcript material may exist inside the private operation root.
+`ephemeral` deletes it after projection and treats cleanup failure as
+`cleanup_required`. `project-retained` requires an explicit choice and retains
+only the exact marker-owned private root until explicit cleanup or policy TTL;
+the body and locator remain non-public. Neither mode copies full transcript,
+raw media, raw process output, audio, or frames into normal artifacts or public
+results.
+
+Cleanup is a separate operation lifecycle, not an extension of generic artifact
+cleanup. It revalidates marker, operation id, UID, mode, device/inode, exact
+root/run containment, lease state, file types, links, and bounds; atomically
+quarantines the exact root; revalidates it; and deletes only that root. A live
+lease, retained root without explicit intent, markerless root, identity drift,
+symlink, hardlink, special file, sibling, or normal artifact root is refused.
+
+Technical analysis uses configured trusted FFprobe/FFmpeg candidates with
+fixed argv, minimal environment, bounded output, timeout, frame, duration,
+stream, and per-allocation limits, and local-file inputs only. The runner closes
+stdin for both tools, and FFmpeg additionally receives `-nostdin`. Tool absence is `unavailable` and
+never triggers installation. Media URL classification parses text only and
+performs no DNS, HTTP, browser navigation, redirect, embed, download, or remote
+image request. Credentials and control characters are rejected; query and
+fragment are omitted from every projection.
+
+Control Center media uploads use a separate streaming, quota-bound, one-use
+source namespace. Paired Origin/CSRF/session checks protect readiness refresh,
+start, cancel, and cleanup. Passive GET endpoints do not spawn processes,
+access networks, recover state, or mutate artifacts. Restart does not replay an
+uncertain operation. Same-UID hostile concurrency, mount namespace attacks,
+root/admin, swap, core dumps, and a compromised trusted provider remain stated
+limitations rather than false guarantees.

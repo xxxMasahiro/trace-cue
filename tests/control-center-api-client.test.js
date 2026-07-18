@@ -130,3 +130,61 @@ test('Control Center rejects semantically empty successful mutation envelopes', 
     globalThis.fetch = originalFetch;
   }
 });
+
+test('Control Center rejects malformed media projections before rendering them', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    const malformedReadiness = {
+      status: 'ok',
+      data: {
+        readiness: {
+          schema_version: '1.0.0', type: 'media_review_readiness', status: 'ready',
+          transcript_provider: { status: 'ready', limitations: [] },
+          technical_analyzer: { status: 'ready', limitations: [] },
+          local_input: { accepted_extensions: ['.mp4'], maximum_bytes: 1024 },
+          boundary: {
+            read_only: true, provider_transcription_performed: false, media_analysis_performed: false,
+            network_performed: false, setup_performed: false, mcp_execution_performed: false,
+            secrets_included: false, executable_paths_included: true,
+            provider_revision_included: false, configuration_hashes_included: false
+          }
+        }
+      }
+    };
+    globalThis.fetch = async () => new Response(JSON.stringify(malformedReadiness), {
+      status: 200, headers: { 'content-type': 'application/json' }
+    });
+    let client = await import(`../control-center/src/apiClient.js?media-readiness=${Date.now()}`);
+    await assert.rejects(client.fetchMediaReviewReadiness(), (error) => error?.name === 'ResponseContractError');
+
+    const malformedOperation = {
+      status: 'ok',
+      data: {
+        media_review: {
+          schema_version: '1.0.0', type: 'media_review_operation', operation_id: 'a'.repeat(32),
+          state: 'completed', retention: 'ephemeral', capabilities: { status: true, cancel: false, cleanup: true, result: true },
+          result_available: true, cleanup_available: true, private_payload_retained: false, errors: [],
+          boundary: { absolute_path_included: false, private_locator_included: false, source_name_included: false, raw_media_included: false, full_transcript_included: false }
+        }
+      }
+    };
+    globalThis.fetch = async () => new Response(JSON.stringify(malformedOperation), {
+      status: 200, headers: { 'content-type': 'application/json' }
+    });
+    client = await import(`../control-center/src/apiClient.js?media-operation=${Date.now()}`);
+    await assert.rejects(client.fetchMediaReviewStatus('a'.repeat(32)), (error) => error?.name === 'ResponseContractError');
+
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      data: {
+        control_center: {
+          action_security: { token: 'b'.repeat(43) },
+          media_reviews: [malformedOperation.data.media_review]
+        }
+      }
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+    client = await import(`../control-center/src/apiClient.js?media-dashboard=${Date.now()}`);
+    await assert.rejects(client.fetchDashboard(), (error) => error?.name === 'ResponseContractError');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

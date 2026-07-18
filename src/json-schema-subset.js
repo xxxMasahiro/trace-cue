@@ -5,7 +5,10 @@ export function validateJsonSchemaSubset(value, schema, options = {}) {
   const state = {
     nodes: 0,
     maxNodes: boundedInteger(options.maxNodes, 1, 1_000_000, DEFAULT_MAX_NODES),
-    maxDepth: boundedInteger(options.maxDepth, 1, 256, DEFAULT_MAX_DEPTH)
+    maxDepth: boundedInteger(options.maxDepth, 1, 256, DEFAULT_MAX_DEPTH),
+    rootSchema: schema,
+    referenceDepth: 0,
+    externalSchemas: options.externalSchemas && typeof options.externalSchemas === 'object' ? options.externalSchemas : {}
   };
   const failure = validateNode(value, schema, '$', 0, state);
   return failure ? { ok: false, error: failure } : { ok: true };
@@ -17,6 +20,15 @@ function validateNode(value, schema, path, depth, state) {
   if (depth > state.maxDepth) return diagnostic(path, 'maxDepth', 'The JSON value is nested too deeply.');
   if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
     return diagnostic(path, 'schema', 'The JSON schema is invalid.');
+  }
+  if (typeof schema.$ref === 'string') {
+    const referenced = resolveReference(state, schema.$ref);
+    if (!referenced || state.referenceDepth > state.maxDepth) return diagnostic(path, '$ref', 'The JSON schema reference is invalid.');
+    return validateNode(value, referenced.schema, path, depth + 1, {
+      ...state,
+      rootSchema: referenced.root,
+      referenceDepth: state.referenceDepth + 1
+    });
   }
   if (Array.isArray(schema.allOf)) {
     for (const child of schema.allOf) {
@@ -60,19 +72,26 @@ function validateString(value, schema, path) {
       return diagnostic(path, 'schema', 'The JSON schema pattern is invalid.');
     }
   }
+  if (schema.format === 'date-time' && !validDateTime(value)) return diagnostic(path, 'format', 'The string is not a valid date-time.');
   return null;
 }
 
 function validateNumber(value, schema, path) {
   if (!Number.isFinite(value)) return diagnostic(path, 'type', 'The number must be finite.');
   if (typeof schema.minimum === 'number' && value < schema.minimum) return diagnostic(path, 'minimum', 'The number is too small.');
+  if (typeof schema.exclusiveMinimum === 'number' && value <= schema.exclusiveMinimum) return diagnostic(path, 'exclusiveMinimum', 'The number is not above the exclusive minimum.');
   if (typeof schema.maximum === 'number' && value > schema.maximum) return diagnostic(path, 'maximum', 'The number is too large.');
+  if (typeof schema.exclusiveMaximum === 'number' && value >= schema.exclusiveMaximum) return diagnostic(path, 'exclusiveMaximum', 'The number is not below the exclusive maximum.');
   return null;
 }
 
 function validateArray(value, schema, path, depth, state) {
   if (Number.isSafeInteger(schema.minItems) && value.length < schema.minItems) return diagnostic(path, 'minItems', 'The array has too few items.');
   if (Number.isSafeInteger(schema.maxItems) && value.length > schema.maxItems) return diagnostic(path, 'maxItems', 'The array has too many items.');
+  if (schema.uniqueItems === true) {
+    const identities = new Set(value.map((item) => JSON.stringify(item)));
+    if (identities.size !== value.length) return diagnostic(path, 'uniqueItems', 'The array contains duplicate items.');
+  }
   if (schema.items && typeof schema.items === 'object') {
     for (let index = 0; index < value.length; index += 1) {
       const failure = validateNode(value[index], schema.items, `${path}[${index}]`, depth + 1, state);
@@ -135,4 +154,34 @@ function diagnostic(path, keyword, message) {
 function boundedInteger(value, min, max, fallback) {
   const number = Number(value);
   return Number.isSafeInteger(number) && number >= min && number <= max ? number : fallback;
+}
+
+function resolveLocalReference(root, reference) {
+  if (reference === '#') return root;
+  if (!reference.startsWith('#/')) return null;
+  let current = root;
+  for (const encoded of reference.slice(2).split('/')) {
+    const key = encoded.replace(/~1/gu, '/').replace(/~0/gu, '~');
+    if (!current || typeof current !== 'object' || !Object.hasOwn(current, key)) return null;
+    current = current[key];
+  }
+  return current;
+}
+
+function resolveReference(state, reference) {
+  if (reference.startsWith('#')) {
+    const schema = resolveLocalReference(state.rootSchema, reference);
+    return schema ? { root: state.rootSchema, schema } : null;
+  }
+  const [resource, fragment = ''] = reference.split('#', 2);
+  const root = state.externalSchemas[resource]
+    ?? Object.values(state.externalSchemas).find((candidate) => candidate?.$id === resource || candidate?.$id?.endsWith(`/${resource}`));
+  if (!root) return null;
+  const schema = fragment ? resolveLocalReference(root, `#${fragment}`) : root;
+  return schema ? { root, schema } : null;
+}
+
+function validDateTime(value) {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/u.test(value)
+    && Number.isFinite(Date.parse(value));
 }

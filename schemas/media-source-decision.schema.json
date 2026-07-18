@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/media-source-decision.schema.json",
+  "title": "TraceCue Media Source Decision",
+  "type": "object",
+  "required": ["schema_version", "type", "source_kind", "status", "capabilities", "rights", "source", "limitations", "boundary"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "type": { "const": "media_source_decision" },
+    "source_kind": { "enum": ["local_file", "url"] },
+    "status": { "enum": ["ready", "rights_confirmation_required", "unsupported", "invalid"] },
+    "capabilities": {
+      "type": "array",
+      "items": { "enum": ["playback_inspection", "full_media_analysis", "metadata_only", "unsupported"] },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "rights": {
+      "type": "object",
+      "required": ["declaration_required", "declared", "platform_policy_separate"],
+      "properties": {
+        "declaration_required": { "type": "boolean" },
+        "declared": { "type": "boolean" },
+        "platform_policy_separate": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": ["display_label", "identity_available", "query_or_fragment_included"],
+      "properties": {
+        "display_label": { "type": "string", "maxLength": 512 },
+        "service_kind": { "type": ["string", "null"] },
+        "opaque_media_id": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "identity_available": { "type": "boolean" },
+        "query_or_fragment_included": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "limitations": { "type": "array", "items": { "type": "string" }, "maxItems": 32 },
+    "boundary": {
+      "type": "object",
+      "required": ["network_performed", "media_acquired", "download_performed", "redirect_followed", "dns_resolution_performed", "url_query_or_fragment_included", "credentials_included", "absolute_path_included", "rights_declaration_treated_as_legal_proof"],
+      "properties": {
+        "network_performed": { "const": false },
+        "media_acquired": { "const": false },
+        "download_performed": { "const": false },
+        "redirect_followed": { "const": false },
+        "dns_resolution_performed": { "const": false },
+        "url_query_or_fragment_included": { "const": false },
+        "credentials_included": { "const": false },
+        "absolute_path_included": { "const": false },
+        "rights_declaration_treated_as_legal_proof": { "const": false }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

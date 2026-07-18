@@ -61,6 +61,43 @@ node "$TRACE_CUE_CLI" session stop --session <id> --json
 
 TraceCue must not automate OAuth or password entry. Persistent sessions use TTL and idle-timeout guards, origin allowlists, local receipts, and ignored `.browser-debug/` artifacts. StorageState export/import is disabled by default and is available only through explicit admin opt-in under the configured artifact auth directory; cookie and token values are not printed.
 
+## Local Media Review Quickstart
+
+The provider-neutral media contract accepts a trusted local transcript provider
+through an owner-readable ignored profile. Start from the packaged example,
+replace its executable identities, expected full revision, engine, and permitted
+environment with audited local values, and store the completed profile outside
+Git or at the ignored policy-selected local path. A routine provider revision is
+adopted by updating those private identities. A changed argv shape, result schema
+major, or runtime kind requires a versioned adapter-catalog change instead of a
+consumer-specific branch.
+
+```bash
+node "$TRACE_CUE_CLI" media source inspect --url 'https://example.test/video' --json
+node "$TRACE_CUE_CLI" media review readiness --json
+node "$TRACE_CUE_CLI" media review plan --input ./authorized-video.mp4 --rights-confirm use-owned-or-authorized-media --json
+node "$TRACE_CUE_CLI" media review run --input ./authorized-video.mp4 --rights-confirm use-owned-or-authorized-media --plan-hash <sha256-from-plan> --execute --confirm execute-media-review --json
+```
+
+URL inspection is a pure capability decision: it performs no DNS, HTTP,
+redirect, playback, or download. Full analysis is local-file-only. The default
+retention removes private source, provider, and full-transcript material after
+projection. Project-retained mode requires an explicit selection and later
+cleanup using the opaque operation id. The public result contains bounded
+measurements, evidence references, time-coded findings, methods, confidence,
+limitations, and recommendations without raw media, transcript bodies, process
+output, URL secrets, or private paths.
+The current trust identity binds the configured executables, provider Git state,
+profile, and declared engine, but not an external provider's untracked language
+runtime, installed ASR dependency bytes, or model-weight bytes. The result keeps
+those reproducibility limitations explicit.
+
+Control Center exposes the same service contract through Video on New review.
+Readiness is passive until the user chooses Check local setup; local upload,
+rights, retention, progress, cancellation, recovery, result, and cleanup stay in
+the browser workflow without exposing executable, argv, engine, provider id, or
+artifact-root controls. Media execution remains absent from every MCP profile.
+
 ## Agentic Human Review Live Dogfood
 
 Agentic Human Review live provider dogfood still starts from a normal TraceCue review artifact index, then `agentic review propose`, `agentic review plan`, `agentic review provider-readiness`, and `agentic review run` with the approved plan hash and exact transfer flags. The optional Responses adapter is only the local conversion endpoint for the existing `generic-api-provider`; it is not a shortcut around the plan/run gate.

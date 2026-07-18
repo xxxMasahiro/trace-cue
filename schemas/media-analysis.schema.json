@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/media-analysis.schema.json",
+  "title": "TraceCue Deterministic Media Analysis",
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "required": ["sha256", "bytes", "format"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "format": { "type": "string", "minLength": 1, "maxLength": 80 }
+      },
+      "additionalProperties": false
+    },
+    "eventClass": { "const": "deterministic_measurement" },
+    "time": { "type": "integer", "minimum": 0 },
+    "nullableNumber": { "type": ["number", "null"], "minimum": 0 },
+    "boundary": {
+      "type": "object",
+      "required": ["local_only", "raw_media_included", "raw_audio_included", "raw_frames_included", "base64_included", "absolute_paths_included", "external_send_performed", "network_performed", "shell_used"],
+      "properties": {
+        "local_only": { "const": true },
+        "raw_media_included": { "const": false },
+        "raw_audio_included": { "const": false },
+        "raw_frames_included": { "const": false },
+        "base64_included": { "const": false },
+        "absolute_paths_included": { "const": false },
+        "external_send_performed": { "const": false },
+        "network_performed": { "const": false },
+        "shell_used": { "const": false }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": ["schema_version", "type", "status", "media_identity", "timebase", "technical_metrics", "frame_intervals", "duplicate_frames", "dropped_frame_intervals", "audio_video_sync", "shot_boundaries", "subtitle_events", "method", "limitations", "boundary"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "type": { "const": "media_technical_analysis" },
+    "status": { "enum": ["available", "partial"] },
+    "media_identity": { "$ref": "#/$defs/identity" },
+    "timebase": { "const": "microseconds" },
+    "technical_metrics": {
+      "type": "object",
+      "required": ["duration_us", "video_codec", "audio_codec", "frame_count_analyzed", "effective_fps", "nominal_fps", "median_frame_interval_us", "frame_interval_variance_us2", "frame_interval_jitter_ratio", "duplicate_frame_count", "presentation_gap_count", "cut_count", "subtitle_event_count", "presentation_timestamps_us", "deterministic"],
+      "properties": {
+        "duration_us": { "$ref": "#/$defs/time" },
+        "video_codec": { "type": ["string", "null"], "maxLength": 80 },
+        "audio_codec": { "type": ["string", "null"], "maxLength": 80 },
+        "frame_count_analyzed": { "type": "integer", "minimum": 1 },
+        "effective_fps": { "$ref": "#/$defs/nullableNumber" },
+        "nominal_fps": { "$ref": "#/$defs/nullableNumber" },
+        "median_frame_interval_us": { "type": ["integer", "null"], "minimum": 0 },
+        "frame_interval_variance_us2": { "type": ["integer", "null"], "minimum": 0 },
+        "frame_interval_jitter_ratio": { "$ref": "#/$defs/nullableNumber" },
+        "duplicate_frame_count": { "type": "integer", "minimum": 0 },
+        "presentation_gap_count": { "type": "integer", "minimum": 0 },
+        "cut_count": { "type": "integer", "minimum": 0 },
+        "subtitle_event_count": { "type": "integer", "minimum": 0 },
+        "presentation_timestamps_us": { "type": "array", "items": { "$ref": "#/$defs/time" } },
+        "deterministic": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "frame_intervals": {
+      "type": "object",
+      "required": ["minimum_us", "maximum_us", "median_us", "variance_us2", "jitter_ratio", "warning"],
+      "properties": {
+        "minimum_us": { "type": ["integer", "null"], "minimum": 0 },
+        "maximum_us": { "type": ["integer", "null"], "minimum": 0 },
+        "median_us": { "type": ["integer", "null"], "minimum": 0 },
+        "variance_us2": { "type": ["integer", "null"], "minimum": 0 },
+        "jitter_ratio": { "$ref": "#/$defs/nullableNumber" },
+        "warning": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "duplicate_frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start_us", "end_us", "frame_index", "matched_frame_index", "classification"],
+        "properties": {
+          "start_us": { "$ref": "#/$defs/time" }, "end_us": { "$ref": "#/$defs/time" },
+          "frame_index": { "type": "integer", "minimum": 1 }, "matched_frame_index": { "type": "integer", "minimum": 0 },
+          "classification": { "$ref": "#/$defs/eventClass" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "dropped_frame_intervals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start_us", "end_us", "interval_us", "expected_interval_us", "estimated_missing_frames", "classification"],
+        "properties": {
+          "start_us": { "$ref": "#/$defs/time" }, "end_us": { "$ref": "#/$defs/time" },
+          "interval_us": { "type": "integer", "minimum": 0 }, "expected_interval_us": { "type": "number", "minimum": 0 },
+          "estimated_missing_frames": { "type": "integer", "minimum": 1 }, "classification": { "$ref": "#/$defs/eventClass" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "audio_video_sync": {
+      "type": "object",
+      "required": ["status", "method", "offset_us", "warning", "classification"],
+      "properties": {
+        "status": { "enum": ["available", "unavailable"] },
+        "method": { "const": "container_stream_start_pts" },
+        "offset_us": { "type": ["integer", "null"] },
+        "absolute_offset_us": { "type": "integer", "minimum": 0 },
+        "warning": { "type": "boolean" },
+        "interpretation": { "enum": ["audio_starts_after_video", "audio_starts_before_video", "aligned_container_start"] },
+        "classification": { "$ref": "#/$defs/eventClass" },
+        "perceptual_lip_sync_measured": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "shot_boundaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "start_us", "end_us", "cut_score", "classification"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^shot-[0-9]{4,}$" }, "start_us": { "$ref": "#/$defs/time" },
+          "end_us": { "$ref": "#/$defs/time" }, "cut_score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "classification": { "$ref": "#/$defs/eventClass" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "subtitle_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "start_us", "end_us", "duration_us", "duration_sufficient", "classification", "body_included"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^subtitle-[0-9]{5,}$" }, "start_us": { "$ref": "#/$defs/time" },
+          "end_us": { "$ref": "#/$defs/time" }, "duration_us": { "$ref": "#/$defs/time" },
+          "duration_sufficient": { "type": "boolean" }, "classification": { "$ref": "#/$defs/eventClass" }, "body_included": { "const": false }
+        },
+        "additionalProperties": false
+      }
+    },
+    "method": {
+      "type": "object",
+      "required": ["classification", "analyzer_contract", "probe_version", "analyzer_version", "probe_identity", "analyzer_identity", "absolute_paths_included", "scene_threshold", "maximum_frames"],
+      "properties": {
+        "classification": { "$ref": "#/$defs/eventClass" }, "analyzer_contract": { "const": "ffmpeg-cli-local-v1" },
+        "probe_version": { "type": "string", "maxLength": 120 }, "analyzer_version": { "type": "string", "maxLength": 120 },
+        "probe_identity": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "analyzer_identity": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "absolute_paths_included": { "const": false }, "scene_threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maximum_frames": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "limitations": { "type": "array", "items": { "type": "string", "maxLength": 200 }, "uniqueItems": true },
+    "boundary": { "$ref": "#/$defs/boundary" }
+  },
+  "additionalProperties": false
+}

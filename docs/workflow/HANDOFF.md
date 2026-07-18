@@ -772,3 +772,50 @@ The tracked commit containing this completion record is the final Phase
 clean local/remote equality, and exact-HEAD release, CI-proof, and read-only
 parent-authority evidence without modifying the parent repository or making the
 tracked revision stale.
+
+## Completed Phase 188-194 Media Review Work
+
+Phase 188-194 is locally complete. The additive provider-neutral pipeline now
+supports network-free URL capability decisions and an owned or authorized local
+video vertical slice from stable identity, private staging, deterministic
+technical analysis, trusted local transcript CLI execution, canonical timeline,
+separated deterministic/advisory findings, bounded JSON/Markdown results, and
+verified cleanup. The synchronous CLI and asynchronous Control Center use the
+same service contracts; the browser receives only opaque ids and body-free
+projections. Existing browser, evidence, AHR, session, artifact, MCP, package,
+and release behavior remains unchanged when media review is unused.
+
+The external transcript provider remains read-only from this repository.
+Runtime trust comes from an ignored 0600 local profile that binds Node, Git,
+entrypoint, package root, full expected revision, commit inventory, and clean
+tracked state. Routine provider revisions need only a private profile revision
+and executable-identity refresh. A changed argv shape, output schema major, or
+runtime kind requires a versioned adapter-catalog change; browser-supplied argv
+and provider-specific service branches remain prohibited.
+
+Control Center passively includes bounded media-operation summaries in its
+existing dashboard response, so unused pages issue no extra media API request.
+Its existing repeat-review recovery also now adopts exactly one newly published
+child matching the pre-request baseline, parent, and repeat mode before retrying
+a response-lost mutation. Ambiguous or absent matches retain the prior
+idempotency-key retry contract.
+
+Local completion evidence is: media-focused contracts 47/47 PASS, real
+FrameCue/faster-whisper acceptance PASS, browser smoke 26/26 PASS, aggregate
+`npm test` 466/466 PASS, package dry-run/install smoke PASS, rename readiness
+PASS, document/development/verification checks PASS, product structure/docs/
+security/design/local-CI checks PASS, release check PASS, and Product Gate PASS.
+The live acceptance uses synthetic audio/video and verifies timed transcript
+output, public transcript-body exclusion, and ephemeral cleanup without a mock
+ASR success.
+
+URL classification still performs no network access, navigation, redirect, or
+media acquisition. `playback_inspection` is capability metadata, not implemented
+official-player observation. MCP media execution, cloud ASR, external sending,
+automatic model setup, provider fallback, OS-level egress isolation, and writes
+to the provider repository remain out of scope. Untracked external Python/ASR
+dependencies and model weights are disclosed as unbound limitations. No commit,
+push, PR, remote CI, or remote synchronization had been performed at the local
+implementation freeze; exact integration evidence belongs to the follow-up
+completion revision. The existing user modification to
+`docs/memory/SESSION_MEMORY.md` remains separately preserved.

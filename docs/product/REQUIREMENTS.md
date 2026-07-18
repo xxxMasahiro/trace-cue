@@ -872,3 +872,59 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   the requested setup succeeded. The browser may present a reconciled connected
   API choice only when authoritative connection storage advanced beyond the
   revision observed before that setup action.
+
+## Phase 188-194 Media Review Platform
+
+- TraceCue must accept a bounded local video or a URL capability request without
+  changing existing page observation, review, evidence, session, MCP, or release
+  behavior when media review is unused.
+- Media source handling must be URL-first but non-acquiring. Classification must
+  return `playback_inspection`, `full_media_analysis`, `metadata_only`, or
+  `unsupported` without DNS, HTTP, browser navigation, download, redirect
+  following, or external transfer. A public URL is not media-use permission.
+  In this range `playback_inspection` is a policy capability decision only; it
+  must not be presented as proof that TraceCue started or observed an official
+  player.
+- Local media analysis must use a versioned provider-neutral contract. Provider
+  executable identity, adapter contract, engine, limits, thresholds, timeouts,
+  and local paths must come from trusted policy or private local configuration,
+  never browser input or reusable core literals.
+  Routine provider revisions must be adoptable through the private trusted
+  profile. A changed command shape, schema major, or runtime kind must use a
+  versioned catalog adapter without provider-specific branches in the common
+  service, CLI, or Control Center.
+- Raw media, provider output, audio, frames, and complete transcripts must remain
+  inside an operation-specific private root outside every Git worktree. The
+  existing workspace artifact root remains unchanged and receives only bounded
+  results and body-free receipts.
+- `ephemeral` is the default retention mode and requires verified cleanup after
+  projection. `project-retained` requires an explicit user choice and may retain
+  the private operation root, but it must remain owner-only, outside Git, path-
+  free in public projections, and explicitly cleanable.
+- Transcript acquisition must use fixed executable identity, fixed argv,
+  `shell: false`, bounded output, timeout, cancellation, offline readiness, and
+  strict normalized timed-segment validation. Mock output cannot satisfy a
+  production-success contract.
+  Results must disclose when external runtime dependencies or model weights are
+  not cryptographically bound by the provider identity.
+- Deterministic media analysis must record effective FPS, frame timestamps and
+  intervals, interval variability, duplicate decoded frames, cadence gaps, shot
+  boundaries, audio/video start offset, and timed subtitle evidence when
+  available. Missing tool capability must be reported as `unavailable`, never a
+  fabricated success.
+- The common timeline must use integer microseconds, retain original method and
+  confidence metadata, and keep deterministic measurements separate from
+  heuristic or Agentic Human Review advice. No combined certainty score may
+  conceal that distinction.
+- Public findings must carry time range, category, severity, evidence reference,
+  method, confidence, deterministic/advisory classification, limitations, and
+  recommendation. Complete transcript text, raw media, raw process output,
+  absolute paths, signed URL query data, and secret values are forbidden.
+- Control Center must provide an explanation-free local-video flow using opaque
+  source and operation identifiers, explicit rights and retention choices,
+  body-free progress, cancellation, recovery, cleanup, and time-coded results.
+  Browser input cannot choose executables, argv, cwd, engines, provider ids, or
+  artifact roots.
+- Media execution is not exposed through safe, full, admin, or HTTP MCP in this
+  range. Cloud ASR, provider fallback, model download, remote media acquisition,
+  and external sending remain unavailable.

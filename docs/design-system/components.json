@@ -65,7 +65,7 @@
     {
       "id": "source-intake-form",
       "tokens": ["background", "surface", "line", "foreground", "muted", "accent"],
-      "contract": ["Offer one New review form for website, image, document, and saved browser-check result; use the prototype one-line purpose input, keep desktop footer actions grouped at the inline end, use URL input or the browser file picker/drag-and-drop, hide original file names after selection, and never accept arbitrary local paths."]
+      "contract": ["Offer one New review form for website, video, image, document, and saved browser-check result; make video URL capability inspection network-free and URL-first, keep local-video rights and retention choices explicit, use the prototype one-line purpose input, keep desktop footer actions grouped at the inline end, use URL input or the browser file picker/drag-and-drop, hide original file names after selection, and never accept arbitrary local paths."]
     },
     {
       "id": "control-center-saved-result",

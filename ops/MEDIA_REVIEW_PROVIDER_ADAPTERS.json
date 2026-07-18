@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0.0",
+  "catalog_version": "1.0.0",
+  "adapters": [
+    {
+      "adapter_contract": "caller-owned-local-asr-cli-v1",
+      "runtime_kind": "node_git_checkout_cli",
+      "display_label": "Local transcription",
+      "supported_result_schema_majors": [1],
+      "supported_normalized_schema_majors": [1],
+      "allowed_environment_keys": [
+        "FRAMECUE_LOCAL_ASR_MODEL",
+        "FRAMECUE_LOCAL_ASR_MODEL_CACHE",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "PATH",
+        "TMPDIR",
+        "UV_CACHE_DIR",
+        "XDG_CACHE_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME"
+      ],
+      "commands": {
+        "readiness": ["local-asr", "setup-guide", "--json"],
+        "initialize": ["init", "--name", "{operation_name}", "--external-artifact-root", "{operation_root}", "--external-artifact-root-confirm", "use-external-artifact-root"],
+        "import_media": ["import-video", "--run", "{run}", "--input", "{input}", "--external-artifact-root", "{operation_root}", "--external-artifact-root-confirm", "use-external-artifact-root"],
+        "transcribe": ["local-asr", "run", "--run", "{run}", "--input-kind", "video", "--engine", "{engine}", "--execute", "--execute-confirm", "execute-local-asr", "--external-artifact-root", "{operation_root}", "--external-artifact-root-confirm", "use-external-artifact-root", "--json"]
+      },
+      "required_readiness": {
+        "status": "ready",
+        "runtime_ready": true,
+        "model_resolvable_offline": true,
+        "external_network_calls_during_asr_enabled": false,
+        "cloud_asr_enabled": false,
+        "external_sending_enabled": false
+      },
+      "production_mock_engines": [],
+      "boundary": {
+        "shell_used": false,
+        "url_input_supported": false,
+        "runtime_setup_supported": false,
+        "model_download_supported": false,
+        "external_send_supported": false,
+        "mcp_execution_supported": false
+      }
+    }
+  ]
+}
