@@ -681,8 +681,11 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
 - [x] Phase 193: implement CLI and asynchronous Control Center media workflows,
   including network-free URL capability decisions.
 - [x] Phase 194: complete focused, live, browser, package, document, security,
-  release, Product Gate, local CI-contract, and document-sync closure. Remote CI
-  remains a separately authorized release action and was not started.
+  release, Product Gate, local CI-contract, document-sync, and remote
+  integration closure. Implementation commits `dbee434` and `b8f394f` passed
+  all seven distributed owners and the proof-only Final gate in pull-request CI
+  run `29631406505`, PR #30 merged as `aad898c`, and exact-merge main CI run
+  `29631532106` passed the same eight-job graph.
 
 No phase may change existing metadata-only video evidence, general artifact
 root confinement, generic cleanup, page URL handling, AHR proof semantics, MCP
