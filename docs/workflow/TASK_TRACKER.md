@@ -713,6 +713,9 @@ no regression / no tradeoff.
   workflow, propagate `unsupported`, add bounded user messages, suppress
   provider-layout detail from ordinary UI, and export the reusable preparation
   service through the package API.
+- [x] Preserve exactly-one repeat mutation when its committed response and the
+  first passive reconciliation read both fail; retry only the passive read and
+  cover the sequence deterministically in the browser suite.
 - [ ] Phase 201: synchronize all authorities and manifests; pass focused, live,
   no-browser, browser, package, document, security, release, Product Gate, and
   three independent reviews; then commit, merge through PR CI, confirm exact

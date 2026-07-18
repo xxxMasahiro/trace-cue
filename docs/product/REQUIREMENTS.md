@@ -462,7 +462,10 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   transport uncertainty without resubmitting a credential or uncertain provider
   execution. Review polling must pause while a review mutation and its
   reconciliation are active. Only repeat admission may make its one scoped
-  exact-once retry with the same memory-held idempotency key.
+  exact-once retry with the same memory-held idempotency key. If the first
+  passive repeat-reconciliation read fails, the browser must retry that read
+  once before considering the mutation retry; the extra read must not create
+  another mutation attempt or change the idempotency key.
 - Leaving New Review or a review workspace must invalidate and abort that
   page's pending preparation, status wait, or repeat request. A late response
   must not navigate away from the page the user subsequently chose.

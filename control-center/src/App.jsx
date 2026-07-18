@@ -45,6 +45,7 @@ const COMPLETE_STATES = new Set(['completed', 'completed_retained', 'cleaned', '
 const FAILED_STATES = new Set(['failed', 'error', 'blocked', 'timed_out']);
 const PREPARED_STATES = new Set(['prepared', 'evidence_ready']);
 const ATTENTION_STATES = new Set(['needs_attention', 'evidence_missing']);
+const REPEAT_RECONCILIATION_READ_ATTEMPTS = 2;
 const DEFAULT_REVIEW = {
   source_kind: 'website',
   url: '',
@@ -1799,9 +1800,9 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
           if (pendingRepeatRef.current === pending) pendingRepeatRef.current = null;
           throw caught;
         }
-        const reconciledDashboard = await reload({ quiet: true });
+        const reconciledDashboard = await readRepeatReconciliationDashboard(reload, pending);
         if (!isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action)) return;
-        next = findNewRepeatedReview(reconciledDashboard, pending);
+        next = reconciledDashboard.match;
         if (!next) {
           try {
             next = await repeatAgenticReview(pending.payload, { signal: action.signal });
@@ -2412,6 +2413,15 @@ function findNewRepeatedReview(dashboard, pending) {
       && item.parent_review?.repeat_mode === pending?.kind;
   });
   return matches.length === 1 ? matches[0] : null;
+}
+
+async function readRepeatReconciliationDashboard(reload, pending) {
+  for (let attempt = 0; attempt < REPEAT_RECONCILIATION_READ_ATTEMPTS; attempt += 1) {
+    const dashboard = await reload({ quiet: true });
+    const match = findNewRepeatedReview(dashboard, pending);
+    if (match || dashboard !== null) return { dashboard, match };
+  }
+  return { dashboard: null, match: null };
 }
 
 function dashboardReviewItems(dashboard) {

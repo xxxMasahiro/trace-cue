@@ -1711,7 +1711,10 @@ The existing agentic-review repeat flow also uses that passive dashboard read
 model to reconcile a lost or malformed mutation response before retrying. It may
 adopt a repeated child only when exactly one operation was absent from the
 pre-request baseline and matches both the requested parent and repeat mode;
-zero or multiple matches preserve the existing idempotency-key retry path.
+zero or multiple matches preserve the existing idempotency-key retry path. If
+the first passive reconciliation read itself fails, the browser performs one
+more passive read before that mutation retry; this does not add another
+mutation attempt or change the retained idempotency key.
 
 The initial catalog adapter is `node_git_checkout_cli`, but the orchestration,
 request, transcript, evidence, and result contracts do not depend on that

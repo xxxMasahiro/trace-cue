@@ -316,6 +316,8 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const consoleErrors = [];
     const repeatEvents = [];
+    let failNextRepeatReconciliationDashboard = false;
+    let failedRepeatReconciliationDashboardReads = 0;
     const repeatObservationStartedAt = Date.now();
     const recordRepeatEvent = (kind, request, details = {}) => {
       if (new URL(request.url()).pathname !== '/api/agentic-review/repeat') return;
@@ -336,6 +338,15 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     page.on('requestfailed', (request) => recordRepeatEvent('requestfailed', request, {
       failure: request.failure()?.errorText ?? 'unknown'
     }));
+    await page.route('**/api/dashboard', async (route) => {
+      if (!failNextRepeatReconciliationDashboard) {
+        await route.continue();
+        return;
+      }
+      failNextRepeatReconciliationDashboard = false;
+      failedRepeatReconciliationDashboardReads += 1;
+      await route.abort('failed');
+    });
     await page.goto(started.url, { waitUntil: 'networkidle' });
     await page.locator('[data-testid="tc-cc-home"]').waitFor();
     await page.getByRole('button', { name: /New review/ }).click();
@@ -463,6 +474,7 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     await page.route('**/api/agentic-review/repeat', async (route) => {
       const response = await route.fetch();
       assert.equal(response.ok(), true);
+      failNextRepeatReconciliationDashboard = true;
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -517,6 +529,7 @@ test('review center completes prepare, consent, review, decision, repeat, and se
       1,
       `A successful repeat recovered from its read model must not be sent again: ${JSON.stringify(repeatEvents)}`
     );
+    assert.equal(failedRepeatReconciliationDashboardReads, 1);
     const repeatedOperation = await page.evaluate(async () => {
       const id = new URLSearchParams(window.location.search).get('item');
       return (await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json()).data.control_center_agentic_review.operation;

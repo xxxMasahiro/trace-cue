@@ -869,6 +869,10 @@ v2 acceptance passes, as do FrameCue's read-only prepared-audio tests 5/5,
 package dry-run/install smoke, rename readiness, release check, document,
 development, verification, structure, security, design, CI-contract, and
 Product Gate checks. Three independent contract, security, and UI/document
-reviews returned APPROVE after their findings were corrected. Commit/PR/main
-CI evidence and final local/remote synchronization remain the Phase 201 remote
-closure work at this checkpoint.
+reviews returned APPROVE after their findings were corrected. The first PR CI
+attempt exposed a transient failure in the existing repeat-response recovery:
+the child was committed, but a failed first passive dashboard read could lead
+to the scoped mutation retry. The browser now retries only that passive read,
+and a deterministic response-loss test proves one mutation plus successful
+second-read adoption. Commit/PR/main CI evidence and final local/remote
+synchronization remain the Phase 201 remote closure work at this checkpoint.

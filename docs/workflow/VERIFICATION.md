@@ -1089,8 +1089,9 @@ zero browser exposure of executable, argv, engine, path, transcript body, URL
 query, or provider internals. URL classification tests inject a network sentinel
 and require zero calls.
 The aggregate browser flow additionally corrupts a successful repeat response
-and asserts that the newly published parent/mode-matched child is recovered from
-the passive dashboard with exactly one mutation request.
+and fails the first passive reconciliation read. It asserts that the newly
+published parent/mode-matched child is recovered by the second passive read
+with exactly one mutation request.
 
 Media checks join existing no-browser and browser owners; they do not add a CI
 job or duplicate a release task. Final local closure requires focused tests, live

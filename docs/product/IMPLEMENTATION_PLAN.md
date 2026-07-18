@@ -2298,6 +2298,9 @@ AHR, MCP, and release behavior requires no migration.
    no-browser, browser, package, document, security, release, Product Gate, and
    independent reviews; then complete commit, PR CI, merge, exact-main CI, and
    clean local/remote synchronization without modifying FrameCue or the parent.
+   If distributed CI exposes a pre-existing response-loss race, preserve the
+   single mutation boundary and harden only bounded passive reconciliation
+   reads with a deterministic browser regression before restarting fresh CI.
 
 The implementation reuses the existing private operation lifecycle, stable-file
 reader, fixed process runner, tool trust, technical analyzer, provider-neutral
