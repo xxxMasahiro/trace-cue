@@ -382,7 +382,7 @@ async function requestJson(url, options = {}) {
     ? responseTimeoutMs
     : CONTROL_CENTER_RESPONSE_TIMEOUTS.defaultRequestMs;
   const deadlineAt = Date.now() + timeoutMs;
-  await settleBeforeDeadline(initializeControlCenterSession(), deadlineAt);
+  await settleControlCenterSession(deadlineAt);
   const mutation = !['GET', 'HEAD'].includes(String(fetchOptions.method ?? 'GET').toUpperCase());
   if (mutation && !actionToken) await bootstrapActionToken(deadlineAt);
   const { response, envelope } = await fetchJsonBeforeDeadline(
@@ -401,6 +401,21 @@ async function requestJson(url, options = {}) {
   }
   if (!isCompleteSuccessEnvelope(envelope)) throw responseContractError();
   return envelope;
+}
+
+async function settleControlCenterSession(deadlineAt) {
+  try {
+    return await settleBeforeDeadline(initializeControlCenterSession(), deadlineAt);
+  } catch (error) {
+    if (initialPairingToken) {
+      const classified = error instanceof Error
+        ? error
+        : new Error('Open the Control Center again to continue.');
+      classified.controlCenterReopenRequired = true;
+      throw classified;
+    }
+    throw error;
+  }
 }
 
 async function bootstrapActionToken(deadlineAt) {

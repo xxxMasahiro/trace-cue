@@ -874,5 +874,24 @@ attempt exposed a transient failure in the existing repeat-response recovery:
 the child was committed, but a failed first passive dashboard read could lead
 to the scoped mutation retry. The browser now retries only that passive read,
 and a deterministic response-loss test proves one mutation plus successful
-second-read adoption. Commit/PR/main CI evidence and final local/remote
-synchronization remain the Phase 201 remote closure work at this checkpoint.
+second-read adoption.
+
+Remote integration is complete. Implementation commits `d8245ff` and
+`e846fc4` passed Node 20, Node 22, Repository contracts, Package producer,
+Package consumer Node 20, Package consumer Node 22, Browser smoke, and the
+proof-only Final gate in PR #32 CI run `29663353998`. PR #32 merged as exact
+main revision `f535b9d`; push CI run `29663474478` passed the same eight-job
+graph for that revision. The superseded PR run `29662929621` is retained as the
+evidence that triggered the passive-read recovery hardening rather than being
+reused as release proof.
+
+Completion-record CI also found two pre-existing timing assumptions without
+changing the prepared-audio design. Failed run `29663625344` led to test-only
+commit `b173930`, which preserves the private-store release-fallback contract
+while allowing one second for loaded Node 22 filesystems. Failed run
+`29663862863` showed that the outer dashboard deadline could beat the pairing
+exchange deadline and display a futile retry for an already consumed one-use
+token. Commit `e49437b` now classifies both outcomes as reopen-required, covers
+the losing timer order directly, and makes the browser evidence deterministic.
+Neither failed run is reused as release proof, and no product timeout,
+authorization capability, or unrelated workflow was relaxed.

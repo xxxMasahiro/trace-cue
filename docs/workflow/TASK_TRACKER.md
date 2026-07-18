@@ -716,10 +716,16 @@ no regression / no tradeoff.
 - [x] Preserve exactly-one repeat mutation when its committed response and the
   first passive reconciliation read both fail; retry only the passive read and
   cover the sequence deterministically in the browser suite.
-- [ ] Phase 201: synchronize all authorities and manifests; pass focused, live,
+- [x] Preserve the reopen-required boundary when the enclosing dashboard
+  deadline wins the one-use pairing exchange deadline; cover the timer order
+  directly and keep the loaded-filesystem release-fallback test bounded and
+  deterministic (`b173930`, `e49437b`).
+- [x] Phase 201: synchronize all authorities and manifests; pass focused, live,
   no-browser, browser, package, document, security, release, Product Gate, and
-  three independent reviews; then commit, merge through PR CI, confirm exact
-  main CI, and finish clean local/remote synchronization.
+  three independent reviews. Implementation commits `d8245ff` and `e846fc4`
+  passed all seven distributed owners and the proof-only Final gate in PR #32
+  CI run `29663353998`; PR #32 merged as `f535b9d`, and exact-merge main CI run
+  `29663474478` passed the same eight-job graph.
 
 Existing FrameCue and parent repositories remain read-only. The prepared path
 adds no MCP execution, URL acquisition, cloud ASR, model setup/download,

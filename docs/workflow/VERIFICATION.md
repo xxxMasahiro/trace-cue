@@ -1161,3 +1161,32 @@ must not reuse a real provider receipt while complete runtime/model identity is
 unproven. Receipt-layout compatibility is likewise revision-bound; live
 acceptance must be repeated for a profile revision, and a changed layout or argv
 requires a new catalog adapter rather than relaxed validation.
+
+### Shared Prepared Audio Remote Integration Evidence
+
+Implementation commits `d8245ff` and `e846fc4` were integrated through PR #32.
+Replacement PR CI run `29663353998` passed Node 20, Node 22, Repository
+contracts, Package producer, Package consumer Node 20, Package consumer Node
+22, Browser smoke, and the proof-only Final gate. PR #32 merged as exact main
+revision `f535b9d`; push CI run `29663474478` passed the same eight-job graph,
+including final proof for that revision.
+
+The superseded PR run `29662929621` found that a committed repeat child could
+outlive both its malformed mutation response and a transiently failed first
+passive dashboard read. Commit `e846fc4` preserves the single mutation request,
+retries only that passive read, and makes the sequence deterministic in the
+browser suite. The replacement PR run and exact-main run passed without
+weakening the one-key exact-once mutation boundary.
+
+The completion-record PR retained two further non-authoritative failed runs as
+diagnostic evidence rather than rerunning either attempt. Run `29663625344`
+exposed an 80 ms test-only private-store acquisition window under Node 22 load;
+commit `b173930` keeps the same release-fallback assertion with a bounded one
+second window and passes the no-browser suite. Run `29663862863` then exposed a
+real pairing classification race: the enclosing dashboard deadline could win
+the same-time exchange deadline and incorrectly offer Try again for a consumed
+one-use token. Commit `e49437b` classifies either deadline as reopen-required,
+adds a unit fixture that deliberately makes the outer deadline win, and keeps
+the browser fixture active, single-page, body-free, and safely diagnosable. No
+production timeout, pairing capability, retry authority, or media behavior was
+broadened.
