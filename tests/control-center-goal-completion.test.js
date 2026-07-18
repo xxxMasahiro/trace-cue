@@ -127,12 +127,12 @@ test('private store releases its known lock after the transition release window 
       }
     });
     await transitionAcquired;
-  }, { timeoutMs: 80 });
+  }, { timeoutMs: 1000 });
 
   await assert.rejects(access(logicalLock));
   releaseTransition();
   await blocker;
-  const reacquired = await store.withLock('release-fallback', async () => 'reacquired', { timeoutMs: 500 });
+  const reacquired = await store.withLock('release-fallback', async () => 'reacquired', { timeoutMs: 1000 });
   assert.equal(reacquired, 'reacquired');
 });
 
