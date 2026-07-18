@@ -1,7 +1,7 @@
 import { SCHEMA_VERSION } from './constants.js';
 import { PRODUCT_IDENTITY } from './product-identity.js';
 
-export const OPERATION_REGISTRY_VERSION = '1.0.0';
+export const OPERATION_REGISTRY_VERSION = '1.1.0';
 
 const MCP_EXPOSURE_NONE = Object.freeze({
   safe: false,
@@ -35,7 +35,8 @@ const GROUPS = Object.freeze([
   group('localization', 'UI, report, and translation boundaries', '96-119'),
   group('release_identity', 'npm, artifact-root, and legacy-alias release boundaries', '120-139'),
   group('constrained_shell', 'Constrained shell review boundaries', '140-148'),
-  group('final_hardening', 'Cross-feature release hardening', '149-155')
+  group('final_hardening', 'Cross-feature release hardening', '149-155'),
+  group('media_review', 'Provider-neutral local media review boundaries', '188-194')
 ]);
 
 const RISK_TAXONOMY = Object.freeze([
@@ -938,6 +939,87 @@ const OPERATIONS = Object.freeze([
       gate('regression_matrix', 'Provider, cleanup, capture, localization, npm, artifact-root, alias, and shell boundaries need a final regression matrix.'),
       gate('security_sweep', 'Secrets, provider, shell, upload, and capture boundaries need a final sweep.'),
       gate('product_gate', 'Final product gate must pass before release readiness is reported.')
+    ]
+  }),
+  operation({
+    id: 'media_source_inspect',
+    group: 'media_review',
+    command: 'media source inspect',
+    category: 'media_source_read',
+    cliAvailable: true,
+    currentStatus: 'cli_control_center_read_only_available',
+    proposedStage: 'network_free_source_decision_available',
+    risk: ['read'],
+    mcpGate: false,
+    gates: [
+      gate('network_free', 'URL capability classification must not perform DNS, HTTP, redirects, downloads, or browser navigation.'),
+      gate('url_secret_redaction', 'Public source decisions must omit URL credentials, query values, fragments, and redirect targets.'),
+      gate('no_rights_inference', 'A public URL must not be treated as permission to acquire or analyze media.')
+    ]
+  }),
+  operation({
+    id: 'media_review_readiness_plan',
+    group: 'media_review',
+    command: 'media review readiness / plan',
+    category: 'media_review_read',
+    cliAvailable: true,
+    currentStatus: 'cli_control_center_read_only_available',
+    proposedStage: 'trusted_local_adapter_readiness_available',
+    risk: ['read'],
+    mcpGate: false,
+    gates: [
+      gate('read_only', 'Readiness and plan may verify trusted local tool identities but must not transcribe, analyze, set up, download, or write private payloads.'),
+      gate('trusted_configuration', 'Executables, adapter contracts, engine, paths, and digests must come only from trusted policy or owner-readable local configuration.'),
+      gate('body_free', 'Readiness and plan output must not contain raw process output, media, transcript text, or private paths.')
+    ]
+  }),
+  operation({
+    id: 'media_review_run',
+    group: 'media_review',
+    command: 'media review run --execute',
+    category: 'local_media_provider_execution',
+    cliAvailable: true,
+    currentStatus: 'cli_control_center_confirmation_gated',
+    proposedStage: 'local_provider_vertical_slice_available',
+    risk: ['write', 'provider'],
+    gates: [
+      gate('no_mcp_exposure', 'Media execution remains unavailable through safe, full, admin, and HTTP MCP profiles.'),
+      gate('exact_plan_confirmation', 'Execution requires a matching plan hash, rights declaration, execute flag, and exact confirmation token.'),
+      gate('private_operation_root', 'Raw media, audio, frames, process output, and complete transcript must stay within the marker-owned private operation root.'),
+      gate('offline_fixed_argv', 'The transcript provider must use fixed trusted executable identity, shell false, fixed argv, offline mode, bounds, timeout, and cancellation.'),
+      gate('classification_separation', 'Deterministic measurements and advisory evaluations must remain distinct in results and reports.')
+    ]
+  }),
+  operation({
+    id: 'media_review_cancel',
+    group: 'media_review',
+    command: 'operator media review cancel',
+    category: 'private_media_cancellation',
+    cliAvailable: false,
+    currentStatus: 'control_center_csrf_gated',
+    proposedStage: 'owned_operation_cancellation_available',
+    risk: ['write', 'provider'],
+    gates: [
+      gate('no_mcp_exposure', 'Media cancellation remains unavailable through every MCP profile and transport.'),
+      gate('control_center_authorization', 'Cancellation requires the existing loopback, Origin, session, and action-token boundary.'),
+      gate('owned_operation_only', 'Cancellation can signal only an operation owned by the active TraceCue media runtime.'),
+      gate('no_false_success', 'A cancelled or interrupted operation must not be reported as a completed review.')
+    ]
+  }),
+  operation({
+    id: 'media_review_cleanup',
+    group: 'media_review',
+    command: 'media review cleanup',
+    category: 'private_media_lifecycle',
+    cliAvailable: true,
+    currentStatus: 'cli_control_center_confirmation_gated',
+    proposedStage: 'owned_private_cleanup_available',
+    risk: ['write', 'delete'],
+    gates: [
+      gate('no_mcp_exposure', 'Media cleanup remains unavailable through every MCP profile and transport.'),
+      gate('ownership_revalidation', 'Cleanup must revalidate the operation marker, device, inode, owner, mode, realpath, tree bounds, and lease state.'),
+      gate('explicit_retained_cleanup', 'Project-retained data requires explicit cleanup and the exact confirmation token.'),
+      gate('body_free_receipt', 'Cleanup receipts must omit paths, media, transcript text, and deleted payload content.')
     ]
   })
 ]);

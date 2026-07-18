@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/media-review-operation.schema.json",
+  "title": "TraceCue Media Review Operation Projection",
+  "type": "object",
+  "required": ["schema_version", "type", "operation_id", "state", "retention", "created_at", "updated_at", "progress", "capabilities", "boundary"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "type": { "const": "media_review_operation" },
+    "operation_id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+    "state": { "enum": ["prepared", "running", "cancelling", "cancelled", "completed", "completed_retained", "failed", "interrupted", "cleanup_required", "cleaned"] },
+    "retention": { "enum": ["ephemeral", "project-retained"] },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "identity": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "progress": {
+      "type": "object",
+      "required": ["phase", "percent"],
+      "properties": {
+        "phase": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "percent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["status", "cancel", "cleanup", "result"],
+      "properties": {
+        "status": { "type": "boolean" },
+        "cancel": { "type": "boolean" },
+        "cleanup": { "type": "boolean" },
+        "result": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "result_available": { "type": "boolean" },
+    "cleanup_available": { "type": "boolean" },
+    "private_payload_retained": { "type": "boolean" },
+    "errors": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "required": ["code", "message", "details"],
+        "properties": {
+          "code": { "type": "string", "pattern": "^[A-Z0-9_]{2,100}$" },
+          "message": { "type": "string", "maxLength": 500 },
+          "details": { "type": "object" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "boundary": {
+      "type": "object",
+      "required": ["absolute_path_included", "private_locator_included", "raw_media_included", "full_transcript_included"],
+      "properties": {
+        "absolute_path_included": { "const": false },
+        "private_locator_included": { "const": false },
+        "source_name_included": { "const": false },
+        "raw_media_included": { "const": false },
+        "full_transcript_included": { "const": false }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

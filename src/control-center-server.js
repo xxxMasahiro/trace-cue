@@ -62,6 +62,7 @@ import {
   CONTROL_CENTER_SESSION_HEADER,
   createControlCenterPairingAuthority
 } from './control-center-pairing.js';
+import { createControlCenterMediaReviewRuntime } from './control-center-media-review.js';
 
 const DEFAULT_CONTROL_CENTER_HOST = '127.0.0.1';
 const DEFAULT_CONTROL_CENTER_PORT = 0;
@@ -88,15 +89,28 @@ export async function startControlCenterServer(options = {}, context = {}) {
     throw new Error(config.message);
   }
   let aiSetupRuntime = null;
+  let mediaReviewRuntime = null;
   let server = null;
   const ownsAiSetupRuntime = config.config.authorizationMode === 'paired' && !context.controlCenterAiSetupRuntime;
+  const ownsMediaReviewRuntime = config.config.authorizationMode === 'paired' && !context.controlCenterMediaReviewRuntime;
   try {
     config.config.runtimeCompatibility = await buildControlCenterRuntimeCompatibility(config.config.staticRoot);
     aiSetupRuntime = context.controlCenterAiSetupRuntime
       ?? (config.config.authorizationMode === 'paired'
         ? await createControlCenterAiSetupRuntime({ instanceId: config.config.instanceId }, context)
         : null);
-    const serverContext = aiSetupRuntime ? { ...context, controlCenterAiSetupRuntime: aiSetupRuntime } : context;
+    mediaReviewRuntime = context.controlCenterMediaReviewRuntime
+      ?? (config.config.authorizationMode === 'paired'
+        ? await createControlCenterMediaReviewRuntime({
+          cwd: config.config.cwd,
+          artifactRoot: config.config.readModelOptions['artifact-root']
+        }, context)
+        : null);
+    const serverContext = {
+      ...context,
+      ...(aiSetupRuntime ? { controlCenterAiSetupRuntime: aiSetupRuntime } : {}),
+      ...(mediaReviewRuntime ? { controlCenterMediaReviewRuntime: mediaReviewRuntime } : {})
+    };
     await recoverPendingControlCenterIntakePublications({
       ...serverContext,
       cwd: config.config.cwd,
@@ -107,6 +121,7 @@ export async function startControlCenterServer(options = {}, context = {}) {
     const closed = serverClosed.then(async () => {
       config.config.pairingAuthority.dispose();
       if (ownsAiSetupRuntime) await aiSetupRuntime.dispose();
+      if (ownsMediaReviewRuntime) await mediaReviewRuntime?.dispose();
     });
     await new Promise((resolve, reject) => {
       server.once('error', reject);
@@ -136,6 +151,7 @@ export async function startControlCenterServer(options = {}, context = {}) {
     config.config.pairingAuthority.dispose();
     if (server?.listening) await closeControlCenterServer(server).catch(() => {});
     if (ownsAiSetupRuntime) await aiSetupRuntime?.dispose().catch(() => {});
+    if (ownsMediaReviewRuntime) await mediaReviewRuntime?.dispose().catch(() => {});
     throw error;
   }
 }
@@ -597,6 +613,7 @@ export async function handleControlCenterRequest(request, response, config, cont
       cwd: config.cwd,
       artifactRoot: config.readModelOptions['artifact-root']
     });
+    const mediaReviewList = context.controlCenterMediaReviewRuntime?.list();
     const dashboardData = {
       ...result.data,
       control_center: {
@@ -604,6 +621,9 @@ export async function handleControlCenterRequest(request, response, config, cont
         action_security: projectActionSecurity(config),
         ai_readiness: compatibilityAiReadiness(aiConnections, context),
         ai_connections: aiConnections,
+        media_reviews: mediaReviewList?.status === 'ok' && Array.isArray(mediaReviewList.data?.media_reviews)
+          ? mediaReviewList.data.media_reviews
+          : [],
         ai_setup: context.controlCenterAiSetupRuntime?.projection({
           canConnect: config.authorizationMode === 'paired'
         }) ?? unavailableAiSetupProjection(config.authorizationMode)
@@ -663,6 +683,76 @@ export async function handleControlCenterRequest(request, response, config, cont
       artifactRoot: config.readModelOptions['artifact-root']
     });
     sendActionEnvelope(response, 'control-center review-intake upload', result, context, 201);
+    return;
+  }
+  if (url.pathname === '/api/media-review/upload') {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_MEDIA_UPLOAD_POST_ONLY', 'Media upload only accepts POST requests.');
+      return;
+    }
+    const runtime = context.controlCenterMediaReviewRuntime;
+    if (!runtime) {
+      sendJson(response, 503, { error: { code: 'CONTROL_CENTER_MEDIA_REVIEW_UNAVAILABLE', message: 'Media review is unavailable.' } });
+      return;
+    }
+    const result = await runtime.stageUpload({
+      originalName: String(request.headers['x-trace-cue-file-name'] ?? ''),
+      contentType: String(request.headers['content-type'] ?? ''),
+      contentLength: request.headers['content-length'],
+      contentEncoding: request.headers['content-encoding']
+    }, request);
+    sendActionEnvelope(response, 'control-center media-review upload', result, context, 201);
+    return;
+  }
+  if (url.pathname === '/api/media-review/readiness') {
+    if (request.method !== 'GET') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_MEDIA_READINESS_GET_ONLY', 'Media review readiness only accepts GET requests.');
+      return;
+    }
+    const result = await context.controlCenterMediaReviewRuntime?.inspectReadiness()
+      ?? { status: 'error', data: { readiness: { status: 'unavailable' } }, warnings: [], errors: [{ code: 'CONTROL_CENTER_MEDIA_REVIEW_UNAVAILABLE', message: 'Media review is unavailable.', details: {} }], artifacts: [] };
+    sendActionEnvelope(response, 'control-center media-review readiness', result, context, 200);
+    return;
+  }
+  if (url.pathname === '/api/media-review/list' || url.pathname === '/api/media-review/status' || url.pathname === '/api/media-review/result') {
+    if (request.method !== 'GET') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_MEDIA_QUERY_GET_ONLY', 'Media review status only accepts GET requests.');
+      return;
+    }
+    const runtime = context.controlCenterMediaReviewRuntime;
+    if (!runtime) {
+      sendJson(response, 503, { error: { code: 'CONTROL_CENTER_MEDIA_REVIEW_UNAVAILABLE', message: 'Media review is unavailable.' } });
+      return;
+    }
+    const input = { operation_id: url.searchParams.get('id') };
+    const result = url.pathname.endsWith('/list') ? runtime.list() : url.pathname.endsWith('/status') ? runtime.status(input) : runtime.result(input);
+    sendActionEnvelope(response, `control-center media-review ${url.pathname.split('/').at(-1)}`, result, context, 200);
+    return;
+  }
+  if (['/api/media-review/source-decision', '/api/media-review/readiness/refresh', '/api/media-review/source/discard', '/api/media-review/start', '/api/media-review/cancel', '/api/media-review/cleanup'].includes(url.pathname)) {
+    if (request.method !== 'POST') {
+      sendMethodNotAllowed(response, 'CONTROL_CENTER_MEDIA_ACTION_POST_ONLY', 'Media review actions only accept POST requests.');
+      return;
+    }
+    const body = await readJsonRequestBody(request);
+    if (!body.ok) {
+      sendJson(response, body.status, { error: { code: body.code, message: body.message, details: body.details ?? {} } });
+      return;
+    }
+    const runtime = context.controlCenterMediaReviewRuntime;
+    if (!runtime) {
+      sendJson(response, 503, { error: { code: 'CONTROL_CENTER_MEDIA_REVIEW_UNAVAILABLE', message: 'Media review is unavailable.' } });
+      return;
+    }
+    let result;
+    let acceptedStatus = 200;
+    if (url.pathname.endsWith('/source-decision')) result = await runtime.sourceDecision(body.value);
+    else if (url.pathname.endsWith('/readiness/refresh')) result = await runtime.inspectReadiness({ refresh: true });
+    else if (url.pathname.endsWith('/source/discard')) result = await runtime.discardSource(body.value);
+    else if (url.pathname.endsWith('/start')) { result = await runtime.start(body.value); acceptedStatus = 202; }
+    else if (url.pathname.endsWith('/cancel')) result = runtime.cancel(body.value);
+    else result = await runtime.cleanup(body.value);
+    sendActionEnvelope(response, `control-center media-review ${url.pathname.split('/').at(-1)}`, result, context, acceptedStatus);
     return;
   }
   if (url.pathname === '/api/review-intake/results' || url.pathname === '/api/review-intake/result') {
@@ -1372,6 +1462,19 @@ function controlCenterServerMetadata(config, url) {
       '/api/review-intake/complete',
       '/api/review-intake/results',
       '/api/review-intake/result'
+    ],
+    media_review_endpoints: [
+      '/api/media-review/readiness',
+      '/api/media-review/readiness/refresh',
+      '/api/media-review/source-decision',
+      '/api/media-review/upload',
+      '/api/media-review/source/discard',
+      '/api/media-review/start',
+      '/api/media-review/status',
+      '/api/media-review/list',
+      '/api/media-review/result',
+      '/api/media-review/cancel',
+      '/api/media-review/cleanup'
     ],
     control_center_preference_endpoints: [
       '/api/settings/control-center',

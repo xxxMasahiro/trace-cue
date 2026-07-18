@@ -74,6 +74,7 @@ All notable local development changes are tracked here before public release.
 
 ## Unreleased
 
+- Added Phase 188-194 provider-neutral media review with network-free URL capability decisions, marker-owned private operation roots, fixed trusted local transcript CLI integration, deterministic FFprobe/FFmpeg analysis, canonical time-coded evidence and findings, bounded Markdown/JSON reports, CLI execution gates, and a non-technical Control Center video workflow. Raw media, audio, frames, transcript bodies, provider output, private paths, and URL secrets remain private; external send, cloud ASR, remote acquisition, model setup, and MCP media execution remain disabled. The existing repeat-review UI now reconciles one unambiguous newly published child from the passive dashboard before retrying a response-lost mutation.
 - Renamed the canonical product identity to TraceCue with `trace-cue` and `trace-cue-mcp` entrypoints while preserving legacy `browser-debug` and `browser-debug-mcp` aliases.
 - Added Phase 41 visual evidence metadata so browser screenshots, standalone images, screen captures, window captures, and desktop app captures can share a metadata-only local evidence record without embedding raw pixels, calling providers, exposing MCP execution, or mutating deterministic review output.
 - Added Phase 42 visual review provider policy planning on `agent execution plan` so future human-like visual review provider work has an explicit metadata-only disclosure boundary before any execution path is expanded.

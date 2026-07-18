@@ -1,0 +1,134 @@
+{
+  "schema_version": "1.0.0",
+  "policy_version": "1.0.0",
+  "mode": "local_first",
+  "source": {
+    "url_classification_network_enabled": false,
+    "url_acquisition_enabled": false,
+    "allowed_url_schemes": ["https:"],
+    "reject_ip_literal_urls": true,
+    "blocked_hostname_suffixes": [".localhost", ".local", ".lan", ".home", ".home.arpa", ".internal", ".corp"],
+    "official_player_rules": [
+      {
+        "rule_id": "official-player-query-or-path-v1",
+        "hosts": ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "youtube-nocookie.com", "www.youtube-nocookie.com"],
+        "service_kind": "official_video_player",
+        "display_path": "/watch",
+        "identifier_pattern": "^[A-Za-z0-9_-]{6,64}$",
+        "identifier_sources": [
+          { "kind": "query", "key": "v", "exact_path": "/watch" },
+          { "kind": "path_segment", "index": 0, "hosts": ["youtu.be"] },
+          { "kind": "path_segment", "index": 1, "prefixes": ["embed", "shorts", "live"] }
+        ]
+      },
+      {
+        "rule_id": "official-player-last-numeric-segment-v1",
+        "hosts": ["vimeo.com", "www.vimeo.com", "player.vimeo.com"],
+        "service_kind": "official_video_player",
+        "display_path": "/video",
+        "identifier_pattern": "^[0-9]{3,32}$",
+        "identifier_sources": [
+          { "kind": "last_matching_path_segment" }
+        ]
+      }
+    ],
+    "maximum_url_characters": 4096,
+    "maximum_local_media_bytes": 104857600,
+    "maximum_media_duration_us": 600000000,
+    "upload_timeout_ms": 120000,
+    "allowed_local_extensions": [".m4v", ".mkv", ".mov", ".mp4", ".webm"]
+  },
+  "retention": {
+    "default_mode": "ephemeral",
+    "allowed_modes": ["ephemeral", "project-retained"],
+    "ephemeral_ttl_ms": 86400000,
+    "project_retained_ttl_ms": 2592000000,
+    "private_directory_mode": "0700",
+    "private_file_mode": "0600",
+    "full_transcript_outside_private_root_allowed": false,
+    "raw_media_outside_private_root_allowed": false
+  },
+  "operation": {
+    "maximum_active_operations": 4,
+    "maximum_history_operations": 100,
+    "maximum_private_tree_entries": 20000,
+    "maximum_private_tree_bytes": 536870912,
+    "maximum_private_tree_depth": 16,
+    "maximum_findings": 200,
+    "maximum_timeline_items": 10000,
+    "maximum_public_excerpt_characters": 240,
+    "maximum_public_result_bytes": 1048576,
+    "cleanup_retry_delay_ms": 30000
+  },
+  "transcript_provider": {
+    "adapter_catalog_relative": "ops/MEDIA_REVIEW_PROVIDER_ADAPTERS.json",
+    "local_profile_relative": "ops/MEDIA_REVIEW_PROVIDER.local.json",
+    "local_profile_environment": "TRACE_CUE_MEDIA_REVIEW_PROVIDER_PROFILE",
+    "maximum_segments": 10000,
+    "maximum_transcript_bytes": 16777216,
+    "maximum_line_bytes": 65536,
+    "maximum_timeline_overrun_us": 250000,
+    "readiness_timeout_ms": 60000,
+    "stage_timeout_ms": 120000,
+    "execution_timeout_ms": 600000,
+    "maximum_stdout_bytes": 2097152,
+    "maximum_stderr_bytes": 1048576
+  },
+  "technical_analyzer": {
+    "probe_executable_environment": "TRACE_CUE_MEDIA_REVIEW_FFPROBE",
+    "analyzer_executable_environment": "TRACE_CUE_MEDIA_REVIEW_FFMPEG",
+    "probe_candidates": ["/usr/bin/ffprobe", "/usr/local/bin/ffprobe"],
+    "analyzer_candidates": ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg"],
+    "maximum_frames": 36000,
+    "maximum_subtitle_events": 10000,
+    "maximum_total_streams": 64,
+    "maximum_video_streams": 4,
+    "maximum_audio_streams": 8,
+    "maximum_subtitle_streams": 32,
+    "maximum_video_width": 7680,
+    "maximum_video_height": 4320,
+    "maximum_video_pixels": 33177600,
+    "maximum_audio_sample_rate": 192000,
+    "maximum_audio_channels": 16,
+    "decoder_threads": 2,
+    "maximum_single_allocation_bytes": 268435456,
+    "timeout_ms": 600000,
+    "maximum_stdout_bytes": 16777216,
+    "maximum_stderr_bytes": 4194304,
+    "cut_scene_threshold": 0.3,
+    "duplicate_hash_window": 1,
+    "dropped_interval_multiplier": 1.5,
+    "interval_jitter_warning_ratio": 0.1,
+    "av_sync_warning_us": 80000,
+    "subtitle_minimum_us": 1000000
+  },
+  "reviewer": {
+    "speech_cut_edge_margin_us": 120000,
+    "topic_change_similarity_threshold": 0.2,
+    "topic_change_visual_window_us": 1000000,
+    "long_pause_warning_us": 2000000,
+    "long_pause_high_us": 4000000,
+    "speech_density_warning_words_per_second": 4.5,
+    "speech_density_high_words_per_second": 6,
+    "repetition_similarity_threshold": 0.82,
+    "event_aggregation_gap_us": 120000,
+    "maximum_content_units": 32,
+    "maximum_content_excerpt_characters": 4096,
+    "maximum_single_excerpt_characters": 120,
+    "minimum_excerpt_characters": 12,
+    "maximum_semantic_text_characters": 1000,
+    "excerpt_fraction_limit": 0.6
+  },
+  "public_boundary": {
+    "absolute_paths_included": false,
+    "raw_media_included": false,
+    "raw_audio_included": false,
+    "raw_frames_included": false,
+    "full_transcript_included": false,
+    "raw_process_output_included": false,
+    "url_query_or_fragment_included": false,
+    "external_send_enabled": false,
+    "cloud_asr_enabled": false,
+    "mcp_execution_enabled": false
+  }
+}

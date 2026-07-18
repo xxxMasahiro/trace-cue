@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0.0",
+  "adapter_contract": "caller-owned-local-asr-cli-v1",
+  "runtime": {
+    "node_executable": "/absolute/path/to/node",
+    "node_sha256": "replace-with-64-character-sha256",
+    "entrypoint": "/absolute/path/to/local-transcript-cli.mjs",
+    "entrypoint_sha256": "replace-with-64-character-sha256",
+    "package_root": "/absolute/path/to/provider-package",
+    "git_executable": "/absolute/path/to/git",
+    "git_sha256": "replace-with-64-character-sha256",
+    "expected_revision": "replace-with-40-character-git-revision",
+    "require_clean_tree": true
+  },
+  "engine": "configured-local-engine",
+  "environment": {}
+}

@@ -3,7 +3,9 @@ const SESSION_TOKEN_HEADER = 'x-trace-cue-session-token';
 export const CONTROL_CENTER_RESPONSE_TIMEOUTS = Object.freeze({
   defaultRequestMs: 10_000,
   localActionMs: 10_000,
-  aiConnectionMs: 120_000
+  aiConnectionMs: 120_000,
+  mediaUploadMs: 120_000,
+  mediaReadinessMs: 60_000
 });
 let actionToken = null;
 let sessionToken = null;
@@ -22,9 +24,13 @@ export async function fetchDashboard() {
     cache: 'no-store'
   });
   const dashboard = envelope.data?.control_center ?? envelope.control_center ?? envelope.data ?? envelope;
-  const token = dashboard?.action_security?.token;
+  if (dashboard?.media_reviews !== undefined && !Array.isArray(dashboard.media_reviews)) throw responseContractError();
+  const validatedDashboard = dashboard?.media_reviews === undefined
+    ? dashboard
+    : { ...dashboard, media_reviews: dashboard.media_reviews.map(requireMediaOperation) };
+  const token = validatedDashboard?.action_security?.token;
   if (typeof token === 'string' && token.length >= 32) actionToken = token;
-  return dashboard;
+  return validatedDashboard;
 }
 
 export async function prepareAgenticReview(payload, { signal } = {}) {
@@ -224,6 +230,72 @@ export async function listReviewIntakeResults(limit = 50) {
 export async function getReviewIntakeResult(id) {
   const envelope = await requestJson(`/api/review-intake/result?id=${encodeURIComponent(id)}`);
   return envelope.data?.control_center_intake?.result;
+}
+
+export async function fetchMediaReviewReadiness({ refresh = false } = {}) {
+  const envelope = await requestJson(refresh ? '/api/media-review/readiness/refresh' : '/api/media-review/readiness', refresh
+    ? postOptions({}, CONTROL_CENTER_RESPONSE_TIMEOUTS.mediaReadinessMs)
+    : { method: 'GET', cache: 'no-store', responseTimeoutMs: CONTROL_CENTER_RESPONSE_TIMEOUTS.mediaReadinessMs });
+  return requireMediaReadiness(envelope.data?.readiness);
+}
+
+export async function inspectMediaReviewUrl(url) {
+  const envelope = await requestJson('/api/media-review/source-decision', postOptions({ url }));
+  return requireMediaSourceDecision(envelope.data?.source_decision);
+}
+
+export async function uploadMediaReviewSource(file, { signal } = {}) {
+  const envelope = await requestJson('/api/media-review/upload', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Trace-Cue-File-Name': encodeURIComponent(file.name)
+    },
+    body: file,
+    signal,
+    responseTimeoutMs: CONTROL_CENTER_RESPONSE_TIMEOUTS.mediaUploadMs
+  });
+  return requireMediaSource(envelope.data?.media_source);
+}
+
+export async function discardMediaReviewSource(sourceId) {
+  const envelope = await requestJson('/api/media-review/source/discard', postOptions({ source_id: sourceId }));
+  return requireMediaCleanupReceipt(envelope.data?.cleanup_receipt);
+}
+
+export async function startMediaReview(payload, { signal } = {}) {
+  const envelope = await requestJson('/api/media-review/start', postOptions(payload, CONTROL_CENTER_RESPONSE_TIMEOUTS.mediaReadinessMs, { signal }));
+  return requireMediaOperation(envelope.data?.media_review);
+}
+
+export async function fetchMediaReviewStatus(operationId, { signal } = {}) {
+  const query = new URLSearchParams({ id: operationId });
+  const envelope = await requestJson(`/api/media-review/status?${query}`, { method: 'GET', cache: 'no-store', signal });
+  return requireMediaOperation(envelope.data?.media_review);
+}
+
+export async function listMediaReviews() {
+  const envelope = await requestJson('/api/media-review/list', { method: 'GET', cache: 'no-store' });
+  const values = envelope.data?.media_reviews;
+  if (!Array.isArray(values)) throw responseContractError();
+  return values.map(requireMediaOperation);
+}
+
+export async function getMediaReviewResult(operationId) {
+  const query = new URLSearchParams({ id: operationId });
+  const envelope = await requestJson(`/api/media-review/result?${query}`, { method: 'GET', cache: 'no-store' });
+  return requireMediaResult(envelope.data?.media_review_result);
+}
+
+export async function cancelMediaReview(operationId) {
+  const envelope = await requestJson('/api/media-review/cancel', postOptions({ operation_id: operationId }));
+  return requireMediaOperation(envelope.data?.media_review);
+}
+
+export async function cleanupMediaReviewOperation(operationId, retention) {
+  const envelope = await requestJson('/api/media-review/cleanup', postOptions({ operation_id: operationId, retention }));
+  return requireMediaCleanupReceipt(envelope.data?.cleanup_receipt);
 }
 
 export async function setDisplayLanguage(payload) {
@@ -447,6 +519,145 @@ function responseContractError() {
   const error = new Error('The local action response could not be read.');
   error.name = 'ResponseContractError';
   return error;
+}
+
+function requireMediaReadiness(value) {
+  if (!isTypedObject(value, 'media_review_readiness')
+    || !['uninspected', 'ready', 'unavailable'].includes(value.status)
+    || !Array.isArray(value.local_input?.accepted_extensions)
+    || value.local_input.accepted_extensions.length === 0
+    || new Set(value.local_input.accepted_extensions).size !== value.local_input.accepted_extensions.length
+    || value.local_input.accepted_extensions.some((extension) => !/^\.[a-z0-9]{1,8}$/u.test(extension))
+    || !Number.isSafeInteger(value.local_input?.maximum_bytes)
+    || value.local_input.maximum_bytes <= 0
+    || !validReadinessComponent(value.transcript_provider)
+    || !validReadinessComponent(value.technical_analyzer)
+    || value.boundary?.read_only !== true
+    || value.boundary?.provider_transcription_performed !== false
+    || value.boundary?.media_analysis_performed !== false
+    || value.boundary?.network_performed !== false
+    || value.boundary?.setup_performed !== false
+    || value.boundary?.mcp_execution_performed !== false
+    || value.boundary?.secrets_included !== false
+    || value.boundary?.executable_paths_included !== false
+    || value.boundary?.provider_revision_included !== false
+    || value.boundary?.configuration_hashes_included !== false) throw responseContractError();
+  return value;
+}
+
+function requireMediaSourceDecision(value) {
+  const capabilities = new Set(['playback_inspection', 'full_media_analysis', 'metadata_only', 'unsupported']);
+  if (!isTypedObject(value, 'media_source_decision')
+    || !Array.isArray(value.capabilities)
+    || value.capabilities.some((item) => !capabilities.has(item))
+    || value.boundary?.network_performed !== false
+    || value.boundary?.media_acquired !== false
+    || value.boundary?.download_performed !== false
+    || value.boundary?.redirect_followed !== false
+    || value.boundary?.dns_resolution_performed !== false
+    || value.boundary?.url_query_or_fragment_included !== false
+    || value.boundary?.credentials_included !== false
+    || value.boundary?.rights_declaration_treated_as_legal_proof !== false) throw responseContractError();
+  return value;
+}
+
+function requireMediaSource(value) {
+  const formats = new Set(['iso-base-media', 'quicktime', 'matroska', 'webm']);
+  if (!isTypedObject(value, 'control_center_media_source')
+    || !/^[a-f0-9]{32}$/u.test(value.source_id ?? '')
+    || value.state !== 'staged'
+    || !Number.isSafeInteger(value.bytes)
+    || value.bytes <= 0
+    || !/^[a-f0-9]{64}$/u.test(value.media_identity?.sha256 ?? '')
+    || value.media_identity?.bytes !== value.bytes
+    || !formats.has(value.media_identity?.format)
+    || value.format !== value.media_identity.format
+    || !Number.isFinite(Date.parse(value.expires_at))
+    || value.boundary?.absolute_path_included !== false
+    || value.boundary?.original_name_included !== false
+    || value.boundary?.raw_media_included !== false
+    || value.boundary?.private_locator_included !== false
+    || value.boundary?.external_send_performed !== false
+    || value.boundary?.network_performed !== false) throw responseContractError();
+  return value;
+}
+
+function requireMediaOperation(value) {
+  if (!isTypedObject(value, 'media_review_operation')
+    || !/^[a-f0-9]{32}$/u.test(value.operation_id ?? '')
+    || !['prepared', 'running', 'cancelling', 'cancelled', 'completed', 'completed_retained', 'failed', 'interrupted', 'cleanup_required', 'cleaned'].includes(value.state)
+    || !['ephemeral', 'project-retained'].includes(value.retention)
+    || !value.capabilities || typeof value.capabilities !== 'object'
+    || !['status', 'cancel', 'cleanup', 'result'].every((key) => typeof value.capabilities[key] === 'boolean')
+    || typeof value.result_available !== 'boolean'
+    || typeof value.cleanup_available !== 'boolean'
+    || typeof value.private_payload_retained !== 'boolean'
+    || value.cleanup_available !== value.capabilities.cleanup
+    || value.result_available !== value.capabilities.result
+    || (value.cleanup_available && !value.private_payload_retained)
+    || !Array.isArray(value.errors)
+    || value.boundary?.absolute_path_included !== false
+    || value.boundary?.private_locator_included !== false
+    || value.boundary?.source_name_included !== false
+    || value.boundary?.raw_media_included !== false
+    || value.boundary?.full_transcript_included !== false) throw responseContractError();
+  return value;
+}
+
+function requireMediaResult(value) {
+  if (!isTypedObject(value, 'media_review_result')
+    || !/^[a-f0-9]{32}$/u.test(value.operation_id ?? '')
+    || !Array.isArray(value.deterministic_findings)
+    || !Array.isArray(value.advisory_findings)
+    || value.deterministic_findings.some((finding) => finding?.classification !== 'deterministic_measurement')
+    || value.advisory_findings.some((finding) => finding?.classification !== 'advisory_evaluation')
+    || value.privacy?.full_transcript_in_result !== false
+    || value.privacy?.raw_audio_in_result !== false
+    || value.privacy?.raw_frames_in_result !== false
+    || value.privacy?.external_send_performed !== false
+    || value.transcript?.boundary?.body_included !== false
+    || value.transcript?.boundary?.absolute_paths_included !== false
+    || Object.hasOwn(value.transcript ?? {}, 'segments')
+    || value.technical_analysis?.boundary?.raw_media_included !== false
+    || value.technical_analysis?.boundary?.raw_audio_included !== false
+    || value.technical_analysis?.boundary?.raw_frames_included !== false
+    || value.timeline?.boundary?.full_transcript_included !== false
+    || value.boundary?.absolute_paths_included !== false
+    || value.boundary?.raw_media_included !== false
+    || value.boundary?.raw_audio_included !== false
+    || value.boundary?.raw_frames_included !== false
+    || value.boundary?.full_transcript_included !== false
+    || value.boundary?.external_send_enabled !== false
+    || value.boundary?.deterministic_and_advisory_separated !== true) throw responseContractError();
+  return value;
+}
+
+function requireMediaCleanupReceipt(value) {
+  if (!isTypedObject(value, 'media_cleanup_receipt')
+    || !/^[a-f0-9]{32}$/u.test(value.operation_id ?? '')
+    || !['cleaned', 'already_cleaned'].includes(value.status)
+    || (value.status === 'cleaned' && !/^[a-f0-9]{64}$/u.test(value.identity ?? ''))
+    || (value.status === 'already_cleaned' && !(value.identity === null || /^[a-f0-9]{64}$/u.test(value.identity ?? '')))
+    || value.boundary?.absolute_path_included !== false
+    || value.boundary?.raw_media_included !== false
+    || value.boundary?.full_transcript_included !== false
+    || value.boundary?.sibling_deleted !== false
+    || value.boundary?.normal_artifact_root_deleted !== false) throw responseContractError();
+  return value;
+}
+
+function validReadinessComponent(value) {
+  return Boolean(value)
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && ['uninspected', 'ready', 'setup_required', 'unavailable'].includes(value.status)
+    && Array.isArray(value.limitations)
+    && value.limitations.every((item) => typeof item === 'string' && item.length <= 160);
+}
+
+function isTypedObject(value, type) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+    && value.schema_version === '1.0.0' && value.type === type;
 }
 
 function isCompleteSuccessEnvelope(value) {

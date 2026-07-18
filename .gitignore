@@ -9,6 +9,8 @@ playwright-report/
 .tmp/
 /ops/DASHBOARD_SETTINGS.local.json
 /ops/DASHBOARD_SETTINGS.local.json.*.tmp
+/ops/MEDIA_REVIEW_PROVIDER.local.json
+/ops/MEDIA_REVIEW_PROVIDER.local.json.*.tmp
 .env
 .env.*
 !.env.example

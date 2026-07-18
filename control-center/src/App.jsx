@@ -10,6 +10,10 @@ import {
   disconnectAiService,
   fetchCodexSubscriptionStatus,
   getReviewIntakeResult,
+  getMediaReviewResult,
+  fetchMediaReviewReadiness,
+  fetchMediaReviewStatus,
+  inspectMediaReviewUrl,
   listReviewIntakeResults,
   prepareAgenticReview,
   recoverAgenticReview,
@@ -23,7 +27,12 @@ import {
   submitAiApiKey,
   setControlCenterPreferences,
   startAgenticReview,
-  uploadReviewIntake
+  uploadReviewIntake,
+  uploadMediaReviewSource,
+  startMediaReview,
+  cancelMediaReview,
+  cleanupMediaReviewOperation,
+  discardMediaReviewSource
 } from './apiClient.js';
 import { designSystemStyle } from './designSystem.js';
 import { createTranslator } from './i18n.js';
@@ -31,14 +40,18 @@ import { PAGES, WORKFLOW_STAGES } from './pageDefinitions.js';
 import { REVIEW_METHOD_IDS, reviewMethodCopy } from './reviewMethods.js';
 import { useControlCenterRoute } from './useControlCenterRoute.js';
 
-const ACTIVE_STATES = new Set(['queued', 'preparing', 'dispatching', 'running', 'validating', 'in_progress', 'fetching']);
-const COMPLETE_STATES = new Set(['completed', 'complete', 'ready', 'success']);
+const ACTIVE_STATES = new Set(['queued', 'prepared', 'preparing', 'dispatching', 'running', 'cancelling', 'validating', 'in_progress', 'fetching']);
+const COMPLETE_STATES = new Set(['completed', 'completed_retained', 'cleaned', 'complete', 'ready', 'success']);
 const FAILED_STATES = new Set(['failed', 'error', 'blocked', 'timed_out']);
 const PREPARED_STATES = new Set(['prepared', 'evidence_ready']);
 const ATTENTION_STATES = new Set(['needs_attention', 'evidence_missing']);
 const DEFAULT_REVIEW = {
   source_kind: 'website',
   url: '',
+  media_input_mode: 'url',
+  media_url: '',
+  retention: 'ephemeral',
+  rights_declared: false,
   purpose: '',
   review_method: 'standard',
   continue_without_ai: false
@@ -49,6 +62,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [intakeResults, setIntakeResults] = useState([]);
+  const [mediaReviews, setMediaReviews] = useState([]);
   const [intakeLoadError, setIntakeLoadError] = useState(false);
   const [locale, setLocale] = useState('en');
   const dashboardRequestGeneration = useRef(0);
@@ -75,6 +89,7 @@ export default function App() {
       } else {
         setIntakeLoadError(true);
       }
+      setMediaReviews(Array.isArray(next.media_reviews) ? next.media_reviews : []);
       setLocale(readLocale(next));
       return next;
     } catch (caught) {
@@ -96,8 +111,9 @@ export default function App() {
 
   const items = useMemo(() => sortItemsByRecency([
     ...normalizeItems(dashboard?.agentic_review?.items, t),
-    ...normalizeIntakeItems(intakeResults, t)
-  ]), [dashboard, intakeResults, t]);
+    ...normalizeIntakeItems(intakeResults, t),
+    ...normalizeMediaReviewItems(mediaReviews, t)
+  ]), [dashboard, intakeResults, mediaReviews, t]);
   const runningCount = items.filter((item) => isActive(item.state)).length;
 
   return (
@@ -152,6 +168,9 @@ function ControlCenter({ dashboard, items, intakeResults, intakeLoadError, local
   if (route.page === 'settings') return <SettingsPage dashboard={dashboard} locale={locale} setLocale={setLocale} reload={reload} t={t} />;
   if (route.view === 'new') return <NewReviewPage dashboard={dashboard} navigate={navigate} reload={reload} t={t} />;
   if (route.view === 'work' && route.itemId) {
+    if (route.itemId.startsWith('media-') && /^[a-f0-9]{32}$/u.test(route.itemId.slice('media-'.length))) {
+      return <MediaReviewPage operationId={route.itemId.slice('media-'.length)} navigate={navigate} reload={reload} t={t} />;
+    }
     if (/^[a-f0-9]{32}$/u.test(route.itemId)) {
       return <SavedIntakeResultPage resultId={route.itemId} locale={locale} navigate={navigate} t={t} />;
     }
@@ -208,6 +227,9 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [localResult, setLocalResult] = useState(null);
+  const [mediaReadiness, setMediaReadiness] = useState(null);
+  const [mediaDecision, setMediaDecision] = useState(null);
+  const [pendingMediaSourceId, setPendingMediaSourceId] = useState(null);
   const [prepared, setPrepared] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
   const [needsAiRefresh, setNeedsAiRefresh] = useState(false);
@@ -219,6 +241,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
   const fileInputRef = useRef(null);
   const actionGenerationRef = useRef(0);
   const actionAbortRef = useRef(null);
+  const mediaOperationIdRef = useRef(null);
 
   useEffect(() => () => {
     actionGenerationRef.current += 1;
@@ -229,15 +252,44 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
     setAiDraft(readAiSelection(dashboard?.ai_connections));
   }, [dashboard?.ai_connections?.capability_token, dashboard?.ai_connections?.settings_revision]);
 
+  useEffect(() => {
+    if (form.source_kind !== 'video') return undefined;
+    let active = true;
+    fetchMediaReviewReadiness()
+      .then((value) => { if (active) setMediaReadiness(value); })
+      .catch(() => { if (active) setMediaReadiness({ status: 'unavailable' }); });
+    return () => { active = false; };
+  }, [form.source_kind]);
+
   function update(field, value) { setForm((current) => ({ ...current, [field]: value })); }
   function clearFileSelection() {
+    const stagedSourceId = pendingMediaSourceId;
     setFile(null);
     setPendingIntakeId(null);
+    setPendingMediaSourceId(null);
+    mediaOperationIdRef.current = null;
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (stagedSourceId) discardMediaReviewSource(stagedSourceId).catch(() => {});
   }
   function selectFile(nextFile) {
+    const stagedSourceId = pendingMediaSourceId;
     setPendingIntakeId(null);
+    setPendingMediaSourceId(null);
+    mediaOperationIdRef.current = createMediaOperationId();
     setFile(nextFile);
+    if (stagedSourceId) discardMediaReviewSource(stagedSourceId).catch(() => {});
+  }
+  async function refreshMediaReadiness() {
+    setBusy(true);
+    setError(null);
+    try {
+      setMediaReadiness(await fetchMediaReviewReadiness({ refresh: true }));
+    } catch (caught) {
+      setMediaReadiness({ status: 'unavailable' });
+      setError(uiErrorMessage(caught, t));
+    } finally {
+      setBusy(false);
+    }
   }
   async function prepare(event) {
     event.preventDefault();
@@ -247,7 +299,42 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
     setError(null);
     setNeedsAiRefresh(false);
     setLocalResult(null);
+    let mediaAttemptId = null;
     try {
+      if (form.source_kind === 'video') {
+        if (form.media_input_mode === 'url') {
+          const decision = await inspectMediaReviewUrl(form.media_url.trim());
+          if (!isCurrentPageAction(actionGenerationRef, action)) return;
+          setMediaDecision(decision);
+          return;
+        }
+        if (!file) throw new Error('Missing file');
+        if (!form.rights_declared) throw new Error('Media rights confirmation required');
+        let sourceId = pendingMediaSourceId;
+        if (!sourceId) {
+          const source = await uploadMediaReviewSource(file, { signal: action.signal });
+          if (!isCurrentPageAction(actionGenerationRef, action)) return;
+          sourceId = source.source_id;
+          setPendingMediaSourceId(sourceId);
+        }
+        mediaAttemptId = mediaOperationIdRef.current ?? createMediaOperationId();
+        mediaOperationIdRef.current = mediaAttemptId;
+        const operation = await startMediaReview({
+          source_id: sourceId,
+          operation_id: mediaAttemptId,
+          retention: form.retention,
+          rights_declared: true,
+          rights_confirm: 'use-owned-or-authorized-media',
+          confirm: 'execute-media-review'
+        }, { signal: action.signal });
+        if (!isCurrentPageAction(actionGenerationRef, action)) return;
+        setPendingMediaSourceId(null);
+        mediaOperationIdRef.current = null;
+        await reload({ quiet: true });
+        if (!isCurrentPageAction(actionGenerationRef, action)) return;
+        navigate({ page: 'confirm', view: 'work', itemId: `media-${operation.operation_id}` });
+        return;
+      }
       if (form.source_kind !== 'website') {
         if (!file) throw new Error('Missing file');
         let intakeId = pendingIntakeId;
@@ -312,6 +399,23 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
       setConfirmation(disclosure);
     } catch (caught) {
       if (!isCurrentPageAction(actionGenerationRef, action)) return;
+      if (mediaAttemptId && !caught?.envelope) {
+        try {
+          const recovered = await fetchMediaReviewStatus(mediaAttemptId, { signal: action.signal });
+          if (!isCurrentPageAction(actionGenerationRef, action)) return;
+          if (recovered?.operation_id === mediaAttemptId) {
+            await reload({ quiet: true });
+            if (!isCurrentPageAction(actionGenerationRef, action)) return;
+            navigate({ page: 'confirm', view: 'work', itemId: `media-${mediaAttemptId}` });
+            return;
+          }
+        } catch {}
+      }
+      if (['CONTROL_CENTER_MEDIA_SOURCE_UNAVAILABLE', 'CONTROL_CENTER_MEDIA_SOURCE_CHANGED'].includes(apiErrorCode(caught))) {
+        if (pendingMediaSourceId) discardMediaReviewSource(pendingMediaSourceId).catch(() => {});
+        setPendingMediaSourceId(null);
+        mediaOperationIdRef.current = null;
+      }
       if (!sameIntakeRetryAvailable(caught)) setPendingIntakeId(null);
       if (requiresAiProjectionRefresh(apiErrorCode(caught))) {
         const nextDashboard = await reload({ quiet: true });
@@ -331,10 +435,13 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
     { id: 'website', icon: '◎', title: t('review.source.website', 'Website'), text: t('review.source.websiteText', 'Check a page in the browser.') },
     { id: 'image', icon: '▣', title: t('review.source.image', 'Image'), text: t('review.source.imageText', 'Prepare image evidence.') },
     { id: 'document_text', icon: '≡', title: t('review.source.document', 'Document'), text: t('review.source.documentText', 'Prepare a review proposal from text.') },
-    { id: 'playwright_result', icon: '✓', title: t('review.source.testResult', 'Test result'), text: t('review.source.testResultText', 'Summarize saved browser-check results.') }
+    { id: 'playwright_result', icon: '✓', title: t('review.source.testResult', 'Test result'), text: t('review.source.testResultText', 'Summarize saved browser-check results.') },
+    { id: 'video', icon: '▶', title: t('review.source.video', 'Video'), text: t('review.source.videoText', 'Review timing, sound, captions, and clarity.') }
   ];
   const accept = form.source_kind === 'image'
     ? '.png,.jpg,.jpeg,.gif,.webp'
+    : form.source_kind === 'video'
+      ? (mediaReadiness?.local_input?.accepted_extensions?.join(',') || '.mp4,.mov,.m4v,.mkv,.webm')
     : form.source_kind === 'document_text'
       ? '.txt,.md,.markdown,.json'
       : '.json,.xml';
@@ -345,6 +452,11 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
     && preferences.aiSuggestions
     && (aiConnections.status !== 'available' || !selectedAiSummary);
   const needsReviewGoal = form.source_kind === 'website' || form.source_kind === 'document_text';
+  const videoLocal = form.source_kind === 'video' && form.media_input_mode === 'local';
+  const sourceMissing = form.source_kind === 'video'
+    ? (videoLocal ? !file : !form.media_url.trim())
+    : (form.source_kind !== 'website' && !file);
+  const videoNotReady = videoLocal && mediaReadiness?.status !== 'ready';
   async function start() {
     const action = beginPageAction(actionGenerationRef, actionAbortRef);
     setBusy(true);
@@ -423,7 +535,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
           <div className="source-grid">
             {sourceOptions.map((source) => (
               <label className={`source-choice${form.source_kind === source.id ? ' selected' : ''}`} key={source.id}>
-                <input type="radio" name="source-kind" value={source.id} checked={form.source_kind === source.id} onChange={() => { update('source_kind', source.id); clearFileSelection(); setLocalResult(null); }} />
+                <input type="radio" name="source-kind" value={source.id} checked={form.source_kind === source.id} onChange={() => { update('source_kind', source.id); clearFileSelection(); setLocalResult(null); setMediaDecision(null); }} />
                 <span className="source-icon" aria-hidden="true">{source.icon}</span>
                 <span><strong>{source.title}</strong><small>{source.text}</small></span>
               </label>
@@ -437,6 +549,64 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
             <input id="review-url" className="text-input" type="url" inputMode="url" required autoComplete="url" placeholder="https://example.jp" value={form.url} onChange={(event) => update('url', event.target.value)} />
             <p className="field-hint">{t('review.source.urlHint', 'Enter the page you want to review.')}</p>
           </>
+        ) : form.source_kind === 'video' ? (
+          <section className="media-review-input" aria-labelledby="media-review-input-title">
+            <div className="section-heading compact-heading">
+              <div><p className="eyebrow">{t('media.localFirst', 'Local-first media review')}</p><h2 id="media-review-input-title">{t('media.input.title', 'Choose how to review the video')}</h2></div>
+              <span className={`status-pill ${mediaReadiness?.status === 'ready' ? 'status-success' : 'status-warning'}`}>{mediaReadiness?.status === 'ready' ? t('media.ready', 'Ready') : mediaReadiness?.status === 'uninspected' ? t('media.notChecked', 'Not checked') : t('media.setupNeeded', 'Setup needed')}</span>
+            </div>
+            <fieldset className="choice-fieldset compact-fieldset">
+              <legend>{t('media.input.legend', 'Video source')}</legend>
+              <div className="method-grid two-column-grid">
+                <label className={`choice-card${form.media_input_mode === 'url' ? ' selected' : ''}`}>
+                  <input type="radio" name="media-input-mode" value="url" checked={form.media_input_mode === 'url'} onChange={() => { update('media_input_mode', 'url'); clearFileSelection(); setMediaDecision(null); }} />
+                  <span className="choice-radio" aria-hidden="true" />
+                  <span><strong>{t('media.input.url', 'Video URL')}</strong><small>{t('media.input.urlText', 'Check what TraceCue can safely inspect before any playback.')}</small></span>
+                </label>
+                <label className={`choice-card${form.media_input_mode === 'local' ? ' selected' : ''}`}>
+                  <input type="radio" name="media-input-mode" value="local" checked={form.media_input_mode === 'local'} onChange={() => { update('media_input_mode', 'local'); setMediaDecision(null); }} />
+                  <span className="choice-radio" aria-hidden="true" />
+                  <span><strong>{t('media.input.local', 'Local video')}</strong><small>{t('media.input.localText', 'Run the full review privately on this computer.')}</small></span>
+                </label>
+              </div>
+            </fieldset>
+            {form.media_input_mode === 'url' ? <>
+              <label className="field-label" htmlFor="media-review-url">{t('media.url.label', 'Video URL')}</label>
+              <input id="media-review-url" className="text-input" type="url" inputMode="url" required autoComplete="url" placeholder="https://www.youtube.com/watch?v=…" value={form.media_url} onChange={(event) => { update('media_url', event.target.value); setMediaDecision(null); }} />
+              <p className="field-hint">{t('media.url.hint', 'TraceCue checks the provider and allowed capabilities without downloading or contacting the URL.')}</p>
+              {mediaDecision ? <MediaSourceDecision decision={mediaDecision} t={t} /> : null}
+            </> : <>
+              <div className="file-field">
+                <label className={`file-drop${file ? ' selected' : ''}`} htmlFor="review-file" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); selectFile(event.dataTransfer.files?.[0] ?? null); }}>
+                  <span className="file-mark" aria-hidden="true">＋</span>
+                  <span><strong>{file ? t('review.file.selected', 'File selected') : t('media.file.choose', 'Choose a video')}</strong><small>{file ? t('review.file.privateName', 'The file name stays private.') : mediaInputLimitLabel(mediaReadiness, t)}</small></span>
+                </label>
+                <input ref={fileInputRef} id="review-file" className="sr-only" type="file" aria-required="true" accept={accept} onChange={(event) => selectFile(event.target.files?.[0] ?? null)} />
+                <p className="field-hint">{t('media.file.localOnly', 'Video, audio, frames, and the full transcript stay in private local storage.')}</p>
+              </div>
+              <label className="check-option media-rights-confirmation">
+                <input type="checkbox" checked={form.rights_declared} onChange={(event) => update('rights_declared', event.target.checked)} />
+                <span className="check-option-mark" aria-hidden="true" />
+                <span>{t('media.rights.confirm', 'I own this video or have permission to review it.')}</span>
+              </label>
+              <fieldset className="choice-fieldset compact-fieldset">
+                <legend>{t('media.retention.legend', 'After the review')}</legend>
+                <div className="method-grid two-column-grid">
+                  <label className={`choice-card${form.retention === 'ephemeral' ? ' selected' : ''}`}>
+                    <input type="radio" name="media-retention" value="ephemeral" checked={form.retention === 'ephemeral'} onChange={() => update('retention', 'ephemeral')} />
+                    <span className="choice-radio" aria-hidden="true" />
+                    <span><strong>{t('media.retention.delete', 'Remove private source data')}</strong><small>{t('media.retention.deleteText', 'Recommended. Keep only the bounded review report.')}</small></span>
+                  </label>
+                  <label className={`choice-card${form.retention === 'project-retained' ? ' selected' : ''}`}>
+                    <input type="radio" name="media-retention" value="project-retained" checked={form.retention === 'project-retained'} onChange={() => update('retention', 'project-retained')} />
+                    <span className="choice-radio" aria-hidden="true" />
+                    <span><strong>{t('media.retention.keep', 'Keep private source data')}</strong><small>{t('media.retention.keepText', 'Keep it privately until you explicitly clean it up.')}</small></span>
+                  </label>
+                </div>
+              </fieldset>
+              {mediaReadiness?.status !== 'ready' ? <InlineNotice tone="warning" title={mediaReadiness?.status === 'uninspected' ? t('media.check.title', 'Check local video review setup') : t('media.unavailable.title', 'Full video review is not ready')} text={mediaReadiness?.status === 'uninspected' ? t('media.check.text', 'Run a private readiness check before choosing a video. Nothing will be installed or downloaded.') : t('media.unavailable.text', 'Check local transcription and FFmpeg readiness. TraceCue will not install or download anything automatically.')} action={<button className="secondary-action compact" type="button" disabled={busy} onClick={refreshMediaReadiness}>{busy ? t('media.check.running', 'Checking…') : t('media.check.action', 'Check local setup')}</button>} /> : null}
+            </>}
+          </section>
         ) : (
           <div className="file-field">
             <label
@@ -503,7 +673,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
           <button className="secondary-action" type="button" onClick={() => navigate({ page: 'confirm', view: 'list' })}>{t('common.back', 'Back')}</button>
           {localResult
             ? <button className="primary-action" type="button" onClick={() => { clearFileSelection(); setLocalResult(null); setError(null); }}>{t('intake.result.prepareAnother', 'Prepare another')}</button>
-            : <button ref={startButtonRef} className="primary-action" type="submit" disabled={busy || (form.source_kind !== 'website' && !file) || (needsAiChoice && !form.continue_without_ai)}>{busy ? t('review.action.starting', 'Preparing...') : sourceActionLabel(form.source_kind, t)}<DirectionalSymbol symbol="→" /></button>}
+            : <button ref={startButtonRef} className="primary-action" type="submit" disabled={busy || sourceMissing || videoNotReady || (videoLocal && !form.rights_declared) || (needsAiChoice && !form.continue_without_ai)}>{busy ? t('review.action.starting', 'Preparing...') : form.source_kind === 'video' ? (videoLocal ? t('media.action.start', 'Start video review') : t('media.action.inspect', 'Check URL capabilities')) : sourceActionLabel(form.source_kind, t)}<DirectionalSymbol symbol="→" /></button>}
         </div>
       </form>
       <SendConfirmationDialog
@@ -537,6 +707,177 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
 function IntakeResult({ result, onOpen = null, t }) {
   const presentation = intakeResultPresentation(result, t);
   return <InlineNotice tone={presentation.tone} title={presentation.title} text={presentation.text} action={onOpen ? <button className="link-action" type="button" onClick={onOpen}>{t('intake.result.open', 'Open result')}</button> : null} />;
+}
+
+function MediaSourceDecision({ decision, t }) {
+  const capability = decision?.capabilities?.[0] ?? 'unsupported';
+  const copy = capability === 'playback_inspection'
+    ? {
+        tone: 'success',
+        title: t('media.url.playbackTitle', 'Official-player inspection is available'),
+        text: t('media.url.playbackText', 'TraceCue may inspect playback state through the official player. It will not download or extract the media.')
+      }
+    : capability === 'metadata_only'
+      ? {
+          tone: 'warning',
+          title: t('media.url.metadataTitle', 'Only source information can be checked'),
+          text: t('media.url.metadataText', 'Full media analysis is not authorized for this URL. Use an owned or authorized local file for a complete review.')
+        }
+      : {
+          tone: 'danger',
+          title: t('media.url.unsupportedTitle', 'This source cannot be reviewed safely'),
+          text: t('media.url.unsupportedText', 'TraceCue did not contact, download, or inspect media from this URL.')
+        };
+  return <div className="media-source-decision" data-testid="tc-media-source-decision">
+    <InlineNotice tone={copy.tone} title={copy.title} text={copy.text} />
+    <dl className="result-facts compact-facts">
+      <div><dt>{t('media.url.source', 'Source')}</dt><dd>{decision?.source?.display_label ?? t('media.url.privateSource', 'Private source')}</dd></div>
+      <div><dt>{t('media.url.capability', 'Available review')}</dt><dd>{mediaCapabilityLabel(capability, t)}</dd></div>
+      <div><dt>{t('media.url.network', 'Network activity')}</dt><dd>{t('media.url.noNetwork', 'None during this capability check')}</dd></div>
+    </dl>
+  </div>;
+}
+
+function MediaReviewPage({ operationId, navigate, reload, t }) {
+  const [operation, setOperation] = useState(null);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer = null;
+    let active = true;
+    async function refresh() {
+      try {
+        const next = await fetchMediaReviewStatus(operationId, { signal: controller.signal });
+        if (!active) return;
+        setOperation(next);
+        setError(null);
+        if (next?.result_available) {
+          const completed = await getMediaReviewResult(operationId);
+          if (active) setResult(completed);
+        }
+        if (active && isActive(readState(next))) timer = window.setTimeout(refresh, 750);
+      } catch (caught) {
+        if (active && !controller.signal.aborted) setError(uiErrorMessage(caught, t));
+      }
+    }
+    refresh();
+    return () => {
+      active = false;
+      controller.abort();
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [operationId, t]);
+
+  async function cancel() {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await cancelMediaReview(operationId);
+      setOperation(next);
+      await reload({ quiet: true });
+    } catch (caught) {
+      setError(uiErrorMessage(caught, t));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cleanup() {
+    setBusy(true);
+    setError(null);
+    try {
+      await cleanupMediaReviewOperation(operationId, operation?.retention);
+      setOperation((current) => current ? { ...current, state: 'cleaned', cleanup_available: false, capabilities: { ...current.capabilities, cleanup: false } } : current);
+      await reload({ quiet: true });
+    } catch (caught) {
+      try {
+        const recovered = await fetchMediaReviewStatus(operationId);
+        if (recovered?.state === 'cleaned') {
+          setOperation(recovered);
+          await reload({ quiet: true });
+          return;
+        }
+      } catch {}
+      setError(uiErrorMessage(caught, t));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const state = readState(operation);
+  const active = isActive(state);
+  const progress = Number(operation?.progress?.percent);
+  const findings = result ? [...(result.deterministic_findings ?? []), ...(result.advisory_findings ?? [])] : [];
+  return <div className="screen narrow-screen" data-testid="tc-cc-media-review">
+    <BackButton onClick={() => navigate({ page: 'confirm', view: 'list' })} t={t} />
+    <PageHeading eyebrow={t('media.result.eyebrow', 'Private local video review')} title={t('media.result.title', 'Video review')} />
+    {!operation && !error ? <StatePanel title={t('review.state.loadingTitle', 'Loading review')} text={t('review.state.loadingText', 'Reading the latest status.')} /> : null}
+    {operation && active ? <section className="progress-panel media-progress" aria-live="polite">
+      <span className="progress-mark" aria-hidden="true">▶</span>
+      <div>
+        <p className="eyebrow">{t('media.progress.local', 'Processing privately on this computer')}</p>
+        <h2>{mediaProgressLabel(operation?.progress?.phase, t)}</h2>
+        <p className="muted">{Number.isFinite(progress) ? formatCopy(t('media.progress.percent', '{percent}% complete'), { percent: Math.round(progress) }) : t('media.progress.wait', 'This page updates automatically.')}</p>
+      </div>
+      {operation?.capabilities?.cancel ? <button className="secondary-action" type="button" disabled={busy} onClick={cancel}>{t('media.action.cancel', 'Stop review')}</button> : null}
+    </section> : null}
+    {error ? <InlineNotice tone="danger" title={t('media.result.loadFailed', 'The video review could not be loaded')} text={error} /> : null}
+    {operation && ['failed', 'cancelled', 'interrupted', 'cleanup_required'].includes(state) ? <StatePanel
+      tone={state === 'cancelled' ? 'warning' : 'danger'}
+      title={state === 'cancelled' ? t('media.result.cancelled', 'The video review was stopped') : t('media.result.failed', 'The video review did not finish')}
+      text={operation?.errors?.[0]?.message ?? t('media.result.failedText', 'No successful result was recorded.')}
+      action={operation?.cleanup_available ? <button className="secondary-action" type="button" disabled={busy} onClick={cleanup}>{t('media.action.cleanup', 'Remove private source data')}</button> : null}
+    /> : null}
+    {result ? <section className="media-review-result">
+      <InlineNotice
+        tone="success"
+        title={t('media.result.ready', 'Your time-coded review is ready')}
+        text={formatCopy(t('media.result.summary', '{count} evidence-linked finding(s). Deterministic measurements and advisory evaluations are shown separately.'), { count: findings.length })}
+      />
+      <div className="summary-strip" aria-label={t('media.result.summaryLabel', 'Video review summary')}>
+        <Metric label={t('media.result.technical', 'Technical measurements')} value={result.deterministic_findings?.length ?? 0} />
+        <Metric label={t('media.result.advisory', 'Advisory evaluations')} value={result.advisory_findings?.length ?? 0} />
+        <Metric label={t('media.result.transcriptSegments', 'Timed speech segments')} value={result.transcript?.timed_segment_count ?? 0} />
+      </div>
+      <MediaFindingSection title={t('media.result.technical', 'Technical measurements')} findings={result.deterministic_findings ?? []} t={t} />
+      <MediaFindingSection title={t('media.result.advisory', 'Advisory evaluations')} findings={result.advisory_findings ?? []} t={t} />
+      {result.limitations?.length ? <section className="media-limitations"><h2>{t('media.result.limitations', 'Review limitations')}</h2><ul>{result.limitations.map((item) => <li key={item}>{humanizeMediaToken(item)}</li>)}</ul></section> : null}
+      <InlineNotice tone="neutral" title={t('media.result.privacy', 'Private source data stays protected')} text={t('media.result.privacyText', 'The report contains no raw video, audio, frames, absolute paths, or complete transcript. Nothing was sent outside this computer.')} />
+      {operation?.cleanup_available ? <div className="form-actions"><button className="secondary-action" type="button" disabled={busy} onClick={cleanup}>{t('media.action.cleanup', 'Remove private source data')}</button></div> : null}
+    </section> : null}
+  </div>;
+}
+
+function MediaFindingSection({ title, findings, t }) {
+  return <section className="media-finding-section"><h2>{title}</h2>{findings.length ? <ol className="media-finding-list">{findings.map((finding) => <li className="media-finding-card" key={finding.id}>
+    <div className="media-finding-heading"><span className={`status-badge ${mediaSeverityTone(finding.severity)}`}>{humanizeMediaToken(finding.severity)}</span><strong>{finding.timecode?.start ?? '00:00.000'}–{finding.timecode?.end ?? finding.timecode?.start ?? '00:00.000'}</strong></div>
+    <h3>{humanizeMediaToken(finding.kind)}</h3>
+    <dl className="result-facts compact-facts">
+      <div><dt>{t('media.finding.evidence', 'Evidence')}</dt><dd>{(finding.evidence ?? []).join(' ')}</dd></div>
+      <div><dt>{t('media.finding.method', 'Method')}</dt><dd>{humanizeMediaToken(finding.method)}</dd></div>
+      <div><dt>{t('media.finding.confidence', 'Confidence')}</dt><dd>{formatConfidence(finding.confidence)}</dd></div>
+      <div><dt>{t('media.finding.classification', 'Classification')}</dt><dd>{finding.classification === 'deterministic_measurement' ? t('media.finding.deterministic', 'Technical measurement') : t('media.finding.advisory', 'Advisory evaluation')}</dd></div>
+      {finding.limitations?.length ? <div><dt>{t('media.finding.limitations', 'Limitations')}</dt><dd>{finding.limitations.map(humanizeMediaToken).join('; ')}</dd></div> : null}
+      <div><dt>{t('media.finding.recommendation', 'Recommended fix')}</dt><dd>{finding.recommendation}</dd></div>
+    </dl>
+  </li>)}</ol> : <p className="muted">{t('media.result.none', 'No findings in this category.')}</p>}</section>;
+}
+
+function mediaInputLimitLabel(readiness, t) {
+  const extensions = readiness?.local_input?.accepted_extensions;
+  const maximumBytes = readiness?.local_input?.maximum_bytes;
+  const formats = Array.isArray(extensions) && extensions.length
+    ? extensions.map((value) => value.replace(/^\./u, '').toUpperCase()).join(', ')
+    : t('media.file.formatsFallback', 'Supported video formats');
+  const size = Number.isSafeInteger(maximumBytes) && maximumBytes > 0
+    ? maximumBytes >= 1024 * 1024
+      ? `${Math.floor(maximumBytes / (1024 * 1024))} MB`
+      : `${Math.floor(maximumBytes / 1024)} KB`
+    : t('media.file.privateLimit', 'the configured local limit');
+  return formatCopy(t('media.file.limit', '{formats} · up to {size}'), { formats, size });
 }
 
 function SavedIntakeResultPage({ resultId, locale, navigate, t }) {
@@ -1435,6 +1776,7 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
         pending = {
           reviewId: requestedReviewId,
           kind,
+          baselineReviewIds: dashboardReviewIds(latestDashboard),
           payload: {
             review_id: requestedReviewId,
             repeat_kind: kind,
@@ -1457,13 +1799,18 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
           if (pendingRepeatRef.current === pending) pendingRepeatRef.current = null;
           throw caught;
         }
-        try {
-          next = await repeatAgenticReview(pending.payload, { signal: action.signal });
-        } catch (reconciliationError) {
-          if (reconciliationError?.envelope && pendingRepeatRef.current === pending) {
-            pendingRepeatRef.current = null;
+        const reconciledDashboard = await reload({ quiet: true });
+        if (!isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action)) return;
+        next = findNewRepeatedReview(reconciledDashboard, pending);
+        if (!next) {
+          try {
+            next = await repeatAgenticReview(pending.payload, { signal: action.signal });
+          } catch (reconciliationError) {
+            if (reconciliationError?.envelope && pendingRepeatRef.current === pending) {
+              pendingRepeatRef.current = null;
+            }
+            throw reconciliationError;
           }
-          throw reconciliationError;
         }
       }
       const nextId = readReviewId(next);
@@ -2049,6 +2396,28 @@ function Toggle({ checked, disabled = false, onChange = () => {}, label }) {
   return <label className={`toggle${disabled ? ' locked' : ''}`}><input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} /><span aria-hidden="true" /><span className="sr-only">{label}</span></label>;
 }
 
+function dashboardReviewIds(dashboard) {
+  return dashboardReviewItems(dashboard)
+    .map((item) => readReviewId(item))
+    .filter(Boolean);
+}
+
+function findNewRepeatedReview(dashboard, pending) {
+  const baseline = new Set(Array.isArray(pending?.baselineReviewIds) ? pending.baselineReviewIds : []);
+  const matches = dashboardReviewItems(dashboard).filter((item) => {
+    const id = readReviewId(item);
+    return Boolean(id)
+      && !baseline.has(id)
+      && item.parent_review?.id === pending?.reviewId
+      && item.parent_review?.repeat_mode === pending?.kind;
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function dashboardReviewItems(dashboard) {
+  return Array.isArray(dashboard?.agentic_review?.items) ? dashboard.agentic_review.items : [];
+}
+
 function normalizeItems(value, t) {
   if (!Array.isArray(value)) return [];
   return value.map((item, index) => {
@@ -2077,6 +2446,74 @@ function normalizeIntakeItems(value, t) {
     intake_result: true,
     completed_at: result.completed_at
   }));
+}
+
+function normalizeMediaReviewItems(value, t) {
+  if (!Array.isArray(value)) return [];
+  return value.map((operation) => {
+    const state = readState(operation);
+    return {
+      ...operation,
+      id: `media-${operation.operation_id}`,
+      state,
+      title: t('media.result.title', 'Video review'),
+      description: activeMediaDescription(operation, t),
+      remaining: 0,
+      media_review: true,
+      operation_id: operation.operation_id,
+      created_at: operation.created_at,
+      updated_at: operation.updated_at
+    };
+  });
+}
+
+function createMediaOperationId() {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return [...bytes].map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+function activeMediaDescription(operation, t) {
+  if (operation?.result_available) return t('media.list.resultReady', 'Time-coded video findings are ready.');
+  if (isActive(readState(operation))) return mediaProgressLabel(operation?.progress?.phase, t);
+  if (readState(operation) === 'cancelled') return t('media.result.cancelled', 'The video review was stopped');
+  if (isFailed(readState(operation))) return t('media.result.failed', 'The video review did not finish');
+  return stateDescription(readState(operation), t);
+}
+
+function mediaCapabilityLabel(value, t) {
+  if (value === 'playback_inspection') return t('media.capability.playback', 'Official-player playback inspection');
+  if (value === 'full_media_analysis') return t('media.capability.full', 'Full local media analysis');
+  if (value === 'metadata_only') return t('media.capability.metadata', 'Source information only');
+  return t('media.capability.unsupported', 'Unsupported');
+}
+
+function mediaProgressLabel(value, t) {
+  const labels = {
+    queued: t('media.progress.queued', 'Waiting to start'),
+    preparing: t('media.progress.preparing', 'Preparing private workspace'),
+    staging: t('media.progress.staging', 'Preparing the local video'),
+    analyzing: t('media.progress.analyzing', 'Analyzing video and speech'),
+    integrating: t('media.progress.integrating', 'Matching evidence by timecode'),
+    cancelling: t('media.progress.cancelling', 'Stopping safely')
+  };
+  return labels[value] ?? t('media.progress.running', 'Reviewing the video');
+}
+
+function mediaSeverityTone(value) {
+  if (['critical', 'high'].includes(value)) return 'danger';
+  if (value === 'medium') return 'warning';
+  return 'success';
+}
+
+function humanizeMediaToken(value) {
+  const normalized = String(value ?? '').replaceAll('_', ' ').trim();
+  return normalized ? `${normalized[0].toUpperCase()}${normalized.slice(1)}` : '—';
+}
+
+function formatConfidence(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${Math.round(Math.max(0, Math.min(1, number)) * 100)}%` : '—';
 }
 
 function intakeResultState(result) {

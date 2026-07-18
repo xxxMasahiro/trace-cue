@@ -665,3 +665,26 @@ Slices 0-25 / Phase 60-155, persistent browser session Slices 0-8, Agentic Human
 - [x] Update the active production mock and PNG assets, then pass focused,
   aggregate, package, browser, release, product, post-review, CI, Git sync, and
   exact-HEAD authority gates.
+
+## Phase 188-194 Media Review Platform
+
+- [x] Phase 188: define and synchronize provider-neutral media policies,
+  contracts, schemas, safety boundaries, and verification ownership.
+- [x] Phase 189: implement marker-owned private operation roots, streaming
+  identity, retention, lifecycle, cleanup, and receipts.
+- [x] Phase 190: implement the trusted caller-owned local-ASR CLI adapter and
+  strict transient transcript normalization.
+- [x] Phase 191: implement deterministic FFprobe/FFmpeg technical analysis and
+  synthetic media fixtures.
+- [x] Phase 192: implement canonical timeline integration, separated findings,
+  bounded evidence projection, and user-facing report data.
+- [x] Phase 193: implement CLI and asynchronous Control Center media workflows,
+  including network-free URL capability decisions.
+- [x] Phase 194: complete focused, live, browser, package, document, security,
+  release, Product Gate, local CI-contract, and document-sync closure. Remote CI
+  remains a separately authorized release action and was not started.
+
+No phase may change existing metadata-only video evidence, general artifact
+root confinement, generic cleanup, page URL handling, AHR proof semantics, MCP
+profiles, provider transfer, or release-gate meaning. Existing-feature impact:
+no regression / no tradeoff.

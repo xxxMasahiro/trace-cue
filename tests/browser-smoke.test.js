@@ -512,6 +512,11 @@ test('review center completes prepare, consent, review, decision, repeat, and se
         cause: caught
       });
     }
+    assert.equal(
+      repeatEvents.filter((event) => event.kind === 'request').length,
+      1,
+      `A successful repeat recovered from its read model must not be sent again: ${JSON.stringify(repeatEvents)}`
+    );
     const repeatedOperation = await page.evaluate(async () => {
       const id = new URLSearchParams(window.location.search).get('item');
       return (await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json()).data.control_center_agentic_review.operation;
@@ -1803,7 +1808,7 @@ test('review center handles every intake type, no-AI continuation, recovery, key
     await page.getByRole('button', { name: /New review/ }).click();
     const newReview = page.locator('[data-testid="tc-cc-new-review"]');
     await newReview.waitFor();
-    assert.equal(await newReview.locator('input[name="source-kind"]').count(), 4);
+    assert.equal(await newReview.locator('input[name="source-kind"]').count(), 5);
     assert.deepEqual(await newReview.locator('.page-header .eyebrow').allTextContents(), []);
     assert.equal(await page.locator('[data-page-heading]').evaluate((element) => document.activeElement === element), true);
 
@@ -2219,6 +2224,126 @@ test('review center keeps one intake and redirects to truthful status after resp
   } finally {
     if (browser) await browser.close();
     await closeServer(started.server);
+  }
+});
+
+test('review center gives a non-engineer URL-first and private local video review flow', { skip: !runBrowserSmoke }, async (t) => {
+  const testWorkspace = await createBrowserTestWorkspace('trace-cue-control-center-media-browser-');
+  t.after(() => testWorkspace.cleanup());
+  const { cwd } = testWorkspace;
+  await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
+  const operationId = '4'.repeat(32);
+  let currentState = 'prepared';
+  let statusReads = 0;
+  let uploadBytes = 0;
+  let readinessChecks = 0;
+  const operation = () => ({
+    schema_version: '1.0.0', type: 'media_review_operation', operation_id: operationId,
+    state: currentState, retention: 'ephemeral', created_at: fixedNow, updated_at: fixedNow,
+    progress: { phase: currentState === 'completed' ? 'completed' : 'analyzing', percent: currentState === 'completed' ? 100 : 45 },
+    capabilities: { status: true, cancel: currentState !== 'completed', cleanup: false, result: currentState === 'completed' },
+    result_available: currentState === 'completed', cleanup_available: false, private_payload_retained: false, errors: [],
+    boundary: { absolute_path_included: false, private_locator_included: false, source_name_included: false, raw_media_included: false, full_transcript_included: false }
+  });
+  const finding = (classification, kind, severity) => ({
+    schema_version: '1.0.0', id: `media-finding-${kind}`, kind, start_us: 900000, end_us: 1200000,
+    timecode: { start: '00:00.900', end: '00:01.200' }, severity,
+    evidence: ['The measured frame interval exceeded the expected cadence.'], evidence_refs: ['frame-gap-1'],
+    method: 'frame_presentation_timestamps', confidence: 0.96, classification,
+    limitations: classification === 'advisory_evaluation' ? ['Viewer response was not directly measured.'] : [],
+    recommendation: 'Adjust the edit timing and verify the updated scene.', recommendation_classification: 'advisory_evaluation',
+    scene_reference: { start_us: 900000, end_us: 1200000 }
+  });
+  const result = {
+    schema_version: '1.0.0', type: 'media_review_result', operation_id: operationId, status: 'completed_with_limitations',
+    media_identity: { sha256: '8'.repeat(64), bytes: 1024, format: 'iso-base-media' }, source_decision: {}, analysis_settings: {}, toolchain: {},
+    technical_analysis: { boundary: { raw_media_included: false, raw_audio_included: false, raw_frames_included: false, absolute_paths_included: false } },
+    transcript: { status: 'available', segment_count: 2, timed_segment_count: 2, boundary: { body_included: false, absolute_paths_included: false } },
+    timeline: { boundary: { full_transcript_included: false } },
+    deterministic_findings: [finding('deterministic_measurement', 'presentation_gap', 'medium')],
+    advisory_findings: [finding('advisory_evaluation', 'cut_during_speech', 'high')],
+    content_evidence: {}, resource_guard: {}, limitations: ['perceptual_lip_sync_not_measured'],
+    privacy: { retention: 'ephemeral', full_transcript_in_result: false, raw_audio_in_result: false, raw_frames_in_result: false, raw_media_persisted_outside_private_root: false, full_transcript_persisted_outside_private_root: false, external_send_performed: false },
+    boundary: { absolute_paths_included: false, raw_media_included: false, raw_audio_included: false, raw_frames_included: false, full_transcript_included: false, external_send_enabled: false, deterministic_and_advisory_separated: true }
+  };
+  const mediaRuntime = {
+    inspectReadiness: async ({ refresh = false } = {}) => {
+      if (refresh) readinessChecks += 1;
+      const status = refresh ? 'ready' : 'uninspected';
+      return { status: 'ok', data: { readiness: {
+        schema_version: '1.0.0', type: 'media_review_readiness', status,
+        transcript_provider: { status: refresh ? 'ready' : 'uninspected', limitations: refresh ? [] : ['explicit_readiness_check_required'] },
+        technical_analyzer: { status: refresh ? 'ready' : 'uninspected', limitations: refresh ? [] : ['explicit_readiness_check_required'] },
+        local_input: { accepted_extensions: ['.mp4', '.mov', '.m4v', '.mkv', '.webm'], maximum_bytes: 104857600 },
+        boundary: { read_only: true, provider_transcription_performed: false, media_analysis_performed: false, network_performed: false, setup_performed: false, mcp_execution_performed: false, secrets_included: false, executable_paths_included: false, provider_revision_included: false, configuration_hashes_included: false }
+      } }, warnings: [], errors: [], artifacts: [] };
+    },
+    sourceDecision: async () => ({ status: 'ok', data: { source_decision: {
+      schema_version: '1.0.0', type: 'media_source_decision', source_kind: 'url', status: 'ready', capabilities: ['playback_inspection'],
+      rights: { declaration_required: false, declared: false, platform_policy_separate: true },
+      source: { display_label: 'www.youtube.com/watch', service_kind: 'official_video_player', opaque_media_id: '9'.repeat(64), identity_available: true, query_or_fragment_included: false },
+      limitations: ['official_player_state_only'], boundary: { network_performed: false, media_acquired: false, download_performed: false, redirect_followed: false, dns_resolution_performed: false, url_query_or_fragment_included: false, credentials_included: false, absolute_path_included: false, rights_declaration_treated_as_legal_proof: false }
+    } }, warnings: [], errors: [], artifacts: [] }),
+    stageUpload: async (_metadata, stream) => {
+      for await (const chunk of stream) uploadBytes += chunk.length;
+      return { status: 'ok', data: { media_source: {
+        schema_version: '1.0.0', type: 'control_center_media_source', source_id: '3'.repeat(32), state: 'staged', bytes: uploadBytes,
+        media_identity: { sha256: '7'.repeat(64), bytes: uploadBytes, format: 'iso-base-media' }, format: 'iso-base-media', expires_at: '2026-07-19T00:00:00.000Z',
+        boundary: { absolute_path_included: false, original_name_included: false, raw_media_included: false, private_locator_included: false, external_send_performed: false, network_performed: false }
+      } }, warnings: [], errors: [], artifacts: [] };
+    },
+    start: async () => ({ status: 'ok', data: { media_review: operation() }, warnings: [], errors: [], artifacts: [] }),
+    list: () => ({ status: 'ok', data: { media_reviews: uploadBytes ? [operation()] : [] }, warnings: [], errors: [], artifacts: [] }),
+    status: () => {
+      statusReads += 1;
+      if (statusReads >= 2) currentState = 'completed';
+      return { status: 'ok', data: { media_review: operation() }, warnings: [], errors: [], artifacts: [] };
+    },
+    result: () => ({ status: 'ok', data: { media_review_result: result }, warnings: [], errors: [], artifacts: [] }),
+    cancel: () => ({ status: 'ok', data: { media_review: operation() }, warnings: [], errors: [], artifacts: [] }),
+    cleanup: async () => ({ status: 'ok', data: { cleanup_receipt: { schema_version: '1.0.0', type: 'media_cleanup_receipt', operation_id: operationId, status: 'cleaned', retention: 'ephemeral', reason: 'fixture', completed_at: fixedNow, deleted: { file_count: 1, directory_count: 1, byte_count: 1 }, identity: '6'.repeat(64), limitations: [], boundary: { absolute_path_included: false, raw_media_included: false, full_transcript_included: false, sibling_deleted: false, normal_artifact_root_deleted: false } } }, warnings: [], errors: [], artifacts: [] }),
+    dispose: async () => {}
+  };
+  const started = await startControlCenterServer({ port: 0 }, {
+    ...controlCenterReviewContext(cwd),
+    controlCenterMediaReviewRuntime: mediaRuntime
+  });
+  testWorkspace.trackServer(started.server);
+  let browser = null;
+  try {
+    browser = await chromium.launch();
+    testWorkspace.trackBrowser(browser);
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(started.url, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: /New review/ }).click();
+    await page.getByRole('radio', { name: /Video/ }).check();
+    await page.getByRole('textbox', { name: 'Video URL' }).fill('https://www.youtube.com/watch?v=public123&token=SECRET');
+    await page.getByRole('button', { name: 'Check URL capabilities' }).click();
+    const decision = page.locator('[data-testid="tc-media-source-decision"]');
+    await decision.getByText('Official-player inspection is permitted', { exact: true }).waitFor();
+    assert.match(await decision.innerText(), /None during this capability check/);
+    assert.doesNotMatch(await decision.innerText(), /SECRET/);
+
+    await page.getByRole('radio', { name: /Local video/ }).check();
+    await page.getByRole('button', { name: 'Check local setup', exact: true }).click();
+    await page.getByText('Ready', { exact: true }).waitFor();
+    await page.locator('#review-file').setInputFiles({ name: 'private-source.mp4', mimeType: 'video/mp4', buffer: Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom'), Buffer.alloc(256)]) });
+    await page.getByRole('checkbox', { name: 'I own this video or have permission to review it.' }).check();
+    await page.getByRole('button', { name: /Start video review/ }).click();
+    const mediaPage = page.locator('[data-testid="tc-cc-media-review"]');
+    await mediaPage.getByText('Your time-coded review is ready', { exact: true }).waitFor({ timeout: 10_000 });
+    assert.match(await mediaPage.innerText(), /00:00\.900–00:01\.200/);
+    assert.match(await mediaPage.innerText(), /Technical measurements/);
+    assert.match(await mediaPage.innerText(), /Advisory evaluations/);
+    assert.match(await mediaPage.innerText(), /Nothing was sent outside this computer/);
+    assert.doesNotMatch(await mediaPage.innerText(), /private-source\.mp4|SECRET|\/home\//);
+    assert.ok(uploadBytes > 0);
+    assert.equal(readinessChecks, 1);
+    assert.ok(statusReads >= 2);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 1);
+  } finally {
+    if (browser) await browser.close();
+    await started.close();
   }
 });
 

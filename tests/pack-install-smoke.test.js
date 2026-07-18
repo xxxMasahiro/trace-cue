@@ -94,6 +94,17 @@ async function main() {
     await assertFile(packageDir, 'src/visual-review-dashboard.js');
     await assertFile(packageDir, 'src/visual-review-aggregation.js');
     await assertFile(packageDir, 'src/e2e-result-review-material.js');
+    await assertFile(packageDir, 'src/media-source-decision.js');
+    await assertFile(packageDir, 'src/media-stable-file.js');
+    await assertFile(packageDir, 'src/media-private-operation.js');
+    await assertFile(packageDir, 'src/media-tool-trust.js');
+    await assertFile(packageDir, 'src/media-transcript-provider.js');
+    await assertFile(packageDir, 'src/media-technical-analyzer.js');
+    await assertFile(packageDir, 'src/media-review-timeline.js');
+    await assertFile(packageDir, 'src/media-cross-modal-reviewer.js');
+    await assertFile(packageDir, 'src/media-review-service.js');
+    await assertFile(packageDir, 'src/control-center-media-review.js');
+    await assertFile(packageDir, 'src/control-center-media-review-store.js');
     await assertFile(packageDir, 'control-center/index.html');
     await assertFile(packageDir, 'control-center/vite.config.mjs');
     await assertFile(packageDir, 'control-center/src/App.jsx');
@@ -184,6 +195,16 @@ async function main() {
     await assertFile(packageDir, 'schemas/source-text.schema.json');
     await assertFile(packageDir, 'schemas/source-reading-review.schema.json');
     await assertFile(packageDir, 'schemas/e2e-result-review-material.schema.json');
+    await assertFile(packageDir, 'schemas/media-review-policy.schema.json');
+    await assertFile(packageDir, 'schemas/media-source-decision.schema.json');
+    await assertFile(packageDir, 'schemas/media-transcript-provider-profile.schema.json');
+    await assertFile(packageDir, 'schemas/transcript-provider.schema.json');
+    await assertFile(packageDir, 'schemas/media-analysis.schema.json');
+    await assertFile(packageDir, 'schemas/media-timeline.schema.json');
+    await assertFile(packageDir, 'schemas/media-review-operation.schema.json');
+    await assertFile(packageDir, 'schemas/media-review-result.schema.json');
+    await assertFile(packageDir, 'schemas/media-cleanup-receipt.schema.json');
+    await assertFile(packageDir, 'schemas/control-center-media-review.schema.json');
     await assertFile(packageDir, 'schemas/control-center-read-model.schema.json');
     await assertFile(packageDir, 'schemas/control-center-agentic-review.schema.json');
     await assertFile(packageDir, 'schemas/control-center-intake.schema.json');
@@ -192,6 +213,7 @@ async function main() {
     await assertFile(packageDir, 'schemas/playwright-test-integration.schema.json');
     await assertFile(packageDir, 'templates/review-target-manifest.json');
     await assertFile(packageDir, 'templates/status-dashboard-content-ux-target-manifest.json');
+    await assertFile(packageDir, 'templates/media-review-provider-profile.example.json');
     await assertFile(packageDir, '.codex-plugin/plugin.json');
     await assertFile(packageDir, '.mcp.json');
     await assertFile(packageDir, PRODUCT_IDENTITY.pluginSkillPath);
@@ -203,6 +225,8 @@ async function main() {
     await assertFile(packageDir, 'docs/design-system/tokens.json');
     await assertFile(packageDir, 'ops/OPERATION_POLICY.json');
     await assertFile(packageDir, 'ops/ARTIFACT_ROOT_POLICY.json');
+    await assertFile(packageDir, 'ops/MEDIA_REVIEW_POLICY.json');
+    await assertFile(packageDir, 'ops/MEDIA_REVIEW_PROVIDER_ADAPTERS.json');
     await assert.rejects(access(path.join(packageDir, 'docs/product/IMPLEMENTATION_PLAN.md')));
 
     const packageJson = JSON.parse(await readFile(path.join(packageDir, 'package.json'), 'utf8'));
@@ -294,6 +318,16 @@ async function main() {
     const agenticHumanReviewDogfoodReadinessSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-dogfood-readiness'));
     const agenticHumanReviewDogfoodPlanSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('agentic-human-review-dogfood-plan'));
     const sourceUnderstandingReviewSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('source-understanding-review'));
+    const mediaReviewPolicySchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-review-policy'));
+    const mediaSourceDecisionSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-source-decision'));
+    const mediaTranscriptProviderProfileSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-transcript-provider-profile'));
+    const transcriptProviderSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('transcript-provider'));
+    const mediaAnalysisSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-analysis'));
+    const mediaTimelineSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-timeline'));
+    const mediaReviewOperationSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-review-operation'));
+    const mediaReviewResultSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-review-result'));
+    const mediaCleanupReceiptSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-cleanup-receipt'));
+    const controlCenterMediaReviewSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('control-center-media-review'));
     assert.equal(path.normalize(apiPath), path.join(packageDir, 'src/api.js'));
     assert.equal(path.normalize(reviewSchemaPath), path.join(packageDir, 'schemas/review.schema.json'));
     assert.equal(path.normalize(visualEvidenceSchemaPath), path.join(packageDir, 'schemas/visual-evidence.schema.json'));
@@ -363,6 +397,16 @@ async function main() {
     assert.equal(path.normalize(sourceUnderstandingReviewSchemaPath), path.join(packageDir, 'schemas/source-understanding-review.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewDogfoodReadinessSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-dogfood-readiness.schema.json'));
     assert.equal(path.normalize(agenticHumanReviewDogfoodPlanSchemaPath), path.join(packageDir, 'schemas/agentic-human-review-dogfood-plan.schema.json'));
+    assert.equal(path.normalize(mediaReviewPolicySchemaPath), path.join(packageDir, 'schemas/media-review-policy.schema.json'));
+    assert.equal(path.normalize(mediaSourceDecisionSchemaPath), path.join(packageDir, 'schemas/media-source-decision.schema.json'));
+    assert.equal(path.normalize(mediaTranscriptProviderProfileSchemaPath), path.join(packageDir, 'schemas/media-transcript-provider-profile.schema.json'));
+    assert.equal(path.normalize(transcriptProviderSchemaPath), path.join(packageDir, 'schemas/transcript-provider.schema.json'));
+    assert.equal(path.normalize(mediaAnalysisSchemaPath), path.join(packageDir, 'schemas/media-analysis.schema.json'));
+    assert.equal(path.normalize(mediaTimelineSchemaPath), path.join(packageDir, 'schemas/media-timeline.schema.json'));
+    assert.equal(path.normalize(mediaReviewOperationSchemaPath), path.join(packageDir, 'schemas/media-review-operation.schema.json'));
+    assert.equal(path.normalize(mediaReviewResultSchemaPath), path.join(packageDir, 'schemas/media-review-result.schema.json'));
+    assert.equal(path.normalize(mediaCleanupReceiptSchemaPath), path.join(packageDir, 'schemas/media-cleanup-receipt.schema.json'));
+    assert.equal(path.normalize(controlCenterMediaReviewSchemaPath), path.join(packageDir, 'schemas/control-center-media-review.schema.json'));
 
     const api = await import(pathToFileURL(apiPath));
     assert.equal(typeof api.executeCli, 'function');
@@ -480,6 +524,7 @@ async function main() {
     assert.equal(typeof api.isAgenticHumanReviewPackage, 'function');
     assert.equal(api.agenticHumanReviewBoundary().mcp_execution_exposed, false);
     assert.equal(typeof api.buildOperationRegistryReport, 'function');
+    assert.equal(api.OPERATION_REGISTRY_VERSION, '1.1.0');
     assert.equal(typeof api.operationRegistryBoundary, 'function');
     assert.equal(typeof api.buildOperationRoadmapReport, 'function');
     assert.equal(typeof api.operationRoadmapBoundary, 'function');
@@ -491,6 +536,20 @@ async function main() {
     assert.equal(typeof api.operationAdminReadinessBoundary, 'function');
     assert.equal(typeof api.buildOperationProviderReadinessReport, 'function');
     assert.equal(typeof api.operationProviderReadinessBoundary, 'function');
+    assert.equal(typeof api.decideMediaSource, 'function');
+    assert.equal(typeof api.inspectStableMediaFile, 'function');
+    assert.equal(typeof api.createPrivateMediaOperation, 'function');
+    assert.equal(typeof api.inspectTranscriptProviderReadiness, 'function');
+    assert.equal(typeof api.runTranscriptProvider, 'function');
+    assert.equal(typeof api.inspectTechnicalMediaReadiness, 'function');
+    assert.equal(typeof api.analyzeLocalMediaTechnical, 'function');
+    assert.equal(typeof api.buildMediaReviewTimeline, 'function');
+    assert.equal(typeof api.reviewMediaTimeline, 'function');
+    assert.equal(typeof api.inspectMediaReviewReadiness, 'function');
+    assert.equal(typeof api.planMediaReview, 'function');
+    assert.equal(typeof api.executeMediaReview, 'function');
+    assert.equal(typeof api.cleanupMediaReview, 'function');
+    assert.equal(typeof api.createControlCenterMediaReviewRuntime, 'function');
     assert.equal(typeof api.buildLocalizationResources, 'function');
     assert.equal(typeof api.buildReportTemplates, 'function');
     assert.equal(typeof api.buildTranslationReadiness, 'function');
@@ -538,6 +597,16 @@ async function main() {
     assert.equal(api.schemaNames().includes('visual_evidence'), true);
     assert.equal(api.schemaNames().includes('video_evidence'), true);
     assert.equal(api.schemaNames().includes('content_evidence'), true);
+    assert.equal(api.schemaNames().includes('media_review_policy'), true);
+    assert.equal(api.schemaNames().includes('media_source_decision'), true);
+    assert.equal(api.schemaNames().includes('media_transcript_provider_profile'), true);
+    assert.equal(api.schemaNames().includes('transcript_provider'), true);
+    assert.equal(api.schemaNames().includes('media_analysis'), true);
+    assert.equal(api.schemaNames().includes('media_timeline'), true);
+    assert.equal(api.schemaNames().includes('media_review_operation'), true);
+    assert.equal(api.schemaNames().includes('media_review_result'), true);
+    assert.equal(api.schemaNames().includes('media_cleanup_receipt'), true);
+    assert.equal(api.schemaNames().includes('control_center_media_review'), true);
     assert.equal(api.schemaNames().includes('source_understanding_review'), true);
     assert.equal(api.schemaNames().includes('e2e_result_review_material'), true);
     assert.equal(api.schemaNames().includes('visual_review_provider_policy'), true);
@@ -847,6 +916,7 @@ async function main() {
     assert.equal(mcpBody.result.tools.some((tool) => tool.name === 'browser_debug_operation_admin_readiness'), true);
     assert.equal(mcpBody.result.tools.some((tool) => tool.name === 'browser_debug_operation_provider_readiness'), true);
     assert.equal(mcpBody.result.tools.some((tool) => /agentic.*review|human_review|agent_execution_plan|agent_execution_run|cleanup_execute|provider_execute|raw_pixel|page_text/i.test(tool.name)), false);
+    assert.equal(mcpBody.result.tools.some((tool) => /media_review|transcript_provider/i.test(tool.name)), false);
 
     const safeMcpBody = await api.handleMcpRequest(
       { jsonrpc: '2.0', id: 2, method: 'tools/list' },
@@ -866,6 +936,7 @@ async function main() {
     assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_operation_contracts'), true);
     assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_operation_policy'), true);
     assert.equal(safeMcpBody.result.tools.some((tool) => /agentic.*review|human_review|agent_execution_plan|agent_execution_run|cleanup_execute|provider_execute|raw_pixel|page_text/i.test(tool.name)), false);
+    assert.equal(safeMcpBody.result.tools.some((tool) => /media_review|transcript_provider/i.test(tool.name)), false);
     const adminMcpBody = await api.handleMcpRequest(
       { jsonrpc: '2.0', id: 21, method: 'tools/list' },
       { cwd: installRoot, mcpProfile: 'admin' }
@@ -873,6 +944,7 @@ async function main() {
     assert.equal(adminMcpBody.result.profile.name, 'admin');
     assert.equal(adminMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_agent_execution_plan'), true);
     assert.equal(adminMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_agent_execution_run'), true);
+    assert.equal(adminMcpBody.result.tools.some((tool) => /media_review|transcript_provider/i.test(tool.name)), false);
     assert.equal(adminMcpBody.result.tools.some((tool) => /agentic.*review|human_review|raw_pixel|page_text/i.test(tool.name)), false);
     assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_operation_admin_readiness'), true);
     assert.equal(safeMcpBody.result.tools.some((tool) => tool.name === 'browser_debug_operation_provider_readiness'), true);

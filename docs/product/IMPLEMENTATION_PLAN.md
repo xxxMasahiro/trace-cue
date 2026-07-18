@@ -2231,3 +2231,38 @@ Rollback is a TraceCue-only Git revert. No parent or consumer repository change,
 live provider call, credential persistence, arbitrary provider configuration,
 automatic uncertain retry, MCP expansion, deterministic finding mutation, or
 release-gate authority is introduced.
+
+## Phase 188-194: Provider-Neutral Media Review
+
+1. Phase 188: synchronize requirements, specification, policy, adapter catalog,
+   schemas, manifests, security, verification, task state, and handoff. Preserve
+   all existing contracts and define URL classification as network-free.
+2. Phase 189: add streaming stable-file identity, an operation-specific private
+   root outside Git, private locator records, leases, retention, bounded tree
+   inspection, quarantine cleanup, and body-free cleanup receipts without
+   modifying the normal artifact-root resolver or cleanup command.
+3. Phase 190: add provider-neutral transcript contracts, trusted runtime/profile
+   validation, fixed caller-owned local-ASR CLI execution, strict result/JSONL
+   normalization, cancellation, and a real non-mock local acceptance path.
+4. Phase 191: add trusted FFprobe/FFmpeg capability resolution and deterministic
+   frame, cadence, duplicate, cut, A/V offset, and subtitle timing analysis with
+   synthetic fixtures and explicit method limitations.
+5. Phase 192: build the canonical microsecond timeline, semantic-change
+   heuristics, deterministic and advisory findings, bounded content-evidence
+   projection, and stable path-free result/report contracts.
+6. Phase 193: add synchronous media CLI source inspection, readiness, plan,
+   confirmed run, and cleanup plus a separate asynchronous Control Center media
+   intake surface that owns status, list, cancellation, recovery, and URL-first
+   capability explanation without remote acquisition.
+7. Phase 194: complete focused, explicit live compatibility, FFmpeg fixture,
+   no-browser, browser, package, document, security, release, Product Gate,
+   local CI-contract, and document-sync verification. Remote CI remains a
+   separately authorized release action. Fix failures within the owning phase;
+   do not weaken gates.
+
+Reuse points are `runFixedProcess`, safe local store primitives, resource guard,
+schema/API/CLI registries, existing Control Center authorization, generic
+content evidence, and existing verification owners. No new dependency or CI job
+is planned. Rollback removes only the additive media policy, schemas, adapters,
+operations, projections, UI, and registrations; existing artifact, browser,
+AHR, MCP, and release behavior requires no migration.

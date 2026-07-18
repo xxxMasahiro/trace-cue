@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/control-center-media-review.schema.json",
+  "title": "TraceCue Control Center Media Review Projection",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["schema_version", "type", "status", "transcript_provider", "technical_analyzer", "local_input", "boundary"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" },
+        "type": { "const": "media_review_readiness" },
+        "status": { "enum": ["uninspected", "ready", "unavailable"] },
+        "transcript_provider": {
+          "type": "object", "required": ["status", "limitations"],
+          "properties": { "status": { "enum": ["uninspected", "ready", "setup_required", "unavailable"] }, "limitations": { "type": "array", "items": { "type": "string", "maxLength": 160 } } },
+          "additionalProperties": false
+        },
+        "technical_analyzer": {
+          "type": "object", "required": ["status", "limitations"],
+          "properties": { "status": { "enum": ["uninspected", "ready", "setup_required", "unavailable"] }, "limitations": { "type": "array", "items": { "type": "string", "maxLength": 160 } } },
+          "additionalProperties": false
+        },
+        "local_input": {
+          "type": "object", "required": ["accepted_extensions", "maximum_bytes"],
+          "properties": { "accepted_extensions": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^\\.[a-z0-9]{1,8}$" } }, "maximum_bytes": { "type": "integer", "minimum": 1 } },
+          "additionalProperties": false
+        },
+        "boundary": {
+          "type": "object",
+          "required": ["read_only", "provider_transcription_performed", "media_analysis_performed", "network_performed", "setup_performed", "mcp_execution_performed", "secrets_included", "executable_paths_included", "provider_revision_included", "configuration_hashes_included"],
+          "properties": { "read_only": { "const": true }, "provider_transcription_performed": { "const": false }, "media_analysis_performed": { "const": false }, "network_performed": { "const": false }, "setup_performed": { "const": false }, "mcp_execution_performed": { "const": false }, "secrets_included": { "const": false }, "executable_paths_included": { "const": false }, "provider_revision_included": { "const": false }, "configuration_hashes_included": { "const": false } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["schema_version", "type", "source_id", "state", "bytes", "media_identity", "format", "expires_at", "boundary"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" },
+        "type": { "const": "control_center_media_source" },
+        "source_id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "state": { "enum": ["staged", "consumed", "expired"] },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "media_identity": {
+          "type": "object",
+          "required": ["sha256", "bytes", "format"],
+          "properties": {
+            "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "bytes": { "type": "integer", "minimum": 1 },
+            "format": { "enum": ["iso-base-media", "quicktime", "matroska", "webm"] }
+          },
+          "additionalProperties": false
+        },
+        "format": { "enum": ["iso-base-media", "quicktime", "matroska", "webm"] },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "boundary": {
+          "type": "object",
+          "required": ["absolute_path_included", "original_name_included", "raw_media_included", "private_locator_included", "external_send_performed", "network_performed"],
+          "properties": {
+            "absolute_path_included": { "const": false }, "original_name_included": { "const": false },
+            "raw_media_included": { "const": false }, "private_locator_included": { "const": false },
+            "external_send_performed": { "const": false }, "network_performed": { "const": false }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    { "$ref": "media-source-decision.schema.json" },
+    { "$ref": "media-review-operation.schema.json" },
+    { "$ref": "media-review-result.schema.json" },
+    { "$ref": "media-cleanup-receipt.schema.json" }
+  ]
+}

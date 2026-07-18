@@ -337,6 +337,46 @@ export {
   runControlCenterServe,
   startControlCenterServer
 } from './control-center-server.js';
+export { createControlCenterMediaReviewRuntime } from './control-center-media-review.js';
+export {
+  loadMediaReviewAdapterCatalog,
+  loadMediaReviewPolicy,
+  mediaReviewBoundary,
+  resolveMediaReviewAdapter
+} from './media-review-policy.js';
+export { decideMediaSource } from './media-source-decision.js';
+export {
+  cleanupPrivateMediaOperation,
+  createPrivateMediaOperation,
+  findPrivateMediaOperation,
+  inspectPrivateMediaTree,
+  projectPrivateMediaOperation,
+  readPrivateMediaOperation,
+  reconcilePrivateMediaOperations,
+  updatePrivateMediaOperation
+} from './media-private-operation.js';
+export { copyStableMediaFile, inspectStableMediaFile } from './media-stable-file.js';
+export {
+  inspectTranscriptProviderReadiness,
+  runTranscriptProvider
+} from './media-transcript-provider.js';
+export {
+  analyzeLocalMediaTechnical,
+  inspectTechnicalMediaReadiness
+} from './media-technical-analyzer.js';
+export { buildMediaReviewTimeline } from './media-review-timeline.js';
+export { reviewMediaTimeline } from './media-cross-modal-reviewer.js';
+export {
+  MEDIA_REVIEW_CLEANUP_CONFIRMATION,
+  MEDIA_REVIEW_EXECUTION_CONFIRMATION,
+  MEDIA_REVIEW_RIGHTS_CONFIRMATION,
+  cleanupMediaReview,
+  executeMediaReview,
+  inspectMediaReviewReadiness,
+  inspectMediaReviewSource,
+  planMediaReview,
+  renderMediaReviewMarkdown
+} from './media-review-service.js';
 export {
   openControlCenterUrl,
   runControlCenterLaunch

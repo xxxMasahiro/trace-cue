@@ -65,6 +65,7 @@ const VALUE_OPTIONS = new Set([
   'name',
   'older-than',
   'operation',
+  'operation-id',
   'overlay',
   'origin-allowlist',
   'package',
@@ -84,6 +85,7 @@ const VALUE_OPTIONS = new Set([
   'registry',
   'resource-guard',
   'reporter',
+  'retention',
   'review-index',
   'review-effort',
   'role-efforts',
@@ -91,6 +93,7 @@ const VALUE_OPTIONS = new Set([
   'rubric-profile',
   'result',
   'risk',
+  'rights-confirm',
   'run-id',
   'scope',
   'source',
@@ -216,6 +219,8 @@ export function parseCliArgs(argv) {
       return parseMcp(args, globals);
     case 'operation':
       return parseOperation(args, globals);
+    case 'media':
+      return parseMedia(args, globals);
     case 'help':
       return { ok: true, command: 'help', json: globals.json, options: {} };
     default:
@@ -2568,6 +2573,110 @@ function parseOperation(args, globals) {
   return parseOptionalOptions(`operation ${subcommand}`, args.slice(1), globals);
 }
 
+function parseMedia(args, globals) {
+  if (globals.help) {
+    return { ok: true, command: 'help', json: globals.json, options: { topic: 'media' } };
+  }
+  const scope = args[0];
+  const action = args[1];
+  if (scope === 'source' && action === 'inspect') {
+    const parsed = parseOptionalOptions('media source inspect', args.slice(2), globals);
+    if (!parsed.ok) return parsed;
+    const unsupported = Object.keys(parsed.options).find((option) => !['input', 'url', 'rights-confirm'].includes(option));
+    if (unsupported) return mediaOptionError('media source inspect', globals, unsupported, true);
+    if (Boolean(parsed.options.input) === Boolean(parsed.options.url)) {
+      return parseError('media source inspect', globals.json, {
+        code: 'MEDIA_SOURCE_SELECTION_REQUIRED',
+        message: 'media source inspect requires exactly one of --input or --url.',
+        details: { options: ['input', 'url'] }
+      });
+    }
+    return parsed;
+  }
+  if (scope !== 'review') {
+    return parseError('media', globals.json, {
+      code: scope ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+      message: scope ? `Unknown media subcommand: ${[scope, action].filter(Boolean).join(' ')}` : 'media requires a subcommand.',
+      details: { subcommands: ['source inspect', 'review readiness', 'review plan', 'review run', 'review cleanup'] }
+    });
+  }
+  if (action === 'readiness') {
+    const parsed = parseOptionalOptions('media review readiness', args.slice(2), globals);
+    if (!parsed.ok) return parsed;
+    const unsupported = Object.keys(parsed.options)[0];
+    if (unsupported) return mediaOptionError('media review readiness', globals, unsupported, true);
+    return parsed;
+  }
+  if (action === 'plan') {
+    const parsed = parseOptionalOptions('media review plan', args.slice(2), globals);
+    if (!parsed.ok) return parsed;
+    const unsupported = Object.keys(parsed.options).find((option) => !['input', 'url', 'rights-confirm', 'retention'].includes(option));
+    if (unsupported) return mediaOptionError('media review plan', globals, unsupported, true);
+    if (parsed.options.retention !== undefined && !['ephemeral', 'project-retained'].includes(parsed.options.retention)) {
+      return mediaRetentionError('media review plan', globals);
+    }
+    if (Boolean(parsed.options.input) === Boolean(parsed.options.url)) {
+      return parseError('media review plan', globals.json, {
+        code: 'MEDIA_SOURCE_SELECTION_REQUIRED',
+        message: 'media review plan requires exactly one of --input or --url.',
+        details: { options: ['input', 'url'] }
+      });
+    }
+    return parsed;
+  }
+  if (action === 'run') {
+    const parsed = parseRequiredOptions('media review run', args.slice(2), globals, ['input', 'rights-confirm', 'plan-hash', 'confirm']);
+    if (!parsed.ok) return parsed;
+    const unsupported = Object.keys(parsed.options).find((option) => !['input', 'rights-confirm', 'retention', 'plan-hash', 'confirm', 'execute', 'artifact-root', 'resource-guard'].includes(option));
+    if (unsupported) return mediaOptionError('media review run', globals, unsupported, false);
+    if (parsed.options.retention !== undefined && !['ephemeral', 'project-retained'].includes(parsed.options.retention)) {
+      return mediaRetentionError('media review run', globals);
+    }
+    if (!parsed.options.execute) {
+      return parseError('media review run', globals.json, {
+        code: 'MISSING_REQUIRED_OPTION', message: 'media review run requires --execute.', details: { option: 'execute' }
+      });
+    }
+    return parsed;
+  }
+  if (action === 'cleanup') {
+    const parsed = parseRequiredOptions('media review cleanup', args.slice(2), globals, ['operation-id', 'retention', 'confirm']);
+    if (!parsed.ok) return parsed;
+    const unsupported = Object.keys(parsed.options).find((option) => !['operation-id', 'retention', 'confirm', 'execute'].includes(option));
+    if (unsupported) return mediaOptionError('media review cleanup', globals, unsupported, false);
+    if (!['ephemeral', 'project-retained'].includes(parsed.options.retention)) {
+      return mediaRetentionError('media review cleanup', globals);
+    }
+    if (!parsed.options.execute) {
+      return parseError('media review cleanup', globals.json, {
+        code: 'MISSING_REQUIRED_OPTION', message: 'media review cleanup requires --execute.', details: { option: 'execute' }
+      });
+    }
+    return parsed;
+  }
+  return parseError('media review', globals.json, {
+    code: action ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
+    message: action ? `Unknown media review subcommand: ${action}` : 'media review requires a subcommand.',
+    details: { subcommands: ['readiness', 'plan', 'run', 'cleanup'] }
+  });
+}
+
+function mediaOptionError(command, globals, option, readOnly) {
+  return parseError(command, globals.json, {
+    code: option === 'execute' && readOnly ? 'CONFLICTING_OPTIONS' : 'UNSUPPORTED_MEDIA_REVIEW_OPTION',
+    message: `${command} does not accept --${option}.`,
+    details: { option }
+  });
+}
+
+function mediaRetentionError(command, globals) {
+  return parseError(command, globals.json, {
+    code: 'MEDIA_REVIEW_RETENTION_INVALID',
+    message: `${command} requires --retention ephemeral or project-retained.`,
+    details: { option: 'retention' }
+  });
+}
+
 function parseRequiredOptions(command, args, globals, requiredOptions) {
   if (globals.help) {
     return { ok: true, command: 'help', json: globals.json, options: { topic: command } };
@@ -2812,6 +2921,11 @@ function plannedCommands() {
     'capture readiness',
     'capture status',
     'capture plan',
+    'media source inspect',
+    'media review readiness',
+    'media review plan',
+    'media review run',
+    'media review cleanup',
     'capture run',
     'capture handoff',
     'settings show',

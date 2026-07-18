@@ -1638,3 +1638,90 @@ environment objects. Execution uses immutable generation snapshots. The
 private binding adds profile revision, configuration identity, credential
 generation, and runtime instance identity to the existing exact connection,
 model, effort, capability, and executable tuple.
+
+## Phase 188-194 media review contract
+
+`ops/MEDIA_REVIEW_POLICY.json` is the tracked authority for media limits,
+retention, adapter-catalog discovery, analyzer candidates, thresholds, and the
+public no-body boundary. Environment-specific executable paths, digests, and
+revisions live only in an owner-readable local profile selected by the policy.
+The tracked adapter catalog defines fixed command templates and compatible
+schema majors; runtime substitutions are limited to validated operation ids,
+owned roots, owned input paths, validated run paths, and a trusted engine.
+
+Media source decisions are pure and network-free. URL normalization rejects
+credentials, controls, oversize values, unsupported schemes, and ambiguous
+known-service forms. Public labels omit query and fragment. Known official
+player URLs yield playback inspection metadata only; generic HTTPS inputs yield
+metadata-only status. Neither decision authorizes acquisition.
+
+Each local run creates an unpredictable marker-owned private operation root.
+The root and every retained child are current-UID, mode 0700/0600, realpath-
+stable, non-symlink, bounded, and outside Git. A private locator record binds
+operation id, device, inode, root identity, retention, lease, source digest,
+created time, and expiry. Public records contain only the opaque operation id
+and digests. The existing artifact resolver is not extended to absolute paths.
+
+The transcript adapter revalidates the trusted Node, Git, and provider
+entrypoint executable identities, package root, expected full revision, commit
+object inventory, normal index flags, forced-configuration clean diff, and
+tracked-file metadata immediately before readiness, initialization, import,
+and execution. It calls only the catalog operations. Initialization output must
+be one direct-child absolute run path; import output must be the expected contained media
+copy; execution must use the fixed real-ASR confirmation and structured JSON.
+The normalized JSONL file is read through a stable bounded no-follow descriptor
+and validates UTF-8, line and segment limits, finite ordered time ranges, media
+duration, and supported schema major. Unknown additive upstream fields are
+ignored rather than echoed.
+The projected `toolchain_identity` covers the trusted executables, provider Git
+state, profile configuration, and declared engine; it does not cryptographically
+bind an external provider's untracked Python environment, installed ASR package
+bytes, or model-weight bytes. Those omissions are explicit result limitations,
+not an end-to-end reproducibility claim.
+
+The technical adapter resolves only configured trusted FFprobe and FFmpeg
+candidates and uses fixed argv with protocol, frame, time, per-allocation,
+stream-count, stdout, and stderr limits. The fixed runner closes stdin for both
+tools, and FFmpeg additionally receives `-nostdin`. Canonical times are integer
+microseconds. Cadence gaps are
+explicit timestamp-gap inferences rather than proof of encoder frame loss;
+saliency is not called eye tracking; audio/video PTS offset is not called lip
+sync.
+
+The orchestrator stages and hashes media once, verifies the provider import
+copy, then may run transcript and technical analysis concurrently with maximum
+concurrency two. It normalizes completion order by time, kind, and stable id.
+The public result contains a bounded technical projection, transcript counts
+and identity, canonical timeline, deterministic findings, advisory findings,
+content-evidence projection, toolchain identities, settings, limitations, and
+privacy boundary. Existing metadata-only `video_evidence` semantics do not
+change.
+
+Control Center media intake and operations use a separate safe-store namespace
+and streaming validation. Upload returns a one-use opaque source id. Start,
+cancel, readiness refresh, and cleanup are paired Origin/CSRF-protected
+mutations; status, list, and result GETs are passive projections. The ordinary
+dashboard response carries the passive bounded media-operation list so existing
+pages do not make a new media endpoint request when the feature is unused. Long-running
+work executes in a bounded background task and restart never automatically
+replays uncertain work. Ephemeral cleanup failure becomes `cleanup_required`.
+Retained work remains private until explicit cleanup.
+
+The existing agentic-review repeat flow also uses that passive dashboard read
+model to reconcile a lost or malformed mutation response before retrying. It may
+adopt a repeated child only when exactly one operation was absent from the
+pre-request baseline and matches both the requested parent and repeat mode;
+zero or multiple matches preserve the existing idempotency-key retry path.
+
+The initial catalog adapter is `node_git_checkout_cli`, but the orchestration,
+request, transcript, evidence, and result contracts do not depend on that
+runtime kind. Routine provider revisions require only an owner-readable profile
+revision and executable-identity refresh. A provider that changes command
+shape, result schema major, or runtime kind requires a new or revised catalog
+adapter; it must not be accommodated by browser-supplied argv or provider-
+specific branches in the service, CLI, or Control Center.
+
+Operation registry version 1.1 adds the ninth `media_review` group and its
+source-inspection, readiness/plan, run, cancel, and cleanup operations. This is
+additive to the historical roadmap groups 1-8 and does not expose a media MCP
+tool.

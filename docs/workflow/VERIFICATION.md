@@ -1040,3 +1040,64 @@ Visual verification compares the active production mock and built Control
 Center for setup heading size, plain recommendation text, compact AI status,
 and Settings AI-control width. Desktop, 320/390px mobile, RTL, and 200% zoom
 assertions reject clipping, overlap, and horizontal overflow.
+
+## Media Review Verification
+
+Media contract tests validate policy, adapter catalog, provider descriptor,
+readiness, transient result, public projection, source decision, technical
+analysis, canonical timeline, operation, result, cleanup receipt, and Control
+Center projection schema/API/file parity. Unknown compatible upstream fields
+are ignored while unsupported majors and missing required fields fail closed.
+
+Lifecycle tests cover UID/mode, traversal, symlink, hardlink, special files,
+marker replacement, device/inode drift, root collision, quota, stable streaming
+hashing, source/staged/import digest parity, cleanup quarantine, idempotency,
+partial failure, live lease refusal, retained-root intent, TTL recovery,
+same-boot containment-uncertainty refusal, different-boot recovery, and exact
+body-free cleanup-tombstone receipt binding and tamper refusal.
+
+Hermetic adapter tests use fixed fake processes to cover identity drift, dirty
+revision, malformed and oversized JSON/JSONL, nonzero exit, timeout,
+cancellation, process-group termination, capability drift, mock-success
+rejection, and stable failure attribution without an adjacent provider checkout
+or model. Ordinary `npm test` is hermetic and does not require the adjacent
+provider checkout. A separate explicit standalone `npm run test:media-live`
+acceptance runs outside `node:test` so Node child-process stdout remains an
+observable contract across supported hosts. It uses the exact configured trusted
+CLI and a real non-mock engine; it is required local completion evidence but not
+remote-CI authority.
+Projection tests require explicit limitations for model-weight identity and
+unbound external provider runtime dependencies.
+
+Technical tests use injected probe/analyzer output and a short locally generated
+lossless FFmpeg fixture. They cover effective FPS, timestamps, VFR interval
+variation, decoded duplicates, cadence gaps, cuts, A/V start offset, subtitle
+duration, limits, unavailable tools, and repeatable integer-microsecond output.
+Assertions use semantic tolerances rather than encoded-file hashes.
+
+Orchestration tests prove fixed provider stage order, bounded parallelism two
+after staging, cancellation, stable ordering independent of completion order,
+deterministic/advisory separation, time-coded cross-modal findings, and bounded
+content evidence without raw media, full transcript, path, process output, or
+false metadata-only boundary statements.
+
+Control Center API and browser tests cover streaming intake, opaque one-use ids,
+rights and retention choices, passive status, explicit readiness refresh,
+background progress, cancellation, interruption recovery, cleanup-required and
+retained states, accessible time-coded findings, mobile/keyboard behavior, and
+zero browser exposure of executable, argv, engine, path, transcript body, URL
+query, or provider internals. URL classification tests inject a network sentinel
+and require zero calls.
+The aggregate browser flow additionally corrupts a successful repeat response
+and asserts that the newly published parent/mode-matched child is recovered from
+the passive dashboard with exactly one mutation request.
+
+Media checks join existing no-browser and browser owners; they do not add a CI
+job or duplicate a release task. Final local closure requires focused tests, live
+local acceptance, real FFmpeg fixture, `npm test`, Control Center build/browser,
+package and installed-package smoke, verification/document/development checks,
+structure/docs/security/design/local-CI-contract checks, release check, Product
+Gate, and diff checks. Remote CI remains separate and approval-bound. Existing
+CLI, page observation, sessions, evidence, AHR, MCP profiles,
+artifact cleanup, package, and release outputs must remain unchanged when media
+review is unused.

@@ -89,8 +89,8 @@ its typography, 232px rail, 1120px work area, 760px form width, spacing scale,
 or ordinary one-pixel borders. Prior baselines remain archived at
 `mockups/control-center/archive/phase-155/`, `phase-168/`, and `phase-176/`.
 
-`New review` begins with four icon-led source choices: website, image, document,
-and test result. Only the fields needed for the selected source appear. Files
+`New review` begins with five icon-led source choices: website, video, image,
+document, and test result. Only the fields needed for the selected source appear. Files
 use a familiar picker and optional drag/drop target; paths, hashes, MIME names,
 and storage details are not shown. The next visible choice asks what the user
 wants to achieve, followed by purpose-led review depth. The primary action uses
@@ -102,6 +102,16 @@ Each source has truthful result language. Website shows review progress and
 findings; image shows image evidence prepared; document shows a review proposal
 prepared; test result shows imported test evidence summarized. Preparation is
 never styled or worded as a completed external AI review.
+
+Video remains part of the same focused source/action/result flow. URL is offered
+first and produces a network-free capability explanation before any execution.
+Local video uses the browser picker, a plain rights confirmation, and a clear
+delete-or-retain choice. The first dashboard read is passive; checking local
+transcription and technical-tool readiness is a separate explicit action. A
+running review shows local-only progress and a real stop action. Results group
+time-coded technical measurements separately from advisory evaluations, expose
+method, confidence, limitation, and recommended fix, and never display source
+paths, commands, provider identity, raw media, or transcript bodies.
 
 Saved results must answer whether action is needed without opening a technical
 artifact. Image results show safe format, dimensions, and finding count;

@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/transcript-provider.schema.json",
+  "title": "TraceCue Transcript Provider Contracts",
+  "$defs": {
+    "mediaIdentity": {
+      "type": "object",
+      "required": ["sha256", "bytes", "format"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "format": { "type": "string", "minLength": 1, "maxLength": 80 }
+      },
+      "additionalProperties": false
+    },
+    "method": {
+      "type": "object",
+      "required": ["adapter_contract", "runtime_kind", "provider_version", "provider_revision", "toolchain_identity", "provider_configuration_identity", "engine", "absolute_paths_included", "environment_values_included"],
+      "properties": {
+        "adapter_contract": { "type": "string", "maxLength": 120 },
+        "runtime_kind": { "type": "string", "pattern": "^[a-z0-9_]{3,80}$" },
+        "provider_version": { "type": "string", "maxLength": 80 },
+        "provider_revision": { "type": ["string", "null"], "pattern": "^[a-f0-9]{40}$" },
+        "toolchain_identity": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "provider_configuration_identity": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "engine": { "type": ["string", "null"], "maxLength": 80 },
+        "model_reference": { "type": ["string", "null"], "maxLength": 120 },
+        "model_reference_identity": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "execution_profile": { "type": ["string", "null"], "maxLength": 80 },
+        "device": { "type": ["string", "null"], "maxLength": 40 },
+        "compute_type": { "type": ["string", "null"], "maxLength": 40 },
+        "vad": { "type": ["boolean", "null"] },
+        "beam_size": { "type": ["integer", "null"], "minimum": 1 },
+        "threads": { "type": ["integer", "null"], "minimum": 1 },
+        "provider_result_schema_version": { "type": ["string", "null"], "maxLength": 40 },
+        "normalized_contract": { "type": ["string", "null"], "maxLength": 40 },
+        "acquisition": { "type": ["string", "null"], "maxLength": 80 },
+        "absolute_paths_included": { "const": false },
+        "environment_values_included": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "boundary": {
+      "type": "object",
+      "required": ["body_included", "absolute_paths_included", "raw_process_output_included", "external_send_performed", "network_performed", "runtime_setup_performed", "model_download_performed", "mcp_execution_performed", "shell_used"],
+      "properties": {
+        "body_included": { "const": false },
+        "absolute_paths_included": { "const": false },
+        "raw_process_output_included": { "const": false },
+        "external_send_performed": { "const": false },
+        "network_performed": { "const": false },
+        "runtime_setup_performed": { "const": false },
+        "model_download_performed": { "const": false },
+        "mcp_execution_performed": { "const": false },
+        "shell_used": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "segment": {
+      "type": "object",
+      "allOf": [{
+        "oneOf": [
+          { "properties": { "timed": { "const": true }, "start_us": { "type": "integer", "minimum": 0 }, "end_us": { "type": "integer", "minimum": 0 } } },
+          { "properties": { "timed": { "const": false }, "start_us": { "const": null }, "end_us": { "const": null } } }
+        ]
+      }],
+      "required": ["id", "start_us", "end_us", "text", "language", "speaker", "confidence", "timed", "needs_review"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 80 },
+        "start_us": { "type": ["integer", "null"], "minimum": 0 },
+        "end_us": { "type": ["integer", "null"], "minimum": 0 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 32768 },
+        "language": { "type": ["string", "null"], "maxLength": 32 },
+        "speaker": { "type": ["string", "null"], "maxLength": 120 },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "timed": { "type": "boolean" },
+        "needs_review": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["schema_version", "type", "adapter_contract", "capabilities", "boundary"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" },
+        "type": { "const": "transcript_provider_descriptor" },
+        "adapter_contract": { "type": "string" },
+        "capabilities": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "boundary": { "$ref": "#/$defs/boundary" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["schema_version", "type", "status", "capabilities", "limitations", "boundary"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" },
+        "type": { "const": "transcript_provider_readiness" },
+        "status": { "enum": ["ready", "setup_required", "unavailable", "unsupported"] },
+        "capabilities": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "method": { "$ref": "#/$defs/method" },
+        "limitations": { "type": "array", "items": { "type": "string" } },
+        "boundary": { "$ref": "#/$defs/boundary" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["schema_version", "type", "operation_id", "media_identity", "retention", "language", "segments", "method", "limitations", "privacy"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" },
+        "type": { "const": "transcript_provider_transient_result" },
+        "operation_id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "media_identity": { "$ref": "#/$defs/mediaIdentity" },
+        "retention": { "enum": ["ephemeral", "project-retained"] },
+        "language": { "type": ["string", "null"] },
+        "segments": { "type": "array", "items": { "$ref": "#/$defs/segment" } },
+        "method": { "$ref": "#/$defs/method" },
+        "limitations": { "type": "array", "items": { "type": "string" } },
+        "privacy": {
+          "type": "object",
+          "required": ["transient_body_in_memory", "private_payload_retained", "public_body_included", "external_send_performed"],
+          "properties": {
+            "transient_body_in_memory": { "const": true },
+            "private_payload_retained": { "type": "boolean" },
+            "public_body_included": { "const": false },
+            "external_send_performed": { "const": false }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["schema_version", "type", "status", "media_identity", "language", "segment_count", "timed_segment_count", "transcript_identity", "method", "limitations", "boundary"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" },
+        "type": { "const": "transcript_provider_projection" },
+        "status": { "enum": ["available", "insufficient", "unavailable"] },
+        "media_identity": { "$ref": "#/$defs/mediaIdentity" },
+        "language": { "type": ["string", "null"] },
+        "segment_count": { "type": "integer", "minimum": 0 },
+        "timed_segment_count": { "type": "integer", "minimum": 0 },
+        "transcript_identity": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "method": { "$ref": "#/$defs/method" },
+        "limitations": { "type": "array", "items": { "type": "string" } },
+        "boundary": { "$ref": "#/$defs/boundary" }
+      },
+      "additionalProperties": false
+    }
+  ]
+}
