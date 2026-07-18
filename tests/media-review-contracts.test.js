@@ -42,6 +42,12 @@ test('media policy and adapter catalog keep local-only boundaries centralized', 
   assert.deepEqual(adapter.production_mock_engines, []);
   assert.equal(adapter.boundary.shell_used, false);
   assert.equal(adapter.boundary.external_send_supported, false);
+  const missingPreparedPolicy = structuredClone(policy);
+  delete missingPreparedPolicy.prepared_audio;
+  assert.equal(validateJsonSchemaSubset(missingPreparedPolicy, getSchema('media_review_policy')).ok, false);
+  const missingDecodedProbe = structuredClone(policy);
+  delete missingDecodedProbe.technical_analyzer.decoded_timeline_probe_packets;
+  assert.equal(validateJsonSchemaSubset(missingDecodedProbe, getSchema('media_review_policy')).ok, false);
 
   const unsafe = structuredClone(policy);
   unsafe.technical_analyzer.cut_scene_threshold = "0.3);movie=https://example.test/video";
@@ -813,6 +819,166 @@ test('media review service completes an ephemeral vertical slice without leaking
   assert.equal(JSON.stringify(artifact).includes(path.join(cwd, 'private-operations')), false);
 });
 
+test('prepared-audio service path prepares once and shares only the prepared contract with transcription', async (t) => {
+  const cwd = await privateTemp(t, 'media-service-prepared-audio-');
+  const input = path.join(cwd, 'source.mp4');
+  await writeFile(input, Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom'), Buffer.alloc(512, 8)]), { mode: 0o600 });
+  const calls = { preflight: 0, prepare: 0, provider: 0, technical: 0 };
+  const context = {
+    cwd,
+    ephemeralMediaRoot: path.join(cwd, 'private-operations'),
+    inspectTranscriptProviderReadiness: async () => readyPreparedTranscriptProvider(),
+    inspectTechnicalMediaReadiness: async () => readyTechnicalAnalyzer(),
+    collectResourceStatus: async () => healthyResourceStatus(),
+    preflightLocalMediaTechnical: async (request) => {
+      calls.preflight += 1;
+      assert.equal(request.includeDecodedTimeline, true);
+      return {
+        decoded_timeline: {
+          basis: 'first_decoded_frame_pts',
+          video_first_timestamp_seconds: '0.000000',
+          audio_first_timestamp_seconds: '0.125000'
+        }
+      };
+    },
+    prepareLocalMediaAudio: async (request) => {
+      calls.prepare += 1;
+      assert.equal(request.contract.schema_version, '1.0.0');
+      const directory = path.join(request.operation.root, 'prepared-audio');
+      await mkdir(directory, { mode: 0o700 });
+      const audioPath = path.join(directory, 'audio.wav');
+      const manifestPath = path.join(directory, 'manifest.json');
+      await writeFile(audioPath, Buffer.alloc(76, 1), { mode: 0o600 });
+      await writeFile(manifestPath, '{}\n', { mode: 0o600 });
+      return {
+        audio: { path: audioPath, sha256: 'a'.repeat(64), bytes: 76, sample_count: 16 },
+        manifest: { path: manifestPath, sha256: 'b'.repeat(64), bytes: 3 },
+        timeline: { sampleZeroSourceTimeMicroseconds: 125_000 },
+        preparation: { settings_identity: 'c'.repeat(64) }
+      };
+    },
+    runTranscriptProvider: async (request) => {
+      calls.provider += 1;
+      assert.equal(request.preparedAudio.audio.sha256, 'a'.repeat(64));
+      assert.equal(request.preparedAudio.timeline.sampleZeroSourceTimeMicroseconds, 125_000);
+      const method = preparedProviderTrustProjection();
+      return {
+        operation: request.operation,
+        transient: {
+          schema_version: '1.0.0', type: 'transcript_provider_transient_result',
+          operation_id: request.operation.operationId, media_identity: request.mediaIdentity,
+          retention: request.retention, language: 'en',
+          segments: [{ id: 'speech-1', start_us: 125_000, end_us: 625_000, text: 'Private prepared service transcript.', language: 'en', speaker: null, confidence: null, timed: true, needs_review: true }],
+          method, limitations: [],
+          privacy: { public_body_included: false }
+        },
+        projection: {
+          schema_version: '1.0.0', type: 'transcript_provider_projection', status: 'available',
+          media_identity: request.mediaIdentity, language: 'en', segment_count: 1, timed_segment_count: 1,
+          transcript_identity: 'd'.repeat(64), method,
+          limitations: [],
+          boundary: { body_included: false, absolute_paths_included: false }
+        }
+      };
+    },
+    analyzeLocalMediaTechnical: async (request) => {
+      calls.technical += 1;
+      return fixtureTechnicalAnalysis(request.mediaIdentity);
+    }
+  };
+  const options = { input: 'source.mp4', rightsDeclared: true, retention: 'ephemeral', artifactRoot: '.artifacts-test' };
+  const planned = await planMediaReview(options, context);
+  assert.equal(planned.data.plan.readiness.transcript_provider.input_contract.mode, 'caller_prepared_audio');
+  const completed = await executeMediaReview({
+    ...options,
+    execute: true,
+    confirm: MEDIA_REVIEW_EXECUTION_CONFIRMATION,
+    planHash: planned.data.plan.plan_hash,
+    operationId: 'e'.repeat(32)
+  }, context);
+  assert.equal(completed.status, 'ok');
+  assert.deepEqual(calls, { preflight: 1, prepare: 1, provider: 1, technical: 1 });
+  assert.equal(completed.data.cleanup_receipt.status, 'cleaned');
+  assert.equal(completed.data.result.transcript.method.acquisition, 'local_cli_offline_prepared_audio');
+  assert.equal(JSON.stringify(completed.data.result).includes('Private prepared service transcript.'), false);
+  assert.equal(completed.data.result.privacy.raw_audio_in_result, false);
+});
+
+test('prepared-audio containment uncertainty defers private cleanup until a restart boundary', async (t) => {
+  const cwd = await privateTemp(t, 'media-service-prepared-containment-');
+  await writeFile(path.join(cwd, 'source.mp4'), Buffer.concat([
+    Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom'), Buffer.alloc(512, 11)
+  ]), { mode: 0o600 });
+  const context = {
+    cwd,
+    ephemeralMediaRoot: path.join(cwd, 'private-operations'),
+    inspectTranscriptProviderReadiness: async () => readyPreparedTranscriptProvider(),
+    inspectTechnicalMediaReadiness: async () => readyTechnicalAnalyzer(),
+    collectResourceStatus: async () => healthyResourceStatus(),
+    preflightLocalMediaTechnical: async () => ({
+      decoded_timeline: {
+        basis: 'first_decoded_frame_pts', video_first_timestamp_seconds: '0.000000', audio_first_timestamp_seconds: '0.000000'
+      }
+    }),
+    prepareLocalMediaAudio: async () => {
+      const error = new Error('fixture containment uncertainty');
+      error.code = 'MEDIA_REVIEW_CONTAINMENT_UNCONFIRMED';
+      throw error;
+    }
+  };
+  const options = { input: 'source.mp4', rightsDeclared: true, retention: 'ephemeral', artifactRoot: '.artifacts-test' };
+  const planned = await planMediaReview(options, context);
+  const operationId = '1'.repeat(32);
+  const completed = await executeMediaReview({
+    ...options, execute: true, confirm: MEDIA_REVIEW_EXECUTION_CONFIRMATION,
+    planHash: planned.data.plan.plan_hash, operationId
+  }, context);
+  assert.equal(completed.status, 'error');
+  assert.equal(completed.errors[0].code, 'MEDIA_REVIEW_CONTAINMENT_UNCONFIRMED');
+  assert.equal(completed.errors[0].details.cleanup_status, 'deferred_containment_unconfirmed');
+  let retained = await findPrivateMediaOperation(operationId, 'ephemeral', context);
+  assert.equal(retained.marker.state, 'cleanup_required');
+  assert.equal(retained.marker.lease.containment_unconfirmed, true);
+  retained = await updatePrivateMediaOperation(retained, { state: 'cleanup_required', lease: null }, context);
+  assert.equal((await cleanupPrivateMediaOperation(retained, { reason: 'simulated_restart_boundary' }, context)).status, 'cleaned');
+});
+
+test('prepared-audio failures project a bounded nontechnical message', async (t) => {
+  const cwd = await privateTemp(t, 'media-service-prepared-message-');
+  const privateDetail = path.join(cwd, 'private-provider-model');
+  await writeFile(path.join(cwd, 'source.mp4'), Buffer.concat([
+    Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom'), Buffer.alloc(512, 13)
+  ]), { mode: 0o600 });
+  const context = {
+    cwd,
+    ephemeralMediaRoot: path.join(cwd, 'private-operations'),
+    inspectTranscriptProviderReadiness: async () => readyPreparedTranscriptProvider(),
+    inspectTechnicalMediaReadiness: async () => readyTechnicalAnalyzer(),
+    collectResourceStatus: async () => healthyResourceStatus(),
+    preflightLocalMediaTechnical: async () => ({
+      decoded_timeline: {
+        basis: 'first_decoded_frame_pts', video_first_timestamp_seconds: '0.000000', audio_first_timestamp_seconds: '0.000000'
+      }
+    }),
+    prepareLocalMediaAudio: async () => {
+      const error = new Error(`private provider setup at ${privateDetail}`);
+      error.code = 'MEDIA_PROVIDER_SETUP_REQUIRED';
+      throw error;
+    }
+  };
+  const options = { input: 'source.mp4', rightsDeclared: true, retention: 'ephemeral', artifactRoot: '.artifacts-test' };
+  const planned = await planMediaReview(options, context);
+  const completed = await executeMediaReview({
+    ...options, execute: true, confirm: MEDIA_REVIEW_EXECUTION_CONFIRMATION,
+    planHash: planned.data.plan.plan_hash, operationId: '7'.repeat(32)
+  }, context);
+  assert.equal(completed.status, 'error');
+  assert.equal(completed.errors[0].code, 'MEDIA_PROVIDER_SETUP_REQUIRED');
+  assert.match(completed.errors[0].message, /Local transcription is not ready/u);
+  assert.equal(JSON.stringify(completed).includes(privateDetail), false);
+  assert.equal(completed.errors[0].details.cleanup_status, 'cleaned');
+});
+
 test('media review preserves a successful ephemeral cleanup when public artifact publication fails', async (t) => {
   const cwd = await privateTemp(t, 'media-service-publication-failure-');
   const input = path.join(cwd, 'source.mp4');
@@ -1207,6 +1373,35 @@ function optionValue(args, option) {
 
 function readyTranscriptProvider() {
   return { schema_version: '1.0.0', type: 'transcript_provider_readiness', status: 'ready', capabilities: ['local_file_transcription'], limitations: [], boundary: { network_performed: false } };
+}
+
+function readyPreparedTranscriptProvider() {
+  return {
+    ...readyTranscriptProvider(),
+    capabilities: ['local_file_transcription', 'caller_prepared_audio'],
+    input_contract: {
+      adapter_contract: 'caller-owned-prepared-audio-cli-v2',
+      mode: 'caller_prepared_audio',
+      prepared_audio_contract: {
+        schema_version: '1.0.0', manifest_kind: 'framecue-prepared-audio-input',
+        registration_result_kind: 'framecue-prepared-audio-registration-result', provider_result_kind: 'framecue-transcript-provider-result',
+        format: { container: 'wav', codec: 'pcm_s16le', sample_rate_hz: 16_000, channel_count: 1, bits_per_sample: 16, header_bytes: 44 },
+        rounding_rule: 'nearest-half-away-from-zero'
+      }
+    }
+  };
+}
+
+function preparedProviderTrustProjection() {
+  return {
+    ...providerTrustProjection(),
+    adapter_contract: 'caller-owned-prepared-audio-cli-v2',
+    acquisition: 'local_cli_offline_prepared_audio',
+    prepared_audio_contract: '1.0.0', prepared_audio_identity: 'a'.repeat(64),
+    preparation_manifest_identity: 'b'.repeat(64), preparation_settings_identity: 'c'.repeat(64),
+    registration_identity: 'd'.repeat(64), provider_receipt_identity: 'e'.repeat(64),
+    computation_identity: 'f'.repeat(64), sample_zero_source_time_us: 125_000
+  };
 }
 
 function readyTechnicalAnalyzer() {

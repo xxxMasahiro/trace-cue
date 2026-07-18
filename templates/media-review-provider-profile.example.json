@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "adapter_contract": "caller-owned-local-asr-cli-v1",
+  "adapter_contract": "caller-owned-prepared-audio-cli-v2",
   "runtime": {
     "node_executable": "/absolute/path/to/node",
     "node_sha256": "replace-with-64-character-sha256",

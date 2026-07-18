@@ -356,6 +356,7 @@ export {
   updatePrivateMediaOperation
 } from './media-private-operation.js';
 export { copyStableMediaFile, inspectStableMediaFile } from './media-stable-file.js';
+export { prepareLocalMediaAudio } from './media-prepared-audio.js';
 export {
   inspectTranscriptProviderReadiness,
   runTranscriptProvider

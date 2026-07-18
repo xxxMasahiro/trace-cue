@@ -523,7 +523,7 @@ function responseContractError() {
 
 function requireMediaReadiness(value) {
   if (!isTypedObject(value, 'media_review_readiness')
-    || !['uninspected', 'ready', 'unavailable'].includes(value.status)
+    || !['uninspected', 'ready', 'unavailable', 'unsupported'].includes(value.status)
     || !Array.isArray(value.local_input?.accepted_extensions)
     || value.local_input.accepted_extensions.length === 0
     || new Set(value.local_input.accepted_extensions).size !== value.local_input.accepted_extensions.length
@@ -650,7 +650,7 @@ function validReadinessComponent(value) {
   return Boolean(value)
     && typeof value === 'object'
     && !Array.isArray(value)
-    && ['uninspected', 'ready', 'setup_required', 'unavailable'].includes(value.status)
+    && ['uninspected', 'ready', 'setup_required', 'unavailable', 'unsupported'].includes(value.status)
     && Array.isArray(value.limitations)
     && value.limitations.every((item) => typeof item === 'string' && item.length <= 160);
 }

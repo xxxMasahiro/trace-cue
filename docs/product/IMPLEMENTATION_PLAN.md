@@ -2266,3 +2266,48 @@ content evidence, and existing verification owners. No new dependency or CI job
 is planned. Rollback removes only the additive media policy, schemas, adapters,
 operations, projections, UI, and registrations; existing artifact, browser,
 AHR, MCP, and release behavior requires no migration.
+
+## Phase 195-201: Shared Prepared Audio Delivery
+
+1. Phase 195: audit the merged FrameCue prepared-audio readiness, registration,
+   result, receipt, payload, timeline, and external-root contracts against the
+   current TraceCue v1 adapter. Preserve the v1 adapter and add a separate v2
+   catalog entry, policy defaults, and conditional schema requirements.
+2. Phase 196: add one reusable local preparation service for canonical mono
+   16 kHz PCM WAV, exact sample/timeline arithmetic, strict path-free manifest,
+   in-flight FFmpeg limits, stable descriptor verification, and private atomic
+   publication without adding dependencies.
+3. Phase 197: add the prepared provider path through the existing trusted
+   executable/profile verifier and fixed-process runner. Bind registration,
+   captured result, revision-scoped receipt, computation identity, and private
+   payload while keeping source video out of the provider request.
+4. Phase 198: integrate the preparation service into the existing media review
+   orchestrator, reuse one prepared audio artifact for ASR, shift transcript
+   cues by signed source origin, and preserve independently useful technical
+   analysis and deterministic/advisory separation.
+5. Phase 199: harden output/time limits, symlink/hardlink and TOCTOU refusal,
+   cancellation/containment cleanup deferral, legacy defaults, exact v1 output,
+   private non-persistence, comparable identities, and conservative no-reuse
+   behavior until complete transitive provider identity is available.
+6. Phase 200: keep CLI and Control Center on the shared service with no new
+   operator controls. Preserve `unsupported`, add bounded nontechnical failure
+   messages, keep provider-layout details out of ordinary UI, and export the
+   reusable preparation service through the package API.
+7. Phase 201: synchronize product/workflow/security/verification authorities,
+   manifests, consumer guidance, and changelog; run focused, live FrameCue,
+   no-browser, browser, package, document, security, release, Product Gate, and
+   independent reviews; then complete commit, PR CI, merge, exact-main CI, and
+   clean local/remote synchronization without modifying FrameCue or the parent.
+   If distributed CI exposes a pre-existing response-loss race, preserve the
+   single mutation boundary and harden only bounded passive reconciliation
+   reads with a deterministic browser regression before restarting fresh CI.
+
+The implementation reuses the existing private operation lifecycle, stable-file
+reader, fixed process runner, tool trust, technical analyzer, provider-neutral
+transcript projection, media timeline/reviewer, service, CLI, Control Center,
+package API, and verification owners. It adds no dependency, MCP execution,
+provider setup, URL acquisition, external transfer, cache authority, or
+provider-repository write. Rollback removes only the v2 prepared-audio adapter,
+preparation module, additive schema/projection fields, UI status wording, tests,
+and synchronized documentation; v1 and unrelated product behavior need no
+migration.

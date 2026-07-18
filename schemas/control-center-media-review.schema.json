@@ -9,15 +9,15 @@
       "properties": {
         "schema_version": { "const": "1.0.0" },
         "type": { "const": "media_review_readiness" },
-        "status": { "enum": ["uninspected", "ready", "unavailable"] },
+        "status": { "enum": ["uninspected", "ready", "unavailable", "unsupported"] },
         "transcript_provider": {
           "type": "object", "required": ["status", "limitations"],
-          "properties": { "status": { "enum": ["uninspected", "ready", "setup_required", "unavailable"] }, "limitations": { "type": "array", "items": { "type": "string", "maxLength": 160 } } },
+          "properties": { "status": { "enum": ["uninspected", "ready", "setup_required", "unavailable", "unsupported"] }, "limitations": { "type": "array", "items": { "type": "string", "maxLength": 160 } } },
           "additionalProperties": false
         },
         "technical_analyzer": {
           "type": "object", "required": ["status", "limitations"],
-          "properties": { "status": { "enum": ["uninspected", "ready", "setup_required", "unavailable"] }, "limitations": { "type": "array", "items": { "type": "string", "maxLength": 160 } } },
+          "properties": { "status": { "enum": ["uninspected", "ready", "setup_required", "unavailable", "unsupported"] }, "limitations": { "type": "array", "items": { "type": "string", "maxLength": 160 } } },
           "additionalProperties": false
         },
         "local_input": {

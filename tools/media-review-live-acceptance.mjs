@@ -22,6 +22,8 @@ async function runLiveMediaAcceptance() {
     assert.equal(providerReadiness.boundary.mcp_execution_performed, false);
     assert.fail(`explicit live media gate requires ready local adapters (provider=${providerReadiness.status}:${providerReadiness.limitations.join(',')}, analyzer=${analyzerReadiness.status}:${analyzerReadiness.limitations.join(',')})`);
   }
+  assert.equal(providerReadiness.input_contract.mode, 'caller_prepared_audio');
+  assert.equal(providerReadiness.input_contract.prepared_audio_contract.schema_version, '1.0.0');
 
   const parent = path.join(os.homedir(), '.local', 'state', 'trace-cue-media-live-tests');
   await mkdir(parent, { recursive: true, mode: 0o700 });
@@ -68,13 +70,18 @@ async function runLiveMediaAcceptance() {
       confirm: MEDIA_REVIEW_EXECUTION_CONFIRMATION,
       planHash: planned.data.plan.plan_hash
     }, context);
-    assert.equal(completed.status, 'ok');
+    assert.equal(completed.status, 'ok', JSON.stringify({ errors: completed.errors, warnings: completed.warnings }));
     assert.equal(completed.data.cleanup_receipt.status, 'cleaned');
     assert.equal(completed.data.result.transcript.status, 'available');
     assert.ok(completed.data.result.transcript.segment_count >= 1);
     assert.ok(completed.data.result.transcript.timed_segment_count >= 1);
     assert.equal(completed.data.result.transcript.method.provider_revision, providerReadiness.method.provider_revision);
-    assert.equal(completed.data.result.transcript.method.acquisition, 'local_cli_offline');
+    assert.equal(completed.data.result.transcript.method.acquisition, 'local_cli_offline_prepared_audio');
+    assert.match(completed.data.result.transcript.method.prepared_audio_identity, /^[a-f0-9]{64}$/u);
+    assert.match(completed.data.result.transcript.method.preparation_manifest_identity, /^[a-f0-9]{64}$/u);
+    assert.match(completed.data.result.transcript.method.registration_identity, /^[a-f0-9]{64}$/u);
+    assert.match(completed.data.result.transcript.method.provider_receipt_identity, /^[a-f0-9]{64}$/u);
+    assert.equal(Number.isSafeInteger(completed.data.result.transcript.method.sample_zero_source_time_us), true);
     assert.equal(completed.data.result.transcript.boundary.body_included, false);
     assert.equal(completed.data.result.boundary.absolute_paths_included, false);
     assert.equal(completed.data.result.privacy.external_send_performed, false);

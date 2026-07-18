@@ -13,8 +13,43 @@
       },
       "additionalProperties": false
     },
+    "preparedMethodProvenance": {
+      "type": "object",
+      "required": ["prepared_audio_contract", "prepared_audio_identity", "preparation_manifest_identity", "preparation_settings_identity", "registration_identity", "provider_receipt_identity", "computation_identity", "sample_zero_source_time_us"],
+      "properties": {
+        "prepared_audio_contract": { "type": "string" },
+        "prepared_audio_identity": { "type": "string" },
+        "preparation_manifest_identity": { "type": "string" },
+        "preparation_settings_identity": { "type": "string" },
+        "registration_identity": { "type": "string" },
+        "provider_receipt_identity": { "type": "string" },
+        "computation_identity": { "type": "string" },
+        "sample_zero_source_time_us": { "type": "integer" }
+      }
+    },
+    "preparedResultMethodRequirement": {
+      "if": {
+        "required": ["method"],
+        "properties": {
+          "method": {
+            "required": ["adapter_contract"],
+            "properties": { "adapter_contract": { "const": "caller-owned-prepared-audio-cli-v2" } }
+          }
+        }
+      },
+      "then": {
+        "properties": { "method": { "$ref": "#/$defs/preparedMethodProvenance" } }
+      }
+    },
     "method": {
       "type": "object",
+      "allOf": [{
+        "if": {
+          "required": ["acquisition"],
+          "properties": { "acquisition": { "const": "local_cli_offline_prepared_audio" } }
+        },
+        "then": { "$ref": "#/$defs/preparedMethodProvenance" }
+      }],
       "required": ["adapter_contract", "runtime_kind", "provider_version", "provider_revision", "toolchain_identity", "provider_configuration_identity", "engine", "absolute_paths_included", "environment_values_included"],
       "properties": {
         "adapter_contract": { "type": "string", "maxLength": 120 },
@@ -35,10 +70,66 @@
         "provider_result_schema_version": { "type": ["string", "null"], "maxLength": 40 },
         "normalized_contract": { "type": ["string", "null"], "maxLength": 40 },
         "acquisition": { "type": ["string", "null"], "maxLength": 80 },
+        "prepared_audio_contract": { "type": ["string", "null"], "maxLength": 40 },
+        "prepared_audio_identity": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "preparation_manifest_identity": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "preparation_settings_identity": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "registration_identity": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "provider_receipt_identity": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "computation_identity": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "sample_zero_source_time_us": { "type": ["integer", "null"] },
         "absolute_paths_included": { "const": false },
         "environment_values_included": { "const": false }
       },
       "additionalProperties": false
+    },
+    "preparedAudioContract": {
+      "type": "object",
+      "required": ["schema_version", "manifest_kind", "registration_result_kind", "provider_result_kind", "format", "rounding_rule"],
+      "properties": {
+        "schema_version": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$" },
+        "manifest_kind": { "const": "framecue-prepared-audio-input" },
+        "registration_result_kind": { "const": "framecue-prepared-audio-registration-result" },
+        "provider_result_kind": { "const": "framecue-transcript-provider-result" },
+        "format": {
+          "type": "object",
+          "required": ["container", "codec", "sample_rate_hz", "channel_count", "bits_per_sample", "header_bytes"],
+          "properties": {
+            "container": { "const": "wav" },
+            "codec": { "const": "pcm_s16le" },
+            "sample_rate_hz": { "const": 16000 },
+            "channel_count": { "const": 1 },
+            "bits_per_sample": { "const": 16 },
+            "header_bytes": { "const": 44 }
+          },
+          "additionalProperties": false
+        },
+        "rounding_rule": { "const": "nearest-half-away-from-zero" }
+      },
+      "additionalProperties": false
+    },
+    "inputContract": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["adapter_contract", "mode"],
+          "properties": {
+            "adapter_contract": { "type": "string", "maxLength": 120 },
+            "mode": { "const": "source_media" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["adapter_contract", "mode", "prepared_audio_contract"],
+          "properties": {
+            "adapter_contract": { "type": "string", "maxLength": 120 },
+            "mode": { "const": "caller_prepared_audio" },
+            "prepared_audio_contract": { "$ref": "#/$defs/preparedAudioContract" }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "boundary": {
       "type": "object",
@@ -88,18 +179,32 @@
         "type": { "const": "transcript_provider_descriptor" },
         "adapter_contract": { "type": "string" },
         "capabilities": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "input_contract": { "$ref": "#/$defs/inputContract" },
         "boundary": { "$ref": "#/$defs/boundary" }
       },
       "additionalProperties": false
     },
     {
       "type": "object",
+      "allOf": [{
+        "if": {
+          "required": ["method"],
+          "properties": {
+            "method": {
+              "required": ["adapter_contract"],
+              "properties": { "adapter_contract": { "const": "caller-owned-prepared-audio-cli-v2" } }
+            }
+          }
+        },
+        "then": { "required": ["input_contract"] }
+      }],
       "required": ["schema_version", "type", "status", "capabilities", "limitations", "boundary"],
       "properties": {
         "schema_version": { "const": "1.0.0" },
         "type": { "const": "transcript_provider_readiness" },
         "status": { "enum": ["ready", "setup_required", "unavailable", "unsupported"] },
         "capabilities": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "input_contract": { "$ref": "#/$defs/inputContract" },
         "method": { "$ref": "#/$defs/method" },
         "limitations": { "type": "array", "items": { "type": "string" } },
         "boundary": { "$ref": "#/$defs/boundary" }
@@ -108,6 +213,7 @@
     },
     {
       "type": "object",
+      "allOf": [{ "$ref": "#/$defs/preparedResultMethodRequirement" }],
       "required": ["schema_version", "type", "operation_id", "media_identity", "retention", "language", "segments", "method", "limitations", "privacy"],
       "properties": {
         "schema_version": { "const": "1.0.0" },
@@ -135,6 +241,7 @@
     },
     {
       "type": "object",
+      "allOf": [{ "$ref": "#/$defs/preparedResultMethodRequirement" }],
       "required": ["schema_version", "type", "status", "media_identity", "language", "segment_count", "timed_segment_count", "transcript_identity", "method", "limitations", "boundary"],
       "properties": {
         "schema_version": { "const": "1.0.0" },

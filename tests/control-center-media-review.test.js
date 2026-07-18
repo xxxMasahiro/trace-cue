@@ -133,6 +133,7 @@ test('Control Center media runtime explains URL capability without network or UR
 test('Control Center media readiness stays passive until an explicit local setup check', async (t) => {
   const roots = await mediaRoots(t);
   let inspections = 0;
+  let providerStatus = 'ready';
   const runtime = await createControlCenterMediaReviewRuntime({ cwd: roots.cwd }, {
     ...roots.context,
     inspectMediaReviewReadiness: async () => {
@@ -141,8 +142,8 @@ test('Control Center media readiness stays passive until an explicit local setup
         status: 'ok',
         data: {
           readiness: {
-            status: 'ready',
-            transcript_provider: { status: 'ready', limitations: [], method: { executable: '/private/provider' } },
+            status: providerStatus === 'ready' ? 'ready' : 'unavailable',
+            transcript_provider: { status: providerStatus, limitations: [], method: { executable: '/private/provider' } },
             technical_analyzer: { status: 'ready', limitations: [], method: { revision: 'private-revision' } }
           }
         }
@@ -158,6 +159,10 @@ test('Control Center media readiness stays passive until an explicit local setup
   assert.equal(inspections, 1);
   assert.equal(JSON.stringify(refreshed).includes('/private/provider'), false);
   assert.equal(JSON.stringify(refreshed).includes('private-revision'), false);
+  providerStatus = 'unsupported';
+  const unsupported = await runtime.inspectReadiness({ refresh: true });
+  assert.equal(unsupported.data.readiness.status, 'unsupported');
+  assert.equal(unsupported.data.readiness.transcript_provider.status, 'unsupported');
 });
 
 test('Control Center serializes competing starts so a staged source is consumed once', async (t) => {

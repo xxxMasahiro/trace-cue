@@ -695,3 +695,47 @@ access networks, recover state, or mutate artifacts. Restart does not replay an
 uncertain operation. Same-UID hostile concurrency, mount namespace attacks,
 root/admin, swap, core dumps, and a compromised trusted provider remain stated
 limitations rather than false guarantees.
+
+### Prepared Audio Security Extension
+
+Prepared-audio mode preserves the existing operation root and provider trust
+boundary. TraceCue gives FrameCue only a caller-owned canonical WAV and a
+path-free manifest; it never supplies the original video path to the v2
+registration or ASR command. The temporary PCM, WAV, manifest, provider receipt,
+payload, and transcript remain under the marker-owned private root. Public and
+browser projections carry identities and counts only.
+
+The preparation FFmpeg command is catalog/policy-derived fixed argv with
+`shell: false`, closed stdin, local `file,pipe` protocols, one selected audio
+stream, removed metadata/chapters, exact codec/rate/channels, `-t`, `-fs`,
+allocation/thread/output/timeout bounds, and descendant containment. Reaching
+the conservative file cap is failure because it cannot prove completeness.
+Containment uncertainty retains the private lease and defers cleanup until the
+existing validated restart boundary.
+
+Raw PCM is rebound by owner, 0600 mode, single link, device/inode, size,
+modification time, and SHA-256 while the WAV is copied. The published WAV and
+provider receipt/payload are read through no-follow descriptors with realpath,
+owner, mode, link-count, size, timestamp, and digest checks. Registration,
+result, receipt, computation, language, timeline, engine, terminal status, and
+payload identities must agree exactly. Symlink, hardlink, replacement,
+traversal, oversized body, schema drift, or unexpected field shape fails
+closed.
+
+The FrameCue receipt and payload layout used by the v2 adapter is explicitly
+revision-bound in the trusted catalog/profile pair. It is not treated as an
+undocumented universal provider guarantee. A layout or fixed-command change
+requires a new adapter contract and live acceptance. Browser input cannot alter
+that layout or select a compatibility fallback.
+
+The manifest records only hashes, byte/sample counts, signed timeline data,
+method/settings/tool identities, and false privacy flags. It contains no media
+path or URL. Exact transcript text is transient and remains private. Leading
+negative cues are clipped or omitted with limitations so signed timeline input
+does not bypass non-negative public-time requirements.
+
+Prepared/computation identities support comparison but do not authorize
+cross-operation ASR reuse. Real-adapter reuse remains disabled while external
+runtime dependencies and model weights are not fully bound. Existing v1 source-
+media behavior, MCP execution-disabled profiles, no cloud/fallback/setup rules,
+and private cleanup contracts remain unchanged.

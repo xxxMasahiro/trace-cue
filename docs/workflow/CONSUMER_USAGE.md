@@ -90,13 +90,29 @@ output, URL secrets, or private paths.
 The current trust identity binds the configured executables, provider Git state,
 profile, and declared engine, but not an external provider's untracked language
 runtime, installed ASR dependency bytes, or model-weight bytes. The result keeps
-those reproducibility limitations explicit.
+those reproducibility limitations explicit. With the packaged prepared-audio v2
+adapter, TraceCue automatically creates one bounded private mono 16 kHz PCM WAV
+and path-free manifest per operation. The configured provider receives those
+artifacts rather than the source video, so expensive ASR audio preparation is
+not repeated by the provider. The same CLI commands and browser-dashboard steps
+apply.
 
-Control Center exposes the same service contract through Video on New review.
+The v1 source-media adapter remains available for older trusted providers. The
+v2 adapter pins exact argv, schema, and private result layout to its adapter
+contract and the profile's trusted full revision. Routine revision updates are
+profile-only only when those observed contracts remain unchanged; otherwise add
+a versioned catalog adapter and repeat live acceptance. Matching audio does not
+authorize cross-operation ASR-result reuse while runtime/model identity is
+incomplete.
+
+The browser dashboard exposes the same service contract through Video on New
+review.
 Readiness is passive until the user chooses Check local setup; local upload,
 rights, retention, progress, cancellation, recovery, result, and cleanup stay in
 the browser workflow without exposing executable, argv, engine, provider id, or
-artifact-root controls. Media execution remains absent from every MCP profile.
+artifact-root controls. Prepared audio is automatic, and an unsupported provider
+contract is shown separately from setup unavailability. Media execution remains
+absent from every MCP profile.
 
 ## Agentic Human Review Live Dogfood
 

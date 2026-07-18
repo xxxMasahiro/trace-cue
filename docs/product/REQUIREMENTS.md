@@ -462,7 +462,10 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   transport uncertainty without resubmitting a credential or uncertain provider
   execution. Review polling must pause while a review mutation and its
   reconciliation are active. Only repeat admission may make its one scoped
-  exact-once retry with the same memory-held idempotency key.
+  exact-once retry with the same memory-held idempotency key. If the first
+  passive repeat-reconciliation read fails, the browser must retry that read
+  once before considering the mutation retry; the extra read must not create
+  another mutation attempt or change the idempotency key.
 - Leaving New Review or a review workspace must invalidate and abort that
   page's pending preparation, status wait, or repeat request. A late response
   must not navigate away from the page the user subsequently chose.
@@ -928,3 +931,51 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
 - Media execution is not exposed through safe, full, admin, or HTTP MCP in this
   range. Cloud ASR, provider fallback, model download, remote media acquisition,
   and external sending remain unavailable.
+
+## Phase 195-201 Shared Prepared Audio Delivery
+
+- When a transcript adapter declares `caller_prepared_audio`, TraceCue must
+  decode the selected local source audio once per review operation into the
+  adapter's versioned canonical format. The same verified prepared artifact
+  must be supplied to the transcript provider; the provider must not receive or
+  reopen the source video.
+- Version 1 prepared audio must be an exact 44-byte-header RIFF/WAVE file with
+  mono 16 kHz little-endian signed 16-bit PCM. Its sample count, duration, and
+  source-timeline origin must be derived with exact integer/rational arithmetic
+  and the declared nearest-half-away-from-zero rule.
+- Preparation must bind source-media identity, prepared-audio identity,
+  preparation-manifest identity, settings and tool identities, sample-zero
+  source time, trim/padding counts, and the adapter contract. The manifest must
+  contain no source path, URL, transcript body, credential, or browser-selected
+  executable value.
+- Audio extraction must be local-file-only, fixed-argv, `shell: false`, bounded
+  during execution by time, output size, memory, process output, timeout, and
+  descendant containment, and followed by stable-descriptor identity checks.
+  A missing usable audio timeline is an explicit failure, not fabricated
+  readiness.
+- FrameCue registration, ASR result, private receipt, computation identity, and
+  transcript payload must be mutually bound by exact schema, media identity,
+  prepared-audio identity, timeline, language, engine, byte size, and SHA-256.
+  Linked, replaced, permissive, oversized, or out-of-root private artifacts
+  must fail closed.
+- Prepared transcript cues must be shifted onto the video-relative integer-
+  microsecond timeline. A partially leading cue is clipped to zero and a cue
+  wholly before video start is omitted; both outcomes require explicit
+  limitations.
+- The existing source-media adapter remains supported without output-shape or
+  command changes. Provider changes that affect fixed argv, prepared schema, or
+  the revision-bound private result layout require a new catalog adapter;
+  browser input and common-service provider branches remain prohibited.
+- Cross-operation ASR-result reuse must remain disabled until the provider can
+  prove complete transitive runtime/model identity. TraceCue records comparable
+  preparation and computation identities but must not treat matching audio
+  alone as sufficient reuse authority.
+- Control Center must keep the existing explanation-free Video flow. It must
+  prepare audio automatically, preserve `unsupported` distinctly from setup
+  failure, show bounded nontechnical failure text, and expose no new path,
+  executable, argv, engine, provider, or artifact-root control.
+- Raw PCM, canonical WAV, preparation manifest, provider receipt, payload, and
+  complete transcript remain in the existing marker-owned private operation
+  root and follow its retention, containment-uncertainty, cleanup, and receipt
+  rules. Public results expose only bounded identities, provenance, counts,
+  limitations, and time-coded findings.

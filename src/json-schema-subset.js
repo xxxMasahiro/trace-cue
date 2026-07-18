@@ -45,6 +45,17 @@ function validateNode(value, schema, path, depth, state) {
     const matches = schema.oneOf.filter((child) => !validateNode(value, child, path, depth + 1, { ...state })).length;
     if (matches !== 1) return diagnostic(path, 'oneOf', 'The JSON value does not match exactly one allowed shape.');
   }
+  if (schema.if && typeof schema.if === 'object' && !Array.isArray(schema.if)) {
+    const conditionMatches = !validateNode(value, schema.if, path, depth + 1, { ...state });
+    if (conditionMatches && schema.then && typeof schema.then === 'object') {
+      const failure = validateNode(value, schema.then, path, depth + 1, state);
+      if (failure) return failure;
+    }
+    if (!conditionMatches && schema.else && typeof schema.else === 'object') {
+      const failure = validateNode(value, schema.else, path, depth + 1, state);
+      if (failure) return failure;
+    }
+  }
   if (Object.hasOwn(schema, 'const') && !deepEqual(value, schema.const)) {
     return diagnostic(path, 'const', 'The JSON value does not match the required constant.');
   }

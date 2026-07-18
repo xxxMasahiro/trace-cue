@@ -96,6 +96,7 @@ async function main() {
     await assertFile(packageDir, 'src/e2e-result-review-material.js');
     await assertFile(packageDir, 'src/media-source-decision.js');
     await assertFile(packageDir, 'src/media-stable-file.js');
+    await assertFile(packageDir, 'src/media-prepared-audio.js');
     await assertFile(packageDir, 'src/media-private-operation.js');
     await assertFile(packageDir, 'src/media-tool-trust.js');
     await assertFile(packageDir, 'src/media-transcript-provider.js');
@@ -538,6 +539,7 @@ async function main() {
     assert.equal(typeof api.operationProviderReadinessBoundary, 'function');
     assert.equal(typeof api.decideMediaSource, 'function');
     assert.equal(typeof api.inspectStableMediaFile, 'function');
+    assert.equal(typeof api.prepareLocalMediaAudio, 'function');
     assert.equal(typeof api.createPrivateMediaOperation, 'function');
     assert.equal(typeof api.inspectTranscriptProviderReadiness, 'function');
     assert.equal(typeof api.runTranscriptProvider, 'function');

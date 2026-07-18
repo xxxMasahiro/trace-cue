@@ -6,11 +6,25 @@
     "positiveInteger": { "type": "integer", "minimum": 1 },
     "falseFlag": { "const": false }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": ["policy_version"],
+        "properties": { "policy_version": { "const": "1.1.0" } }
+      },
+      "then": {
+        "required": ["prepared_audio"],
+        "properties": {
+          "technical_analyzer": { "required": ["decoded_timeline_probe_packets"] }
+        }
+      }
+    }
+  ],
   "type": "object",
   "required": ["schema_version", "policy_version", "mode", "source", "retention", "operation", "transcript_provider", "technical_analyzer", "reviewer", "public_boundary"],
   "properties": {
     "schema_version": { "const": "1.0.0" },
-    "policy_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "policy_version": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$" },
     "mode": { "const": "local_first" },
     "source": {
       "type": "object",
@@ -133,6 +147,17 @@
       },
       "additionalProperties": false
     },
+    "prepared_audio": {
+      "type": "object",
+      "required": ["preparation_method", "maximum_prepared_audio_bytes", "maximum_manifest_bytes", "copy_chunk_bytes"],
+      "properties": {
+        "preparation_method": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,159}$" },
+        "maximum_prepared_audio_bytes": { "$ref": "#/$defs/positiveInteger" },
+        "maximum_manifest_bytes": { "$ref": "#/$defs/positiveInteger" },
+        "copy_chunk_bytes": { "$ref": "#/$defs/positiveInteger" }
+      },
+      "additionalProperties": false
+    },
     "technical_analyzer": {
       "type": "object",
       "required": ["probe_executable_environment", "analyzer_executable_environment", "probe_candidates", "analyzer_candidates", "maximum_frames", "maximum_subtitle_events", "maximum_total_streams", "maximum_video_streams", "maximum_audio_streams", "maximum_subtitle_streams", "maximum_video_width", "maximum_video_height", "maximum_video_pixels", "maximum_audio_sample_rate", "maximum_audio_channels", "decoder_threads", "maximum_single_allocation_bytes", "timeout_ms", "maximum_stdout_bytes", "maximum_stderr_bytes", "cut_scene_threshold", "duplicate_hash_window", "dropped_interval_multiplier", "interval_jitter_warning_ratio", "av_sync_warning_us", "subtitle_minimum_us"],
@@ -152,6 +177,7 @@
         "maximum_video_pixels": { "$ref": "#/$defs/positiveInteger" },
         "maximum_audio_sample_rate": { "$ref": "#/$defs/positiveInteger" },
         "maximum_audio_channels": { "$ref": "#/$defs/positiveInteger" },
+        "decoded_timeline_probe_packets": { "$ref": "#/$defs/positiveInteger" },
         "decoder_threads": { "$ref": "#/$defs/positiveInteger" },
         "maximum_single_allocation_bytes": { "$ref": "#/$defs/positiveInteger" },
         "timeout_ms": { "$ref": "#/$defs/positiveInteger" },

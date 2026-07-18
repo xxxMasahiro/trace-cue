@@ -28,6 +28,7 @@ import { decideMediaSource } from './media-source-decision.js';
 import { copyStableMediaFile, inspectStableMediaFile } from './media-stable-file.js';
 import { analyzeLocalMediaTechnical, inspectTechnicalMediaReadiness, preflightLocalMediaTechnical } from './media-technical-analyzer.js';
 import { inspectTranscriptProviderReadiness, runTranscriptProvider } from './media-transcript-provider.js';
+import { prepareLocalMediaAudio } from './media-prepared-audio.js';
 import { createResourceGuard } from './resource-guard.js';
 import { getSchema } from './schema-registry.js';
 import { validateJsonSchemaSubset } from './json-schema-subset.js';
@@ -320,19 +321,35 @@ export async function executeMediaReview(options = {}, context = {}) {
     context.onMediaReviewProgress?.({ operation_id: operation.operationId, phase: 'analyzing', percent: 25 });
     const providerRunner = context.runTranscriptProvider ?? runTranscriptProvider;
     const technicalRunner = context.analyzeLocalMediaTechnical ?? analyzeLocalMediaTechnical;
-    if (!context.analyzeLocalMediaTechnical) {
-      await (context.preflightLocalMediaTechnical ?? preflightLocalMediaTechnical)({
+    const providerInputContract = plan.readiness?.transcript_provider?.input_contract ?? { mode: 'source_media' };
+    const preparedMode = providerInputContract.mode === 'caller_prepared_audio';
+    let technicalPreflight = null;
+    if (!context.analyzeLocalMediaTechnical || preparedMode) {
+      technicalPreflight = await (context.preflightLocalMediaTechnical ?? preflightLocalMediaTechnical)({
         mediaPath: stagedPath,
         operationRoot: operation.root,
         mediaIdentity: staged,
+        includeDecodedTimeline: preparedMode,
         signal: options.signal ?? null
       }, context);
     }
+    const preparedAudio = preparedMode
+      ? await (context.prepareLocalMediaAudio ?? prepareLocalMediaAudio)({
+        operation,
+        mediaPath: stagedPath,
+        mediaIdentity: staged,
+        decodedTimeline: technicalPreflight?.decoded_timeline,
+        contract: providerInputContract.prepared_audio_contract,
+        signal: options.signal ?? null
+      }, context)
+      : null;
+    context.onMediaReviewProgress?.({ operation_id: operation.operationId, phase: 'analyzing', percent: preparedMode ? 40 : 25 });
     const [providerResult, technicalAnalysis] = await runConcurrentMediaAnalyses([
       (analysisSignal) => providerRunner({
         operation,
         stagedMedia: { path: stagedPath },
         mediaIdentity: staged,
+        preparedAudio,
         retention,
         signal: analysisSignal
       }, context),
@@ -380,7 +397,7 @@ export async function executeMediaReview(options = {}, context = {}) {
       policy
     });
     enforcePublicResultLimit(result, policy);
-    assertPublicResultBoundary(result, [operation.root, operation.base, sourcePath, stagedPath]);
+    assertPublicResultBoundary(result, [operation.root, operation.base, sourcePath, stagedPath, preparedAudio?.audio?.path, preparedAudio?.manifest?.path]);
     assertPublicResultSchema(result);
     operation = await updatePrivateMediaOperation(operation, {
       state: retention === 'project-retained' ? 'completed_retained' : 'completed',
@@ -402,7 +419,7 @@ export async function executeMediaReview(options = {}, context = {}) {
     // Cleanup outcome can change status/privacy/limitations. Revalidate the
     // exact final bytes immediately before normal artifact publication.
     enforcePublicResultLimit(result, policy);
-    assertPublicResultBoundary(result, [operation.root, operation.base, sourcePath, stagedPath]);
+    assertPublicResultBoundary(result, [operation.root, operation.base, sourcePath, stagedPath, preparedAudio?.audio?.path, preparedAudio?.manifest?.path]);
     assertPublicResultSchema(result);
     const artifacts = await persistMediaReviewResult(result, options, context);
     context.onMediaReviewProgress?.({ operation_id: operation.operationId, phase: 'completed', percent: 100 });
@@ -428,7 +445,7 @@ export async function executeMediaReview(options = {}, context = {}) {
     };
   } catch (error) {
     let cleanupError = null;
-    const containmentUnconfirmed = error?.code === 'MEDIA_PROVIDER_CONTAINMENT_UNCONFIRMED';
+    const containmentUnconfirmed = ['MEDIA_PROVIDER_CONTAINMENT_UNCONFIRMED', 'MEDIA_REVIEW_CONTAINMENT_UNCONFIRMED'].includes(error?.code);
     if (operation) {
       try {
         const current = await readPrivateMediaOperation(operation, context);
@@ -796,7 +813,18 @@ function publicMediaReviewErrorMessage(code) {
     MEDIA_REVIEW_TRANSCRIPT_DURATION_MISMATCH: 'The transcript timing did not match the measured video duration.',
     MEDIA_REVIEW_DURATION_INVALID: 'The measured video duration was invalid.',
     MEDIA_REVIEW_PUBLIC_RESULT_LIMIT: 'The bounded media review result exceeded its safe output limit.',
+    MEDIA_ANALYZER_AUDIO_TIMELINE_UNAVAILABLE: 'The video does not contain a usable local audio timeline for transcription.',
+    MEDIA_PREPARED_AUDIO_EXTRACTION_FAILED: 'The video audio could not be prepared for local transcription.',
+    MEDIA_PREPARED_AUDIO_PCM_INVALID: 'The prepared local audio did not match the required transcription format.',
+    MEDIA_PREPARED_AUDIO_OUTPUT_LIMIT_REACHED: 'The prepared local audio reached the configured private size limit.',
+    MEDIA_PREPARED_AUDIO_SIZE_LIMIT: 'The prepared local audio exceeded the configured private size limit.',
+    MEDIA_PROVIDER_SETUP_REQUIRED: 'Local transcription is not ready. Check the configured provider and model without installing or downloading automatically.',
+    MEDIA_REVIEW_ADAPTER_CONTRACT_UNAVAILABLE: 'The configured local transcription contract is not supported by this TraceCue version.',
+    MEDIA_PROVIDER_RESULT_INVALID: 'The local transcription provider returned an incompatible result contract.',
+    MEDIA_PROVIDER_PREPARED_REGISTRATION_INVALID: 'The local transcription provider could not verify the prepared audio contract.',
+    MEDIA_PROVIDER_PREPARED_RECEIPT_BINDING_INVALID: 'The local transcription receipt did not match the verified prepared audio result.',
     MEDIA_PROVIDER_CONTAINMENT_UNCONFIRMED: 'The local transcript provider stopped without confirmed child-process containment; restart Linux/WSL before retrying cleanup.',
+    MEDIA_REVIEW_CONTAINMENT_UNCONFIRMED: 'A local media process stopped without confirmed child-process containment; restart Linux/WSL before retrying cleanup.',
     MEDIA_PRIVATE_OPERATION_NOT_FOUND: 'The private media review operation was not found.',
     FIXED_PROCESS_ABORTED: 'The local media review was cancelled.'
   };
@@ -832,6 +860,16 @@ function normalizeTranscriptProjection(value, mediaIdentity) {
       provider_result_schema_version: value.method?.provider_result_schema_version ? String(value.method.provider_result_schema_version).slice(0, 40) : null,
       normalized_contract: value.method?.normalized_contract ? String(value.method.normalized_contract).slice(0, 40) : null,
       acquisition: value.method?.acquisition ? String(value.method.acquisition).slice(0, 80) : null,
+      ...(value.method?.acquisition === 'local_cli_offline_prepared_audio' ? {
+        prepared_audio_contract: value.method?.prepared_audio_contract ? String(value.method.prepared_audio_contract).slice(0, 40) : null,
+        prepared_audio_identity: /^[a-f0-9]{64}$/u.test(value.method?.prepared_audio_identity ?? '') ? value.method.prepared_audio_identity : null,
+        preparation_manifest_identity: /^[a-f0-9]{64}$/u.test(value.method?.preparation_manifest_identity ?? '') ? value.method.preparation_manifest_identity : null,
+        preparation_settings_identity: /^[a-f0-9]{64}$/u.test(value.method?.preparation_settings_identity ?? '') ? value.method.preparation_settings_identity : null,
+        registration_identity: /^[a-f0-9]{64}$/u.test(value.method?.registration_identity ?? '') ? value.method.registration_identity : null,
+        provider_receipt_identity: /^[a-f0-9]{64}$/u.test(value.method?.provider_receipt_identity ?? '') ? value.method.provider_receipt_identity : null,
+        computation_identity: /^[a-f0-9]{64}$/u.test(value.method?.computation_identity ?? '') ? value.method.computation_identity : null,
+        sample_zero_source_time_us: Number.isSafeInteger(value.method?.sample_zero_source_time_us) ? value.method.sample_zero_source_time_us : null
+      } : {}),
       absolute_paths_included: false,
       environment_values_included: false
     },
