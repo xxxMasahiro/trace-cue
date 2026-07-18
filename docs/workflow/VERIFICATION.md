@@ -1161,3 +1161,19 @@ must not reuse a real provider receipt while complete runtime/model identity is
 unproven. Receipt-layout compatibility is likewise revision-bound; live
 acceptance must be repeated for a profile revision, and a changed layout or argv
 requires a new catalog adapter rather than relaxed validation.
+
+### Shared Prepared Audio Remote Integration Evidence
+
+Implementation commits `d8245ff` and `e846fc4` were integrated through PR #32.
+Replacement PR CI run `29663353998` passed Node 20, Node 22, Repository
+contracts, Package producer, Package consumer Node 20, Package consumer Node
+22, Browser smoke, and the proof-only Final gate. PR #32 merged as exact main
+revision `f535b9d`; push CI run `29663474478` passed the same eight-job graph,
+including final proof for that revision.
+
+The superseded PR run `29662929621` found that a committed repeat child could
+outlive both its malformed mutation response and a transiently failed first
+passive dashboard read. Commit `e846fc4` preserves the single mutation request,
+retries only that passive read, and makes the sequence deterministic in the
+browser suite. The replacement PR run and exact-main run passed without
+weakening the one-key exact-once mutation boundary.

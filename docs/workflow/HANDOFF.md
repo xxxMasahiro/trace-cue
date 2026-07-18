@@ -874,5 +874,13 @@ attempt exposed a transient failure in the existing repeat-response recovery:
 the child was committed, but a failed first passive dashboard read could lead
 to the scoped mutation retry. The browser now retries only that passive read,
 and a deterministic response-loss test proves one mutation plus successful
-second-read adoption. Commit/PR/main CI evidence and final local/remote
-synchronization remain the Phase 201 remote closure work at this checkpoint.
+second-read adoption.
+
+Remote integration is complete. Implementation commits `d8245ff` and
+`e846fc4` passed Node 20, Node 22, Repository contracts, Package producer,
+Package consumer Node 20, Package consumer Node 22, Browser smoke, and the
+proof-only Final gate in PR #32 CI run `29663353998`. PR #32 merged as exact
+main revision `f535b9d`; push CI run `29663474478` passed the same eight-job
+graph for that revision. The superseded PR run `29662929621` is retained as the
+evidence that triggered the passive-read recovery hardening rather than being
+reused as release proof.
