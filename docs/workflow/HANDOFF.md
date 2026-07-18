@@ -816,6 +816,11 @@ automatic model setup, provider fallback, OS-level egress isolation, and writes
 to the provider repository remain out of scope. Untracked external Python/ASR
 dependencies and model weights are disclosed as unbound limitations. No commit,
 push, PR, remote CI, or remote synchronization had been performed at the local
-implementation freeze; exact integration evidence belongs to the follow-up
-completion revision. The existing user modification to
-`docs/memory/SESSION_MEMORY.md` remains separately preserved.
+implementation freeze. Integration is now complete: implementation commits
+`dbee434` and `b8f394f` passed all seven distributed owners and the proof-only
+Final gate in PR #30 CI run `29631406505`; PR #30 merged as `aad898c`, whose
+exact-revision main CI run `29631532106` passed the same eight-job graph. The
+existing user modification
+to `docs/memory/SESSION_MEMORY.md` remains excluded from every integration
+revision and preserved in the local stash named
+`preserve user session memory before media review integration`.

@@ -1101,3 +1101,19 @@ Gate, and diff checks. Remote CI remains separate and approval-bound. Existing
 CLI, page observation, sessions, evidence, AHR, MCP profiles,
 artifact cleanup, package, and release outputs must remain unchanged when media
 review is unused.
+
+### Media Review Remote Integration Evidence
+
+Implementation commits `dbee434` and `b8f394f` were integrated through PR #30.
+Replacement PR CI run `29631406505` passed Node 20, Node 22, Repository
+contracts, Package producer, Package consumer Node 20, Package consumer Node
+22, Browser smoke, and the proof-only Final gate. The PR merged as exact main
+revision `aad898c`; push CI run `29631532106` passed the same eight-job graph,
+including final proof for that revision.
+
+The superseded PR run `29631240195` exposed a host-dependent permission
+assumption in the provider-trust test fixture under the GitHub-hosted Node 22
+toolcache. Commit `b8f394f` replaced that host executable with a private 0700
+hermetic fixture. The focused media suite then passed 47/47 and the replacement
+PR and main runs passed without weakening executable trust or production
+permission checks.
