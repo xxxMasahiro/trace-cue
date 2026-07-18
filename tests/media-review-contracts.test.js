@@ -291,6 +291,7 @@ test('provider trust binds the tracked inventory and rejects hidden index drift'
   const root = await privateTemp(t, 'media-provider-trust-');
   await mkdir(path.join(root, 'bin'), { mode: 0o700 });
   await writeFile(path.join(root, 'package.json'), '{"name":"provider-fixture","version":"1.0.0","type":"module"}\n', { mode: 0o600 });
+  await writeFile(path.join(root, 'bin', 'node-fixture'), 'trusted node fixture\n', { mode: 0o700 });
   await writeFile(path.join(root, 'bin', 'provider.mjs'), "import '../lib.mjs';\n", { mode: 0o600 });
   await writeFile(path.join(root, 'lib.mjs'), 'export const trusted = true;\n', { mode: 0o600 });
   for (const args of [
@@ -305,8 +306,8 @@ test('provider trust binds the tracked inventory and rejects hidden index drift'
     schema_version: '1.0.0',
     adapter_contract: 'caller-owned-local-asr-cli-v1',
     runtime: {
-      node_executable: process.execPath,
-      node_sha256: await sha256File(process.execPath),
+      node_executable: path.join(root, 'bin', 'node-fixture'),
+      node_sha256: await sha256File(path.join(root, 'bin', 'node-fixture')),
       entrypoint: path.join(root, 'bin', 'provider.mjs'),
       entrypoint_sha256: await sha256File(path.join(root, 'bin', 'provider.mjs')),
       package_root: root,
