@@ -1268,8 +1268,10 @@ test('paired review center hard reload gives a clear reopen path instead of a fu
     assert.match(await page.locator('.workspace').innerText(), /private browser session has ended/i);
     assert.equal(await page.getByRole('button', { name: 'Try again', exact: true }).count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+    await page.close();
 
     const stalledPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await activateObservedPage(stalledPage);
     const stalledPair = await issueControlCenterPairingUrl(started);
     let observeStalledPairing;
     const stalledPairingObserved = new Promise((resolve) => { observeStalledPairing = resolve; });
@@ -1288,9 +1290,22 @@ test('paired review center hard reload gives a clear reopen path instead of a fu
     await stalledPage.goto(stalledPair.url, { waitUntil: 'domcontentloaded' });
     await stalledPairingObserved;
     await activateObservedPage(stalledPage);
-    await stalledPage.getByRole('heading', { name: reopenHeading, exact: true }).waitFor({
-      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
-    });
+    try {
+      await stalledPage.getByRole('heading', { name: reopenHeading, exact: true }).waitFor({
+        timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+      });
+    } catch (caught) {
+      const safeSnapshot = await stalledPage.evaluate(() => ({
+        visibility: document.visibilityState,
+        headings: [...document.querySelectorAll('h1, h2')]
+          .map((element) => element.textContent?.replace(/\s+/gu, ' ').trim())
+          .filter(Boolean),
+        workspace: document.querySelector('.workspace')?.textContent?.replace(/\s+/gu, ' ').trim() ?? ''
+      }));
+      throw new Error(`Stalled pairing did not reach the reopen state: ${JSON.stringify(safeSnapshot)}`, {
+        cause: caught
+      });
+    }
     assert.equal(await stalledPage.getByRole('button', { name: 'Try again', exact: true }).count(), 0);
     assert.equal(await stalledPage.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
     releaseStalledPairing();

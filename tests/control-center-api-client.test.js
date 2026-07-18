@@ -1,6 +1,56 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+test('Control Center classifies an outer pairing deadline as reopen-required', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalWindow = globalThis.window;
+  const callbacks = [];
+  let requestSignal = null;
+  try {
+    globalThis.window = {
+      location: {
+        hash: `#pair=${'p'.repeat(43)}`,
+        pathname: '/',
+        search: ''
+      },
+      history: {
+        state: null,
+        replaceState() {}
+      }
+    };
+    globalThis.fetch = async (_url, options = {}) => {
+      requestSignal = options.signal;
+      return new Promise(() => {});
+    };
+    globalThis.setTimeout = (callback) => {
+      callbacks.push(callback);
+      if (callbacks.length === 2) queueMicrotask(callback);
+      return callbacks.length;
+    };
+    globalThis.clearTimeout = () => {};
+
+    const client = await import(`../control-center/src/apiClient.js?pairing-deadline=${Date.now()}`);
+    await assert.rejects(
+      client.fetchDashboard(),
+      (error) => error?.name === 'TimeoutError'
+        && error?.controlCenterReopenRequired === true
+        && error?.envelope === undefined
+    );
+    assert.equal(callbacks.length, 2);
+    callbacks[0]();
+    await Promise.resolve();
+    assert.equal(requestSignal?.aborted, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
 test('Control Center API setup bounds an unreadable local response and clears transport authority', async () => {
   const originalFetch = globalThis.fetch;
   const originalSetTimeout = globalThis.setTimeout;
