@@ -16,7 +16,7 @@ export async function inspectTechnicalMediaReadiness(context = {}) {
       schema_version: ANALYSIS_SCHEMA_VERSION,
       type: 'media_technical_analyzer_readiness',
       status: 'ready',
-      capabilities: ['container_probe', 'frame_timing', 'duplicate_frame_detection', 'presentation_gap_detection', 'scene_change_detection', 'subtitle_timing', 'container_pts_sync'],
+      capabilities: ['container_probe', 'frame_timing', 'duplicate_frame_detection', 'presentation_gap_detection', 'scene_change_detection', 'subtitle_timing', 'container_pts_sync', 'first_decoded_timeline_origin'],
       method: projectToolchain(toolchain),
       limitations: ['container_pts_sync_is_not_perceptual_lip_sync'],
       boundary: analyzerBoundary()
@@ -48,6 +48,9 @@ export async function preflightLocalMediaTechnical(request, context = {}) {
   const toolchain = await resolveTechnicalMediaToolchain({ ...context, signal: request.signal ?? context.signal });
   const runner = context.technicalProcessRunner ?? context.fixedProcessRunner ?? runFixedProcess;
   const probed = await probeTechnicalMetadata(request, policy, toolchain, runner);
+  const decodedTimeline = request.includeDecodedTimeline === true
+    ? await probeFirstDecodedTimeline(request, policy, toolchain, runner)
+    : null;
   return {
     schema_version: ANALYSIS_SCHEMA_VERSION,
     type: 'media_technical_preflight',
@@ -56,6 +59,7 @@ export async function preflightLocalMediaTechnical(request, context = {}) {
     duration_us: probed.durationUs,
     video: { width: probed.videoStream.width, height: probed.videoStream.height },
     stream_counts: probed.streamCounts,
+    decoded_timeline: decodedTimeline,
     boundary: analyzerBoundary()
   };
 }
@@ -273,6 +277,39 @@ async function probeTechnicalMetadata(request, policy, toolchain, runner) {
     audioStream: audioStreams[0] ?? null,
     streamCounts: { total: metadata.streams.length, video: videoStreams.length, audio: audioStreams.length, subtitle: subtitleStreams.length }
   };
+}
+
+async function probeFirstDecodedTimeline(request, policy, toolchain, runner) {
+  const [video, audio] = await Promise.all([
+    probeFirstDecodedTimestamp('v:0', request, policy, toolchain, runner),
+    probeFirstDecodedTimestamp('a:0', request, policy, toolchain, runner)
+  ]);
+  if (video === null) throw analyzerError('MEDIA_ANALYZER_VIDEO_TIMELINE_UNAVAILABLE', 'The first decoded video timestamp is unavailable.');
+  if (audio === null) throw analyzerError('MEDIA_ANALYZER_AUDIO_TIMELINE_UNAVAILABLE', 'The selected media has no usable decoded audio timeline.');
+  return {
+    basis: 'first_decoded_frame_pts',
+    video_first_timestamp_seconds: video,
+    audio_first_timestamp_seconds: audio
+  };
+}
+
+async function probeFirstDecodedTimestamp(selector, request, policy, toolchain, runner) {
+  const limits = policy.technical_analyzer;
+  const result = await runTool(runner, toolchain.probe, [
+    '-v', 'error', '-max_alloc', String(limits.maximum_single_allocation_bytes),
+    '-protocol_whitelist', 'file,pipe', '-of', 'json',
+    '-select_streams', selector, '-show_frames',
+    '-show_entries', 'frame=best_effort_timestamp_time,pts_time',
+    '-read_intervals', `%+#${limits.decoded_timeline_probe_packets}`, request.mediaPath
+  ], request.operationRoot, limits, request.signal);
+  const payload = parseJson(result.stdout, 'MEDIA_ANALYZER_DECODED_TIMELINE_INVALID');
+  if (!Array.isArray(payload.frames)) return null;
+  for (const frame of payload.frames) {
+    for (const candidate of [frame?.best_effort_timestamp_time, frame?.pts_time]) {
+      if (typeof candidate === 'string' && /^-?\d{1,12}(?:\.\d{1,18})?$/u.test(candidate)) return candidate;
+    }
+  }
+  return null;
 }
 
 function strictPositiveInteger(value) {

@@ -553,7 +553,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
           <section className="media-review-input" aria-labelledby="media-review-input-title">
             <div className="section-heading compact-heading">
               <div><p className="eyebrow">{t('media.localFirst', 'Local-first media review')}</p><h2 id="media-review-input-title">{t('media.input.title', 'Choose how to review the video')}</h2></div>
-              <span className={`status-pill ${mediaReadiness?.status === 'ready' ? 'status-success' : 'status-warning'}`}>{mediaReadiness?.status === 'ready' ? t('media.ready', 'Ready') : mediaReadiness?.status === 'uninspected' ? t('media.notChecked', 'Not checked') : t('media.setupNeeded', 'Setup needed')}</span>
+              <span className={`status-pill ${mediaReadiness?.status === 'ready' ? 'status-success' : 'status-warning'}`}>{mediaReadiness?.status === 'ready' ? t('media.ready', 'Ready') : mediaReadiness?.status === 'uninspected' ? t('media.notChecked', 'Not checked') : mediaReadiness?.status === 'unsupported' ? t('media.capability.unsupported', 'Unsupported') : t('media.setupNeeded', 'Setup needed')}</span>
             </div>
             <fieldset className="choice-fieldset compact-fieldset">
               <legend>{t('media.input.legend', 'Video source')}</legend>
@@ -604,7 +604,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
                   </label>
                 </div>
               </fieldset>
-              {mediaReadiness?.status !== 'ready' ? <InlineNotice tone="warning" title={mediaReadiness?.status === 'uninspected' ? t('media.check.title', 'Check local video review setup') : t('media.unavailable.title', 'Full video review is not ready')} text={mediaReadiness?.status === 'uninspected' ? t('media.check.text', 'Run a private readiness check before choosing a video. Nothing will be installed or downloaded.') : t('media.unavailable.text', 'Check local transcription and FFmpeg readiness. TraceCue will not install or download anything automatically.')} action={<button className="secondary-action compact" type="button" disabled={busy} onClick={refreshMediaReadiness}>{busy ? t('media.check.running', 'Checking…') : t('media.check.action', 'Check local setup')}</button>} /> : null}
+              {mediaReadiness?.status !== 'ready' ? <InlineNotice tone="warning" title={mediaReadinessNotice(mediaReadiness, t).title} text={mediaReadinessNotice(mediaReadiness, t).text} action={<button className="secondary-action compact" type="button" disabled={busy} onClick={refreshMediaReadiness}>{busy ? t('media.check.running', 'Checking…') : t('media.check.action', 'Check local setup')}</button>} /> : null}
             </>}
           </section>
         ) : (
@@ -2498,6 +2498,25 @@ function mediaProgressLabel(value, t) {
     cancelling: t('media.progress.cancelling', 'Stopping safely')
   };
   return labels[value] ?? t('media.progress.running', 'Reviewing the video');
+}
+
+function mediaReadinessNotice(readiness, t) {
+  if (readiness?.status === 'uninspected') {
+    return {
+      title: t('media.check.title', 'Check local video review setup'),
+      text: t('media.check.text', 'Run a private readiness check before choosing a video. Nothing will be installed or downloaded.')
+    };
+  }
+  if (readiness?.status === 'unsupported') {
+    return {
+      title: t('media.unsupported.title', 'The configured transcription method is not supported'),
+      text: t('media.unsupported.text', 'Choose a supported local transcription configuration, then check again. TraceCue will not install, download, or use a fallback automatically.')
+    };
+  }
+  return {
+    title: t('media.unavailable.title', 'Full video review is not ready'),
+    text: t('media.unavailable.text', 'Check local transcription and FFmpeg readiness. TraceCue will not install or download anything automatically.')
+  };
 }
 
 function mediaSeverityTone(value) {

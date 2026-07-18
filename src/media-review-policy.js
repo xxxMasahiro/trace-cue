@@ -11,21 +11,21 @@ let cachedPolicy;
 let cachedCatalog;
 
 export async function loadMediaReviewPolicy(context = {}) {
-  if (context.mediaReviewPolicy) return validatePolicy(structuredClone(context.mediaReviewPolicy));
+  if (context.mediaReviewPolicy) return validatePolicy(normalizePolicyDefaults(structuredClone(context.mediaReviewPolicy)));
   if (!cachedPolicy || context.disableMediaReviewPolicyCache) {
     const root = path.resolve(context.packageRoot ?? moduleRoot);
-    cachedPolicy = validatePolicy(await readJson(path.join(root, MEDIA_REVIEW_POLICY_RELATIVE), 'MEDIA_REVIEW_POLICY_INVALID'));
+    cachedPolicy = validatePolicy(normalizePolicyDefaults(await readJson(path.join(root, MEDIA_REVIEW_POLICY_RELATIVE), 'MEDIA_REVIEW_POLICY_INVALID')));
   }
   return structuredClone(cachedPolicy);
 }
 
 export async function loadMediaReviewAdapterCatalog(policy, context = {}) {
-  if (context.mediaReviewAdapterCatalog) return validateCatalog(structuredClone(context.mediaReviewAdapterCatalog));
+  if (context.mediaReviewAdapterCatalog) return validateCatalog(normalizeCatalogDefaults(structuredClone(context.mediaReviewAdapterCatalog)));
   if (!cachedCatalog || context.disableMediaReviewPolicyCache) {
     const root = path.resolve(context.packageRoot ?? moduleRoot);
     const relative = policy?.transcript_provider?.adapter_catalog_relative ?? MEDIA_REVIEW_ADAPTER_CATALOG_RELATIVE;
     if (!isSafeRelativePolicyPath(relative)) throw mediaPolicyError('MEDIA_REVIEW_ADAPTER_CATALOG_PATH_INVALID', 'The adapter catalog path is invalid.');
-    cachedCatalog = validateCatalog(await readJson(path.join(root, relative), 'MEDIA_REVIEW_ADAPTER_CATALOG_INVALID'));
+    cachedCatalog = validateCatalog(normalizeCatalogDefaults(await readJson(path.join(root, relative), 'MEDIA_REVIEW_ADAPTER_CATALOG_INVALID')));
   }
   return structuredClone(cachedCatalog);
 }
@@ -43,11 +43,13 @@ export function mediaReviewBoundary(policy) {
 function validatePolicy(policy) {
   if (!isRecord(policy)
     || policy.schema_version !== MEDIA_REVIEW_POLICY_SCHEMA_VERSION
+    || !/^1\.[0-9]+\.[0-9]+$/u.test(policy.policy_version ?? '')
     || policy.mode !== 'local_first'
     || !isRecord(policy.source)
     || !isRecord(policy.retention)
     || !isRecord(policy.operation)
     || !isRecord(policy.transcript_provider)
+    || !isRecord(policy.prepared_audio)
     || !isRecord(policy.technical_analyzer)
     || !isRecord(policy.reviewer)
     || !isRecord(policy.public_boundary)) {
@@ -88,6 +90,7 @@ function validatePolicy(policy) {
     || !isSafeRelativePolicyPath(policy.transcript_provider.adapter_catalog_relative)
     || !isSafeRelativePolicyPath(policy.transcript_provider.local_profile_relative)
     || !/^[A-Z_][A-Z0-9_]{2,100}$/u.test(policy.transcript_provider.local_profile_environment ?? '')
+    || !/^[a-z0-9][a-z0-9._-]{2,159}$/u.test(policy.prepared_audio.preparation_method ?? '')
     || !trustedToolCandidates(policy.technical_analyzer.probe_candidates, 'ffprobe')
     || !trustedToolCandidates(policy.technical_analyzer.analyzer_candidates, 'ffmpeg')
     || !/^[A-Z_][A-Z0-9_]{2,100}$/u.test(policy.technical_analyzer.probe_executable_environment ?? '')
@@ -126,6 +129,9 @@ function validatePolicy(policy) {
     execution_timeout_ms: policy.transcript_provider.execution_timeout_ms,
     provider_maximum_stdout_bytes: policy.transcript_provider.maximum_stdout_bytes,
     provider_maximum_stderr_bytes: policy.transcript_provider.maximum_stderr_bytes,
+    maximum_prepared_audio_bytes: policy.prepared_audio.maximum_prepared_audio_bytes,
+    maximum_preparation_manifest_bytes: policy.prepared_audio.maximum_manifest_bytes,
+    prepared_audio_copy_chunk_bytes: policy.prepared_audio.copy_chunk_bytes,
     maximum_frames: policy.technical_analyzer.maximum_frames,
     maximum_subtitle_events: policy.technical_analyzer.maximum_subtitle_events,
     maximum_total_streams: policy.technical_analyzer.maximum_total_streams,
@@ -137,6 +143,7 @@ function validatePolicy(policy) {
     maximum_video_pixels: policy.technical_analyzer.maximum_video_pixels,
     maximum_audio_sample_rate: policy.technical_analyzer.maximum_audio_sample_rate,
     maximum_audio_channels: policy.technical_analyzer.maximum_audio_channels,
+    decoded_timeline_probe_packets: policy.technical_analyzer.decoded_timeline_probe_packets,
     decoder_threads: policy.technical_analyzer.decoder_threads,
     maximum_single_allocation_bytes: policy.technical_analyzer.maximum_single_allocation_bytes,
     analyzer_timeout_ms: policy.technical_analyzer.timeout_ms,
@@ -167,6 +174,9 @@ function validatePolicy(policy) {
     ['dropped_interval_multiplier', policy.technical_analyzer.dropped_interval_multiplier, 1, 100]
   ]) assertFiniteRange(value, minimum, maximum, name);
   if (policy.transcript_provider.maximum_line_bytes > policy.transcript_provider.maximum_transcript_bytes
+    || policy.prepared_audio.maximum_manifest_bytes > policy.transcript_provider.maximum_transcript_bytes
+    || policy.prepared_audio.maximum_prepared_audio_bytes > policy.operation.maximum_private_tree_bytes
+    || policy.prepared_audio.copy_chunk_bytes > policy.prepared_audio.maximum_prepared_audio_bytes
     || policy.operation.maximum_public_excerpt_characters > policy.operation.maximum_public_result_bytes
     || policy.operation.maximum_active_operations > policy.operation.maximum_history_operations
     || policy.reviewer.long_pause_high_us < policy.reviewer.long_pause_warning_us
@@ -187,6 +197,7 @@ function validatePolicy(policy) {
     || policy.technical_analyzer.maximum_video_pixels > 134217728
     || policy.technical_analyzer.maximum_audio_sample_rate > 768000
     || policy.technical_analyzer.maximum_audio_channels > 64
+    || policy.technical_analyzer.decoded_timeline_probe_packets > 4096
     || policy.technical_analyzer.decoder_threads > 16
     || policy.technical_analyzer.maximum_single_allocation_bytes > 1073741824) {
     throw mediaPolicyError('MEDIA_REVIEW_POLICY_LIMIT_INVALID', 'Technical media limits exceed supported safety ceilings.');
@@ -194,8 +205,38 @@ function validatePolicy(policy) {
   return Object.freeze(policy);
 }
 
+function normalizePolicyDefaults(policy) {
+  if (!isRecord(policy)) return policy;
+  const legacy = /^1\.0\.[0-9]+$/u.test(policy.policy_version ?? '');
+  if (legacy && policy.prepared_audio === undefined) {
+    policy.prepared_audio = {
+      preparation_method: 'ffmpeg-pcm-s16le',
+      maximum_prepared_audio_bytes: 33_554_432,
+      maximum_manifest_bytes: 65_536,
+      copy_chunk_bytes: 1_048_576
+    };
+  }
+  if (legacy && isRecord(policy.technical_analyzer) && policy.technical_analyzer.decoded_timeline_probe_packets === undefined) {
+    policy.technical_analyzer.decoded_timeline_probe_packets = 64;
+  }
+  return policy;
+}
+
+function normalizeCatalogDefaults(catalog) {
+  if (!isRecord(catalog) || !Array.isArray(catalog.adapters)) return catalog;
+  if (!/^1\.0\.[0-9]+$/u.test(catalog.catalog_version ?? '')) return catalog;
+  for (const adapter of catalog.adapters) {
+    if (isRecord(adapter) && adapter.input_mode === undefined) adapter.input_mode = 'source_media';
+  }
+  return catalog;
+}
+
 function validateCatalog(catalog) {
-  if (!isRecord(catalog) || catalog.schema_version !== '1.0.0' || !Array.isArray(catalog.adapters) || catalog.adapters.length === 0) {
+  if (!isRecord(catalog)
+    || catalog.schema_version !== '1.0.0'
+    || !/^1\.[0-9]+\.[0-9]+$/u.test(catalog.catalog_version ?? '')
+    || !Array.isArray(catalog.adapters)
+    || catalog.adapters.length === 0) {
     throw mediaPolicyError('MEDIA_REVIEW_ADAPTER_CATALOG_INVALID', 'The media review adapter catalog is invalid.');
   }
   const contracts = new Set();
@@ -209,13 +250,7 @@ function validateCatalog(catalog) {
       || !versionMajorArray(adapter.supported_result_schema_majors)
       || !versionMajorArray(adapter.supported_normalized_schema_majors)
       || !uniqueStringArray(adapter.production_mock_engines, /^[a-z0-9][a-z0-9-]{0,79}$/u)
-      || !isRecord(adapter.commands)
-      || !exactKeys(adapter.commands, ['readiness', 'initialize', 'import_media', 'transcribe'])
-      || !isFixedTemplate(adapter.commands.readiness, [])
-      || !isFixedTemplate(adapter.commands.initialize, ['operation_name', 'operation_root'])
-      || !isFixedTemplate(adapter.commands.import_media, ['run', 'input', 'operation_root'])
-      || !isFixedTemplate(adapter.commands.transcribe, ['run', 'engine', 'operation_root'])
-      || !validRequiredReadiness(adapter.required_readiness)
+      || !validAdapterWorkflow(adapter)
       || adapter.boundary?.shell_used !== false
       || adapter.boundary?.url_input_supported !== false
       || adapter.boundary?.runtime_setup_supported !== false
@@ -229,6 +264,30 @@ function validateCatalog(catalog) {
   return Object.freeze(catalog);
 }
 
+function validAdapterWorkflow(adapter) {
+  if (adapter.input_mode === 'source_media') {
+    return isRecord(adapter.commands)
+      && exactKeys(adapter.commands, ['readiness', 'initialize', 'import_media', 'transcribe'])
+      && isFixedTemplate(adapter.commands.readiness, [])
+      && isFixedTemplate(adapter.commands.initialize, ['operation_name', 'operation_root'])
+      && isFixedTemplate(adapter.commands.import_media, ['run', 'input', 'operation_root'])
+      && isFixedTemplate(adapter.commands.transcribe, ['run', 'engine', 'operation_root'])
+      && validLegacyReadiness(adapter.required_readiness)
+      && adapter.prepared_audio_contract === undefined
+      && adapter.result_resolution === undefined;
+  }
+  return adapter.input_mode === 'caller_prepared_audio'
+    && isRecord(adapter.commands)
+    && exactKeys(adapter.commands, ['readiness', 'initialize', 'register_prepared', 'transcribe'])
+    && exactTemplate(adapter.commands.readiness, ['local-asr', 'readiness', '--input-kind', 'prepared', '--engine', '{engine}', '--json'])
+    && exactTemplate(adapter.commands.initialize, ['init', '--name', '{operation_name}', '--external-artifact-root', '{operation_root}', '--external-artifact-root-confirm', 'use-external-artifact-root'])
+    && exactTemplate(adapter.commands.register_prepared, ['audio', 'import-prepared', '--run', '{run}', '--input', '{prepared_audio}', '--preparation-manifest', '{preparation_manifest}', '--external-artifact-root', '{operation_root}', '--external-artifact-root-confirm', 'use-external-artifact-root', '--json'])
+    && exactTemplate(adapter.commands.transcribe, ['local-asr', 'run', '--run', '{run}', '--input-kind', 'prepared', '--prepared-registration-id', '{registration_id}', '--engine', '{engine}', '--execute', '--execute-confirm', 'execute-local-asr', '--external-artifact-root', '{operation_root}', '--external-artifact-root-confirm', 'use-external-artifact-root', '--json'])
+    && validPreparedReadiness(adapter.required_readiness)
+    && validPreparedAudioContract(adapter.prepared_audio_contract)
+    && validPreparedResultResolution(adapter.result_resolution);
+}
+
 function isFixedTemplate(value, allowedPlaceholders) {
   if (!(Array.isArray(value)
     && value.length > 0
@@ -239,6 +298,12 @@ function isFixedTemplate(value, allowedPlaceholders) {
   return placeholders.every((placeholder) => allowedPlaceholders.includes(placeholder));
 }
 
+function exactTemplate(value, expected) {
+  return Array.isArray(value)
+    && value.length === expected.length
+    && value.every((entry, index) => entry === expected[index]);
+}
+
 function versionMajorArray(value) {
   return Array.isArray(value)
     && value.length > 0
@@ -247,7 +312,7 @@ function versionMajorArray(value) {
     && value.every((entry) => Number.isSafeInteger(entry) && entry >= 1 && entry <= 1000);
 }
 
-function validRequiredReadiness(value) {
+function validLegacyReadiness(value) {
   return isRecord(value)
     && exactKeys(value, ['status', 'runtime_ready', 'model_resolvable_offline', 'external_network_calls_during_asr_enabled', 'cloud_asr_enabled', 'external_sending_enabled'])
     && value.status === 'ready'
@@ -256,6 +321,60 @@ function validRequiredReadiness(value) {
     && value.external_network_calls_during_asr_enabled === false
     && value.cloud_asr_enabled === false
     && value.external_sending_enabled === false;
+}
+
+function validPreparedReadiness(value) {
+  return isRecord(value)
+    && exactKeys(value, [
+      'kind', 'status', 'input_kind', 'capability_supported', 'external_artifact_root_supported',
+      'source_media_read_required', 'source_media_reprocessing_enabled', 'ffmpeg_conversion_required',
+      'url_acquisition_enabled', 'yt_dlp_enabled', 'cloud_asr_enabled',
+      'external_sending_enabled', 'model_auto_download_enabled', 'runtime_setup_execution_enabled',
+      'provider_fallback_enabled', 'shell_execution_enabled', 'body_included', 'absolute_paths_included'
+    ])
+    && value.kind === 'framecue-prepared-audio-readiness'
+    && value.status === 'ready'
+    && value.input_kind === 'prepared'
+    && value.capability_supported === true
+    && value.external_artifact_root_supported === true
+    && Object.entries(value).every(([key, entry]) => [
+      'kind', 'status', 'input_kind', 'capability_supported', 'external_artifact_root_supported'
+    ].includes(key) || entry === false);
+}
+
+function validPreparedAudioContract(value) {
+  return isRecord(value)
+    && exactKeys(value, ['schema_version', 'manifest_kind', 'registration_result_kind', 'provider_result_kind', 'format', 'rounding_rule'])
+    && /^1\.[0-9]+\.[0-9]+$/u.test(value.schema_version ?? '')
+    && /^[a-z0-9][a-z0-9-]{2,100}$/u.test(value.manifest_kind ?? '')
+    && /^[a-z0-9][a-z0-9-]{2,100}$/u.test(value.registration_result_kind ?? '')
+    && /^[a-z0-9][a-z0-9-]{2,100}$/u.test(value.provider_result_kind ?? '')
+    && value.rounding_rule === 'nearest-half-away-from-zero'
+    && isRecord(value.format)
+    && exactKeys(value.format, ['container', 'codec', 'sample_rate_hz', 'channel_count', 'bits_per_sample', 'header_bytes'])
+    && value.format.container === 'wav'
+    && value.format.codec === 'pcm_s16le'
+    && value.format.sample_rate_hz === 16_000
+    && value.format.channel_count === 1
+    && value.format.bits_per_sample === 16
+    && value.format.header_bytes === 44;
+}
+
+function validPreparedResultResolution(value) {
+  return isRecord(value)
+    && exactKeys(value, [
+      'contract_version', 'provider_receipt_kind', 'provider_receipt_directory', 'provider_receipt_file_name',
+      'payload_directory', 'payload_file_name', 'payload_namespace', 'payload_media_type', 'receipt_identity'
+    ])
+    && /^1\.[0-9]+\.[0-9]+$/u.test(value.contract_version ?? '')
+    && /^[a-z0-9][a-z0-9-]{2,100}$/u.test(value.provider_receipt_kind ?? '')
+    && isSafeRelativePolicyPath(value.provider_receipt_directory)
+    && /^[A-Za-z0-9._-]{1,80}$/u.test(value.provider_receipt_file_name ?? '')
+    && isSafeRelativePolicyPath(value.payload_directory)
+    && /^[A-Za-z0-9._-]{1,80}$/u.test(value.payload_file_name ?? '')
+    && /^[a-z0-9][a-z0-9-]{2,80}$/u.test(value.payload_namespace ?? '')
+    && value.payload_media_type === 'application/x-ndjson'
+    && value.receipt_identity === 'stable-json-sha256';
 }
 
 function validOfficialPlayerRules(value) {

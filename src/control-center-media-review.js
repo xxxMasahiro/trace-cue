@@ -635,7 +635,7 @@ function uninspectedReadiness(policy) {
 function publicReadiness(result, policy) {
   const value = result?.data?.readiness ?? {};
   const projectComponent = (component) => ({
-    status: ['ready', 'setup_required', 'unavailable'].includes(component?.status) ? component.status : 'unavailable',
+    status: ['ready', 'setup_required', 'unavailable', 'unsupported'].includes(component?.status) ? component.status : 'unavailable',
     limitations: Array.isArray(component?.limitations)
       ? component.limitations.filter((item) => typeof item === 'string').slice(0, 20).map((item) => item.slice(0, 160))
       : []
@@ -644,7 +644,11 @@ function publicReadiness(result, policy) {
     readiness: {
       schema_version: CONTROL_CENTER_MEDIA_SCHEMA_VERSION,
       type: 'media_review_readiness',
-      status: value.status === 'ready' ? 'ready' : 'unavailable',
+      status: value.status === 'ready'
+        ? 'ready'
+        : [value.transcript_provider, value.technical_analyzer].some((component) => component?.status === 'unsupported')
+          ? 'unsupported'
+          : 'unavailable',
       transcript_provider: projectComponent(value.transcript_provider),
       technical_analyzer: projectComponent(value.technical_analyzer),
       local_input: publicLocalInput(policy),

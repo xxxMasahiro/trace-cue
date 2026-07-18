@@ -1117,3 +1117,46 @@ toolcache. Commit `b8f394f` replaced that host executable with a private 0700
 hermetic fixture. The focused media suite then passed 47/47 and the replacement
 PR and main runs passed without weakening executable trust or production
 permission checks.
+
+### Shared Prepared Audio Verification
+
+`tests/media-prepared-audio.test.js` owns the additive v2 preparation/provider
+contract. It verifies catalog coexistence with v1; safe legacy defaults and
+unchanged v1 projection shape; exact fixed argv; signed rational timeline
+rounding; bounded first-valid decoded timestamp selection; one 44-byte-header
+canonical WAV; exact sample counts and path-free manifest; FFmpeg time/file
+caps; partial/cap-sized output refusal; readiness without setup execution;
+registration/result/receipt/computation/payload binding; language and
+computation drift refusal; symlink/hardlink refusal; negative cue clipping and
+omission; conditional schema requirements; and private cleanup.
+
+The media service tests require exactly one preparation call per prepared-mode
+operation, one provider call using the prepared contract, and one independent
+technical analysis call. They verify that the public result contains neither
+prepared paths nor transcript text, that containment uncertainty defers cleanup,
+and that provider/setup/preparation failures use bounded nontechnical messages.
+Control Center tests preserve `unsupported` in the passive readiness contract;
+API and browser owners validate the corresponding safe projection and UI.
+
+`npm run test:media-live` is the explicit non-hermetic acceptance for the
+private configured provider. It must use the v2 prepared input contract, real
+FFprobe/FFmpeg preparation, real FrameCue registration and ASR, receipt-bound
+payload resolution, timed output, prepared provenance identities, public-body
+exclusion, and successful ephemeral cleanup. It remains outside ordinary
+`npm test` and remote CI because the provider checkout, ASR runtime, and model
+are local optional authorities. FrameCue's own prepared-audio tests may be run
+read-only as corroboration but are not TraceCue release authority.
+
+Final closure additionally requires syntax/JSON/diff checks, focused media and
+Control Center tests, `npm test`, Control Center build and Playwright browser
+smoke, pack and packed-install smoke including `media-prepared-audio.js` and its
+API export, rename and release checks, development/document/verification
+contracts, product structure/docs/security/design/CI checks, Product Gate, and
+three independent post-implementation reviews. PR and exact-main GitHub CI must
+pass the existing owner graph; no new CI job or dependency is introduced.
+
+Cross-operation ASR reuse is a negative assertion: matching audio or settings
+must not reuse a real provider receipt while complete runtime/model identity is
+unproven. Receipt-layout compatibility is likewise revision-bound; live
+acceptance must be repeated for a profile revision, and a changed layout or argv
+requires a new catalog adapter rather than relaxed validation.

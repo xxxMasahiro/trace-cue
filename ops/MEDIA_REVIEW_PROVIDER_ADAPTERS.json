@@ -1,10 +1,11 @@
 {
   "schema_version": "1.0.0",
-  "catalog_version": "1.0.0",
+  "catalog_version": "1.1.0",
   "adapters": [
     {
       "adapter_contract": "caller-owned-local-asr-cli-v1",
       "runtime_kind": "node_git_checkout_cli",
+      "input_mode": "source_media",
       "display_label": "Local transcription",
       "supported_result_schema_majors": [1],
       "supported_normalized_schema_majors": [1],
@@ -35,6 +36,89 @@
         "external_network_calls_during_asr_enabled": false,
         "cloud_asr_enabled": false,
         "external_sending_enabled": false
+      },
+      "production_mock_engines": [],
+      "boundary": {
+        "shell_used": false,
+        "url_input_supported": false,
+        "runtime_setup_supported": false,
+        "model_download_supported": false,
+        "external_send_supported": false,
+        "mcp_execution_supported": false
+      }
+    },
+    {
+      "adapter_contract": "caller-owned-prepared-audio-cli-v2",
+      "runtime_kind": "node_git_checkout_cli",
+      "input_mode": "caller_prepared_audio",
+      "display_label": "Local transcription from prepared audio",
+      "supported_result_schema_majors": [1],
+      "supported_normalized_schema_majors": [1],
+      "allowed_environment_keys": [
+        "FRAMECUE_LOCAL_ASR_MODEL",
+        "FRAMECUE_LOCAL_ASR_MODEL_CACHE",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "PATH",
+        "TMPDIR",
+        "UV_CACHE_DIR",
+        "XDG_CACHE_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME"
+      ],
+      "commands": {
+        "readiness": ["local-asr", "readiness", "--input-kind", "prepared", "--engine", "{engine}", "--json"],
+        "initialize": ["init", "--name", "{operation_name}", "--external-artifact-root", "{operation_root}", "--external-artifact-root-confirm", "use-external-artifact-root"],
+        "register_prepared": ["audio", "import-prepared", "--run", "{run}", "--input", "{prepared_audio}", "--preparation-manifest", "{preparation_manifest}", "--external-artifact-root", "{operation_root}", "--external-artifact-root-confirm", "use-external-artifact-root", "--json"],
+        "transcribe": ["local-asr", "run", "--run", "{run}", "--input-kind", "prepared", "--prepared-registration-id", "{registration_id}", "--engine", "{engine}", "--execute", "--execute-confirm", "execute-local-asr", "--external-artifact-root", "{operation_root}", "--external-artifact-root-confirm", "use-external-artifact-root", "--json"]
+      },
+      "required_readiness": {
+        "kind": "framecue-prepared-audio-readiness",
+        "status": "ready",
+        "input_kind": "prepared",
+        "capability_supported": true,
+        "external_artifact_root_supported": true,
+        "source_media_read_required": false,
+        "source_media_reprocessing_enabled": false,
+        "ffmpeg_conversion_required": false,
+        "url_acquisition_enabled": false,
+        "yt_dlp_enabled": false,
+        "cloud_asr_enabled": false,
+        "external_sending_enabled": false,
+        "model_auto_download_enabled": false,
+        "runtime_setup_execution_enabled": false,
+        "provider_fallback_enabled": false,
+        "shell_execution_enabled": false,
+        "body_included": false,
+        "absolute_paths_included": false
+      },
+      "prepared_audio_contract": {
+        "schema_version": "1.0.0",
+        "manifest_kind": "framecue-prepared-audio-input",
+        "registration_result_kind": "framecue-prepared-audio-registration-result",
+        "provider_result_kind": "framecue-transcript-provider-result",
+        "format": {
+          "container": "wav",
+          "codec": "pcm_s16le",
+          "sample_rate_hz": 16000,
+          "channel_count": 1,
+          "bits_per_sample": 16,
+          "header_bytes": 44
+        },
+        "rounding_rule": "nearest-half-away-from-zero"
+      },
+      "result_resolution": {
+        "contract_version": "1.0.0",
+        "provider_receipt_kind": "framecue-transcript-provider-receipt",
+        "provider_receipt_directory": "transcripts/asr/prepared-provider-receipts",
+        "provider_receipt_file_name": "receipt.json",
+        "payload_directory": "transcripts/asr/prepared-payloads",
+        "payload_file_name": "payload.jsonl",
+        "payload_namespace": "transcript-payload",
+        "payload_media_type": "application/x-ndjson",
+        "receipt_identity": "stable-json-sha256"
       },
       "production_mock_engines": [],
       "boundary": {

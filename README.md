@@ -52,7 +52,9 @@ confirmation, and whether private source data should be removed after review.
 Use **Check local setup** only when you want TraceCue to probe the installed
 transcript and technical tools. Progress, stop, cleanup, and time-coded results
 stay in the same browser flow; executable paths and provider settings are never
-browser inputs.
+browser inputs. For a prepared-audio provider, TraceCue automatically extracts
+one private canonical audio artifact and the configured provider transcribes it
+without reopening the source video; there is no additional user step.
 
 CLI users can inspect capability and run the same core contract:
 
@@ -72,13 +74,26 @@ as its shape. TraceCue does not install providers, models, FFmpeg, or network
 isolation, and media execution is not exposed through MCP. The result records
 that an external provider's untracked language runtime, installed ASR package
 bytes, and model weights are not cryptographically bound unless a future
-provider contract supplies that evidence.
+provider contract supplies that evidence. Matching media or audio does not
+silently reuse an older ASR receipt while those transitive identities remain
+unproven. The current prepared adapter also pins the provider's fixed argv and
+private result layout by adapter contract and trusted revision; a provider
+layout change requires a new versioned adapter rather than a browser setting or
+fallback.
 
 ## Current Status
 
 This repository has completed the Free Development scaffold, local Git initialization, Phase 2a package/runtime design, the local MVP runtime slice, the Phase 7 local review-platform slice, the Phase 8 local dogfood/plugin-readiness slice, the Phase 9 local review-quality slice, the Phase 10 manifest route-readiness slice, the Phase 11 page-expectation review slice, the Phase 12 rendered-state dogfood hardening slice, the Phase 13 dogfood signal refinement slice, the Phase 14 content UX advisory slice, the Phase 15 content UX heuristic strengthening slice, the Phase 16 content UX handoff output slice, the Phase 17 content UX practical handoff slice, the Phase 18 content UX review brief/rubric slice, the Phase 19 local target manifest validation slice, the Phase 20 local resource status preflight slice, the Phase 21-24 local resource safety slice, the Phase 25 local agent advisory handoff slice, the Phase 26 local agent request status slice, the Phase 27 local agent request detail slice, the Phase 28 local agent workflow status slice, the Phase 29 agent execution integration, the Phase 30 no-publish release-hardening slice with packed install smoke coverage, the Phase 31 MCP profile-gating slice, the Phase 32 rename-readiness slice, the Phase 33 MCP read-only agent status slice, the Phase 34 safe HTTP MCP foundation slice, the Phase 35 HTTP MCP integration-hardening slice, the Phase 36 MCP capability policy slice, the Phase 37 external-repository usage quickstart slice, the Phase 38 local-checkout MCP config dogfood-hardening slice, the Phase 41-55 visual evidence, image review, capture handoff, visual execution, desktop provenance, MCP gate-reporting, aggregation, and hardening slices, the Phase 56-58 rename-readiness, physical checkout rename, and remote repository rename slices, the Phase 59 local language settings foundation, the Phase 60 read-only operation registry and roadmap risk taxonomy foundation, the Phase 60.1 read-only operation roadmap boundary-contract slice, the Phase 61-64 read-only operation contract foundation, the Phase 65-68 read-only operation policy/readiness foundation, the Phase 69-70 read-only operation admin readiness foundation, and the Phase 71-73 read-only operation provider readiness foundation. The current CLI supports `doctor`, deterministic JSON errors, Playwright-backed one-shot `observe`, headed/devtools launch modes, local artifacts, session metadata, simple actions, process-scoped supervision, local background daemon start/status/stop with optional lifecycle guards, no-browser `resource status`, no-browser `resource artifacts plan`, explicit `.browser-debug/` cleanup receipts, screenshots/traces, reports, spec export, deterministic `review` with additive `resource_guard` output, target-manifest site review, target manifest initialization, target manifest validation, action plans, local heuristic review advisory data, local quality signals, rendered-state findings, manifest suggestions, opt-in content UX advisory, selector-scoped content/state/risk checks, required user-question checks, dedicated content UX findings/action/readiness handoff output, page-level content UX handoff, content UX manifest-authoring suggestions, content UX review brief/rubric evaluation, page expectation checks, local review artifact indexes, agent advisory package/request-status/request-detail/workflow/ingest/report commands, agent execution plan/run/status/list commands, visual review result preparation, visual review execution, visual review aggregation, identity audit, local language settings inspection, read-only operation registry inspection, read-only operation roadmap inspection, read-only operation contracts inspection, read-only operation policy inspection, read-only operation admin readiness inspection, read-only operation provider readiness inspection, schema commands, shell-safe structured input, reusable target manifest templates, packaged external-repository usage guidance, product identity metadata, token-free MCP client configuration output with installed-bin and local-checkout metadata, no-side-effect MCP capability policy output, a local stdio MCP adapter with profile-gated tool surfaces including read-only agent advisory/status inspection, and an explicit safe-profile HTTP MCP transport that is loopback-only and bearer-token gated.
 
 Phase 188-194 adds provider-neutral local media review, private caller-owned operation roots, trusted local transcript CLI adaptation, deterministic FFprobe/FFmpeg analysis, canonical time-coded findings, network-free URL capability decisions, CLI execution gates, and an explanation-free browser video flow. Existing browser review, video/content evidence, source-text, AHR, session, artifact, MCP, and release contracts remain additive and unchanged when this flow is unused.
+
+Phase 195-201 adds shared prepared-audio delivery: TraceCue extracts one bounded
+canonical WAV per operation, records exact sample/timeline and tool provenance,
+passes only that WAV and a path-free manifest to the provider, validates its
+receipt-bound ASR result, and keeps the existing CLI and browser-dashboard flow.
+The legacy source-media adapter remains compatible, technical analysis remains
+independently useful, and raw audio/transcript data stays inside the existing
+private cleanup lifecycle.
 
 The persistent session slice additionally exposes bounded `supervise` through `full` MCP and persistent browser session tools through stdio `admin` MCP only. Persistent sessions use retained Playwright contexts with TTL and idle guards, origin allowlists, local file-command queues, local receipts, manual-login checkpoints, local review handoff, and explicit storageState import/export under the configured artifact auth directory. Safe MCP, full MCP, and HTTP MCP do not expose persistent session tools. Existing browser profiles are not reused, OAuth/password automation remains prohibited, storageState is never saved by default, and cookie/token values are not printed.
 

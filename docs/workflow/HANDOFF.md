@@ -824,3 +824,51 @@ existing user modification
 to `docs/memory/SESSION_MEMORY.md` remains excluded from every integration
 revision and preserved in the local stash named
 `preserve user session memory before media review integration`.
+
+## Phase 195-201 Shared Prepared Audio Delivery
+
+TraceCue now supports FrameCue's merged caller-prepared-audio contract as an
+additive v2 transcript adapter. For each prepared-mode media review, TraceCue
+preflights the first valid decoded video/audio timestamps, extracts the selected
+audio once, publishes one exact private mono 16 kHz PCM WAV plus a path-free
+manifest, and gives FrameCue those prepared artifacts instead of the source
+video. FrameCue performs registration and ASR; TraceCue independently performs
+the visual/cadence/cut/synchronization analysis and combines both result streams
+on the signed integer-microsecond timeline.
+
+The result path strictly binds source, prepared audio, preparation manifest and
+settings, registration, provider receipt, computation identity, language,
+engine, terminal state, payload size, and payload SHA-256. Private files are
+owner-only, single-link, stable-descriptor checked, bounded, and cleaned by the
+existing operation lifecycle. In-flight FFmpeg time/file caps and containment
+handling prevent unbounded preparation or unsafe cleanup. Partially leading
+cues are clipped and wholly pre-video cues are omitted with explicit
+limitations. No raw audio, prepared path, private receipt, transcript body, or
+provider output enters the public result.
+
+The source-media v1 adapter remains available with its prior readiness and
+projection shape. The private provider profile now selects v2 for the validated
+FrameCue revision. The v2 receipt/payload layout is declared in the catalog and
+is revision-bound: a future FrameCue change to fixed argv, schema, or layout
+requires a new adapter and live acceptance. Cross-operation real-ASR reuse is
+disabled until FrameCue can prove complete transitive runtime and model
+identity; the recorded preparation/computation hashes are comparison evidence,
+not cache authority.
+
+CLI commands and the Control Center Video steps are unchanged. Audio preparation
+is automatic. Control Center now distinguishes an unsupported provider contract
+from setup unavailability and uses bounded nontechnical failure messages. The
+prepared service is also exported through the package API for reusable local
+orchestration. Media MCP execution, URL acquisition, cloud ASR, model setup,
+fallback, external send, and writes to FrameCue or the parent remain disabled.
+
+Final local evidence is 67/67 PASS across prepared media, base media, Control
+Center media, and API-client contracts; aggregate `npm test` is 486/486 PASS;
+and the rebuilt browser suite is 26/26 PASS. Real local FrameCue/faster-whisper
+v2 acceptance passes, as do FrameCue's read-only prepared-audio tests 5/5,
+package dry-run/install smoke, rename readiness, release check, document,
+development, verification, structure, security, design, CI-contract, and
+Product Gate checks. Three independent contract, security, and UI/document
+reviews returned APPROVE after their findings were corrected. Commit/PR/main
+CI evidence and final local/remote synchronization remain the Phase 201 remote
+closure work at this checkpoint.

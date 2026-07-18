@@ -1725,3 +1725,75 @@ Operation registry version 1.1 adds the ninth `media_review` group and its
 source-inspection, readiness/plan, run, cancel, and cleanup operations. This is
 additive to the historical roadmap groups 1-8 and does not expose a media MCP
 tool.
+
+## Phase 195-201 shared prepared-audio contract
+
+Media policy version 1.1 adds bounded prepared-audio settings and a bounded
+first-decoded-timestamp probe count. Adapter catalog version 1.1 preserves
+`caller-owned-local-asr-cli-v1` as `source_media` and adds
+`caller-owned-prepared-audio-cli-v2` as `caller_prepared_audio`. Missing
+`input_mode`, prepared-audio policy, and decoded-probe-count fields are given
+safe legacy defaults only while loading an older injected v1 contract; tracked
+v1.1 data remains strictly validated.
+
+For a prepared adapter, planning projects its versioned input contract. Run
+execution stages and hashes the source as before, preflights the selected video
+and audio streams, and uses bounded FFprobe frame records to find the first
+valid decoded timestamp for each stream. The video-relative sample-zero origin
+is `audio_first_pts - video_first_pts`, rounded from decimal rationals into
+integer microseconds. TraceCue then invokes the configured FFmpeg analyzer once
+to produce temporary raw `pcm_s16le`, with fixed local-file argv, `-t`, `-fs`,
+protocol, allocation, thread, timeout, output, cancellation, and descendant
+containment bounds.
+
+TraceCue publishes one exact canonical WAV and one preparation manifest inside
+the marker-owned operation root. The WAV is validated through one no-follow
+descriptor for owner, mode, link count, device/inode, size, timestamps, header,
+sample boundary, and SHA-256 stability. The JSON manifest records source and
+audio identities, exact sample counts, signed timeline origin, zero trim and
+padding, preparation producer/method/settings/tool identities, limitations, and
+false privacy flags; it records no source locator. Temporary PCM is removed
+after publication and all remaining private artifacts use mode 0600 under a
+0700 directory.
+
+The v2 transcript adapter calls only the catalog's exact readiness, initialize,
+`audio import-prepared`, and prepared `local-asr run` argv. It revalidates the
+prepared WAV and manifest before registration and again before execution.
+FrameCue receives the WAV and manifest, never the original media path. TraceCue
+accepts the result only when registration, source identity, prepared identity,
+sample timeline, language, producer, preparation producer/method/settings,
+adapter, engine, analysis configuration, computation identity, terminal state,
+payload size, and payload SHA-256 agree across the captured result and the
+private receipt.
+
+The v2 adapter currently resolves a body-free result through a protected
+provider receipt and payload layout declared in the tracked adapter catalog.
+That layout is revision-bound rather than a provider-wide compatibility claim.
+An otherwise valid provider revision that changes the layout, fixed argv, or
+contract shape requires a new versioned catalog adapter and focused live
+acceptance; updating only the private revision profile is sufficient only when
+all adapter-observed contracts remain unchanged.
+
+Transcript cue seconds are converted with rational decimal parsing and shifted
+by the signed sample-zero origin. Partially negative video-relative cues are
+clipped to zero; wholly pre-video cues are omitted. The public method projection
+binds the prepared contract, audio, preparation manifest/settings,
+registration, provider receipt, computation identity, and signed origin. It
+does not expose a private receipt layout or transcript body. Existing v1
+readiness and result projections omit prepared fields exactly as before.
+
+The service prepares audio before starting the transcript and technical
+analysis pair. The provider consumes the prepared WAV while the technical
+analyzer performs its independently useful visual/cadence/cut/synchronization
+measurements; the source audio is not extracted a second time for ASR. No
+cross-operation ASR receipt is reused because the current provider does not
+cryptographically bind every transitive runtime and model byte. Comparable
+configuration identities remain evidence, not cache authority.
+
+Control Center uses the unchanged Video workflow and shared service. Prepared
+audio is automatic and private. Readiness preserves component and overall
+`unsupported`, and failures are mapped to bounded user-facing messages without
+paths, argv, stderr, receipts, or transcript text. The reusable package API
+exports `prepareLocalMediaAudio`; CLI names and options, MCP profiles, generic
+artifact handling, provider repositories, and browser-review behavior are
+unchanged.

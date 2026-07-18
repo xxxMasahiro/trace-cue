@@ -691,3 +691,34 @@ No phase may change existing metadata-only video evidence, general artifact
 root confinement, generic cleanup, page URL handling, AHR proof semantics, MCP
 profiles, provider transfer, or release-gate meaning. Existing-feature impact:
 no regression / no tradeoff.
+
+## Phase 195-201 Shared Prepared Audio Delivery
+
+- [x] Phase 195: audit the merged FrameCue prepared-audio contract and add a
+  versioned v2 catalog path while retaining the exact v1 path and safe legacy
+  loader defaults.
+- [x] Phase 196: implement bounded canonical WAV preparation, exact sample and
+  signed timeline arithmetic, path-free manifest publication, stable identity,
+  and private atomic storage without a new dependency.
+- [x] Phase 197: implement fixed readiness/register/transcribe argv, strict
+  FrameCue registration/result/receipt/computation/payload binding, private
+  file validation, and revision-scoped result resolution.
+- [x] Phase 198: prepare audio once in the shared service, pass it to FrameCue
+  without the source video, preserve independent technical analysis, and align
+  transcript cues to the video timeline with explicit clip/omit limitations.
+- [x] Phase 199: complete extraction caps, TOCTOU/link checks, containment-safe
+  cleanup deferral, exact v1 compatibility, public-body exclusion, comparable
+  identities, and fail-closed no-reuse policy.
+- [x] Phase 200: preserve the existing CLI and non-engineer Control Center
+  workflow, propagate `unsupported`, add bounded user messages, suppress
+  provider-layout detail from ordinary UI, and export the reusable preparation
+  service through the package API.
+- [ ] Phase 201: synchronize all authorities and manifests; pass focused, live,
+  no-browser, browser, package, document, security, release, Product Gate, and
+  three independent reviews; then commit, merge through PR CI, confirm exact
+  main CI, and finish clean local/remote synchronization.
+
+Existing FrameCue and parent repositories remain read-only. The prepared path
+adds no MCP execution, URL acquisition, cloud ASR, model setup/download,
+external transfer, cross-operation receipt reuse, generic artifact-root change,
+or unrelated feature tradeoff.

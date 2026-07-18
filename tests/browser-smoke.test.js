@@ -2269,10 +2269,10 @@ test('review center gives a non-engineer URL-first and private local video revie
   const mediaRuntime = {
     inspectReadiness: async ({ refresh = false } = {}) => {
       if (refresh) readinessChecks += 1;
-      const status = refresh ? 'ready' : 'uninspected';
+      const status = refresh ? (readinessChecks === 1 ? 'unsupported' : 'ready') : 'uninspected';
       return { status: 'ok', data: { readiness: {
         schema_version: '1.0.0', type: 'media_review_readiness', status,
-        transcript_provider: { status: refresh ? 'ready' : 'uninspected', limitations: refresh ? [] : ['explicit_readiness_check_required'] },
+        transcript_provider: { status, limitations: refresh ? [] : ['explicit_readiness_check_required'] },
         technical_analyzer: { status: refresh ? 'ready' : 'uninspected', limitations: refresh ? [] : ['explicit_readiness_check_required'] },
         local_input: { accepted_extensions: ['.mp4', '.mov', '.m4v', '.mkv', '.webm'], maximum_bytes: 104857600 },
         boundary: { read_only: true, provider_transcription_performed: false, media_analysis_performed: false, network_performed: false, setup_performed: false, mcp_execution_performed: false, secrets_included: false, executable_paths_included: false, provider_revision_included: false, configuration_hashes_included: false }
@@ -2326,6 +2326,8 @@ test('review center gives a non-engineer URL-first and private local video revie
 
     await page.getByRole('radio', { name: /Local video/ }).check();
     await page.getByRole('button', { name: 'Check local setup', exact: true }).click();
+    await page.locator('.media-review-input .status-pill').getByText('Unsupported', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Check local setup', exact: true }).click();
     await page.getByText('Ready', { exact: true }).waitFor();
     await page.locator('#review-file').setInputFiles({ name: 'private-source.mp4', mimeType: 'video/mp4', buffer: Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom'), Buffer.alloc(256)]) });
     await page.getByRole('checkbox', { name: 'I own this video or have permission to review it.' }).check();
@@ -2338,7 +2340,7 @@ test('review center gives a non-engineer URL-first and private local video revie
     assert.match(await mediaPage.innerText(), /Nothing was sent outside this computer/);
     assert.doesNotMatch(await mediaPage.innerText(), /private-source\.mp4|SECRET|\/home\//);
     assert.ok(uploadBytes > 0);
-    assert.equal(readinessChecks, 1);
+    assert.equal(readinessChecks, 2);
     assert.ok(statusReads >= 2);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 1);
   } finally {

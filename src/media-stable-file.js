@@ -95,6 +95,7 @@ export async function hashStableRegularFile(file, options = {}) {
     const digest = createHash('sha256');
     let bytes = 0;
     for await (const chunk of inspected.handle.createReadStream({ start: 0, autoClose: false })) {
+      if (options.signal?.aborted) throw mediaFileError('MEDIA_FILE_ABORTED', 'File inspection was cancelled.');
       bytes += chunk.length;
       if (bytes > inspected.maxBytes) throw mediaFileError('MEDIA_FILE_TOO_LARGE', 'The file exceeds the configured size limit.');
       digest.update(chunk);

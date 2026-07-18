@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "policy_version": "1.0.0",
+  "policy_version": "1.1.0",
   "mode": "local_first",
   "source": {
     "url_classification_network_enabled": false,
@@ -74,6 +74,12 @@
     "maximum_stdout_bytes": 2097152,
     "maximum_stderr_bytes": 1048576
   },
+  "prepared_audio": {
+    "preparation_method": "ffmpeg-pcm-s16le",
+    "maximum_prepared_audio_bytes": 33554432,
+    "maximum_manifest_bytes": 65536,
+    "copy_chunk_bytes": 1048576
+  },
   "technical_analyzer": {
     "probe_executable_environment": "TRACE_CUE_MEDIA_REVIEW_FFPROBE",
     "analyzer_executable_environment": "TRACE_CUE_MEDIA_REVIEW_FFMPEG",
@@ -90,6 +96,7 @@
     "maximum_video_pixels": 33177600,
     "maximum_audio_sample_rate": 192000,
     "maximum_audio_channels": 16,
+    "decoded_timeline_probe_packets": 64,
     "decoder_threads": 2,
     "maximum_single_allocation_bytes": 268435456,
     "timeout_ms": 600000,
