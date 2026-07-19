@@ -1137,8 +1137,10 @@ test('paired review center completes repeated subscription polling with accessib
 
     const signInLink = dialog.getByRole('link', { name: /Open sign-in page/ });
     await signInLink.waitFor({ timeout: 10_000 });
-    await signInLink.focus();
-    assert.equal(await signInLink.evaluate((element) => element === document.activeElement), true);
+    assert.equal(await signInLink.evaluate((element) => {
+      element.focus();
+      return element === document.activeElement;
+    }), true);
     await page.route('**/api/settings/ai-setup/subscription/cancel', async (route) => {
       const response = await route.fetch();
       assert.equal(response.ok(), true);

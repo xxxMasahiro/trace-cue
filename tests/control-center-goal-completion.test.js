@@ -954,7 +954,8 @@ test('completed intake retry stays available when other active results fill publ
   await waitUntil(async () => {
     const listed = await listControlCenterIntakeResults({}, { cwd });
     return listed.status === 'ok' && listed.data.control_center_intake.results.length === 1;
-  });
+  }, WORKER_COORDINATION_TIMEOUT_MS,
+    'Completed intake history was not retired before capacity coordination completed.');
 
   const store = createSafeLocalStore({
     workspaceRoot: cwd,
