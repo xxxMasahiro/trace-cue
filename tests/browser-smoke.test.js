@@ -1704,6 +1704,11 @@ test('review center preserves an AI choice draft when another settings page wins
     const refreshRevision = savedDashboard.ai_connections.revision;
     let observeLostRefresh;
     const lostRefreshObserved = new Promise((resolve) => { observeLostRefresh = resolve; });
+    const lostRefreshRequestFailed = first.waitForEvent('requestfailed', {
+      predicate: (request) => new URL(request.url()).pathname === '/api/settings/ai-connections/refresh'
+        && request.method() === 'POST',
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
     await first.route('**/api/settings/ai-connections/refresh', async (route) => {
       const response = await route.fetch();
       assert.equal(response.ok(), true);
@@ -1711,8 +1716,10 @@ test('review center preserves an AI choice draft when another settings page wins
       await route.abort('failed');
     }, { times: 1 });
     await first.getByRole('button', { name: 'Update availability', exact: true }).click();
-    await lostRefreshObserved;
-    await first.waitForFunction(() => document.querySelector('.ai-connection-setting')?.getAttribute('aria-busy') === 'false');
+    await Promise.all([lostRefreshObserved, lostRefreshRequestFailed]);
+    await first.locator('.ai-connection-setting[aria-busy="false"]').waitFor({
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
     assert.equal(await first.locator('.ai-connection-setting > .inline-notice.warning').count(), 0);
     savedDashboard = await first.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
     assert.ok(savedDashboard.ai_connections.revision > refreshRevision);
