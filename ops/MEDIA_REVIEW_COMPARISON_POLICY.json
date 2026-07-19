@@ -1,0 +1,156 @@
+{
+  "schema_version": "1.0.0",
+  "policy_version": "1.0.0",
+  "accepted_result_schema_versions": [
+    "1.0.0"
+  ],
+  "input": {
+    "maximum_result_bytes": 1048576,
+    "maximum_total_input_bytes": 2097152,
+    "maximum_findings_per_class": 200,
+    "producer_finding_limits": [
+      {
+        "policy_identity": "60a17d306a565233db9021b2ed81986657eadf52ca47cfd90f993c339574dcc5",
+        "maximum_total_findings": 200
+      }
+    ]
+  },
+  "matching": {
+    "stable_timing_tolerance_us": 100000,
+    "maximum_moved_timing_distance_us": 2000000,
+    "minimum_overlap_ratio": 0.25,
+    "confidence_change_threshold": 0.1
+  },
+  "metrics": [
+    {
+      "id": "duration_us",
+      "domain": "technical",
+      "classification": "deterministic_measurement",
+      "selector": "technical_analysis.technical_metrics.duration_us",
+      "unit": "microseconds",
+      "quality_direction": "informational",
+      "tolerance": 1000,
+      "normalize_per_minute": false
+    },
+    {
+      "id": "effective_fps",
+      "domain": "technical",
+      "classification": "deterministic_measurement",
+      "selector": "technical_analysis.technical_metrics.effective_fps",
+      "unit": "frames_per_second",
+      "quality_direction": "informational",
+      "tolerance": 0.01,
+      "normalize_per_minute": false
+    },
+    {
+      "id": "median_frame_interval_us",
+      "domain": "technical",
+      "classification": "deterministic_measurement",
+      "selector": "technical_analysis.technical_metrics.median_frame_interval_us",
+      "unit": "microseconds",
+      "quality_direction": "informational",
+      "tolerance": 1,
+      "normalize_per_minute": false
+    },
+    {
+      "id": "frame_interval_jitter_ratio",
+      "domain": "technical",
+      "classification": "deterministic_measurement",
+      "selector": "technical_analysis.technical_metrics.frame_interval_jitter_ratio",
+      "unit": "ratio",
+      "quality_direction": "lower_is_better",
+      "tolerance": 0.001,
+      "normalize_per_minute": false
+    },
+    {
+      "id": "duplicate_frame_count",
+      "domain": "technical",
+      "classification": "deterministic_measurement",
+      "selector": "technical_analysis.technical_metrics.duplicate_frame_count",
+      "unit": "count",
+      "quality_direction": "lower_is_better",
+      "tolerance": 0,
+      "normalize_per_minute": true
+    },
+    {
+      "id": "presentation_gap_count",
+      "domain": "technical",
+      "classification": "deterministic_measurement",
+      "selector": "technical_analysis.technical_metrics.presentation_gap_count",
+      "unit": "count",
+      "quality_direction": "lower_is_better",
+      "tolerance": 0,
+      "normalize_per_minute": true
+    },
+    {
+      "id": "cut_count",
+      "domain": "technical",
+      "classification": "deterministic_measurement",
+      "selector": "technical_analysis.technical_metrics.cut_count",
+      "unit": "count",
+      "quality_direction": "informational",
+      "tolerance": 0,
+      "normalize_per_minute": true
+    },
+    {
+      "id": "subtitle_event_count",
+      "domain": "technical",
+      "classification": "deterministic_measurement",
+      "selector": "technical_analysis.technical_metrics.subtitle_event_count",
+      "unit": "count",
+      "quality_direction": "informational",
+      "tolerance": 0,
+      "normalize_per_minute": true
+    },
+    {
+      "id": "audio_video_absolute_offset_us",
+      "domain": "technical",
+      "classification": "deterministic_measurement",
+      "selector": "technical_analysis.audio_video_sync.absolute_offset_us",
+      "unit": "microseconds",
+      "quality_direction": "lower_is_better",
+      "tolerance": 1000,
+      "normalize_per_minute": false
+    },
+    {
+      "id": "timed_transcript_segment_count",
+      "domain": "transcript",
+      "classification": "provider_measurement",
+      "selector": "transcript.timed_segment_count",
+      "unit": "count",
+      "quality_direction": "informational",
+      "tolerance": 0,
+      "normalize_per_minute": true
+    },
+    {
+      "id": "semantic_change_count",
+      "domain": "advisory",
+      "classification": "advisory_evaluation",
+      "selector": "timeline.semantic_change_count",
+      "unit": "count",
+      "quality_direction": "informational",
+      "tolerance": 0,
+      "normalize_per_minute": true
+    }
+  ],
+  "output": {
+    "maximum_result_bytes": 1048576,
+    "maximum_metric_diffs": 32,
+    "maximum_finding_changes": 200,
+    "maximum_limitations": 64
+  },
+  "boundary": {
+    "public_results_only": true,
+    "raw_media_read": false,
+    "raw_audio_read": false,
+    "raw_frames_read": false,
+    "full_transcript_read": false,
+    "private_operation_read": false,
+    "provider_execution": false,
+    "technical_analyzer_execution": false,
+    "network_performed": false,
+    "external_send_performed": false,
+    "mcp_execution_exposed": false,
+    "combined_quality_score": false
+  }
+}

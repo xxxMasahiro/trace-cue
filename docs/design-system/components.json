@@ -141,6 +141,16 @@
       "id": "playwright-test-ci-approved-settings",
       "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "danger"],
       "contract": ["Suggest, approve, summarize, and explicitly fetch from one approved GitHub Actions artifact policy without dropping target policy, commit SHA, lookup limit, or max-age fields; never trigger CI."]
+    },
+    {
+      "id": "media-review-before-after-picker",
+      "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "warning", "danger"],
+      "contract": ["Default the current completed review to After and the newest different completed review to Before; show date, duration, and finding count instead of ids or paths; expose one primary Compare action and one familiar Swap action; keep both selectors and Swap fixed while comparison is in flight; distinguish loading, retryable failure, and confirmed fewer-than-two empty states."]
+    },
+    {
+      "id": "media-review-comparison-result",
+      "tokens": ["surface", "line", "foreground", "muted", "accent", "success", "warning", "danger"],
+      "contract": ["Focus the result heading after comparison and announce only its short status; show normalized per-minute values as primary when they determine assessment and raw totals as supporting context; separate deterministic technical metrics, transcript-provider metrics, advisory metrics, deterministic findings, and advisory findings; clear or identity-guard old result content during source navigation; keep limitations collapsed and source navigation keyboard accessible without ids, paths, provider details, replay, or a combined score."]
     }
   ]
 }

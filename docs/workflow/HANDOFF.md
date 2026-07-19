@@ -895,3 +895,44 @@ token. Commit `e49437b` now classifies both outcomes as reopen-required, covers
 the losing timer order directly, and makes the browser evidence deterministic.
 Neither failed run is reused as release proof, and no product timeout,
 authorization capability, or unrelated workflow was relaxed.
+
+## Phase 202-208 Saved Media Review Comparison
+
+The active TraceCue branch adds a read-only comparison vertical slice over two
+already-saved public media review results. It does not reopen video, audio,
+frames, a private operation root, or the complete transcript and does not run
+FrameCue, FFmpeg/FFprobe, a browser, network, external send, MCP, or an artifact
+writer. Existing result bytes and storage remain backward compatible.
+
+The versioned comparison policy owns byte/finding/output bounds, producer
+finding-completeness limits, selected
+metrics, duration normalization, matching thresholds, and negative execution
+capabilities. The CLI reader accepts opaque operation ids only and performs
+no-follow, owner, link-count, exact-size plus growth-probe, stable-descriptor,
+strict UTF-8, complete schema, bounded graph, and embedded private-locator
+checks. Comparison basis is independent for technical,
+timed-transcript, and advisory domains; setting/tool/provider/schema/method or
+completeness drift becomes limited/incompatible instead of a quality claim.
+
+The shared core emits classification-bound raw and per-minute metric deltas,
+separate deterministic/provider/advisory metric summaries, deterministic finding
+changes, advisory finding changes, evidence/timecode references, confidence,
+method, limitations, and separate summaries. Ambiguous or heuristic matches are
+inconclusive; not detected does not mean fixed; no combined score exists.
+
+CLI/API integration and passive Control Center GET endpoints reuse the same
+core. The result screen selects the current review as After, presents saved
+choices without internal ids, and offers Before, After, Swap, and one Compare
+action. Loading/retry/empty/in-flight states, stale-response and old-route-result
+refusal, normalized-primary values, comparison conditions, technical changes,
+provider-measured speech indicators, advisory changes, and source-result
+navigation remain plain-language and responsive.
+The focused 77-test media/Control Center suite passes. The 390x844 Playwright
+flow additionally owns keyboard activation, disabled in-flight controls, result
+focus, 44px touch targets, no horizontal overflow, no id/name/path leakage, and
+exactly one passive comparison read. Final local evidence also passes the real
+FrameCue/FFmpeg/FFprobe prepared-audio acceptance, all 496 no-browser tests, all
+26 browser tests, release/package checks, every product contract check, and
+Product Gate. Three independent post-implementation reviews approve the
+contract, Security/Privacy boundary, and Control Center UI/UX. Phase 208 Git,
+pull-request CI, exact-main CI, and clean synchronization remain the active work.

@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trace-cue.local/schemas/media-review-comparison.schema.json",
+  "title": "TraceCue Media Review Comparison",
+  "$defs": {
+    "inputReference": {
+      "type": "object",
+      "required": ["operation_id", "result_digest", "result_schema_version", "status", "media_identity", "duration_us", "finding_counts"],
+      "properties": {
+        "operation_id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "result_digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "result_schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "status": { "enum": ["completed", "completed_with_limitations"] },
+        "media_identity": {
+          "type": "object",
+          "required": ["sha256", "bytes", "format"],
+          "properties": {
+            "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "bytes": { "type": "integer", "minimum": 1 },
+            "format": { "type": "string", "minLength": 1, "maxLength": 80 }
+          },
+          "additionalProperties": false
+        },
+        "duration_us": { "type": "integer", "minimum": 0 },
+        "finding_counts": {
+          "type": "object",
+          "required": ["deterministic", "advisory"],
+          "properties": {
+            "deterministic": { "type": "integer", "minimum": 0 },
+            "advisory": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "compatibilityReason": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[a-z0-9_]{1,120}$" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 300 }
+      },
+      "additionalProperties": false
+    },
+    "domainCompatibility": {
+      "type": "object",
+      "required": ["status", "baseline_basis_identity", "candidate_basis_identity", "basis_equal", "reasons"],
+      "properties": {
+        "status": { "enum": ["comparable", "comparable_with_limitations", "incompatible"] },
+        "baseline_basis_identity": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "candidate_basis_identity": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "basis_equal": { "type": "boolean" },
+        "reasons": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/compatibilityReason" } }
+      },
+      "additionalProperties": false
+    },
+    "metricDiff": {
+      "type": "object",
+      "required": ["id", "domain", "unit", "baseline", "candidate", "delta", "normalized_per_minute", "status", "assessment", "classification", "limitations"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9_]{1,100}$" },
+        "domain": { "enum": ["technical", "transcript", "advisory"] },
+        "unit": { "type": "string", "pattern": "^[a-z0-9_]{1,80}$" },
+        "baseline": { "type": ["number", "null"] },
+        "candidate": { "type": ["number", "null"] },
+        "delta": { "type": ["number", "null"] },
+        "normalized_per_minute": {
+          "type": "object",
+          "required": ["applied", "baseline", "candidate", "delta"],
+          "properties": {
+            "applied": { "type": "boolean" },
+            "baseline": { "type": ["number", "null"] },
+            "candidate": { "type": ["number", "null"] },
+            "delta": { "type": ["number", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "status": { "enum": ["comparable", "comparable_with_limitations", "incompatible", "unavailable"] },
+        "assessment": { "enum": ["improved", "regressed", "unchanged", "changed", "inconclusive", "unavailable"] },
+        "classification": { "enum": ["deterministic_measurement", "provider_measurement", "advisory_evaluation"] },
+        "limitations": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 240 } }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "domain": { "const": "technical" },
+            "classification": { "const": "deterministic_measurement" }
+          }
+        },
+        {
+          "properties": {
+            "domain": { "const": "transcript" },
+            "classification": { "const": "provider_measurement" }
+          }
+        },
+        {
+          "properties": {
+            "domain": { "const": "advisory" },
+            "classification": { "const": "advisory_evaluation" }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "findingReference": {
+      "type": "object",
+      "required": ["id", "kind", "start_us", "end_us", "timecode", "severity", "evidence", "evidence_refs", "method", "confidence", "classification", "limitations", "recommendation"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^media-finding-[a-f0-9]{16}$" },
+        "kind": { "type": "string", "pattern": "^[a-z0-9_]{1,100}$" },
+        "start_us": { "type": "integer", "minimum": 0 },
+        "end_us": { "type": "integer", "minimum": 0 },
+        "timecode": {
+          "type": "object",
+          "required": ["start", "end"],
+          "properties": {
+            "start": { "type": "string", "pattern": "^[0-9]{2,}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}$" },
+            "end": { "type": "string", "pattern": "^[0-9]{2,}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}$" }
+          },
+          "additionalProperties": false
+        },
+        "severity": { "enum": ["low", "medium", "high", "critical"] },
+        "evidence": { "type": "array", "maxItems": 6, "items": { "type": "string", "maxLength": 1000 } },
+        "evidence_refs": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 200 } },
+        "method": { "type": "string", "pattern": "^[a-z0-9_]{1,120}$" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "classification": { "enum": ["deterministic_measurement", "advisory_evaluation"] },
+        "limitations": { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 500 } },
+        "recommendation": { "type": "string", "maxLength": 1000 }
+      },
+      "additionalProperties": false
+    },
+    "findingChange": {
+      "type": "object",
+      "required": ["id", "classification", "state", "change_types", "kind", "method", "baseline", "candidate", "timing_delta_us", "severity_delta", "confidence_delta", "match", "assessment", "limitations"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^media-comparison-finding-[a-f0-9]{16}$" },
+        "classification": { "enum": ["deterministic_measurement", "advisory_evaluation"] },
+        "state": { "enum": ["new", "not_detected_in_candidate", "unmatched_inconclusive", "persistent", "moved", "severity_changed"] },
+        "change_types": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 4,
+          "items": { "enum": ["new", "not_detected_in_candidate", "unmatched_inconclusive", "timing_moved", "severity_changed", "confidence_changed", "persistent"] }
+        },
+        "kind": { "type": "string", "pattern": "^[a-z0-9_]{1,100}$" },
+        "method": { "type": "string", "pattern": "^[a-z0-9_]{1,120}$" },
+        "baseline": { "anyOf": [{ "$ref": "#/$defs/findingReference" }, { "type": "null" }] },
+        "candidate": { "anyOf": [{ "$ref": "#/$defs/findingReference" }, { "type": "null" }] },
+        "timing_delta_us": { "type": ["integer", "null"] },
+        "severity_delta": { "type": ["integer", "null"], "minimum": -3, "maximum": 3 },
+        "confidence_delta": { "type": ["number", "null"], "minimum": -1, "maximum": 1 },
+        "match": {
+          "type": "object",
+          "required": ["method", "overlap_ratio", "midpoint_distance_us", "heuristic"],
+          "properties": {
+            "method": { "enum": ["exact_finding_id", "timeline_overlap", "nearest_timeline", "unmatched"] },
+            "overlap_ratio": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+            "midpoint_distance_us": { "type": ["integer", "null"], "minimum": 0 },
+            "heuristic": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "assessment": { "enum": ["improved", "regressed", "unchanged", "changed", "inconclusive"] },
+        "limitations": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 240 } }
+      },
+      "additionalProperties": false
+    },
+    "outcome": {
+      "type": "object",
+      "required": ["status", "new", "not_detected_in_candidate", "unmatched_inconclusive", "persistent", "moved", "severity_changed", "improved", "regressed", "inconclusive"],
+      "properties": {
+        "status": { "enum": ["improved", "regressed", "mixed", "unchanged", "changed", "inconclusive"] },
+        "new": { "type": "integer", "minimum": 0 },
+        "not_detected_in_candidate": { "type": "integer", "minimum": 0 },
+        "unmatched_inconclusive": { "type": "integer", "minimum": 0 },
+        "persistent": { "type": "integer", "minimum": 0 },
+        "moved": { "type": "integer", "minimum": 0 },
+        "severity_changed": { "type": "integer", "minimum": 0 },
+        "improved": { "type": "integer", "minimum": 0 },
+        "regressed": { "type": "integer", "minimum": 0 },
+        "inconclusive": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": ["schema_version", "type", "comparison_id", "relationship", "status", "policy", "baseline", "candidate", "compatibility", "metric_diffs", "deterministic_finding_changes", "advisory_finding_changes", "summary", "limitations", "privacy", "boundary"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "type": { "const": "media_review_comparison" },
+    "comparison_id": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "relationship": { "const": "caller_selected_before_after" },
+    "status": { "enum": ["comparable", "comparable_with_limitations", "incompatible"] },
+    "policy": {
+      "type": "object",
+      "required": ["version", "identity"],
+      "properties": {
+        "version": { "type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$" },
+        "identity": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "baseline": { "$ref": "#/$defs/inputReference" },
+    "candidate": { "$ref": "#/$defs/inputReference" },
+    "compatibility": {
+      "type": "object",
+      "required": ["technical", "transcript", "advisory", "same_media_identity", "exact_result_repeat"],
+      "properties": {
+        "technical": { "$ref": "#/$defs/domainCompatibility" },
+        "transcript": { "$ref": "#/$defs/domainCompatibility" },
+        "advisory": { "$ref": "#/$defs/domainCompatibility" },
+        "same_media_identity": { "type": "boolean" },
+        "exact_result_repeat": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "metric_diffs": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/metricDiff" } },
+    "deterministic_finding_changes": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/findingChange" } },
+    "advisory_finding_changes": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/findingChange" } },
+    "summary": {
+      "type": "object",
+      "required": ["deterministic", "advisory", "deterministic_metric_assessments", "provider_metric_assessments", "advisory_metric_assessments", "combined_quality_score_included"],
+      "properties": {
+        "deterministic": { "$ref": "#/$defs/outcome" },
+        "advisory": { "$ref": "#/$defs/outcome" },
+        "deterministic_metric_assessments": {
+          "type": "object",
+          "required": ["improved", "regressed", "unchanged", "changed", "inconclusive", "unavailable"],
+          "properties": {
+            "improved": { "type": "integer", "minimum": 0 },
+            "regressed": { "type": "integer", "minimum": 0 },
+            "unchanged": { "type": "integer", "minimum": 0 },
+            "changed": { "type": "integer", "minimum": 0 },
+            "inconclusive": { "type": "integer", "minimum": 0 },
+            "unavailable": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "provider_metric_assessments": {
+          "type": "object",
+          "required": ["improved", "regressed", "unchanged", "changed", "inconclusive", "unavailable"],
+          "properties": {
+            "improved": { "type": "integer", "minimum": 0 },
+            "regressed": { "type": "integer", "minimum": 0 },
+            "unchanged": { "type": "integer", "minimum": 0 },
+            "changed": { "type": "integer", "minimum": 0 },
+            "inconclusive": { "type": "integer", "minimum": 0 },
+            "unavailable": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "advisory_metric_assessments": {
+          "type": "object",
+          "required": ["improved", "regressed", "unchanged", "changed", "inconclusive", "unavailable"],
+          "properties": {
+            "improved": { "type": "integer", "minimum": 0 },
+            "regressed": { "type": "integer", "minimum": 0 },
+            "unchanged": { "type": "integer", "minimum": 0 },
+            "changed": { "type": "integer", "minimum": 0 },
+            "inconclusive": { "type": "integer", "minimum": 0 },
+            "unavailable": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "combined_quality_score_included": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "limitations": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "maxLength": 300 } },
+    "privacy": {
+      "type": "object",
+      "required": ["public_results_only", "raw_media_read", "raw_audio_read", "raw_frames_read", "full_transcript_read", "private_payload_read", "absolute_paths_included", "external_send_performed"],
+      "properties": {
+        "public_results_only": { "const": true },
+        "raw_media_read": { "const": false },
+        "raw_audio_read": { "const": false },
+        "raw_frames_read": { "const": false },
+        "full_transcript_read": { "const": false },
+        "private_payload_read": { "const": false },
+        "absolute_paths_included": { "const": false },
+        "external_send_performed": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "boundary": {
+      "type": "object",
+      "required": ["read_only", "media_reprocessed", "provider_called", "technical_analyzer_called", "browser_launched", "network_performed", "artifact_written", "mcp_execution_exposed", "deterministic_and_advisory_separated", "combined_quality_score_included", "gate_effect"],
+      "properties": {
+        "read_only": { "const": true },
+        "media_reprocessed": { "const": false },
+        "provider_called": { "const": false },
+        "technical_analyzer_called": { "const": false },
+        "browser_launched": { "const": false },
+        "network_performed": { "const": false },
+        "artifact_written": { "const": false },
+        "mcp_execution_exposed": { "const": false },
+        "deterministic_and_advisory_separated": { "const": true },
+        "combined_quality_score_included": { "const": false },
+        "gate_effect": { "const": "none" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

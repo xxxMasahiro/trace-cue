@@ -86,6 +86,90 @@ test('Control Center media runtime streams a one-use source into an asynchronous
   assert.equal(reused.errors[0].code, 'CONTROL_CENTER_MEDIA_SOURCE_UNAVAILABLE');
 });
 
+test('Control Center compares two completed public media results without replaying either review', async (t) => {
+  const roots = await mediaRoots(t);
+  let executions = 0;
+  let comparisons = 0;
+  const runtime = await createControlCenterMediaReviewRuntime({ cwd: roots.cwd, artifactRoot: '.artifacts' }, {
+    ...roots.context,
+    now: () => new Date(FIXED_NOW),
+    planMediaReview: async () => planEnvelope(),
+    executeMediaReview: async (options) => {
+      executions += 1;
+      return completedEnvelope(options.operationId);
+    },
+    buildMediaReviewComparison: (baseline, candidate, policy) => {
+      comparisons += 1;
+      assert.equal(policy.boundary.public_results_only, true);
+      return comparisonFixture(baseline.operation_id, candidate.operation_id);
+    }
+  });
+  t.after(() => runtime.dispose());
+  for (const operationId of ['1'.repeat(32), '2'.repeat(32)]) {
+    const body = mediaBody(1024);
+    const staged = await runtime.stageUpload(uploadMetadata(body), Readable.from(body));
+    const started = await runtime.start({
+      source_id: staged.data.media_source.source_id,
+      operation_id: operationId,
+      retention: 'ephemeral',
+      rights_declared: true,
+      rights_confirm: 'use-owned-or-authorized-media',
+      confirm: 'execute-media-review'
+    });
+    assert.equal(started.status, 'ok');
+    await waitForState(runtime, operationId, 'completed');
+  }
+  const options = runtime.comparisonOptions();
+  assert.equal(options.status, 'ok');
+  assert.equal(options.data.media_review_comparison_options.options.length, 2);
+  assert.equal(options.data.media_review_comparison_options.boundary.source_names_included, false);
+  const compared = await runtime.compare({ baseline_operation_id: '1'.repeat(32), candidate_operation_id: '2'.repeat(32) });
+  assert.equal(compared.status, 'ok');
+  assert.equal(compared.data.media_review_comparison.boundary.media_reprocessed, false);
+  assert.equal(executions, 2);
+  assert.equal(comparisons, 1);
+  const duplicate = await runtime.compare({ baseline_operation_id: '1'.repeat(32), candidate_operation_id: '1'.repeat(32) });
+  assert.equal(duplicate.status, 'error');
+  assert.equal(duplicate.errors[0].code, 'MEDIA_REVIEW_COMPARISON_DISTINCT_RESULTS_REQUIRED');
+});
+
+test('Control Center keeps ordinary media review available when comparison policy is unusable', async (t) => {
+  const roots = await mediaRoots(t);
+  const runtime = await createControlCenterMediaReviewRuntime({ cwd: roots.cwd, artifactRoot: '.artifacts' }, {
+    ...roots.context,
+    now: () => new Date(FIXED_NOW),
+    mediaReviewComparisonPolicy: {},
+    planMediaReview: async () => planEnvelope(),
+    executeMediaReview: async (options) => {
+      const envelope = completedEnvelope(options.operationId);
+      if (options.operationId === '2'.repeat(32)) envelope.data.result.status = 'insufficient';
+      return envelope;
+    }
+  });
+  t.after(() => runtime.dispose());
+  for (const operationId of ['1'.repeat(32), '2'.repeat(32), '3'.repeat(32)]) {
+    const body = mediaBody(512);
+    const staged = await runtime.stageUpload(uploadMetadata(body), Readable.from(body));
+    await runtime.start({
+      source_id: staged.data.media_source.source_id,
+      operation_id: operationId,
+      retention: 'ephemeral',
+      rights_declared: true,
+      rights_confirm: 'use-owned-or-authorized-media',
+      confirm: 'execute-media-review'
+    });
+    await waitForState(runtime, operationId, 'completed');
+  }
+  assert.equal(runtime.list().data.media_reviews.length, 3);
+  assert.equal(runtime.result({ operation_id: '1'.repeat(32) }).status, 'ok');
+  const options = runtime.comparisonOptions().data.media_review_comparison_options.options;
+  assert.deepEqual(options.map((option) => option.operation_id).sort(), ['1'.repeat(32), '3'.repeat(32)]);
+  const comparison = await runtime.compare({ baseline_operation_id: '1'.repeat(32), candidate_operation_id: '3'.repeat(32) });
+  assert.equal(comparison.status, 'error');
+  assert.equal(comparison.errors[0].code, 'MEDIA_REVIEW_COMPARISON_POLICY_INVALID');
+  assert.equal(runtime.result({ operation_id: '3'.repeat(32) }).status, 'ok');
+});
+
 test('Control Center retries private cleanup after an upload fails before source publication', async (t) => {
   const roots = await mediaRoots(t);
   const policy = structuredClone(await loadMediaReviewPolicy());
@@ -443,6 +527,14 @@ test('Control Center media HTTP surface keeps passive reads separate from protec
     },
     status: () => ({ status: 'ok', data: { media_review: savedOperation(operationId, 'completed') }, warnings: [], errors: [], artifacts: [] }),
     result: () => completedEnvelope(operationId),
+    comparisonOptions: () => {
+      calls.push('comparison-options');
+      return { status: 'ok', data: { media_review_comparison_options: comparisonOptionsFixture(operationId) }, warnings: [], errors: [], artifacts: [] };
+    },
+    compare: () => {
+      calls.push('comparison');
+      return { status: 'ok', data: { media_review_comparison: comparisonFixture('8'.repeat(32), operationId) }, warnings: [], errors: [], artifacts: [] };
+    },
     cancel: () => ({ status: 'ok', data: { media_review: savedOperation(operationId, 'cancelling') }, warnings: [], errors: [], artifacts: [] }),
     cleanup: async () => ({ status: 'ok', data: { cleanup_receipt: { status: 'cleaned', body_included: false } }, warnings: [], errors: [], artifacts: [] }),
     dispose: async () => {}
@@ -450,6 +542,7 @@ test('Control Center media HTTP surface keeps passive reads separate from protec
   const started = await startControlCenterServer({ port: 0, assetRoot }, { cwd, now: FIXED_NOW, controlCenterMediaReviewRuntime: fakeRuntime });
   t.after(() => closeServer(started.server));
   assert.equal(started.metadata.media_review_endpoints.includes('/api/media-review/start'), true);
+  assert.equal(started.metadata.media_review_endpoints.includes('/api/media-review/comparison'), true);
 
   const readiness = await fetch(new URL('/api/media-review/readiness', started.url));
   assert.equal(readiness.status, 200);
@@ -457,6 +550,12 @@ test('Control Center media HTTP surface keeps passive reads separate from protec
   const list = await fetch(new URL('/api/media-review/list', started.url));
   assert.equal(list.status, 200);
   assert.equal(calls.includes('start'), false);
+  const options = await fetch(new URL('/api/media-review/comparison-options', started.url));
+  assert.equal(options.status, 200);
+  assert.equal((await options.json()).data.media_review_comparison_options.options.length, 1);
+  const comparison = await fetch(new URL(`/api/media-review/comparison?baseline=${'8'.repeat(32)}&candidate=${operationId}`, started.url));
+  assert.equal(comparison.status, 200);
+  assert.equal((await comparison.json()).data.media_review_comparison.boundary.media_reprocessed, false);
 
   const dashboard = await fetch(new URL('/api/dashboard', started.url));
   assert.equal(dashboard.status, 200);
@@ -555,6 +654,43 @@ function completedEnvelope(operationId, retention = 'ephemeral') {
       }
     },
     warnings: [], errors: [], artifacts: []
+  };
+}
+
+function comparisonOptionsFixture(operationId) {
+  return {
+    schema_version: '1.0.0', type: 'media_review_comparison_options',
+    options: [{ operation_id: operationId, created_at: FIXED_NOW, duration_us: 1_000_000, finding_counts: { deterministic: 1, advisory: 2 } }],
+    boundary: {
+      public_results_only: true, absolute_paths_included: false, source_names_included: false,
+      raw_media_included: false, full_transcript_included: false, network_performed: false
+    }
+  };
+}
+
+function comparisonFixture(baselineOperationId, candidateOperationId) {
+  return {
+    schema_version: '1.0.0', type: 'media_review_comparison', status: 'comparable',
+    baseline: { operation_id: baselineOperationId, status: 'completed' }, candidate: { operation_id: candidateOperationId, status: 'completed_with_limitations' },
+    metric_diffs: [], deterministic_finding_changes: [], advisory_finding_changes: [],
+    summary: {
+      deterministic: { status: 'unchanged' }, advisory: { status: 'unchanged' },
+      deterministic_metric_assessments: { improved: 0, regressed: 0, unchanged: 0, changed: 0, inconclusive: 0, unavailable: 0 },
+      provider_metric_assessments: { improved: 0, regressed: 0, unchanged: 0, changed: 0, inconclusive: 0, unavailable: 0 },
+      advisory_metric_assessments: { improved: 0, regressed: 0, unchanged: 0, changed: 0, inconclusive: 0, unavailable: 0 },
+      combined_quality_score_included: false
+    },
+    limitations: ['comparison_reads_bounded_public_results_only'],
+    privacy: {
+      public_results_only: true, raw_media_read: false, raw_audio_read: false, raw_frames_read: false,
+      full_transcript_read: false, private_payload_read: false, absolute_paths_included: false,
+      external_send_performed: false
+    },
+    boundary: {
+      read_only: true, media_reprocessed: false, provider_called: false, technical_analyzer_called: false,
+      browser_launched: false, network_performed: false, artifact_written: false, mcp_execution_exposed: false,
+      deterministic_and_advisory_separated: true, combined_quality_score_included: false, gate_effect: 'none'
+    }
   };
 }
 

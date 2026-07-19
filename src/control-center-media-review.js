@@ -11,6 +11,8 @@ import {
 import { loadMediaReviewPolicy } from './media-review-policy.js';
 import { inspectStableMediaFile } from './media-stable-file.js';
 import { createControlCenterMediaReviewStore } from './control-center-media-review-store.js';
+import { buildMediaReviewComparison } from './media-review-comparison.js';
+import { loadMediaReviewComparisonPolicy } from './media-review-comparison-policy.js';
 import {
   cleanupMediaReview,
   executeMediaReview,
@@ -30,6 +32,7 @@ export async function createControlCenterMediaReviewRuntime(config = {}, context
   const cwd = path.resolve(config.cwd ?? context.cwd ?? process.cwd());
   const artifactRoot = config.artifactRoot;
   const policy = await loadMediaReviewPolicy(context);
+  let comparisonPolicyPromise = null;
   const cleanupPrivate = context.cleanupPrivateMediaOperation ?? cleanupPrivateMediaOperation;
   const sources = new Map();
   const operations = new Map();
@@ -396,6 +399,61 @@ export async function createControlCenterMediaReviewRuntime(config = {}, context
     return success({ media_review_result: record.result });
   }
 
+  function comparisonOptions() {
+    const options = [...operations.values()]
+      .filter((record) => ['completed', 'completed_with_limitations'].includes(record.result?.status))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, policy.operation.maximum_history_operations)
+      .map((record) => ({
+        operation_id: record.operationId,
+        created_at: record.createdAt,
+        duration_us: boundedDuration(record.result),
+        finding_counts: {
+          deterministic: boundedCount(record.result?.deterministic_findings),
+          advisory: boundedCount(record.result?.advisory_findings)
+        }
+      }));
+    return success({
+      media_review_comparison_options: {
+        schema_version: CONTROL_CENTER_MEDIA_SCHEMA_VERSION,
+        type: 'media_review_comparison_options',
+        options,
+        boundary: {
+          public_results_only: true,
+          absolute_paths_included: false,
+          source_names_included: false,
+          raw_media_included: false,
+          full_transcript_included: false,
+          network_performed: false
+        }
+      }
+    });
+  }
+
+  async function compare(input = {}) {
+    const baseline = operationRecord(input.baseline_operation_id);
+    const candidate = operationRecord(input.candidate_operation_id);
+    if (input.baseline_operation_id === input.candidate_operation_id) {
+      return failure('MEDIA_REVIEW_COMPARISON_DISTINCT_RESULTS_REQUIRED', 'Choose two different saved video reviews.');
+    }
+    if (!['completed', 'completed_with_limitations'].includes(baseline?.result?.status)
+      || !['completed', 'completed_with_limitations'].includes(candidate?.result?.status)) {
+      return failure('CONTROL_CENTER_MEDIA_COMPARISON_RESULT_NOT_FOUND', 'Choose two completed video reviews.');
+    }
+    try {
+      comparisonPolicyPromise ??= loadMediaReviewComparisonPolicy(context);
+      const comparisonPolicy = await comparisonPolicyPromise;
+      const comparison = (context.buildMediaReviewComparison ?? buildMediaReviewComparison)(
+        baseline.result,
+        candidate.result,
+        comparisonPolicy
+      );
+      return success({ media_review_comparison: comparison });
+    } catch (error) {
+      return failure(safeErrorCode(error), 'These saved video reviews could not be compared safely.');
+    }
+  }
+
   function cancel(input = {}) {
     const record = operationRecord(input.operation_id);
     if (!record) return failure('CONTROL_CENTER_MEDIA_OPERATION_NOT_FOUND', 'The media review was not found.');
@@ -528,6 +586,8 @@ export async function createControlCenterMediaReviewRuntime(config = {}, context
     status,
     list,
     result,
+    comparisonOptions,
+    compare,
     cancel,
     cleanup,
     discardSource,
@@ -594,6 +654,15 @@ function cleanupCapable(record) {
 
 function safelyPrunable(record) {
   return record.state === 'cleaned' || (!activeState(record.state) && record.privatePayloadRetained !== true);
+}
+
+function boundedDuration(result) {
+  const value = result?.technical_analysis?.technical_metrics?.duration_us;
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function boundedCount(value) {
+  return Array.isArray(value) ? Math.min(value.length, 10_000) : 0;
 }
 
 function alreadyCleanedReceipt(record) {

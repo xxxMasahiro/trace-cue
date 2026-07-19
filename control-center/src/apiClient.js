@@ -288,6 +288,21 @@ export async function getMediaReviewResult(operationId) {
   return requireMediaResult(envelope.data?.media_review_result);
 }
 
+export async function listMediaReviewComparisonOptions({ signal } = {}) {
+  const envelope = await requestJson('/api/media-review/comparison-options', { method: 'GET', cache: 'no-store', signal });
+  return requireMediaComparisonOptions(envelope.data?.media_review_comparison_options);
+}
+
+export async function compareMediaReviews(baselineOperationId, candidateOperationId, { signal } = {}) {
+  const query = new URLSearchParams({ baseline: baselineOperationId, candidate: candidateOperationId });
+  const envelope = await requestJson(`/api/media-review/comparison?${query}`, { method: 'GET', cache: 'no-store', signal });
+  const comparison = requireMediaComparison(envelope.data?.media_review_comparison);
+  if (comparison.baseline.operation_id !== baselineOperationId || comparison.candidate.operation_id !== candidateOperationId) {
+    throw responseContractError();
+  }
+  return comparison;
+}
+
 export async function cancelMediaReview(operationId) {
   const envelope = await requestJson('/api/media-review/cancel', postOptions({ operation_id: operationId }));
   return requireMediaOperation(envelope.data?.media_review);
@@ -645,6 +660,77 @@ function requireMediaResult(value) {
     || value.boundary?.external_send_enabled !== false
     || value.boundary?.deterministic_and_advisory_separated !== true) throw responseContractError();
   return value;
+}
+
+function requireMediaComparisonOptions(value) {
+  if (!isTypedObject(value, 'media_review_comparison_options')
+    || !Array.isArray(value.options)
+    || value.options.length > 100
+    || new Set(value.options.map((option) => option?.operation_id)).size !== value.options.length
+    || value.options.some((option) => !/^[a-f0-9]{32}$/u.test(option?.operation_id ?? '')
+      || !Number.isFinite(Date.parse(option?.created_at))
+      || !(option?.duration_us === null || (Number.isSafeInteger(option?.duration_us) && option.duration_us >= 0))
+      || !Number.isSafeInteger(option?.finding_counts?.deterministic) || option.finding_counts.deterministic < 0
+      || !Number.isSafeInteger(option?.finding_counts?.advisory) || option.finding_counts.advisory < 0)
+    || value.boundary?.public_results_only !== true
+    || value.boundary?.absolute_paths_included !== false
+    || value.boundary?.source_names_included !== false
+    || value.boundary?.raw_media_included !== false
+    || value.boundary?.full_transcript_included !== false
+    || value.boundary?.network_performed !== false) throw responseContractError();
+  return value;
+}
+
+function requireMediaComparison(value) {
+  if (!isTypedObject(value, 'media_review_comparison')
+    || !['comparable', 'comparable_with_limitations', 'incompatible'].includes(value.status)
+    || !/^[a-f0-9]{32}$/u.test(value.baseline?.operation_id ?? '')
+    || !/^[a-f0-9]{32}$/u.test(value.candidate?.operation_id ?? '')
+    || !['completed', 'completed_with_limitations'].includes(value.baseline?.status)
+    || !['completed', 'completed_with_limitations'].includes(value.candidate?.status)
+    || value.baseline.operation_id === value.candidate.operation_id
+    || !Array.isArray(value.metric_diffs)
+    || value.metric_diffs.length > 32
+    || value.metric_diffs.some((metric) => !['technical', 'transcript', 'advisory'].includes(metric?.domain)
+      || metric?.classification !== ({
+        technical: 'deterministic_measurement',
+        transcript: 'provider_measurement',
+        advisory: 'advisory_evaluation'
+      })[metric.domain])
+    || !Array.isArray(value.deterministic_finding_changes)
+    || !Array.isArray(value.advisory_finding_changes)
+    || value.deterministic_finding_changes.length + value.advisory_finding_changes.length > 200
+    || value.deterministic_finding_changes.some((change) => change?.classification !== 'deterministic_measurement')
+    || value.advisory_finding_changes.some((change) => change?.classification !== 'advisory_evaluation')
+    || value.summary?.combined_quality_score_included !== false
+    || !isMetricAssessmentSummary(value.summary?.deterministic_metric_assessments)
+    || !isMetricAssessmentSummary(value.summary?.provider_metric_assessments)
+    || !isMetricAssessmentSummary(value.summary?.advisory_metric_assessments)
+    || value.privacy?.public_results_only !== true
+    || value.privacy?.raw_media_read !== false
+    || value.privacy?.raw_audio_read !== false
+    || value.privacy?.raw_frames_read !== false
+    || value.privacy?.full_transcript_read !== false
+    || value.privacy?.private_payload_read !== false
+    || value.privacy?.absolute_paths_included !== false
+    || value.privacy?.external_send_performed !== false
+    || value.boundary?.read_only !== true
+    || value.boundary?.media_reprocessed !== false
+    || value.boundary?.provider_called !== false
+    || value.boundary?.technical_analyzer_called !== false
+    || value.boundary?.browser_launched !== false
+    || value.boundary?.network_performed !== false
+    || value.boundary?.artifact_written !== false
+    || value.boundary?.mcp_execution_exposed !== false
+    || value.boundary?.deterministic_and_advisory_separated !== true
+    || value.boundary?.combined_quality_score_included !== false
+    || value.boundary?.gate_effect !== 'none') throw responseContractError();
+  return value;
+}
+
+function isMetricAssessmentSummary(value) {
+  return value && ['improved', 'regressed', 'unchanged', 'changed', 'inconclusive', 'unavailable']
+    .every((key) => Number.isSafeInteger(value[key]) && value[key] >= 0);
 }
 
 function requireMediaCleanupReceipt(value) {

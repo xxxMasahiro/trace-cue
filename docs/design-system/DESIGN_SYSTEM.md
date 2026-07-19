@@ -149,3 +149,34 @@ uncertain dispatch offers Check status and never Retry; verified local
 validation offers Finish checking; a known failure offers Start a new attempt;
 completed work offers Open result. Stop is shown only where the backend can
 guarantee no external dispatch.
+
+## Saved Video Before/After Comparison
+
+Completed video results add one optional Before/After comparison card only when
+saved evidence exists. The current result is selected as After, while the newest
+different result becomes Before. Choice labels use the selected-locale date,
+video duration, and finding count rather than an operation id, hash, file name,
+or provider detail. One full-width Compare action is primary; Swap is a familiar
+secondary control. With fewer than two results, the card explains the single
+next step instead of displaying disabled technical controls.
+
+Comparison output begins with a plain conditions statement, then three glanceable
+counts and separate condition labels for video measurements, timed speech, and
+review suggestions. Deterministic technical deltas, provider-measured timed-
+speech indicators, measured finding changes, and advisory changes use separate
+sections; provider or advisory text never appears as a deterministic score.
+Limitations are collapsed but keyboard accessible, and both source results have
+plain navigation actions. The card preserves the ordinary one-pixel surfaces,
+system typography, responsive single-column mobile flow, 44px minimum controls,
+screen-reader labels, and zero horizontal overflow at 390px. It does not replay
+media, simulate progress, expose ids, or claim that an absent finding is fixed.
+Loading, retryable failure, and a confirmed one-result state use different copy;
+failure never appears beside the one-result message. Before, After, and Swap are
+fixed while a comparison read is active, and a late or mismatched response is
+discarded. When duration-normalized rates determine an assessment, the per-minute
+rate is the primary value and the raw total is supporting context. Plain user
+labels replace metric tokens. Only the short result status is a polite live
+region; focus moves to the labelled result container so a screen reader is not
+asked to announce the complete bounded report at once.
+Opening Before or After clears and operation-id guards the old result while the
+selected saved review loads, so previous findings never remain under a new URL.

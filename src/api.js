@@ -379,6 +379,17 @@ export {
   renderMediaReviewMarkdown
 } from './media-review-service.js';
 export {
+  buildMediaReviewComparison,
+  compareMediaReviewResults,
+  inspectMediaReviewComparability,
+  renderMediaReviewComparisonMarkdown,
+  runMediaReviewComparison
+} from './media-review-comparison.js';
+export {
+  loadMediaReviewComparisonPolicy,
+  mediaReviewComparisonPolicyIdentity
+} from './media-review-comparison-policy.js';
+export {
   openControlCenterUrl,
   runControlCenterLaunch
 } from './control-center-launcher.js';

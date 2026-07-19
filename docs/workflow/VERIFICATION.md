@@ -1190,3 +1190,41 @@ adds a unit fixture that deliberately makes the outer deadline win, and keeps
 the browser fixture active, single-page, body-free, and safely diagnosable. No
 production timeout, pairing capability, retry authority, or media behavior was
 broadened.
+
+### Saved Media Review Comparison Verification
+
+`tests/media-review-contracts.test.js` owns comparison policy/schema loading,
+complete existing-result validation, different-result enforcement, domain-basis
+compatibility, raw and per-minute metric deltas, deterministic/provider/advisory
+separation, insufficient schema/API refusal, heuristic and duplicate-id handling,
+settings drift, truncated
+unmatched inconclusive behavior, Markdown output, stable stored-result reading,
+symlink/hardlink and embedded, noncanonical, or safe-URL-prefix-smuggled path/
+URL-locator refusal, CLI parsing/reporting, API exports, operation-registry
+registration, and unchanged MCP non-exposure.
+
+`tests/control-center-media-review.test.js` owns passive completed-result choice
+projection, comparison delegation without review replay, distinct result
+enforcement, server GET routing, metadata registration, and existing action
+authorization non-regression. `tests/control-center-api-client.test.js` rejects
+malformed, duplicate, negative, or oversized option projections; pair-id
+substitution; count/classification drift; and every weakened raw-media/read/
+write/browser/transfer/gate boundary before rendering.
+
+The Control Center browser flow runs at 390x844 and verifies retryable option
+failure versus loading/empty states, the current-result default, keyboard Swap
+and Compare, in-flight disabled controls, stale-response-safe selection binding,
+normalized-primary/raw-supplemental copy, focused results, old-result clearing on
+saved-result navigation, plain non-id labels, separated technical/provider/
+advisory sections, no-video-replay wording, safe caution
+language, at least 44px button and select targets, no source name/secret/path/
+internal-id exposure, and no horizontal overflow. Production build remains a
+separate owner.
+
+Phase 208 closure requires JSON/syntax/diff checks; focused media, prepared-
+audio, Control Center runtime/API and browser tests; complete `npm test`; schema,
+package dry-run/installed-package, rename, development, document, verification,
+structure, docs, security, design-system, CI-contract, release, and Product Gate
+owners; three independent post-implementation reviews; exact PR and main CI;
+clean local/remote equality; and preserved read-only parent/FrameCue authority.
+No new dependency or CI job is introduced.

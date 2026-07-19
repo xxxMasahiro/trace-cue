@@ -96,6 +96,7 @@ export const PLANNED_COMMANDS = Object.freeze([
   'media review readiness',
   'media review plan',
   'media review run',
+  'media review compare',
   'media review cleanup',
   'capture handoff',
   'settings show',

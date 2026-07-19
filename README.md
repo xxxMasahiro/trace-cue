@@ -63,6 +63,7 @@ trace-cue media source inspect --url 'https://www.youtube.com/watch?v=<id>' --js
 trace-cue media review readiness --json
 trace-cue media review plan --input ./authorized-video.mp4 --rights-confirm use-owned-or-authorized-media --json
 trace-cue media review run --input ./authorized-video.mp4 --rights-confirm use-owned-or-authorized-media --plan-hash <sha256-from-plan> --execute --confirm execute-media-review --json
+trace-cue media review compare --baseline <saved-operation-id> --candidate <saved-operation-id> --json
 ```
 
 The default `ephemeral` retention removes the private operation root after the
@@ -94,6 +95,16 @@ receipt-bound ASR result, and keeps the existing CLI and browser-dashboard flow.
 The legacy source-media adapter remains compatible, technical analysis remains
 independently useful, and raw audio/transcript data stays inside the existing
 private cleanup lifecycle.
+
+Phase 202-208 adds saved before/after comparison without replaying either video.
+TraceCue reads two bounded public review results, checks technical, timed-speech,
+and advisory comparability separately, normalizes duration-dependent counts,
+and reports time-coded metric/finding changes with deterministic,
+transcript-provider, and advisory metric summaries but no combined score. The CLI,
+package API, and responsive browser dashboard share one read-only core. Comparison
+does not call a transcript provider, FFmpeg/FFprobe, a browser, network, external service,
+MCP, or an artifact writer; incompatible or incomplete evidence stays
+explicitly inconclusive.
 
 The persistent session slice additionally exposes bounded `supervise` through `full` MCP and persistent browser session tools through stdio `admin` MCP only. Persistent sessions use retained Playwright contexts with TTL and idle guards, origin allowlists, local file-command queues, local receipts, manual-login checkpoints, local review handoff, and explicit storageState import/export under the configured artifact auth directory. Safe MCP, full MCP, and HTTP MCP do not expose persistent session tools. Existing browser profiles are not reused, OAuth/password automation remains prohibited, storageState is never saved by default, and cookie/token values are not printed.
 

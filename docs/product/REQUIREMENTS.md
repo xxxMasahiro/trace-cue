@@ -979,3 +979,62 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   root and follow its retention, containment-uncertainty, cleanup, and receipt
   rules. Public results expose only bounded identities, provenance, counts,
   limitations, and time-coded findings.
+
+## Phase 202-208 Saved Media Review Comparison
+
+- TraceCue must compare two completed saved `media_review_result` projections by
+  opaque operation id without reopening or reprocessing video, audio, frames,
+  private operation data, or a complete transcript. Comparison must not call a
+  transcript provider, technical analyzer, browser, network, external service,
+  MCP tool, or artifact writer.
+- Comparison must use a versioned policy and public result schema. Each input
+  must pass the complete existing result schema, byte/finding limits, private-
+  body/path rejection, stable owner-controlled file checks for CLI reads, and
+  exact operation-id binding.
+- Comparability must be decided separately for technical measurements, timed
+  transcript evidence, and advisory review. Schema, policy, analysis settings,
+  tool, provider, method, language, or completeness drift must fail closed as a
+  domain limitation or incompatibility rather than a quality conclusion.
+- Duration-dependent counts must be normalized per minute before a directional
+  assessment. Informational metrics may report change but must not be labeled
+  improvement or regression. No aggregate or combined quality score is allowed.
+- Finding comparison must keep deterministic measurements and advisory
+  evaluations separate. Exact ids may be reused only with matching kind,
+  method, classification, and start/end time; otherwise a bounded versioned
+  timeline heuristic may match overlap or proximity. Ambiguous, partial,
+  truncated, producer-limit-unknown, or heuristic cases must remain explicitly
+  inconclusive.
+- Each domain must bind the public result/analysis/projection/content-evidence
+  completion states that establish its evidence basis. Standard method caveats
+  may remain report limitations without erasing otherwise complete metrics, but
+  an `insufficient` result or incomplete domain evidence must never become a
+  comparable quality conclusion.
+- Metric output must identify whether each value is a deterministic measurement,
+  transcript-provider measurement, or advisory evaluation. Transcript-provider
+  and advisory indicators must not be mislabeled as technical measurements;
+  all three metric summaries must remain separate.
+- A finding absent from one public result must be described as newly detected or
+  not detected in the candidate, never as proof that an issue was created or
+  fixed. Advisory differences must not become definitive measured-quality
+  claims.
+- CLI, package API, and Control Center must reuse the same comparison service.
+  The CLI may return JSON or a bounded Markdown report but must not persist a
+  comparison implicitly. Control Center comparison endpoints remain passive GET
+  projections over results already loaded by the owned media runtime.
+- Control Center must make before/after comparison usable without instructions:
+  current result selected as After, plain saved-date/duration/finding labels,
+  one Compare action, a Swap action, no exposed internal ids, separate technical,
+  transcript-provider, and advisory sections, clear incompatibility guidance,
+  at least 44px touch
+  targets, keyboard/readability support, and no mobile horizontal overflow.
+  Loading, retryable failure, insufficient history, and comparison-in-progress
+  must be visually distinct; stale asynchronous responses must not replace the
+  currently selected pair. When a duration-normalized value determines the
+  assessment, the normalized value must be primary and the raw total clearly
+  supplemental. Opening another saved result must clear or identity-guard the
+  prior result immediately so old findings cannot appear under the new review.
+- Existing media result, prepared-audio, browser review, evidence, source-text,
+  AHR, session, artifact, cleanup, MCP, operation-gate, and release contracts
+  must remain unchanged when comparison is unused. No new dependency, provider
+  write, parent write, external transfer, MCP exposure, or remote acquisition is
+  permitted.

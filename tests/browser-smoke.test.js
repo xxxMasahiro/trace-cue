@@ -2261,18 +2261,24 @@ test('review center gives a non-engineer URL-first and private local video revie
   const { cwd } = testWorkspace;
   await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
   const operationId = '4'.repeat(32);
+  const previousOperationId = '5'.repeat(32);
   let currentState = 'prepared';
   let statusReads = 0;
   let uploadBytes = 0;
   let readinessChecks = 0;
-  const operation = () => ({
-    schema_version: '1.0.0', type: 'media_review_operation', operation_id: operationId,
-    state: currentState, retention: 'ephemeral', created_at: fixedNow, updated_at: fixedNow,
-    progress: { phase: currentState === 'completed' ? 'completed' : 'analyzing', percent: currentState === 'completed' ? 100 : 45 },
-    capabilities: { status: true, cancel: currentState !== 'completed', cleanup: false, result: currentState === 'completed' },
-    result_available: currentState === 'completed', cleanup_available: false, private_payload_retained: false, errors: [],
+  let comparisonReads = 0;
+  let comparisonOptionReads = 0;
+  const operation = (id = operationId) => {
+    const state = id === operationId ? currentState : 'completed';
+    return {
+    schema_version: '1.0.0', type: 'media_review_operation', operation_id: id,
+    state, retention: 'ephemeral', created_at: fixedNow, updated_at: fixedNow,
+    progress: { phase: state === 'completed' ? 'completed' : 'analyzing', percent: state === 'completed' ? 100 : 45 },
+    capabilities: { status: true, cancel: state !== 'completed', cleanup: false, result: state === 'completed' },
+    result_available: state === 'completed', cleanup_available: false, private_payload_retained: false, errors: [],
     boundary: { absolute_path_included: false, private_locator_included: false, source_name_included: false, raw_media_included: false, full_transcript_included: false }
-  });
+  };
+  };
   const finding = (classification, kind, severity) => ({
     schema_version: '1.0.0', id: `media-finding-${kind}`, kind, start_us: 900000, end_us: 1200000,
     timecode: { start: '00:00.900', end: '00:01.200' }, severity,
@@ -2321,13 +2327,43 @@ test('review center gives a non-engineer URL-first and private local video revie
       } }, warnings: [], errors: [], artifacts: [] };
     },
     start: async () => ({ status: 'ok', data: { media_review: operation() }, warnings: [], errors: [], artifacts: [] }),
-    list: () => ({ status: 'ok', data: { media_reviews: uploadBytes ? [operation()] : [] }, warnings: [], errors: [], artifacts: [] }),
-    status: () => {
+    list: () => ({ status: 'ok', data: { media_reviews: uploadBytes ? [operation(), operation(previousOperationId)] : [] }, warnings: [], errors: [], artifacts: [] }),
+    status: async ({ operation_id: requestedOperationId }) => {
+      if (requestedOperationId === previousOperationId) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        return { status: 'ok', data: { media_review: operation(previousOperationId) }, warnings: [], errors: [], artifacts: [] };
+      }
       statusReads += 1;
       if (statusReads >= 2) currentState = 'completed';
       return { status: 'ok', data: { media_review: operation() }, warnings: [], errors: [], artifacts: [] };
     },
-    result: () => ({ status: 'ok', data: { media_review_result: result }, warnings: [], errors: [], artifacts: [] }),
+    result: ({ operation_id: requestedOperationId }) => ({
+      status: 'ok',
+      data: { media_review_result: { ...result, operation_id: requestedOperationId } },
+      warnings: [], errors: [], artifacts: []
+    }),
+    comparisonOptions: async () => {
+      comparisonOptionReads += 1;
+      if (comparisonOptionReads === 1) {
+        return { status: 'error', data: {}, warnings: [], errors: [{ code: 'FIXTURE_RETRY', message: 'Saved reviews are temporarily unavailable.', details: {} }], artifacts: [] };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      return { status: 'ok', data: { media_review_comparison_options: {
+        schema_version: '1.0.0', type: 'media_review_comparison_options',
+        options: [
+          { operation_id: operationId, created_at: '2026-07-19T00:00:00.000Z', duration_us: 2_000_000, finding_counts: { deterministic: 1, advisory: 1 } },
+          { operation_id: previousOperationId, created_at: '2026-07-18T00:00:00.000Z', duration_us: 1_000_000, finding_counts: { deterministic: 2, advisory: 1 } }
+        ],
+        boundary: { public_results_only: true, absolute_paths_included: false, source_names_included: false, raw_media_included: false, full_transcript_included: false, network_performed: false }
+      } }, warnings: [], errors: [], artifacts: [] };
+    },
+    compare: async ({ baseline_operation_id: baseline, candidate_operation_id: candidate }) => {
+      comparisonReads += 1;
+      assert.equal(baseline, previousOperationId);
+      assert.equal(candidate, operationId);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      return { status: 'ok', data: { media_review_comparison: browserMediaComparison(previousOperationId, operationId) }, warnings: [], errors: [], artifacts: [] };
+    },
     cancel: () => ({ status: 'ok', data: { media_review: operation() }, warnings: [], errors: [], artifacts: [] }),
     cleanup: async () => ({ status: 'ok', data: { cleanup_receipt: { schema_version: '1.0.0', type: 'media_cleanup_receipt', operation_id: operationId, status: 'cleaned', retention: 'ephemeral', reason: 'fixture', completed_at: fixedNow, deleted: { file_count: 1, directory_count: 1, byte_count: 1 }, identity: '6'.repeat(64), limitations: [], boundary: { absolute_path_included: false, raw_media_included: false, full_transcript_included: false, sibling_deleted: false, normal_artifact_root_deleted: false } } }, warnings: [], errors: [], artifacts: [] }),
     dispose: async () => {}
@@ -2366,16 +2402,119 @@ test('review center gives a non-engineer URL-first and private local video revie
     assert.match(await mediaPage.innerText(), /Technical measurements/);
     assert.match(await mediaPage.innerText(), /Advisory evaluations/);
     assert.match(await mediaPage.innerText(), /Nothing was sent outside this computer/);
+    const comparisonPanel = mediaPage.locator('[data-testid="tc-cc-media-comparison"]');
+    await comparisonPanel.getByText('See what changed', { exact: true }).waitFor();
+    await comparisonPanel.getByText('Saved reviews could not be loaded', { exact: true }).waitFor();
+    assert.doesNotMatch(await comparisonPanel.innerText(), /One more review is needed/);
+    const optionsRetry = comparisonPanel.getByRole('button', { name: 'Try again', exact: true });
+    await optionsRetry.focus();
+    await optionsRetry.press('Enter');
+    await comparisonPanel.getByText('Loading saved reviews', { exact: true }).waitFor();
+    await comparisonPanel.getByRole('combobox', { name: 'Before', exact: true }).waitFor();
+    assert.match(await comparisonPanel.innerText(), /Current review/);
+    assert.doesNotMatch(await comparisonPanel.innerText(), new RegExp(operationId));
+    const beforeSelect = comparisonPanel.getByRole('combobox', { name: 'Before', exact: true });
+    const afterSelect = comparisonPanel.getByRole('combobox', { name: 'After', exact: true });
+    const swap = comparisonPanel.getByRole('button', { name: 'Swap before and after', exact: true });
+    const originalBefore = await beforeSelect.inputValue();
+    const originalAfter = await afterSelect.inputValue();
+    await swap.focus();
+    await swap.press('Enter');
+    assert.equal(await beforeSelect.inputValue(), originalAfter);
+    assert.equal(await afterSelect.inputValue(), originalBefore);
+    await swap.press('Enter');
+    const compareButton = comparisonPanel.getByRole('button', { name: 'Compare these reviews', exact: true });
+    await compareButton.focus();
+    await compareButton.press('Enter');
+    assert.equal(await beforeSelect.isDisabled(), true);
+    assert.equal(await afterSelect.isDisabled(), true);
+    assert.equal(await swap.isDisabled(), true);
+    const comparisonResult = comparisonPanel.locator('[data-testid="tc-cc-media-comparison-result"]');
+    await comparisonResult.getByRole('heading', { name: 'Compared with cautions', exact: true }).waitFor();
+    assert.match(await comparisonResult.innerText(), /Measurements improved/);
+    assert.match(await comparisonResult.innerText(), /Measured changes/);
+    assert.match(await comparisonResult.innerText(), /Review suggestions that changed/);
+    assert.match(await comparisonResult.innerText(), /Timed speech indicators/);
+    assert.match(await comparisonResult.innerText(), /Timed speech segments per minute/);
+    assert.match(await comparisonResult.innerText(), /60 → 30 per minute/);
+    assert.match(await comparisonResult.innerText(), /Repeated frames per minute/);
+    assert.match(await comparisonResult.innerText(), /300 → 180 per minute/);
+    assert.match(await comparisonResult.innerText(), /Total in video: 10 → 12/);
+    assert.equal(await comparisonResult.evaluate((element) => document.activeElement === element), true);
+    const comparisonTouchHeights = await comparisonPanel.locator('button, select').evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().height)));
+    assert.equal(comparisonTouchHeights.every((height) => height >= 44), true);
     assert.doesNotMatch(await mediaPage.innerText(), /private-source\.mp4|SECRET|\/home\//);
     assert.ok(uploadBytes > 0);
     assert.equal(readinessChecks, 2);
     assert.ok(statusReads >= 2);
+    assert.equal(comparisonReads, 1);
+    assert.equal(comparisonOptionReads, 2);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 1);
+    await comparisonResult.getByRole('button', { name: 'Open before review', exact: true }).click();
+    await mediaPage.getByText('Loading reviews', { exact: true }).waitFor();
+    assert.equal(await mediaPage.getByText('Your time-coded review is ready', { exact: true }).isVisible(), false);
+    await mediaPage.getByText('Your time-coded review is ready', { exact: true }).waitFor();
+    assert.match(page.url(), new RegExp(previousOperationId));
   } finally {
     if (browser) await browser.close();
     await started.close();
   }
 });
+
+function browserMediaComparison(baseline, candidate) {
+  const finding = {
+    id: 'media-finding-1111111111111111', kind: 'presentation_gap', start_us: 900_000, end_us: 1_200_000,
+    timecode: { start: '00:00.900', end: '00:01.200' }, severity: 'medium',
+    evidence: ['The measured frame interval exceeded the expected cadence.'], evidence_refs: ['frame-gap-1'],
+    method: 'frame_presentation_timestamps', confidence: 0.96, classification: 'deterministic_measurement',
+    limitations: [], recommendation: 'Verify the updated scene timing.'
+  };
+  const advisory = { ...finding, id: 'media-finding-2222222222222222', kind: 'cut_during_speech', classification: 'advisory_evaluation', method: 'timeline_advisory_heuristic' };
+  return {
+    schema_version: '1.0.0', type: 'media_review_comparison', status: 'comparable_with_limitations',
+    baseline: { operation_id: baseline, status: 'completed' }, candidate: { operation_id: candidate, status: 'completed_with_limitations' },
+    compatibility: {
+      technical: { status: 'comparable' }, transcript: { status: 'comparable' },
+      advisory: { status: 'comparable_with_limitations' }
+    },
+    metric_diffs: [
+      {
+        id: 'duplicate_frame_count', domain: 'technical', unit: 'count', baseline: 10, candidate: 12,
+        delta: 2, normalized_per_minute: { applied: true, baseline: 300, candidate: 180, delta: -120 },
+        status: 'comparable', assessment: 'improved', classification: 'deterministic_measurement', limitations: []
+      },
+      {
+        id: 'timed_transcript_segment_count', domain: 'transcript', unit: 'count', baseline: 2, candidate: 1,
+        delta: -1, normalized_per_minute: { applied: true, baseline: 60, candidate: 30, delta: -30 },
+        status: 'comparable', assessment: 'changed', classification: 'provider_measurement', limitations: []
+      }
+    ],
+    deterministic_finding_changes: [{
+      id: 'media-comparison-finding-1111111111111111', classification: 'deterministic_measurement',
+      state: 'not_detected_in_candidate', change_types: ['not_detected_in_candidate'], kind: finding.kind,
+      method: finding.method, baseline: finding, candidate: null, timing_delta_us: null, severity_delta: null,
+      confidence_delta: null, match: { method: 'unmatched', overlap_ratio: null, midpoint_distance_us: null, heuristic: false },
+      assessment: 'inconclusive', limitations: ['absence_in_one_result_does_not_prove_issue_fixed_or_created']
+    }],
+    advisory_finding_changes: [{
+      id: 'media-comparison-finding-2222222222222222', classification: 'advisory_evaluation', state: 'persistent',
+      change_types: ['persistent'], kind: advisory.kind, method: advisory.method, baseline: advisory, candidate: advisory,
+      timing_delta_us: 0, severity_delta: 0, confidence_delta: 0,
+      match: { method: 'exact_finding_id', overlap_ratio: 1, midpoint_distance_us: 0, heuristic: false },
+      assessment: 'unchanged', limitations: []
+    }],
+    summary: {
+      deterministic: { status: 'improved', inconclusive: 0 }, advisory: { status: 'unchanged', inconclusive: 0 },
+      deterministic_metric_assessments: { improved: 1, regressed: 0, unchanged: 0, changed: 0, inconclusive: 0, unavailable: 0 },
+      provider_metric_assessments: { improved: 0, regressed: 0, unchanged: 0, changed: 1, inconclusive: 0, unavailable: 0 },
+      advisory_metric_assessments: { improved: 0, regressed: 0, unchanged: 0, changed: 0, inconclusive: 0, unavailable: 0 },
+      combined_quality_score_included: false
+    },
+    limitations: ['comparison_reads_bounded_public_results_only', 'not_detected_in_candidate_does_not_prove_fixed'],
+    privacy: { public_results_only: true, raw_media_read: false, raw_audio_read: false, raw_frames_read: false, full_transcript_read: false, private_payload_read: false, absolute_paths_included: false, external_send_performed: false },
+    boundary: { read_only: true, media_reprocessed: false, provider_called: false, technical_analyzer_called: false, browser_launched: false, network_performed: false, artifact_written: false, mcp_execution_exposed: false, deterministic_and_advisory_separated: true, combined_quality_score_included: false, gate_effect: 'none' }
+  };
+}
 
 test('session action can click and observe the changed page', { skip: !runBrowserSmoke }, async (t) => {
   const testWorkspace = await createBrowserTestWorkspace('browser-debug-session-smoke-');

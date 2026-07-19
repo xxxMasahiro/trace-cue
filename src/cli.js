@@ -94,6 +94,7 @@ import {
   MEDIA_REVIEW_RIGHTS_CONFIRMATION,
   planMediaReview
 } from './media-review-service.js';
+import { renderMediaReviewComparisonMarkdown, runMediaReviewComparison } from './media-review-comparison.js';
 import {
   runLanguageSettings,
   runLanguageSettingsPolicy,
@@ -635,6 +636,14 @@ export async function executeCli(argv, context = {}) {
       return runtimeResult(parsed.command, await (context.mediaReviewRunRunner ?? executeMediaReview)(normalizeMediaReviewOptions(parsed.options), context), parsed.json, now);
     }
 
+    if (parsed.command === 'media review compare') {
+      const compared = await (context.mediaReviewComparisonRunner ?? runMediaReviewComparison)(normalizeMediaReviewOptions(parsed.options), context);
+      const report = !parsed.json && compared.status === 'ok' && compared.data?.media_review_comparison?.type === 'media_review_comparison'
+        ? renderMediaReviewComparisonMarkdown(compared.data.media_review_comparison)
+        : undefined;
+      return runtimeResult(parsed.command, compared, parsed.json, now, report);
+    }
+
     if (parsed.command === 'media review cleanup') {
       return runtimeResult(parsed.command, await (context.mediaReviewCleanupRunner ?? cleanupMediaReview)(normalizeMediaReviewOptions(parsed.options), context), parsed.json, now);
     }
@@ -839,7 +848,7 @@ function notImplemented(command, json, now) {
   return formatResult(envelope, json, 2);
 }
 
-function runtimeResult(command, result, json, now) {
+function runtimeResult(command, result, json, now, textOutput = undefined) {
   const envelope = createEnvelope({
     command,
     status: result.status,
@@ -849,7 +858,7 @@ function runtimeResult(command, result, json, now) {
     artifacts: result.artifacts,
     now
   });
-  return formatResult(envelope, json, result.status === 'ok' ? 0 : 1, runtimeText(command, envelope));
+  return formatResult(envelope, json, result.status === 'ok' ? 0 : 1, textOutput ?? runtimeText(command, envelope));
 }
 
 function formatResult(envelope, json, exitCode, textOutput = '') {
@@ -928,6 +937,8 @@ function normalizeMediaReviewOptions(options = {}) {
     execute: options.execute === true,
     confirm: options.confirm,
     operationId: options['operation-id'],
+    baseline: options.baseline,
+    candidate: options.candidate,
     artifactRoot: options['artifact-root'],
     resourceGuard: options['resource-guard']
   };
@@ -940,6 +951,7 @@ function usageText(topic) {
       `       ${CLI_NAME} media review readiness [--json]`,
       `       ${CLI_NAME} media review plan (--input <workspace-video> | --url <https-url>) [--retention ephemeral|project-retained] [--rights-confirm ${MEDIA_REVIEW_RIGHTS_CONFIRMATION}] [--json]`,
       `       ${CLI_NAME} media review run --input <workspace-video> --rights-confirm ${MEDIA_REVIEW_RIGHTS_CONFIRMATION} --plan-hash <sha256> --execute --confirm execute-media-review [--retention ephemeral|project-retained] [--json]`,
+      `       ${CLI_NAME} media review compare --baseline <saved-operation-id> --candidate <saved-operation-id> [--artifact-root <relative-path>] [--json]`,
       `       ${CLI_NAME} media review cleanup --operation-id <id> --retention project-retained --execute --confirm cleanup-media-review [--json]`,
       '',
       'URL inspection is network-free and never downloads media. Full analysis accepts only an authorized local workspace file.',
@@ -1430,6 +1442,7 @@ function usageText(topic) {
     '  media review readiness --json',
     '  media review plan --input <workspace-video> --rights-confirm use-owned-or-authorized-media --json',
     '  media review run --input <workspace-video> --rights-confirm use-owned-or-authorized-media --plan-hash <sha256> --execute --confirm execute-media-review --json',
+    '  media review compare --baseline <saved-operation-id> --candidate <saved-operation-id> --json',
     '  capture handoff --image <path> --json',
     '  settings show --json',
     '  settings language --json',
