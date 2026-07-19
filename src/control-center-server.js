@@ -714,7 +714,11 @@ export async function handleControlCenterRequest(request, response, config, cont
     sendActionEnvelope(response, 'control-center media-review readiness', result, context, 200);
     return;
   }
-  if (url.pathname === '/api/media-review/list' || url.pathname === '/api/media-review/status' || url.pathname === '/api/media-review/result') {
+  if (url.pathname === '/api/media-review/list'
+    || url.pathname === '/api/media-review/status'
+    || url.pathname === '/api/media-review/result'
+    || url.pathname === '/api/media-review/comparison-options'
+    || url.pathname === '/api/media-review/comparison') {
     if (request.method !== 'GET') {
       sendMethodNotAllowed(response, 'CONTROL_CENTER_MEDIA_QUERY_GET_ONLY', 'Media review status only accepts GET requests.');
       return;
@@ -725,7 +729,18 @@ export async function handleControlCenterRequest(request, response, config, cont
       return;
     }
     const input = { operation_id: url.searchParams.get('id') };
-    const result = url.pathname.endsWith('/list') ? runtime.list() : url.pathname.endsWith('/status') ? runtime.status(input) : runtime.result(input);
+    const result = await (url.pathname.endsWith('/list')
+      ? runtime.list()
+      : url.pathname.endsWith('/status')
+        ? runtime.status(input)
+        : url.pathname.endsWith('/result')
+          ? runtime.result(input)
+          : url.pathname.endsWith('/comparison-options')
+            ? runtime.comparisonOptions()
+            : runtime.compare({
+              baseline_operation_id: url.searchParams.get('baseline'),
+              candidate_operation_id: url.searchParams.get('candidate')
+            }));
     sendActionEnvelope(response, `control-center media-review ${url.pathname.split('/').at(-1)}`, result, context, 200);
     return;
   }
@@ -1473,6 +1488,8 @@ function controlCenterServerMetadata(config, url) {
       '/api/media-review/status',
       '/api/media-review/list',
       '/api/media-review/result',
+      '/api/media-review/comparison-options',
+      '/api/media-review/comparison',
       '/api/media-review/cancel',
       '/api/media-review/cleanup'
     ],

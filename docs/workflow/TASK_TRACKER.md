@@ -731,3 +731,42 @@ Existing FrameCue and parent repositories remain read-only. The prepared path
 adds no MCP execution, URL acquisition, cloud ASR, model setup/download,
 external transfer, cross-operation receipt reuse, generic artifact-root change,
 or unrelated feature tradeoff.
+
+## Phase 202-208 Saved Media Review Comparison
+
+- [x] Phase 202: audit the saved public result, artifact, CLI/API, Control
+  Center, operation, MCP, safety, and verification contracts with no unrelated
+  changes.
+- [x] Phase 203: add strict versioned policy/output schemas, stable opaque-id
+  input reading, complete result validation, and domain comparability identities.
+- [x] Phase 204: implement bounded raw and per-minute metric deltas with
+  conservative directional assessments and no combined score.
+- [x] Phase 205: implement exact and bounded-timeline one-to-one finding
+  matching, duplicate/tie refusal, completeness-aware inconclusive states, and
+  deterministic/advisory separation.
+- [x] Phase 206: implement bounded JSON and Markdown reports over public results
+  only, with no media replay, provider/analyzer call, network, external send, or
+  implicit artifact write.
+- [x] Phase 207: add read-only CLI/package API/operation registration, passive
+  Control Center endpoints, and an explanation-free responsive Before/After UI
+  with current-result default, Swap, one Compare action, plain labels, condition
+  guidance, source navigation, and 44px touch targets.
+- [x] Preserve the Settings screen and AI-choice draft when both the selection
+  response and its first quiet reconciliation read are lost; require loading
+  the latest choices before another write, retain that block after another read
+  failure and for an initial selection, keep unrelated quiet refresh behavior
+  unchanged, retain reopen-required session expiry, and inject the failures
+  deterministically in browser coverage. Bind a newer exact-match reconciliation
+  to the current request generation so the parent dashboard update cannot
+  overwrite confirmed success with a draft conflict.
+- [x] Keep the startup intake-publication recovery integration fixture bounded
+  at the existing one-second policy maximum under loaded CI filesystems without
+  changing the production 100 ms best-effort default or fail-closed reads.
+- [ ] Phase 208: complete all aggregate gates and independent reviews, commit,
+  push, pull-request CI, merge, exact-main CI, clean local/remote synchronization,
+  and final completion evidence.
+
+No phase changes the existing media result schema, prepared-audio execution,
+private operation lifecycle, browser/session/evidence/AHR behavior, generic
+artifact cleanup, MCP profiles, release meaning, FrameCue, or the parent.
+Existing-feature impact: no regression / no tradeoff.

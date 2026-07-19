@@ -71,6 +71,50 @@
     { "$ref": "media-source-decision.schema.json" },
     { "$ref": "media-review-operation.schema.json" },
     { "$ref": "media-review-result.schema.json" },
+    {
+      "type": "object",
+      "required": ["schema_version", "type", "options", "boundary"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" },
+        "type": { "const": "media_review_comparison_options" },
+        "options": {
+          "type": "array", "maxItems": 100,
+          "items": {
+            "type": "object",
+            "required": ["operation_id", "created_at", "duration_us", "finding_counts"],
+            "properties": {
+              "operation_id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+              "created_at": { "type": "string", "format": "date-time" },
+              "duration_us": { "type": ["integer", "null"], "minimum": 0 },
+              "finding_counts": {
+                "type": "object", "required": ["deterministic", "advisory"],
+                "properties": {
+                  "deterministic": { "type": "integer", "minimum": 0 },
+                  "advisory": { "type": "integer", "minimum": 0 }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "boundary": {
+          "type": "object",
+          "required": ["public_results_only", "absolute_paths_included", "source_names_included", "raw_media_included", "full_transcript_included", "network_performed"],
+          "properties": {
+            "public_results_only": { "const": true },
+            "absolute_paths_included": { "const": false },
+            "source_names_included": { "const": false },
+            "raw_media_included": { "const": false },
+            "full_transcript_included": { "const": false },
+            "network_performed": { "const": false }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    { "$ref": "media-review-comparison.schema.json" },
     { "$ref": "media-cleanup-receipt.schema.json" }
   ]
 }

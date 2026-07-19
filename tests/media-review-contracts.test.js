@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmod, copyFile, lstat, mkdtemp, mkdir, readFile, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, copyFile, link, lstat, mkdtemp, mkdir, readFile, rename, rm, symlink, truncate, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { decideMediaSource } from '../src/media-source-decision.js';
@@ -21,6 +21,13 @@ import { analyzeLocalMediaTechnical, inspectTechnicalMediaReadiness, preflightLo
 import { buildMediaReviewTimeline } from '../src/media-review-timeline.js';
 import { reviewMediaTimeline } from '../src/media-cross-modal-reviewer.js';
 import { cleanupMediaReview, executeMediaReview, MEDIA_REVIEW_CLEANUP_CONFIRMATION, MEDIA_REVIEW_EXECUTION_CONFIRMATION, planMediaReview, renderMediaReviewMarkdown } from '../src/media-review-service.js';
+import {
+  buildMediaReviewComparison,
+  renderMediaReviewComparisonMarkdown,
+  runMediaReviewComparison
+} from '../src/media-review-comparison.js';
+import { loadMediaReviewComparisonPolicy } from '../src/media-review-comparison-policy.js';
+import { readStoredMediaReviewResult, validatePublicMediaReviewResult } from '../src/media-review-public-result.js';
 import { parseCliArgs } from '../src/parser.js';
 import { executeCli } from '../src/cli.js';
 import { getSchema, schemaNames } from '../src/schema-registry.js';
@@ -28,6 +35,7 @@ import { buildOperationRegistryReport } from '../src/operation-registry.js';
 import { getMcpTools } from '../src/mcp.js';
 import { runFixedProcess } from '../src/fixed-process-runner.js';
 import { validateJsonSchemaSubset } from '../src/json-schema-subset.js';
+import { readStableBoundedFileHandle } from '../src/safe-local-store.js';
 
 test('media policy and adapter catalog keep local-only boundaries centralized', async () => {
   const policy = await loadMediaReviewPolicy({ disableMediaReviewPolicyCache: true });
@@ -767,7 +775,10 @@ test('media review service completes an ephemeral vertical slice without leaking
         operation_id: request.operation.operationId, media_identity: request.mediaIdentity,
         retention: request.retention, language: 'en',
         segments: [{ id: 'speech-1', start_us: 0, end_us: 900_000, text: 'Private service transcript body.', language: 'en', speaker: null, confidence: null, timed: true, needs_review: true }],
-        method: providerTrustProjection(), limitations: [], privacy: { public_body_included: false }
+        method: providerTrustProjection(), limitations: [
+          'provider_model_reference_identity_is_not_a_model_weight_hash',
+          'provider_external_runtime_dependencies_are_not_cryptographically_bound'
+        ], privacy: { public_body_included: false }
       },
       projection: {
         schema_version: '1.0.0', type: 'transcript_provider_projection', status: 'available',
@@ -817,6 +828,415 @@ test('media review service completes an ephemeral vertical slice without leaking
   assert.ok(Buffer.byteLength(artifactBody) <= policy.operation.maximum_public_result_bytes);
   assert.equal(artifact.privacy.full_transcript_in_result, false);
   assert.equal(JSON.stringify(artifact).includes(path.join(cwd, 'private-operations')), false);
+});
+
+test('media review comparison keeps metric and finding evidence separated without reprocessing media', async (t) => {
+  const { result: original } = await comparisonFixtureResult(t, 'a'.repeat(32));
+  const baseline = comparisonResultVariant(original, {
+    operationId: 'a'.repeat(32),
+    mediaSha256: 'a'.repeat(64),
+    duplicateFrameCount: 1,
+    deterministicFindings: [comparisonFinding({ id: 'media-finding-1111111111111111', classification: 'deterministic_measurement' })],
+    advisoryFindings: [comparisonFinding({
+      id: 'media-finding-2222222222222222',
+      classification: 'advisory_evaluation',
+      kind: 'speech_cut_proximity',
+      method: 'timeline_advisory_heuristic'
+    })]
+  });
+  const candidate = comparisonResultVariant(original, {
+    operationId: 'b'.repeat(32),
+    mediaSha256: 'b'.repeat(64),
+    duplicateFrameCount: 3,
+    deterministicFindings: [comparisonFinding({
+      id: 'media-finding-3333333333333333',
+      classification: 'deterministic_measurement',
+      startUs: 250_000,
+      endUs: 650_000,
+      severity: 'high'
+    })],
+    advisoryFindings: [comparisonFinding({
+      id: 'media-finding-4444444444444444',
+      classification: 'advisory_evaluation',
+      kind: 'speech_cut_proximity',
+      method: 'timeline_advisory_heuristic',
+      startUs: 250_000,
+      endUs: 650_000,
+      severity: 'high'
+    })]
+  });
+  const policy = await loadMediaReviewComparisonPolicy({ disableMediaReviewComparisonPolicyCache: true });
+  const forgedPolicy = structuredClone(policy);
+  forgedPolicy.metrics.find((metric) => metric.domain === 'transcript').classification = 'deterministic_measurement';
+  assert.equal(validateJsonSchemaSubset(forgedPolicy, getSchema('media_review_comparison_policy')).ok, false);
+  await assert.rejects(loadMediaReviewComparisonPolicy({ mediaReviewComparisonPolicy: forgedPolicy }), {
+    code: 'MEDIA_REVIEW_COMPARISON_POLICY_INVALID'
+  });
+  const comparison = buildMediaReviewComparison(baseline, candidate, policy);
+  assert.equal(comparison.status, 'comparable_with_limitations');
+  assert.equal(comparison.compatibility.technical.basis_equal, true);
+  assert.equal(comparison.compatibility.transcript.basis_equal, true);
+  assert.equal(comparison.compatibility.same_media_identity, false);
+  assert.equal(comparison.boundary.media_reprocessed, false);
+  assert.equal(comparison.boundary.provider_called, false);
+  assert.equal(comparison.boundary.artifact_written, false);
+  assert.equal(comparison.summary.combined_quality_score_included, false);
+  assert.equal(comparison.compatibility.technical.status, 'comparable', 'method disclaimers must not erase deterministic metric comparisons');
+  assert.equal(comparison.limitations.includes('technical_analysis_method_limitations_remain_applicable'), true);
+  assert.equal(comparison.metric_diffs.find((item) => item.id === 'duplicate_frame_count').assessment, 'regressed');
+  assert.equal(comparison.metric_diffs.find((item) => item.id === 'duplicate_frame_count').classification, 'deterministic_measurement');
+  assert.equal(comparison.metric_diffs.find((item) => item.id === 'timed_transcript_segment_count').classification, 'provider_measurement');
+  assert.equal(comparison.metric_diffs.find((item) => item.id === 'semantic_change_count').classification, 'advisory_evaluation');
+  assert.equal(Object.values(comparison.summary.deterministic_metric_assessments).reduce((sum, value) => sum + value, 0),
+    comparison.metric_diffs.filter((item) => item.classification === 'deterministic_measurement').length);
+  assert.equal(Object.values(comparison.summary.provider_metric_assessments).reduce((sum, value) => sum + value, 0), 1);
+  assert.equal(Object.values(comparison.summary.advisory_metric_assessments).reduce((sum, value) => sum + value, 0), 1);
+  assert.equal(comparison.deterministic_finding_changes[0].state, 'severity_changed');
+  assert.equal(comparison.deterministic_finding_changes[0].assessment, 'inconclusive', 'heuristic matches must not become definitive quality claims');
+  assert.equal(comparison.advisory_finding_changes[0].assessment, 'inconclusive');
+  assert.deepEqual(validateJsonSchemaSubset(comparison, getSchema('media_review_comparison')), { ok: true });
+  const forgedMetricClassification = structuredClone(comparison);
+  forgedMetricClassification.metric_diffs.find((metric) => metric.domain === 'transcript').classification = 'deterministic_measurement';
+  assert.equal(validateJsonSchemaSubset(forgedMetricClassification, getSchema('media_review_comparison')).ok, false);
+  const markdown = renderMediaReviewComparisonMarkdown(comparison);
+  assert.match(markdown, /Deterministic technical measurements/u);
+  assert.match(markdown, /Transcript provider measurements/u);
+  assert.match(markdown, /Advisory indicators/u);
+  assert.match(markdown, /Deterministic finding changes/u);
+  assert.match(markdown, /Advisory finding changes/u);
+  assert.equal(markdown.includes('Private service transcript body.'), false);
+
+  const cleanBaseline = comparisonResultVariant(original, {
+    operationId: '5'.repeat(32), mediaSha256: '5'.repeat(64), deterministicFindings: [], advisoryFindings: []
+  });
+  const cleanCandidate = comparisonResultVariant(original, {
+    operationId: '6'.repeat(32), mediaSha256: '6'.repeat(64), deterministicFindings: [], advisoryFindings: []
+  });
+  for (const value of [cleanBaseline, cleanCandidate]) {
+    value.status = 'completed';
+    value.limitations = [];
+    value.technical_analysis.limitations = [];
+    value.transcript.limitations = [];
+    value.timeline.limitations = [];
+    value.content_evidence.limitations = [];
+  }
+  const cleanComparison = buildMediaReviewComparison(cleanBaseline, cleanCandidate, policy);
+  assert.equal(cleanComparison.status, 'comparable');
+  assert.deepEqual(cleanComparison.limitations, ['comparison_reads_bounded_public_results_only']);
+  assert.equal(cleanComparison.limitations.includes('not_detected_in_candidate_does_not_prove_fixed'), false);
+});
+
+test('media review comparison fails closed on basis drift and marks incomplete unmatched findings inconclusive', async (t) => {
+  const { result: original } = await comparisonFixtureResult(t, 'c'.repeat(32));
+  const policy = await loadMediaReviewComparisonPolicy();
+  const baseline = comparisonResultVariant(original, {
+    operationId: 'c'.repeat(32), mediaSha256: 'c'.repeat(64),
+    deterministicFindings: [comparisonFinding({ id: 'media-finding-6666666666666666', classification: 'deterministic_measurement' })],
+    advisoryFindings: [comparisonFinding({ id: 'media-finding-5555555555555555', classification: 'advisory_evaluation' })]
+  });
+  const drifted = comparisonResultVariant(original, {
+    operationId: 'd'.repeat(32), mediaSha256: 'd'.repeat(64), advisoryFindings: []
+  });
+  drifted.analysis_settings.maximum_frames += 1;
+  const driftComparison = buildMediaReviewComparison(baseline, drifted, policy);
+  assert.equal(driftComparison.compatibility.technical.status, 'incompatible');
+  assert.equal(driftComparison.compatibility.advisory.status, 'incompatible');
+  assert.equal(driftComparison.metric_diffs.find((item) => item.id === 'effective_fps').assessment, 'inconclusive');
+  assert.deepEqual(driftComparison.advisory_finding_changes, []);
+
+  const completeMissing = comparisonResultVariant(original, {
+    operationId: 'f'.repeat(32), mediaSha256: 'f'.repeat(64), deterministicFindings: [],
+    advisoryFindings: baseline.advisory_findings
+  });
+  const completeMissingComparison = buildMediaReviewComparison(baseline, completeMissing, policy);
+  assert.equal(completeMissingComparison.deterministic_finding_changes[0].state, 'not_detected_in_candidate');
+  assert.equal(completeMissingComparison.deterministic_finding_changes[0].assessment, 'inconclusive');
+
+  const incomplete = comparisonResultVariant(original, {
+    operationId: 'e'.repeat(32), mediaSha256: 'e'.repeat(64), deterministicFindings: [], advisoryFindings: []
+  });
+  incomplete.timeline.truncated = true;
+  const incompleteComparison = buildMediaReviewComparison(baseline, incomplete, policy);
+  assert.equal(incompleteComparison.compatibility.advisory.status, 'incompatible');
+  assert.deepEqual(incompleteComparison.advisory_finding_changes, []);
+  assert.equal(incompleteComparison.deterministic_finding_changes[0].state, 'unmatched_inconclusive');
+  assert.equal(incompleteComparison.deterministic_finding_changes[0].assessment, 'inconclusive');
+  assert.throws(() => buildMediaReviewComparison(baseline, { ...incomplete, operation_id: baseline.operation_id }, policy), {
+    code: 'MEDIA_REVIEW_COMPARISON_DISTINCT_RESULTS_REQUIRED'
+  });
+
+  const privateBody = structuredClone(baseline);
+  privateBody.transcript.segments = [{ text: 'forbidden full transcript' }];
+  assert.throws(() => validatePublicMediaReviewResult(privateBody), { code: 'MEDIA_REVIEW_COMPARISON_INPUT_PRIVATE_BODY' });
+  const duplicateIds = structuredClone(baseline);
+  duplicateIds.deterministic_findings.push(structuredClone(duplicateIds.deterministic_findings[0]));
+  assert.throws(() => buildMediaReviewComparison(duplicateIds, incomplete, policy), {
+    code: 'MEDIA_REVIEW_COMPARISON_FINDING_ID_DUPLICATE'
+  });
+});
+
+test('media comparison rejects incomplete inputs and propagates completeness without unsafe exact matches', async (t) => {
+  const { result: original } = await comparisonFixtureResult(t, '7'.repeat(32));
+  const policy = await loadMediaReviewComparisonPolicy();
+  const baseline = comparisonResultVariant(original, {
+    operationId: '7'.repeat(32), mediaSha256: '7'.repeat(64),
+    deterministicFindings: [comparisonFinding({ id: 'media-finding-7777777777777777', classification: 'deterministic_measurement' })]
+  });
+  const candidate = comparisonResultVariant(original, {
+    operationId: '8'.repeat(32), mediaSha256: '8'.repeat(64),
+    deterministicFindings: [comparisonFinding({
+      id: 'media-finding-7777777777777777', classification: 'deterministic_measurement', startUs: 200_000, endUs: 600_000
+    })]
+  });
+  const movedSameId = buildMediaReviewComparison(baseline, candidate, policy);
+  assert.equal(movedSameId.deterministic_finding_changes[0].match.method, 'timeline_overlap');
+  assert.equal(movedSameId.deterministic_finding_changes[0].match.heuristic, true);
+  assert.equal(movedSameId.deterministic_finding_changes[0].assessment, 'inconclusive');
+
+  const insufficient = structuredClone(candidate);
+  insufficient.status = 'insufficient';
+  assert.throws(() => buildMediaReviewComparison(baseline, insufficient, policy), {
+    code: 'MEDIA_REVIEW_COMPARISON_RESULT_INSUFFICIENT'
+  });
+  const forgedInsufficientProjection = structuredClone(movedSameId);
+  forgedInsufficientProjection.baseline.status = 'insufficient';
+  assert.equal(validateJsonSchemaSubset(forgedInsufficientProjection, getSchema('media_review_comparison')).ok, false);
+
+  const transcriptDrift = structuredClone(candidate);
+  transcriptDrift.transcript.status = 'insufficient';
+  const transcriptComparison = buildMediaReviewComparison(baseline, transcriptDrift, policy);
+  assert.equal(transcriptComparison.compatibility.transcript.status, 'incompatible');
+  assert.equal(transcriptComparison.compatibility.advisory.status, 'incompatible');
+  assert.equal(transcriptComparison.metric_diffs.find((item) => item.id === 'timed_transcript_segment_count').assessment, 'inconclusive');
+
+  const partialBaseline = structuredClone(baseline);
+  const partialCandidate = structuredClone(candidate);
+  partialBaseline.technical_analysis.status = 'partial';
+  partialCandidate.technical_analysis.status = 'partial';
+  const partialComparison = buildMediaReviewComparison(partialBaseline, partialCandidate, policy);
+  assert.equal(partialComparison.compatibility.technical.status, 'comparable_with_limitations');
+  assert.equal(partialComparison.compatibility.advisory.status, 'comparable_with_limitations');
+  assert.equal(partialComparison.metric_diffs.find((item) => item.id === 'effective_fps').assessment, 'inconclusive');
+
+  const contentBaseline = structuredClone(baseline);
+  const contentCandidate = structuredClone(candidate);
+  contentBaseline.content_evidence.status = 'insufficient';
+  contentCandidate.content_evidence.status = 'insufficient';
+  const contentComparison = buildMediaReviewComparison(contentBaseline, contentCandidate, policy);
+  assert.equal(contentComparison.compatibility.advisory.status, 'comparable_with_limitations');
+  assert.equal(contentComparison.metric_diffs.find((item) => item.id === 'semantic_change_count').assessment, 'inconclusive');
+
+  const cyclic = structuredClone(baseline);
+  cyclic.cycle = cyclic;
+  assert.throws(() => buildMediaReviewComparison(cyclic, candidate, policy), {
+    code: 'MEDIA_REVIEW_COMPARISON_INPUT_TOO_COMPLEX'
+  });
+  const deep = structuredClone(baseline);
+  let cursor = deep;
+  for (let index = 0; index < 70; index += 1) cursor = cursor.nested = {};
+  assert.throws(() => buildMediaReviewComparison(deep, candidate, policy), {
+    code: 'MEDIA_REVIEW_COMPARISON_INPUT_TOO_COMPLEX'
+  });
+});
+
+test('media comparison treats total producer limits as incomplete and truncates projection by bytes', async (t) => {
+  const { result: original } = await comparisonFixtureResult(t, '9'.repeat(32));
+  const policy = await loadMediaReviewComparisonPolicy();
+  const mixedDeterministic = Array.from({ length: 50 }, (_, index) => comparisonFinding({
+    id: `media-finding-${(index + 1).toString(16).padStart(16, '0')}`,
+    classification: 'deterministic_measurement', startUs: index * 1_000, endUs: index * 1_000 + 500
+  }));
+  const mixedAdvisory = Array.from({ length: 150 }, (_, index) => comparisonFinding({
+    id: `media-finding-${(index + 1001).toString(16).padStart(16, '0')}`,
+    classification: 'advisory_evaluation', kind: 'speech_cut_proximity', method: 'timeline_advisory_heuristic',
+    startUs: index * 1_000, endUs: index * 1_000 + 500
+  }));
+  const mixedBaseline = comparisonResultVariant(original, {
+    operationId: 'c'.repeat(32), mediaSha256: 'c'.repeat(64),
+    deterministicFindings: mixedDeterministic, advisoryFindings: mixedAdvisory
+  });
+  const mixedCandidate = comparisonResultVariant(original, {
+    operationId: 'd'.repeat(32), mediaSha256: 'd'.repeat(64),
+    deterministicFindings: mixedDeterministic, advisoryFindings: mixedAdvisory
+  });
+  const mixedComparison = buildMediaReviewComparison(mixedBaseline, mixedCandidate, policy);
+  assert.equal(mixedComparison.compatibility.advisory.status, 'comparable_with_limitations');
+  assert.equal(mixedComparison.deterministic_finding_changes.every((change) => change.assessment === 'inconclusive'), true);
+  assert.equal(mixedComparison.advisory_finding_changes.every((change) => change.assessment === 'inconclusive'), true);
+
+  const findings = Array.from({ length: 200 }, (_, index) => {
+    const finding = comparisonFinding({
+      id: `media-finding-${index.toString(16).padStart(16, '0')}`,
+      classification: 'deterministic_measurement',
+      startUs: index * 1_000,
+      endUs: index * 1_000 + 500
+    });
+    finding.evidence = ['E'.repeat(1000), 'F'.repeat(1000)];
+    finding.limitations = ['L'.repeat(500)];
+    finding.recommendation = 'R'.repeat(1000);
+    return finding;
+  });
+  const baseline = comparisonResultVariant(original, {
+    operationId: '9'.repeat(32), mediaSha256: '9'.repeat(64), deterministicFindings: findings, advisoryFindings: []
+  });
+  const candidate = comparisonResultVariant(original, {
+    operationId: 'a'.repeat(32), mediaSha256: 'a'.repeat(64), deterministicFindings: findings, advisoryFindings: []
+  });
+  const comparison = buildMediaReviewComparison(baseline, candidate, policy);
+  assert.equal(comparison.compatibility.advisory.status, 'comparable_with_limitations');
+  assert.equal(comparison.deterministic_finding_changes.every((change) => change.assessment === 'inconclusive'), true);
+  assert.equal(comparison.limitations.includes('comparison_finding_changes_truncated_to_byte_limit'), true);
+  assert.ok(comparison.deterministic_finding_changes.length < 200);
+  assert.ok(Buffer.byteLength(`${JSON.stringify(comparison)}\n`) <= policy.output.maximum_result_bytes);
+});
+
+test('media comparison rejects embedded private paths and secret-bearing URLs', async (t) => {
+  const { result: original } = await comparisonFixtureResult(t, 'b'.repeat(32));
+  const baseline = comparisonResultVariant(original, {
+    operationId: 'b'.repeat(32), mediaSha256: 'b'.repeat(64),
+    deterministicFindings: [comparisonFinding({ id: 'media-finding-bbbbbbbbbbbbbbbb', classification: 'deterministic_measurement' })]
+  });
+  for (const text of [
+    'Evidence from /home/user/private.mp4',
+    'Evidence\n/home/user/private.mp4',
+    'Evidence\t/home/user/private.mp4',
+    'Evidence\u202e/home/user/private.mp4',
+    'Evidence:/home/user/private.mp4',
+    'Evidence;/home/user/private.mp4',
+    'Evidence,/home/user/private.mp4',
+    'Evidence-/home/user/private.mp4',
+    'Evidence./home/user/private.mp4',
+    'Evidence from /ho\u202eme/user/private.mp4',
+    'Evidence,C:\\Users\\name\\private.mp4',
+    'Evidence-C:\\Users\\name\\private.mp4',
+    'Evidence,\\Users\\name\\private.mp4',
+    'Evidence,\\\\server\\share\\private.mp4',
+    'Evidence-\\\\server\\share\\private.mp4',
+    'See file:/home/user/private.mp4',
+    'See file://server/share/private.mp4',
+    'See file:///home/user/private.mp4',
+    '[source](//media.example/watch?token=SECRET)',
+    '[source](https://media.example/watch?token=SECRET)',
+    'See https://media.example/watch#signed-fragment',
+    'See https://user:password@media.example/watch',
+    'See https:media.example/watch?token=SECRET',
+    String.raw`See https:\media.example\watch?token=SECRET`,
+    'See http:media.example/watch#secret',
+    'See ws:media.example/socket?token=SECRET',
+    'See ftp:media.example/file#secret',
+    'See (https://media.example/watch),/home/user/private.mp4',
+    'See (https://media.example/watch),C:\\Users\\name\\private.mp4',
+    'See https://media.example/watch;/home/user/private.mp4',
+    'See https://media.example/watch:/home/user/private.mp4',
+    'See https://media.example/watch=/home/user/private.mp4',
+    'See https://media.example/watch-/home/user/private.mp4',
+    'See https://media.example/watch]/home/user/private.mp4',
+    'See https://media.example/watch%/home/user/private.mp4',
+    'See https://media.example/%5CUsers%5Cname%5Cprivate.mp4',
+    'See https://media.example/watch\n/home/user/private.mp4',
+    'See https://public.example/watch),https://user:password@private.example/media',
+    'See https://public.example/watch),//user:password@private.example/media'
+  ]) {
+    for (const field of ['evidence', 'evidence_refs', 'limitations', 'recommendation']) {
+      const unsafe = structuredClone(baseline);
+      unsafe.deterministic_findings[0][field] = field === 'recommendation' ? text : [text];
+      assert.throws(() => validatePublicMediaReviewResult(unsafe), {
+        code: 'MEDIA_REVIEW_COMPARISON_INPUT_PRIVATE_PATH'
+      }, `${field} must reject ${text}`);
+    }
+  }
+  for (const text of [
+    'See https://media.example/watch for public context.',
+    'See https://[2001:db8::1]/watch for public context.',
+    'See https://例え.テスト/watch for public context.',
+    'See https://example.com./watch for public context.',
+    'See https://media.example/watch%20clip for public context.',
+    'See https:media.example/watch for public context.',
+    'See the source file: no local locator is included.'
+  ]) {
+    const safe = structuredClone(baseline);
+    safe.deterministic_findings[0].evidence = [text];
+    assert.doesNotThrow(() => validatePublicMediaReviewResult(safe), text);
+  }
+});
+
+test('stored media review comparison accepts only stable owner-controlled public result files', async (t) => {
+  const { cwd, result: original } = await comparisonFixtureResult(t, '1'.repeat(32));
+  const store = path.join(cwd, '.comparison-artifacts', 'media-review-results');
+  await mkdir(store, { recursive: true, mode: 0o700 });
+  const baseline = comparisonResultVariant(original, { operationId: '1'.repeat(32), mediaSha256: '1'.repeat(64) });
+  const candidate = comparisonResultVariant(original, { operationId: '2'.repeat(32), mediaSha256: '2'.repeat(64) });
+  await writeFile(path.join(store, `${baseline.operation_id}.json`), `${JSON.stringify(baseline)}\n`, { mode: 0o600 });
+  await writeFile(path.join(store, `${candidate.operation_id}.json`), `${JSON.stringify(candidate)}\n`, { mode: 0o600 });
+  const loaded = await readStoredMediaReviewResult(baseline.operation_id, { artifactRoot: '.comparison-artifacts' }, { cwd });
+  assert.equal(loaded.value.operation_id, baseline.operation_id);
+  const completed = await runMediaReviewComparison({
+    baseline: baseline.operation_id,
+    candidate: candidate.operation_id,
+    artifactRoot: '.comparison-artifacts'
+  }, { cwd });
+  assert.equal(completed.status, 'ok');
+  assert.equal(completed.data.media_review_comparison.boundary.artifact_written, false);
+  const cli = await executeCli([
+    'media', 'review', 'compare', '--baseline', baseline.operation_id, '--candidate', candidate.operation_id,
+    '--artifact-root', '.comparison-artifacts'
+  ], { cwd });
+  assert.equal(cli.exitCode, 0);
+  assert.match(cli.stdout, /^# Media Review Comparison/mu);
+  assert.equal(cli.stdout.includes(cwd), false);
+
+  const symlinkId = '3'.repeat(32);
+  await symlink(`${baseline.operation_id}.json`, path.join(store, `${symlinkId}.json`));
+  await assert.rejects(readStoredMediaReviewResult(symlinkId, { artifactRoot: '.comparison-artifacts' }, { cwd }), {
+    code: 'MEDIA_REVIEW_COMPARISON_RESULT_NOT_FOUND'
+  });
+  const hardlinkId = '4'.repeat(32);
+  await link(path.join(store, `${baseline.operation_id}.json`), path.join(store, `${hardlinkId}.json`));
+  await assert.rejects(readStoredMediaReviewResult(hardlinkId, { artifactRoot: '.comparison-artifacts' }, { cwd }), {
+    code: 'MEDIA_REVIEW_COMPARISON_RESULT_FILE_INVALID'
+  });
+
+  const growId = '5'.repeat(32);
+  const growFile = path.join(store, `${growId}.json`);
+  await writeFile(growFile, `${JSON.stringify({ ...baseline, operation_id: growId })}\n`, { mode: 0o600 });
+  await assert.rejects(readStoredMediaReviewResult(growId, { artifactRoot: '.comparison-artifacts' }, {
+    cwd,
+    readStableBoundedFileHandle: async (handle, options) => {
+      await appendFile(growFile, 'x');
+      return readStableBoundedFileHandle(handle, options);
+    }
+  }), { code: 'MEDIA_REVIEW_COMPARISON_RESULT_CHANGED' });
+
+  const shrinkId = '6'.repeat(32);
+  const shrinkFile = path.join(store, `${shrinkId}.json`);
+  await writeFile(shrinkFile, `${JSON.stringify({ ...baseline, operation_id: shrinkId })}\n`, { mode: 0o600 });
+  await assert.rejects(readStoredMediaReviewResult(shrinkId, { artifactRoot: '.comparison-artifacts' }, {
+    cwd,
+    readStableBoundedFileHandle: async (handle, options) => {
+      await truncate(shrinkFile, 2);
+      return readStableBoundedFileHandle(handle, options);
+    }
+  }), { code: 'MEDIA_REVIEW_COMPARISON_RESULT_CHANGED' });
+
+  const shortId = '7'.repeat(32);
+  const shortFile = path.join(store, `${shortId}.json`);
+  await writeFile(shortFile, `${JSON.stringify({ ...baseline, operation_id: shortId })}\n`, { mode: 0o600 });
+  await assert.rejects(readStoredMediaReviewResult(shortId, { artifactRoot: '.comparison-artifacts' }, {
+    cwd,
+    readStableBoundedFileHandle: async () => Buffer.from('{')
+  }), { code: 'MEDIA_REVIEW_COMPARISON_RESULT_CHANGED' });
+
+  const replacementId = '8'.repeat(32);
+  const replacementFile = path.join(store, `${replacementId}.json`);
+  await writeFile(replacementFile, `${JSON.stringify({ ...baseline, operation_id: replacementId })}\n`, { mode: 0o600 });
+  await assert.rejects(readStoredMediaReviewResult(replacementId, { artifactRoot: '.comparison-artifacts' }, {
+    cwd,
+    readStableBoundedFileHandle: async (handle, options) => {
+      await rename(replacementFile, `${replacementFile}.replaced`);
+      await writeFile(replacementFile, '{"forged":true}\n', { mode: 0o600 });
+      return readStableBoundedFileHandle(handle, options);
+    }
+  }), { code: 'MEDIA_REVIEW_COMPARISON_RESULT_CHANGED' });
 });
 
 test('prepared-audio service path prepares once and shares only the prepared contract with transcription', async (t) => {
@@ -1300,13 +1720,32 @@ test('media CLI exposes read-only inspection and keeps execution confirmation-bo
   });
   assert.equal(readiness.exitCode, 0);
   assert.equal(readiness.envelope.data.readiness.status, 'ready');
+
+  const comparison = await executeCli([
+    'media', 'review', 'compare', '--baseline', '1'.repeat(32), '--candidate', '2'.repeat(32), '--json'
+  ], {
+    mediaReviewComparisonRunner: async (options) => {
+      assert.equal(options.baseline, '1'.repeat(32));
+      assert.equal(options.candidate, '2'.repeat(32));
+      assert.equal(options.execute, false);
+      return { status: 'ok', data: { media_review_comparison: { type: 'media_review_comparison' } }, warnings: [], errors: [], artifacts: [] };
+    }
+  });
+  assert.equal(comparison.exitCode, 0);
+  assert.equal(comparison.envelope.command, 'media review compare');
+  const unsafeComparison = parseCliArgs([
+    'media', 'review', 'compare', '--baseline', '1'.repeat(32), '--candidate', '2'.repeat(32), '--execute'
+  ]);
+  assert.equal(unsafeComparison.ok, false);
+  assert.equal(unsafeComparison.error.code, 'CONFLICTING_OPTIONS');
 });
 
 test('media schemas and operations are registered without expanding MCP profiles', async () => {
   for (const name of [
     'media_review_policy', 'media_source_decision', 'media_transcript_provider_profile',
     'transcript_provider', 'media_analysis', 'media_timeline', 'media_review_operation',
-    'media_review_result', 'media_cleanup_receipt', 'control_center_media_review'
+    'media_review_result', 'media_review_comparison_policy', 'media_review_comparison',
+    'media_cleanup_receipt', 'control_center_media_review'
   ]) {
     assert.equal(schemaNames().includes(name), true, `${name} must be registered`);
     assert.equal(getSchema(name)?.$schema, 'https://json-schema.org/draft/2020-12/schema');
@@ -1314,7 +1753,7 @@ test('media schemas and operations are registered without expanding MCP profiles
   const registry = buildOperationRegistryReport({ group: 'media_review' }, { now: new Date('2026-07-18T00:00:00.000Z') });
   assert.equal(registry.ok, true);
   assert.deepEqual(registry.report.operations.map((operation) => operation.id), [
-    'media_source_inspect', 'media_review_readiness_plan', 'media_review_run', 'media_review_cancel', 'media_review_cleanup'
+    'media_source_inspect', 'media_review_readiness_plan', 'media_review_run', 'media_review_cancel', 'media_review_compare', 'media_review_cleanup'
   ]);
   assert.equal(registry.report.operations.every((operation) => Object.values(operation.current_mcp_exposure).every((enabled) => enabled === false)), true);
   for (const profile of ['safe', 'full', 'admin']) {
@@ -1322,6 +1761,8 @@ test('media schemas and operations are registered without expanding MCP profiles
   }
   const api = await import('../src/api.js');
   assert.equal(typeof api.executeMediaReview, 'function');
+  assert.equal(typeof api.runMediaReviewComparison, 'function');
+  assert.equal(typeof api.buildMediaReviewComparison, 'function');
   assert.equal(typeof api.createControlCenterMediaReviewRuntime, 'function');
 });
 
@@ -1419,6 +1860,97 @@ function healthyResourceStatus() {
     cgroup: { available: false, current_bytes: null, limit_bytes: null, usage_ratio: null },
     pressure: { available: false, some: null, full: null }
   };
+}
+
+async function comparisonFixtureResult(t, operationId) {
+  const cwd = await privateTemp(t, 'media-comparison-');
+  const input = path.join(cwd, 'source.mp4');
+  await writeFile(input, Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom'), Buffer.alloc(512, 6)]), { mode: 0o600 });
+  const context = {
+    cwd,
+    ephemeralMediaRoot: path.join(cwd, 'private-operations'),
+    inspectTranscriptProviderReadiness: async () => readyTranscriptProvider(),
+    inspectTechnicalMediaReadiness: async () => readyTechnicalAnalyzer(),
+    collectResourceStatus: async () => healthyResourceStatus(),
+    runTranscriptProvider: async (request) => ({
+      operation: request.operation,
+      transient: {
+        schema_version: '1.0.0', type: 'transcript_provider_transient_result',
+        operation_id: request.operation.operationId, media_identity: request.mediaIdentity,
+        retention: request.retention, language: 'en',
+        segments: [{
+          id: 'speech-1', start_us: 0, end_us: 900_000,
+          text: 'Private comparison fixture body.', language: 'en', speaker: null,
+          confidence: null, timed: true, needs_review: true
+        }],
+        method: providerTrustProjection(), limitations: [], privacy: { public_body_included: false }
+      },
+      projection: {
+        schema_version: '1.0.0', type: 'transcript_provider_projection', status: 'available',
+        media_identity: request.mediaIdentity, language: 'en', segment_count: 1, timed_segment_count: 1,
+        transcript_identity: '9'.repeat(64), method: providerTrustProjection(), limitations: [
+          'provider_model_reference_identity_is_not_a_model_weight_hash',
+          'provider_external_runtime_dependencies_are_not_cryptographically_bound'
+        ],
+        boundary: { body_included: false, absolute_paths_included: false }
+      }
+    }),
+    analyzeLocalMediaTechnical: async (request) => fixtureTechnicalAnalysis(request.mediaIdentity)
+  };
+  const options = { input: 'source.mp4', rightsDeclared: true, retention: 'ephemeral', artifactRoot: '.fixture-artifacts' };
+  const planned = await planMediaReview(options, context);
+  assert.equal(planned.status, 'ok');
+  const completed = await executeMediaReview({
+    ...options,
+    execute: true,
+    confirm: MEDIA_REVIEW_EXECUTION_CONFIRMATION,
+    planHash: planned.data.plan.plan_hash,
+    operationId
+  }, context);
+  assert.equal(completed.status, 'ok');
+  return { cwd, result: completed.data.result };
+}
+
+function comparisonResultVariant(original, options = {}) {
+  const result = structuredClone(original);
+  result.operation_id = options.operationId ?? result.operation_id;
+  const mediaSha256 = options.mediaSha256 ?? result.media_identity.sha256;
+  result.media_identity.sha256 = mediaSha256;
+  result.technical_analysis.media_identity.sha256 = mediaSha256;
+  result.transcript.media_identity.sha256 = mediaSha256;
+  result.content_evidence.source.media_id = mediaSha256;
+  result.content_evidence.provenance.input_hash = mediaSha256;
+  if (Number.isSafeInteger(options.duplicateFrameCount)) {
+    result.technical_analysis.technical_metrics.duplicate_frame_count = options.duplicateFrameCount;
+  }
+  if (options.deterministicFindings) result.deterministic_findings = structuredClone(options.deterministicFindings);
+  if (options.advisoryFindings) result.advisory_findings = structuredClone(options.advisoryFindings);
+  return result;
+}
+
+function comparisonFinding({
+  id,
+  classification,
+  kind = 'duplicate_frame_run',
+  method = 'frame_hash_measurement',
+  startUs = 100_000,
+  endUs = 500_000,
+  severity = 'medium'
+}) {
+  return {
+    schema_version: '1.0.0', id, kind, start_us: startUs, end_us: endUs,
+    timecode: { start: comparisonTimecode(startUs), end: comparisonTimecode(endUs) },
+    severity, evidence: ['Bounded comparison fixture evidence.'], evidence_refs: [`time:${startUs}-${endUs}`],
+    method, confidence: 0.8, classification, limitations: [],
+    recommendation: 'Review this bounded time range.', recommendation_classification: 'advisory_evaluation',
+    scene_reference: { start_us: startUs, end_us: endUs }
+  };
+}
+
+function comparisonTimecode(valueUs) {
+  const milliseconds = Math.floor(valueUs / 1000);
+  const seconds = Math.floor(milliseconds / 1000);
+  return `00:00:${String(seconds).padStart(2, '0')}.${String(milliseconds % 1000).padStart(3, '0')}`;
 }
 
 function fixtureTechnicalAnalysis(mediaIdentity) {

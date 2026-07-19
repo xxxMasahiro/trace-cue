@@ -1,7 +1,7 @@
 import { SCHEMA_VERSION } from './constants.js';
 import { PRODUCT_IDENTITY } from './product-identity.js';
 
-export const OPERATION_REGISTRY_VERSION = '1.1.0';
+export const OPERATION_REGISTRY_VERSION = '1.2.0';
 
 const MCP_EXPOSURE_NONE = Object.freeze({
   safe: false,
@@ -1004,6 +1004,24 @@ const OPERATIONS = Object.freeze([
       gate('control_center_authorization', 'Cancellation requires the existing loopback, Origin, session, and action-token boundary.'),
       gate('owned_operation_only', 'Cancellation can signal only an operation owned by the active TraceCue media runtime.'),
       gate('no_false_success', 'A cancelled or interrupted operation must not be reported as a completed review.')
+    ]
+  }),
+  operation({
+    id: 'media_review_compare',
+    group: 'media_review',
+    command: 'media review compare',
+    category: 'public_media_result_comparison',
+    cliAvailable: true,
+    currentStatus: 'cli_control_center_read_only_available',
+    proposedStage: 'bounded_saved_result_comparison_available',
+    risk: ['read'],
+    mcpGate: false,
+    gates: [
+      gate('public_results_only', 'Comparison reads two bounded schema-valid public results by opaque operation id and never reads private payloads.'),
+      gate('no_reprocessing', 'Comparison must not run a provider, technical analyzer, browser, network request, or media preparation step.'),
+      gate('fail_closed_comparability', 'Tool, policy, schema, method, or completeness drift must produce domain limitations or incompatibility instead of a quality claim.'),
+      gate('classification_separation', 'Deterministic and advisory changes remain separate and no combined quality score is produced.'),
+      gate('no_mcp_exposure', 'Saved media result comparison remains unavailable through every MCP profile and transport.')
     ]
   }),
   operation({

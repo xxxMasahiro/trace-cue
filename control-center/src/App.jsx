@@ -11,6 +11,8 @@ import {
   fetchCodexSubscriptionStatus,
   getReviewIntakeResult,
   getMediaReviewResult,
+  listMediaReviewComparisonOptions,
+  compareMediaReviews,
   fetchMediaReviewReadiness,
   fetchMediaReviewStatus,
   inspectMediaReviewUrl,
@@ -71,7 +73,7 @@ export default function App() {
   const t = useMemo(() => createTranslator(locale).t, [locale]);
   const style = useMemo(() => designSystemStyle(), []);
 
-  async function loadDashboard({ quiet = false } = {}) {
+  async function loadDashboard({ quiet = false, preserveCurrentPageOnError = false } = {}) {
     const generation = ++dashboardRequestGeneration.current;
     if (!quiet) setLoading(true);
     setLoadError(null);
@@ -94,7 +96,11 @@ export default function App() {
       setLocale(readLocale(next));
       return next;
     } catch (caught) {
-      if (generation === dashboardRequestGeneration.current) setLoadError(controlCenterLoadError(caught));
+      const classifiedError = controlCenterLoadError(caught);
+      if (generation === dashboardRequestGeneration.current
+        && (!preserveCurrentPageOnError || classifiedError === 'session')) {
+        setLoadError(classifiedError);
+      }
       return null;
     } finally {
       if (!quiet && generation === dashboardRequestGeneration.current) setLoading(false);
@@ -170,7 +176,7 @@ function ControlCenter({ dashboard, items, intakeResults, intakeLoadError, local
   if (route.view === 'new') return <NewReviewPage dashboard={dashboard} navigate={navigate} reload={reload} t={t} />;
   if (route.view === 'work' && route.itemId) {
     if (route.itemId.startsWith('media-') && /^[a-f0-9]{32}$/u.test(route.itemId.slice('media-'.length))) {
-      return <MediaReviewPage operationId={route.itemId.slice('media-'.length)} navigate={navigate} reload={reload} t={t} />;
+      return <MediaReviewPage operationId={route.itemId.slice('media-'.length)} locale={locale} navigate={navigate} reload={reload} t={t} />;
     }
     if (/^[a-f0-9]{32}$/u.test(route.itemId)) {
       return <SavedIntakeResultPage resultId={route.itemId} locale={locale} navigate={navigate} t={t} />;
@@ -739,11 +745,44 @@ function MediaSourceDecision({ decision, t }) {
   </div>;
 }
 
-function MediaReviewPage({ operationId, navigate, reload, t }) {
+function MediaReviewPage({ operationId, locale, navigate, reload, t }) {
   const [operation, setOperation] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [comparisonOptions, setComparisonOptions] = useState([]);
+  const [comparisonOptionsState, setComparisonOptionsState] = useState('idle');
+  const [comparisonOptionsError, setComparisonOptionsError] = useState(null);
+  const [comparisonOptionsRevision, setComparisonOptionsRevision] = useState(0);
+  const [baselineId, setBaselineId] = useState('');
+  const [candidateId, setCandidateId] = useState(operationId);
+  const [comparison, setComparison] = useState(null);
+  const [comparisonBusy, setComparisonBusy] = useState(false);
+  const [comparisonError, setComparisonError] = useState(null);
+  const comparisonGeneration = useRef(0);
+  const comparisonAbortController = useRef(null);
+
+  useEffect(() => {
+    comparisonGeneration.current += 1;
+    comparisonAbortController.current?.abort();
+    comparisonAbortController.current = null;
+    setOperation(null);
+    setResult(null);
+    setError(null);
+    setComparisonBusy(false);
+    setComparison(null);
+    setComparisonError(null);
+    setComparisonOptions([]);
+    setComparisonOptionsState('idle');
+    setComparisonOptionsError(null);
+    setBaselineId('');
+    setCandidateId(operationId);
+  }, [operationId]);
+
+  useEffect(() => () => {
+    comparisonGeneration.current += 1;
+    comparisonAbortController.current?.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -771,6 +810,32 @@ function MediaReviewPage({ operationId, navigate, reload, t }) {
       if (timer !== null) window.clearTimeout(timer);
     };
   }, [operationId, t]);
+
+  useEffect(() => {
+    if (!result || result.operation_id !== operationId) return undefined;
+    const controller = new AbortController();
+    let active = true;
+    setComparisonOptionsState('loading');
+    setComparisonOptionsError(null);
+    setComparisonOptions([]);
+    listMediaReviewComparisonOptions({ signal: controller.signal })
+      .then((value) => {
+        if (!active) return;
+        const options = value.options ?? [];
+        setComparisonOptions(options);
+        setCandidateId(operationId);
+        setBaselineId(options.find((option) => option.operation_id !== operationId)?.operation_id ?? '');
+        setComparison(null);
+        setComparisonError(null);
+        setComparisonOptionsState('ready');
+      })
+      .catch((caught) => {
+        if (!active || controller.signal.aborted) return;
+        setComparisonOptionsError(uiErrorMessage(caught, t));
+        setComparisonOptionsState('error');
+      });
+    return () => { active = false; controller.abort(); };
+  }, [Boolean(result), operationId, t, comparisonOptionsRevision]);
 
   async function cancel() {
     setBusy(true);
@@ -808,48 +873,288 @@ function MediaReviewPage({ operationId, navigate, reload, t }) {
     }
   }
 
-  const state = readState(operation);
+  function swapComparisonSides() {
+    if (comparisonBusy || !baselineId || !candidateId) return;
+    setBaselineId(candidateId);
+    setCandidateId(baselineId);
+    setComparison(null);
+    setComparisonError(null);
+  }
+
+  async function runComparison() {
+    if (!baselineId || !candidateId || baselineId === candidateId) return;
+    const requestedBaseline = baselineId;
+    const requestedCandidate = candidateId;
+    const generation = comparisonGeneration.current + 1;
+    comparisonGeneration.current = generation;
+    comparisonAbortController.current?.abort();
+    const controller = new AbortController();
+    comparisonAbortController.current = controller;
+    setComparisonBusy(true);
+    setComparisonError(null);
+    try {
+      const next = await compareMediaReviews(requestedBaseline, requestedCandidate, { signal: controller.signal });
+      if (comparisonGeneration.current !== generation || controller.signal.aborted) return;
+      setComparison(next);
+    } catch (caught) {
+      if (comparisonGeneration.current !== generation || controller.signal.aborted) return;
+      setComparison(null);
+      setComparisonError(uiErrorMessage(caught, t));
+    } finally {
+      if (comparisonGeneration.current === generation) {
+        comparisonAbortController.current = null;
+        setComparisonBusy(false);
+      }
+    }
+  }
+
+  const visibleOperation = operation?.operation_id === operationId ? operation : null;
+  const visibleResult = result?.operation_id === operationId ? result : null;
+  const state = readState(visibleOperation);
   const active = isActive(state);
-  const progress = Number(operation?.progress?.percent);
-  const findings = result ? [...(result.deterministic_findings ?? []), ...(result.advisory_findings ?? [])] : [];
+  const progress = Number(visibleOperation?.progress?.percent);
+  const findings = visibleResult ? [...(visibleResult.deterministic_findings ?? []), ...(visibleResult.advisory_findings ?? [])] : [];
   return <div className="screen narrow-screen" data-testid="tc-cc-media-review">
     <BackButton onClick={() => navigate({ page: 'confirm', view: 'list' })} t={t} />
     <PageHeading eyebrow={t('media.result.eyebrow', 'Private local video review')} title={t('media.result.title', 'Video review')} />
-    {!operation && !error ? <StatePanel title={t('review.state.loadingTitle', 'Loading review')} text={t('review.state.loadingText', 'Reading the latest status.')} /> : null}
-    {operation && active ? <section className="progress-panel media-progress" aria-live="polite">
+    {!visibleOperation && !error ? <StatePanel title={t('review.state.loadingTitle', 'Loading review')} text={t('review.state.loadingText', 'Reading the latest status.')} /> : null}
+    {visibleOperation && active ? <section className="progress-panel media-progress" aria-live="polite">
       <span className="progress-mark" aria-hidden="true">▶</span>
       <div>
         <p className="eyebrow">{t('media.progress.local', 'Processing privately on this computer')}</p>
-        <h2>{mediaProgressLabel(operation?.progress?.phase, t)}</h2>
+        <h2>{mediaProgressLabel(visibleOperation?.progress?.phase, t)}</h2>
         <p className="muted">{Number.isFinite(progress) ? formatCopy(t('media.progress.percent', '{percent}% complete'), { percent: Math.round(progress) }) : t('media.progress.wait', 'This page updates automatically.')}</p>
       </div>
-      {operation?.capabilities?.cancel ? <button className="secondary-action" type="button" disabled={busy} onClick={cancel}>{t('media.action.cancel', 'Stop review')}</button> : null}
+      {visibleOperation?.capabilities?.cancel ? <button className="secondary-action" type="button" disabled={busy} onClick={cancel}>{t('media.action.cancel', 'Stop review')}</button> : null}
     </section> : null}
     {error ? <InlineNotice tone="danger" title={t('media.result.loadFailed', 'The video review could not be loaded')} text={error} /> : null}
-    {operation && ['failed', 'cancelled', 'interrupted', 'cleanup_required'].includes(state) ? <StatePanel
+    {visibleOperation && ['failed', 'cancelled', 'interrupted', 'cleanup_required'].includes(state) ? <StatePanel
       tone={state === 'cancelled' ? 'warning' : 'danger'}
       title={state === 'cancelled' ? t('media.result.cancelled', 'The video review was stopped') : t('media.result.failed', 'The video review did not finish')}
-      text={operation?.errors?.[0]?.message ?? t('media.result.failedText', 'No successful result was recorded.')}
-      action={operation?.cleanup_available ? <button className="secondary-action" type="button" disabled={busy} onClick={cleanup}>{t('media.action.cleanup', 'Remove private source data')}</button> : null}
+      text={visibleOperation?.errors?.[0]?.message ?? t('media.result.failedText', 'No successful result was recorded.')}
+      action={visibleOperation?.cleanup_available ? <button className="secondary-action" type="button" disabled={busy} onClick={cleanup}>{t('media.action.cleanup', 'Remove private source data')}</button> : null}
     /> : null}
-    {result ? <section className="media-review-result">
+    {visibleResult ? <section className="media-review-result">
       <InlineNotice
         tone="success"
         title={t('media.result.ready', 'Your time-coded review is ready')}
         text={formatCopy(t('media.result.summary', '{count} evidence-linked finding(s). Deterministic measurements and advisory evaluations are shown separately.'), { count: findings.length })}
       />
       <div className="summary-strip" aria-label={t('media.result.summaryLabel', 'Video review summary')}>
-        <Metric label={t('media.result.technical', 'Technical measurements')} value={result.deterministic_findings?.length ?? 0} />
-        <Metric label={t('media.result.advisory', 'Advisory evaluations')} value={result.advisory_findings?.length ?? 0} />
-        <Metric label={t('media.result.transcriptSegments', 'Timed speech segments')} value={result.transcript?.timed_segment_count ?? 0} />
+        <Metric label={t('media.result.technical', 'Technical measurements')} value={visibleResult.deterministic_findings?.length ?? 0} />
+        <Metric label={t('media.result.advisory', 'Advisory evaluations')} value={visibleResult.advisory_findings?.length ?? 0} />
+        <Metric label={t('media.result.transcriptSegments', 'Timed speech segments')} value={visibleResult.transcript?.timed_segment_count ?? 0} />
       </div>
-      <MediaFindingSection title={t('media.result.technical', 'Technical measurements')} findings={result.deterministic_findings ?? []} t={t} />
-      <MediaFindingSection title={t('media.result.advisory', 'Advisory evaluations')} findings={result.advisory_findings ?? []} t={t} />
-      {result.limitations?.length ? <section className="media-limitations"><h2>{t('media.result.limitations', 'Review limitations')}</h2><ul>{result.limitations.map((item) => <li key={item}>{humanizeMediaToken(item)}</li>)}</ul></section> : null}
+      <MediaReviewComparisonPanel
+        options={comparisonOptions}
+        optionsState={comparisonOptionsState}
+        optionsError={comparisonOptionsError}
+        currentOperationId={operationId}
+        baselineId={baselineId}
+        candidateId={candidateId}
+        comparison={comparison}
+        busy={comparisonBusy}
+        error={comparisonError}
+        locale={locale}
+        onBaselineChange={(value) => { if (!comparisonBusy) { setBaselineId(value); setComparison(null); setComparisonError(null); } }}
+        onCandidateChange={(value) => { if (!comparisonBusy) { setCandidateId(value); setComparison(null); setComparisonError(null); } }}
+        onSwap={swapComparisonSides}
+        onCompare={runComparison}
+        onRetryOptions={() => setComparisonOptionsRevision((value) => value + 1)}
+        onOpen={(id) => navigate({ page: 'confirm', view: 'work', itemId: `media-${id}` })}
+        t={t}
+      />
+      <MediaFindingSection title={t('media.result.technical', 'Technical measurements')} findings={visibleResult.deterministic_findings ?? []} t={t} />
+      <MediaFindingSection title={t('media.result.advisory', 'Advisory evaluations')} findings={visibleResult.advisory_findings ?? []} t={t} />
+      {visibleResult.limitations?.length ? <section className="media-limitations"><h2>{t('media.result.limitations', 'Review limitations')}</h2><ul>{visibleResult.limitations.map((item) => <li key={item}>{humanizeMediaToken(item)}</li>)}</ul></section> : null}
       <InlineNotice tone="neutral" title={t('media.result.privacy', 'Private source data stays protected')} text={t('media.result.privacyText', 'The report contains no raw video, audio, frames, absolute paths, or complete transcript. Nothing was sent outside this computer.')} />
-      {operation?.cleanup_available ? <div className="form-actions"><button className="secondary-action" type="button" disabled={busy} onClick={cleanup}>{t('media.action.cleanup', 'Remove private source data')}</button></div> : null}
+      {visibleOperation?.cleanup_available ? <div className="form-actions"><button className="secondary-action" type="button" disabled={busy} onClick={cleanup}>{t('media.action.cleanup', 'Remove private source data')}</button></div> : null}
     </section> : null}
   </div>;
+}
+
+function MediaReviewComparisonPanel({
+  options, optionsState, optionsError, currentOperationId, baselineId, candidateId, comparison, busy, error, locale,
+  onBaselineChange, onCandidateChange, onSwap, onCompare, onRetryOptions, onOpen, t
+}) {
+  const canCompare = options.length >= 2 && baselineId && candidateId && baselineId !== candidateId;
+  return <section className="media-comparison" aria-labelledby="media-comparison-title" data-testid="tc-cc-media-comparison">
+    <div className="media-comparison-heading">
+      <div>
+        <p className="eyebrow">{t('media.comparison.eyebrow', 'Before and after')}</p>
+        <h2 id="media-comparison-title">{t('media.comparison.title', 'See what changed')}</h2>
+        <p className="muted">{t('media.comparison.intro', 'Choose an earlier review and a newer review. TraceCue compares the saved evidence without processing either video again.')}</p>
+      </div>
+      <span className="status-pill status-success">{t('media.comparison.noReplay', 'No video replay')}</span>
+    </div>
+    {optionsState === 'loading' ? <StatePanel
+      title={t('media.comparison.loading', 'Loading saved reviews')}
+      text={t('media.comparison.loadingText', 'Checking which completed reviews can be compared.')}
+    /> : null}
+    {optionsState === 'error' ? <StatePanel
+      tone="danger"
+      title={t('media.comparison.optionsFailed', 'Saved reviews could not be loaded')}
+      text={optionsError}
+      action={<button className="primary-action" type="button" onClick={onRetryOptions}>{t('common.retry', 'Try again')}</button>}
+    /> : null}
+    {optionsState === 'ready' && options.length < 2 ? <InlineNotice
+      tone="neutral"
+      title={t('media.comparison.needAnother', 'One more review is needed')}
+      text={t('media.comparison.needAnotherText', 'Review the updated video, then return here to compare the two saved results.')}
+    /> : null}
+    {optionsState === 'ready' && options.length >= 2 ? <>
+      <div className="media-comparison-picker">
+        <label>
+          <span>{t('media.comparison.before', 'Before')}</span>
+          <small>{t('media.comparison.beforeHint', 'The result you want to use as the starting point')}</small>
+          <select aria-label={t('media.comparison.before', 'Before')} value={baselineId} disabled={busy} onChange={(event) => onBaselineChange(event.target.value)}>
+            <option value="" disabled>{t('media.comparison.chooseBefore', 'Choose the earlier review')}</option>
+            {options.map((option, index) => <option key={option.operation_id} value={option.operation_id} disabled={option.operation_id === candidateId}>
+              {mediaComparisonOptionLabel(option, currentOperationId, locale, index, t)}
+            </option>)}
+          </select>
+        </label>
+        <button className="media-comparison-swap" type="button" onClick={onSwap} disabled={busy || !baselineId || !candidateId} aria-label={t('media.comparison.swap', 'Swap before and after')}>
+          <span aria-hidden="true">⇄</span><span>{t('media.comparison.swapShort', 'Swap')}</span>
+        </button>
+        <label>
+          <span>{t('media.comparison.after', 'After')}</span>
+          <small>{t('media.comparison.afterHint', 'The result you want to check for changes')}</small>
+          <select aria-label={t('media.comparison.after', 'After')} value={candidateId} disabled={busy} onChange={(event) => onCandidateChange(event.target.value)}>
+            <option value="" disabled>{t('media.comparison.chooseAfter', 'Choose the newer review')}</option>
+            {options.map((option, index) => <option key={option.operation_id} value={option.operation_id} disabled={option.operation_id === baselineId}>
+              {mediaComparisonOptionLabel(option, currentOperationId, locale, index, t)}
+            </option>)}
+          </select>
+        </label>
+      </div>
+      <button className="primary-action media-comparison-run" type="button" disabled={!canCompare || busy} onClick={onCompare}>
+        {busy ? t('media.comparison.comparing', 'Comparing…') : t('media.comparison.compare', 'Compare these reviews')}
+      </button>
+    </> : null}
+    {error ? <InlineNotice tone="danger" title={t('media.comparison.failed', 'The reviews could not be compared')} text={error} /> : null}
+    {comparison ? <MediaReviewComparisonResult comparison={comparison} onOpen={onOpen} t={t} /> : null}
+  </section>;
+}
+
+function MediaReviewComparisonResult({ comparison, onOpen, t }) {
+  const compatible = comparison.status === 'comparable';
+  const incompatible = comparison.status === 'incompatible';
+  const deterministicMetricSummary = comparison.summary?.deterministic_metric_assessments ?? {};
+  const providerMetricSummary = comparison.summary?.provider_metric_assessments ?? {};
+  const resultTitle = compatible
+    ? t('media.comparison.comparable', 'Compared under matching conditions')
+    : incompatible
+      ? t('media.comparison.incompatible', 'Some areas cannot be compared fairly')
+      : t('media.comparison.limited', 'Compared with cautions');
+  const resultRef = useRef(null);
+  useEffect(() => {
+    try { resultRef.current?.focus({ preventScroll: true }); } catch { resultRef.current?.focus(); }
+  }, [comparison.comparison_id]);
+  return <section className="media-comparison-result" ref={resultRef} tabIndex={-1} aria-labelledby="media-comparison-result-title" data-testid="tc-cc-media-comparison-result">
+    <h3 className="sr-only" id="media-comparison-result-title">{resultTitle}</h3>
+    <p className="sr-only" aria-live="polite">{resultTitle}</p>
+    <InlineNotice
+      tone={compatible ? 'success' : 'warning'}
+      title={resultTitle}
+      text={incompatible
+        ? t('media.comparison.incompatibleText', 'Settings or tools changed. TraceCue leaves those areas undecided instead of guessing.')
+        : t('media.comparison.comparableText', 'Measurements and human-style suggestions remain separate. A missing item does not by itself prove that it was fixed.')}
+    />
+    <div className="summary-strip" aria-label={t('media.comparison.summaryLabel', 'Comparison summary')}>
+      <Metric label={t('media.comparison.metricsImproved', 'Measurements improved')} value={deterministicMetricSummary.improved ?? 0} />
+      <Metric label={t('media.comparison.metricsRegressed', 'Measurements to check')} value={deterministicMetricSummary.regressed ?? 0} />
+      <Metric label={t('media.comparison.inconclusiveCount', 'Needs a closer look')} value={(deterministicMetricSummary.inconclusive ?? 0) + (providerMetricSummary.inconclusive ?? 0) + (comparison.summary?.deterministic?.inconclusive ?? 0) + (comparison.summary?.advisory?.inconclusive ?? 0)} />
+    </div>
+    <div className="media-comparison-domains" aria-label={t('media.comparison.conditions', 'Comparison conditions')}>
+      {['technical', 'transcript', 'advisory'].map((domain) => <div key={domain}>
+        <span>{mediaComparisonDomainLabel(domain, t)}</span>
+        <strong>{mediaCompatibilityLabel(comparison.compatibility?.[domain]?.status, t)}</strong>
+      </div>)}
+    </div>
+    <MediaMetricDiffs
+      title={t('media.comparison.metricChanges', 'Technical measurements')}
+      emptyText={t('media.comparison.noMetricChanges', 'No comparable measured change was detected.')}
+      values={(comparison.metric_diffs ?? []).filter((metric) => metric.classification === 'deterministic_measurement')}
+      t={t}
+    />
+    <MediaMetricDiffs
+      title={t('media.comparison.providerMetricChanges', 'Timed speech indicators')}
+      emptyText={t('media.comparison.noProviderMetricChanges', 'No comparable timed speech indicator changed.')}
+      values={(comparison.metric_diffs ?? []).filter((metric) => metric.classification === 'provider_measurement')}
+      t={t}
+    />
+    <MediaMetricDiffs
+      title={t('media.comparison.advisoryMetricChanges', 'Advisory indicators')}
+      emptyText={t('media.comparison.noAdvisoryMetricChanges', 'No comparable advisory indicator changed.')}
+      values={(comparison.metric_diffs ?? []).filter((metric) => metric.classification === 'advisory_evaluation')}
+      t={t}
+    />
+    <MediaComparisonChangeSection
+      title={t('media.comparison.deterministicTitle', 'Measured changes')}
+      text={t('media.comparison.deterministicText', 'Differences supported by technical measurements.')}
+      changes={comparison.deterministic_finding_changes ?? []}
+      baselineId={comparison.baseline.operation_id}
+      candidateId={comparison.candidate.operation_id}
+      onOpen={onOpen}
+      t={t}
+    />
+    <MediaComparisonChangeSection
+      title={t('media.comparison.advisoryTitle', 'Review suggestions that changed')}
+      text={t('media.comparison.advisoryText', 'These are advisory observations, not measured facts or a quality score.')}
+      changes={comparison.advisory_finding_changes ?? []}
+      baselineId={comparison.baseline.operation_id}
+      candidateId={comparison.candidate.operation_id}
+      onOpen={onOpen}
+      t={t}
+    />
+    <div className="media-comparison-open-actions">
+      <button className="secondary-action" type="button" onClick={() => onOpen(comparison.baseline.operation_id)}>{t('media.comparison.openBefore', 'Open before review')}</button>
+      <button className="secondary-action" type="button" onClick={() => onOpen(comparison.candidate.operation_id)}>{t('media.comparison.openAfter', 'Open after review')}</button>
+    </div>
+    {comparison.limitations?.length ? <details className="media-comparison-limitations">
+      <summary>{t('media.comparison.cautions', 'Why some changes need caution')}</summary>
+      <ul>{comparison.limitations.map((item) => <li key={item}>{humanizeMediaToken(item)}</li>)}</ul>
+    </details> : null}
+  </section>;
+}
+
+function MediaMetricDiffs({ title, emptyText, values, t }) {
+  const changed = values.filter((value) => !['unchanged', 'unavailable'].includes(value.assessment));
+  return <section className="media-metric-diffs">
+    <h3>{title}</h3>
+    {changed.length ? <ul>{changed.map((metric) => <li key={metric.id}>
+      <span>{mediaMetricLabel(metric, t)}</span>
+      <strong className={`comparison-assessment comparison-${metric.assessment}`}>{mediaComparisonAssessmentLabel(metric.assessment, t)}</strong>
+      <small className="media-metric-primary">{mediaMetricComparisonValue(metric, t)}</small>
+      {metric.normalized_per_minute?.applied ? <small className="media-metric-raw">{formatCopy(
+        t('media.comparison.rawTotal', 'Total in video: {before} → {after}'),
+        { before: mediaMetricValue(metric.baseline, metric.unit), after: mediaMetricValue(metric.candidate, metric.unit) }
+      )}</small> : null}
+    </li>)}</ul> : <p className="muted">{emptyText}</p>}
+  </section>;
+}
+
+function MediaComparisonChangeSection({ title, text, changes, baselineId, candidateId, onOpen, t }) {
+  return <section className="media-comparison-changes">
+    <h3>{title}</h3><p className="muted">{text}</p>
+    {changes.length ? <ol>{changes.map((change) => {
+      const finding = change.candidate ?? change.baseline;
+      return <li key={change.id}>
+        <div className="media-comparison-change-heading">
+          <span className={`status-badge ${mediaComparisonAssessmentTone(change.assessment)}`}>{mediaComparisonStateLabel(change.state, t)}</span>
+          <strong>{finding?.timecode?.start ?? '00:00.000'}–{finding?.timecode?.end ?? finding?.timecode?.start ?? '00:00.000'}</strong>
+        </div>
+        <h4>{humanizeMediaToken(change.kind)}</h4>
+        <p>{finding?.evidence?.join(' ')}</p>
+        <small>{mediaComparisonAssessmentLabel(change.assessment, t)} · {humanizeMediaToken(change.method)}</small>
+        <div className="media-comparison-change-actions">
+          {change.baseline ? <button type="button" onClick={() => onOpen(baselineId)}>{t('media.comparison.viewBefore', 'View before')}</button> : null}
+          {change.candidate ? <button type="button" onClick={() => onOpen(candidateId)}>{t('media.comparison.viewAfter', 'View after')}</button> : null}
+        </div>
+      </li>;
+    })}</ol> : <p className="muted">{t('media.comparison.noFindingChanges', 'No comparable finding changes in this group.')}</p>}
+  </section>;
 }
 
 function MediaFindingSection({ title, findings, t }) {
@@ -1094,6 +1399,28 @@ function sameAiSelection(left, right) {
     && left.connection_option_id === right.connection_option_id
     && left.model_option_id === right.model_option_id
     && left.effort_option_id === right.effort_option_id;
+}
+
+function sameOptionalAiSelection(left, right) {
+  return (!left && !right) || sameAiSelection(left, right);
+}
+
+function aiSelectionSubmissionProjectionState(submission, projection) {
+  if (!submission || !projection
+    || !Number.isSafeInteger(submission.previousRevision)
+    || !Number.isSafeInteger(submission.capabilityRevision)
+    || typeof submission.capabilityToken !== 'string'
+    || !Number.isSafeInteger(projection.storage_revision)
+    || projection.revision !== submission.capabilityRevision
+    || projection.capability_token !== submission.capabilityToken) return 'conflict';
+  if (projection.storage_revision === submission.previousRevision) {
+    return sameOptionalAiSelection(projection.selection, submission.previousSelection)
+      ? 'pending'
+      : 'conflict';
+  }
+  if (projection.storage_revision > submission.previousRevision
+    && sameAiSelection(projection.selection, submission.selection)) return 'confirmed';
+  return 'conflict';
 }
 
 function aiProjectionVersion(value) {
@@ -2067,6 +2394,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
   const [state, setState] = useState('idle');
   const [settingsErrorMessage, setSettingsErrorMessage] = useState(null);
   const aiRequestGeneration = useRef(0);
+  const pendingAiSelectionRef = useRef(null);
   const aiSetupButtonRef = useRef(null);
   const saveButtonRef = useRef(null);
   const aiDraftDirty = Boolean(aiDraft) && !sameAiSelection(aiDraft, aiConnections.selection);
@@ -2086,6 +2414,18 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
   useEffect(() => {
     const next = dashboard?.ai_connections ?? initialAiConnections;
     const versionChanged = aiVersionRef.current !== aiProjectionVersion(next);
+    const pendingSubmission = pendingAiSelectionRef.current;
+    if (pendingSubmission?.generation === aiRequestGeneration.current) {
+      if (pendingSubmission.phase === 'reconciling') return;
+      if (aiSelectionSubmissionProjectionState(pendingSubmission, next) === 'conflict') {
+        pendingAiSelectionRef.current = null;
+        aiRequestGeneration.current += 1;
+        setAiActionState('conflict');
+        setAiErrorMessage(t('settings.aiChangedWhileEditing', 'AI availability changed while you were choosing. Load the latest choices before applying.'));
+      }
+      return;
+    }
+    if (pendingSubmission) pendingAiSelectionRef.current = null;
     if (!aiDraftDirtyRef.current) {
       setAiConnections(next);
       setAiDraft(readAiSelection(next));
@@ -2104,6 +2444,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
   }
   async function refreshAvailability() {
     const generation = ++aiRequestGeneration.current;
+    pendingAiSelectionRef.current = null;
     const previousRevision = aiConnections.storage_revision ?? 0;
     const previousCapabilityRevision = aiConnections.revision ?? 0;
     const previousCapabilityToken = aiConnections.capability_token ?? null;
@@ -2145,9 +2486,23 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
     }
   }
   async function applyAiSelection(selection = aiDraft) {
-    if (!selection || !describeAiSelection(aiConnections, selection)) return;
+    if (aiActionState === 'conflict'
+      || aiActionState === 'loading'
+      || !selection
+      || !describeAiSelection(aiConnections, selection)) return;
     const generation = ++aiRequestGeneration.current;
     const previousRevision = aiConnections.storage_revision ?? 0;
+    const submission = {
+      phase: 'submitting',
+      generation,
+      previousRevision,
+      previousSelection: readAiSelection(aiConnections),
+      capabilityRevision: aiConnections.revision,
+      capabilityToken: aiConnections.capability_token,
+      selection: { ...selection }
+    };
+    pendingAiSelectionRef.current = submission;
+    setAiDraft({ ...selection });
     setAiActionState('saving');
     setAiErrorMessage(null);
     try {
@@ -2159,6 +2514,14 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
         confirm: 'save-ai-selection'
       });
       if (generation !== aiRequestGeneration.current) return;
+      if (aiSelectionSubmissionProjectionState(submission, next) !== 'confirmed') {
+        pendingAiSelectionRef.current = null;
+        aiRequestGeneration.current += 1;
+        setAiActionState('conflict');
+        setAiErrorMessage(t('settings.aiChangedWhileEditing', 'AI availability changed while you were choosing. Load the latest choices before applying.'));
+        return;
+      }
+      pendingAiSelectionRef.current = null;
       setAiConnections(next);
       setAiDraft(readAiSelection(next));
       aiVersionRef.current = aiProjectionVersion(next);
@@ -2167,12 +2530,15 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
     } catch (caught) {
       if (generation !== aiRequestGeneration.current) return;
       if (!caught?.envelope) {
-        const latestDashboard = await reload({ quiet: true }).catch(() => null);
+        pendingAiSelectionRef.current = { ...submission, phase: 'reconciling' };
+        const latestDashboard = await reload({
+          quiet: true,
+          preserveCurrentPageOnError: true
+        }).catch(() => null);
         if (generation !== aiRequestGeneration.current) return;
         const latest = latestDashboard?.ai_connections;
-        if (Number.isSafeInteger(latest?.storage_revision)
-          && latest.storage_revision > previousRevision
-          && sameAiSelection(latest.selection, selection)) {
+        if (aiSelectionSubmissionProjectionState(submission, latest) === 'confirmed') {
+          pendingAiSelectionRef.current = null;
           setAiConnections(latest);
           setAiDraft(readAiSelection(latest));
           aiVersionRef.current = aiProjectionVersion(latest);
@@ -2180,15 +2546,26 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
           return;
         }
       }
-      setAiActionState(apiErrorCode(caught) === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT' ? 'conflict' : 'error');
+      if (pendingAiSelectionRef.current?.generation === generation) {
+        pendingAiSelectionRef.current = null;
+      }
+      aiRequestGeneration.current += 1;
+      setAiActionState(!caught?.envelope
+        || apiErrorCode(caught) === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT'
+        ? 'conflict'
+        : 'error');
       setAiErrorMessage(uiErrorMessage(caught, t));
     }
   }
   async function loadLatestAiSettings() {
     const generation = ++aiRequestGeneration.current;
+    pendingAiSelectionRef.current = null;
     setAiActionState('loading');
     try {
-      const nextDashboard = await reload({ quiet: true });
+      const nextDashboard = await reload({
+        quiet: true,
+        preserveCurrentPageOnError: true
+      });
       if (generation !== aiRequestGeneration.current) return;
       const next = nextDashboard?.ai_connections;
       if (!next) throw new Error('AI settings unavailable');
@@ -2199,7 +2576,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
       setAiActionState('idle');
     } catch (caught) {
       if (generation !== aiRequestGeneration.current) return;
-      setAiActionState('error');
+      setAiActionState('conflict');
       setAiErrorMessage(uiErrorMessage(caught, t));
     }
   }
@@ -2279,7 +2656,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
                 <button className="secondary-action compact" type="button" onClick={refreshAvailability} disabled={aiBusy || aiDraftDirty}>{aiActionState === 'refreshing' ? t('settings.aiRefreshing', 'Updating...') : t('settings.aiRefresh', 'Update availability')}</button>
               </div>
               {showAiEditor ? <AiConnectionEditor aiConnections={aiConnections} value={aiDraft} onChange={changeAiDraft} t={t} disabled={aiBusy} /> : null}
-              {showAiEditor && !selectedAi && firstAvailableAiSelection(aiConnections) ? <button className="primary-action compact" type="button" disabled={aiBusy} onClick={() => applyAiSelection(firstAvailableAiSelection(aiConnections))}>{aiActionState === 'saving' ? t('settings.aiSaving', 'Applying...') : t('settings.aiApply', 'Use this AI')}</button> : null}
+              {showAiEditor && !selectedAi && firstAvailableAiSelection(aiConnections) ? <button className="primary-action compact" type="button" disabled={aiBusy || aiActionState === 'conflict'} onClick={() => applyAiSelection(firstAvailableAiSelection(aiConnections))}>{aiActionState === 'saving' ? t('settings.aiSaving', 'Applying...') : t('settings.aiApply', 'Use this AI')}</button> : null}
               {aiDraftDirty ? <button className="primary-action compact" type="button" disabled={aiBusy || aiActionState === 'conflict' || !describeAiSelection(aiConnections, aiDraft)} onClick={() => applyAiSelection()}>{aiActionState === 'saving' ? t('settings.aiSaving', 'Applying...') : t('settings.aiApply', 'Use this AI')}</button> : null}
               {aiActionState === 'saved' ? <p className="ai-action-status" role="status">{t('settings.aiSaved', 'AI choice updated.')}</p> : null}
               {aiErrorMessage ? <InlineNotice tone="warning" title={t('settings.aiUpdateFailed', 'AI settings could not be updated')} text={aiErrorMessage} action={aiActionState === 'conflict' || aiActionState === 'loading' ? <button className="link-action" type="button" onClick={loadLatestAiSettings} disabled={aiBusy}>{t('settings.aiLoadLatest', 'Load latest choices')}</button> : <button className="link-action" type="button" onClick={refreshAvailability} disabled={aiBusy || aiDraftDirty}>{t('common.retry', 'Try again')}</button>} /> : null}
@@ -2543,6 +2920,107 @@ function humanizeMediaToken(value) {
 function formatConfidence(value) {
   const number = Number(value);
   return Number.isFinite(number) ? `${Math.round(Math.max(0, Math.min(1, number)) * 100)}%` : '—';
+}
+
+function mediaComparisonOptionLabel(option, currentOperationId, locale, index, t) {
+  const title = option.operation_id === currentOperationId
+    ? t('media.comparison.currentReview', 'Current review')
+    : formatCopy(t('media.comparison.savedReview', 'Saved review {number}'), { number: index + 1 });
+  const completedAt = formatCompletedAt(option.created_at, locale);
+  const duration = mediaDurationLabel(option.duration_us);
+  const findings = safeCount(option.finding_counts?.deterministic) + safeCount(option.finding_counts?.advisory);
+  return `${title} · ${completedAt} · ${duration} · ${formatCopy(t('media.comparison.findingCount', '{count} findings'), { count: findings })}`;
+}
+
+function mediaDurationLabel(value) {
+  if (!Number.isSafeInteger(value) || value < 0) return '—';
+  const totalSeconds = Math.round(value / 1_000_000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function mediaComparisonDomainLabel(domain, t) {
+  const labels = {
+    technical: t('media.comparison.domainTechnical', 'Video measurements'),
+    transcript: t('media.comparison.domainTranscript', 'Timed speech'),
+    advisory: t('media.comparison.domainAdvisory', 'Review suggestions')
+  };
+  return labels[domain] ?? humanizeMediaToken(domain);
+}
+
+function mediaCompatibilityLabel(status, t) {
+  const labels = {
+    comparable: t('media.comparison.conditionMatch', 'Conditions match'),
+    comparable_with_limitations: t('media.comparison.conditionCaution', 'Compare with caution'),
+    incompatible: t('media.comparison.conditionMismatch', 'Not fairly comparable')
+  };
+  return labels[status] ?? t('media.comparison.conditionUnknown', 'Needs review');
+}
+
+function mediaComparisonAssessmentLabel(value, t) {
+  const labels = {
+    improved: t('media.comparison.assessmentImproved', 'Improved measurement'),
+    regressed: t('media.comparison.assessmentRegressed', 'Needs attention'),
+    unchanged: t('media.comparison.assessmentUnchanged', 'No measured change'),
+    changed: t('media.comparison.assessmentChanged', 'Changed'),
+    inconclusive: t('media.comparison.assessmentInconclusive', 'Cannot conclude'),
+    unavailable: t('media.comparison.assessmentUnavailable', 'Not available')
+  };
+  return labels[value] ?? humanizeMediaToken(value);
+}
+
+function mediaComparisonStateLabel(value, t) {
+  const labels = {
+    new: t('media.comparison.stateNew', 'Newly detected'),
+    not_detected_in_candidate: t('media.comparison.stateNotDetected', 'Not detected in after review'),
+    unmatched_inconclusive: t('media.comparison.stateInconclusive', 'Could not match safely'),
+    persistent: t('media.comparison.statePersistent', 'Still detected'),
+    moved: t('media.comparison.stateMoved', 'Moved in time'),
+    severity_changed: t('media.comparison.stateSeverity', 'Importance changed')
+  };
+  return labels[value] ?? humanizeMediaToken(value);
+}
+
+function mediaComparisonAssessmentTone(value) {
+  if (value === 'improved' || value === 'unchanged') return 'success';
+  if (value === 'regressed') return 'danger';
+  return 'warning';
+}
+
+function mediaMetricLabel(metric, t) {
+  const perMinute = metric.normalized_per_minute?.applied === true;
+  const labels = {
+    duration_us: t('media.comparison.metricDuration', 'Video length'),
+    effective_fps: t('media.comparison.metricEffectiveFps', 'Frames shown per second'),
+    median_frame_interval_us: t('media.comparison.metricFrameSpacing', 'Typical frame spacing'),
+    frame_interval_jitter_ratio: t('media.comparison.metricFrameVariation', 'Frame timing variation'),
+    duplicate_frame_count: perMinute ? t('media.comparison.metricRepeatedFramesRate', 'Repeated frames per minute') : t('media.comparison.metricRepeatedFrames', 'Repeated frames'),
+    presentation_gap_count: perMinute ? t('media.comparison.metricFrameGapsRate', 'Frame gaps per minute') : t('media.comparison.metricFrameGaps', 'Frame gaps'),
+    cut_count: perMinute ? t('media.comparison.metricCutsRate', 'Cuts per minute') : t('media.comparison.metricCuts', 'Cuts'),
+    subtitle_event_count: perMinute ? t('media.comparison.metricSubtitlesRate', 'Subtitle events per minute') : t('media.comparison.metricSubtitles', 'Subtitle events'),
+    audio_video_absolute_offset_us: t('media.comparison.metricAvOffset', 'Audio/video start offset'),
+    timed_transcript_segment_count: perMinute ? t('media.comparison.metricSpeechRate', 'Timed speech segments per minute') : t('media.comparison.metricSpeech', 'Timed speech segments'),
+    semantic_change_count: perMinute ? t('media.comparison.metricMeaningRate', 'Meaning changes per minute') : t('media.comparison.metricMeaning', 'Meaning changes')
+  };
+  return labels[metric.id] ?? humanizeMediaToken(metric.id);
+}
+
+function mediaMetricComparisonValue(metric, t) {
+  if (metric.normalized_per_minute?.applied) {
+    const before = mediaMetricValue(metric.normalized_per_minute.baseline, 'per_minute');
+    const after = mediaMetricValue(metric.normalized_per_minute.candidate, 'per_minute');
+    return formatCopy(t('media.comparison.perMinuteValues', '{before} → {after} per minute'), { before, after });
+  }
+  return `${mediaMetricValue(metric.baseline, metric.unit)} → ${mediaMetricValue(metric.candidate, metric.unit)}`;
+}
+
+function mediaMetricValue(value, unit) {
+  if (!Number.isFinite(value)) return '—';
+  if (unit === 'microseconds') return value >= 1_000_000 ? `${(value / 1_000_000).toFixed(2)} s` : `${Math.round(value / 1000)} ms`;
+  if (unit === 'frames_per_second') return `${Number(value.toFixed(2))} fps`;
+  if (unit === 'ratio') return `${Number((value * 100).toFixed(2))}%`;
+  return String(Number(value.toFixed(3)));
 }
 
 function intakeResultState(result) {

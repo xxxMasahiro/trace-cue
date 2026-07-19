@@ -940,7 +940,14 @@ form submits one combined payload so validation completes before one file
 replacement. Legacy dedicated setting endpoints remain compatible and use
 serialized read-modify-write updates so unrelated local branches survive.
 
-The React surface lives under `control-center/`. It imports the product-local design-system JSON from `docs/design-system/`, maps those tokens to CSS custom properties, and uses the same read model that the CLI emits. The ordinary UI has three destinations: Confirm, In progress, and Settings. New review accepts a web URL, a plain-language purpose, and one of three purpose-led review choices. Settings combines display language, default viewport, a plain-language automated-check choice, AI suggestions, a compact user-facing AI service/model selection, optional provider-native effort details, and mandatory send confirmation. The footer save atomically applies only the general settings payload. A changed AI choice is applied by its nearby explicit action against the capability-store revision; a conflict retains the draft and offers the latest choices. Playwright and CI remain implementation details rather than ordinary setting labels; raw provider/adapter ids, endpoints, executable paths, and technical artifact controls are not ordinary UI. Credential entry exists only inside the paired, bounded AI setup dialog and is never an ordinary provider control.
+The React surface lives under `control-center/`. It imports the product-local design-system JSON from `docs/design-system/`, maps those tokens to CSS custom properties, and uses the same read model that the CLI emits. The ordinary UI has three destinations: Confirm, In progress, and Settings. New review accepts a web URL, a plain-language purpose, and one of three purpose-led review choices. Settings combines display language, default viewport, a plain-language automated-check choice, AI suggestions, a compact user-facing AI service/model selection, optional provider-native effort details, and mandatory send confirmation. The footer save atomically applies only the general settings payload. A changed AI choice is applied by its nearby explicit action against the capability-store revision; a conflict retains the draft and offers the latest choices. A transport-uncertain selection whose quiet reconciliation also fails uses that same conservative latest-choice action while preserving the Settings page and draft. The write block remains latched across another failed latest-choice read and also covers an initial selection with no saved predecessor. Only these AI-selection reconciliation reads suppress the application-wide transient load error; unrelated quiet refresh behavior remains unchanged, while a private-session expiry still replaces the page with the reopen-required state. Playwright and CI remain implementation details rather than ordinary setting labels; raw provider/adapter ids, endpoints, executable paths, and technical artifact controls are not ordinary UI. Credential entry exists only inside the paired, bounded AI setup dialog and is never an ordinary provider control.
+
+A quiet reconciliation confirms an uncertain selection only when its storage
+revision is newer than the submitted base revision and its exact opaque choice
+matches the current request generation. The Settings state machine consumes
+that matching parent projection as success instead of allowing the draft-change
+effect to overwrite it with a conflict; every stale, missing, or different
+projection preserves the draft and follows the conservative conflict path.
 
 The browser surface is intentionally not a landing page, generic command launcher, schema browser, provider console, artifact browser, or raw JSON viewer. It is an execution plane only for its dedicated page-review operation contract. Shell, cleanup, MCP write/execute, arbitrary credential or provider controls, raw artifact serving, CI mutation, and gate-affecting authority remain excluded. The only credential input is the fixed-catalog, session-only API setup channel described below.
 
@@ -1800,3 +1807,78 @@ paths, argv, stderr, receipts, or transcript text. The reusable package API
 exports `prepareLocalMediaAudio`; CLI names and options, MCP profiles, generic
 artifact handling, provider repositories, and browser-review behavior are
 unchanged.
+
+## Phase 202-208 saved media review comparison contract
+
+`ops/MEDIA_REVIEW_COMPARISON_POLICY.json` and its strict schema own accepted
+result versions, two 1 MiB input limits, total input bound, producer-policy
+finding limits, metric selectors, duration normalization, matching thresholds,
+output limits, and false execution boundaries. `media-review-comparison.schema.json`
+owns the path-free public output. The existing `media-review-result` schema is
+unchanged.
+
+The CLI reader accepts only 32-hex operation ids and resolves
+`media-review-results/<operation-id>.json` under the configured workspace-owned
+artifact root. It opens with no-follow semantics, requires a regular single-link
+file owned by the current UID, reads the exact measured size through one
+descriptor, probes one byte for concurrent growth, and compares device, inode,
+size, link count, ctime, and mtime before and after bounded strict-UTF-8 parsing.
+Full result-schema validation precedes hashing/cloning. An iterative bounded
+public-data walk rejects cycles, excessive depth/nodes, raw/private bodies,
+binary values, absolute/UNC/file paths, and embedded credential- or query-bearing
+URL locators.
+
+The comparison core derives run-independent SHA-256 basis identities for three
+domains. Technical basis includes result and analysis completion states, result
+schema, integer timebase, complete analysis settings, and analyzer method.
+Transcript basis includes result and projection completion states, projection
+schema/type, availability/language contract, and provider method while excluding
+only per-run prepared-artifact/receipt/computation identities. Advisory basis
+binds those bases plus result, timeline, and content-evidence completion states,
+timeline schema, semantic method, and reviewer thresholds. The historical
+comparable-configuration identity is not used because it includes the per-media
+identity. Inputs whose top-level result is `insufficient` are rejected.
+
+Policy metrics produce generic `metric_diffs` with explicit deterministic-
+measurement, provider-measurement, or advisory-evaluation classification, raw
+deltas and, for counts, per-minute normalized deltas. Only comparable
+directional metrics emit
+`improved` or `regressed`; informational metrics emit `changed`, and limited or
+incompatible domains emit `inconclusive`. Deterministic, provider, and advisory
+assessment summaries remain separate. Findings first match an exact id plus classification,
+kind, method, and identical start/end time, then bounded interval overlap or
+midpoint distance with deterministic tie refusal. Producer finding completeness
+is checked against the policy-bound total producer limit rather than independent
+class totals. States are `new`, `not_detected_in_candidate`,
+`unmatched_inconclusive`, `persistent`, `moved`, or `severity_changed`.
+Truncation, partial evidence, duplicate ids, ambiguity, heuristic matching, or
+domain drift cannot produce a definitive absent/present quality claim.
+Projection truncation removes bounded finding changes deterministically until
+the UTF-8 byte limit is met, records the limitation, and recomputes summaries and
+status before final schema validation.
+
+`trace-cue media review compare --baseline <operation-id> --candidate
+<operation-id> [--artifact-root <relative-path>] [--json]` is read-only and has
+no execute/confirm mode. The package API exports policy loading, comparability,
+pure comparison, stored-result comparison, and Markdown rendering. Operation
+registry 1.2 adds `media_review_compare` with read risk and false MCP exposure.
+
+The Control Center media runtime lazily loads the comparison policy only for the
+comparison read, so an unused comparison configuration cannot prevent ordinary
+media review startup. It lists bounded completed non-insufficient result choices
+and compares two in-memory public results through passive GET endpoints. The result
+screen defaults the current operation to After and the newest different result
+to Before, labels choices by date, duration, and finding count, and offers one
+Compare action plus Swap. It renders domain compatibility, technical deltas,
+provider-measured speech indicators, measured finding changes, advisory changes,
+source-result navigation, and
+collapsed limitations without internal ids, paths, source names, provider
+details, or a combined score. Loading, retryable option failure, insufficient
+history, and in-flight comparison are distinct states. Abort/generation and pair
+binding suppress stale results; pair controls remain disabled in flight. A
+duration-normalized value is visually primary whenever it drives assessment,
+with raw totals marked supplemental. The completed result receives keyboard
+focus while only a short status is announced. Desktop, 390px mobile, keyboard,
+touch target, privacy, and overflow behavior are browser-owned contracts. A
+result and operation are cleared and operation-id guarded on saved-result
+navigation so a prior review cannot remain visible under the new route.

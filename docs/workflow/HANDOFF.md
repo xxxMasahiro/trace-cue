@@ -895,3 +895,69 @@ token. Commit `e49437b` now classifies both outcomes as reopen-required, covers
 the losing timer order directly, and makes the browser evidence deterministic.
 Neither failed run is reused as release proof, and no product timeout,
 authorization capability, or unrelated workflow was relaxed.
+
+## Phase 202-208 Saved Media Review Comparison
+
+The active TraceCue branch adds a read-only comparison vertical slice over two
+already-saved public media review results. It does not reopen video, audio,
+frames, a private operation root, or the complete transcript and does not run
+FrameCue, FFmpeg/FFprobe, a browser, network, external send, MCP, or an artifact
+writer. Existing result bytes and storage remain backward compatible.
+
+The versioned comparison policy owns byte/finding/output bounds, producer
+finding-completeness limits, selected
+metrics, duration normalization, matching thresholds, and negative execution
+capabilities. The CLI reader accepts opaque operation ids only and performs
+no-follow, owner, link-count, exact-size plus growth-probe, stable-descriptor,
+strict UTF-8, complete schema, bounded graph, and embedded private-locator
+checks. Comparison basis is independent for technical,
+timed-transcript, and advisory domains; setting/tool/provider/schema/method or
+completeness drift becomes limited/incompatible instead of a quality claim.
+
+The shared core emits classification-bound raw and per-minute metric deltas,
+separate deterministic/provider/advisory metric summaries, deterministic finding
+changes, advisory finding changes, evidence/timecode references, confidence,
+method, limitations, and separate summaries. Ambiguous or heuristic matches are
+inconclusive; not detected does not mean fixed; no combined score exists.
+
+CLI/API integration and passive Control Center GET endpoints reuse the same
+core. The result screen selects the current review as After, presents saved
+choices without internal ids, and offers Before, After, Swap, and one Compare
+action. Loading/retry/empty/in-flight states, stale-response and old-route-result
+refusal, normalized-primary values, comparison conditions, technical changes,
+provider-measured speech indicators, advisory changes, and source-result
+navigation remain plain-language and responsive.
+The focused 77-test media/Control Center suite passes. The 390x844 Playwright
+flow additionally owns keyboard activation, disabled in-flight controls, result
+focus, 44px touch targets, no horizontal overflow, no id/name/path leakage, and
+exactly one passive comparison read. Final local evidence also passes the real
+FrameCue/FFmpeg/FFprobe prepared-audio acceptance, all 496 no-browser tests, all
+26 browser tests, release/package checks, every product contract check, and
+Product Gate. Three independent post-implementation reviews approve the
+contract, Security/Privacy boundary, and Control Center UI/UX. Phase 208 Git,
+pull-request CI, exact-main CI, and clean synchronization remain the active work.
+The first PR CI attempt exposed a pre-existing multi-page AI-selection race:
+when both the mutation response and its quiet reconciliation read were lost, a
+transient load error replaced Settings and hid the retained draft. The active
+branch now preserves that screen, treats the unknown revision as requiring the
+latest choices before another write, keeps the block across another failed read
+and an initial selection, scopes preservation to selection reconciliation,
+keeps unrelated refresh and private-session expiry behavior unchanged, and
+injects the failures deterministically in the browser suite. Diagnostic run
+`29674510922` then identified two test-only scheduling assumptions; commit
+`a414d80` aligns the missed history wait with the existing bounded worker
+coordination policy and verifies focus on one live DOM element. Run
+`29674805693` subsequently exposed a real parent/Settings render race after a
+response-lost selection had already been confirmed by a newer matching
+projection. The active branch now binds that confirmation to the current
+request generation so it remains successful, while a stale or different
+projection still preserves the draft and fails closed. These failed runs and
+the original run `29673582545` are diagnostic evidence only and are not accepted
+as Phase 208 proof. Replacement run `29675497375` passed Browser smoke and every
+owner except Node 22; its startup-publication fixture exposed a separate
+pre-existing assumption that the production 100 ms best-effort recovery window
+was also a deterministic test deadline. The fixture now uses the existing
+one-second policy maximum through test context only and retains every recovery,
+receipt, digest, source-release, and capacity assertion. Production recovery and
+fail-closed reads are unchanged. That run is diagnostic-only; a fresh replacement
+run is required.

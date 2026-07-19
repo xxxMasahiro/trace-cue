@@ -2597,7 +2597,7 @@ function parseMedia(args, globals) {
     return parseError('media', globals.json, {
       code: scope ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
       message: scope ? `Unknown media subcommand: ${[scope, action].filter(Boolean).join(' ')}` : 'media requires a subcommand.',
-      details: { subcommands: ['source inspect', 'review readiness', 'review plan', 'review run', 'review cleanup'] }
+      details: { subcommands: ['source inspect', 'review readiness', 'review plan', 'review run', 'review compare', 'review cleanup'] }
     });
   }
   if (action === 'readiness') {
@@ -2639,6 +2639,20 @@ function parseMedia(args, globals) {
     }
     return parsed;
   }
+  if (action === 'compare') {
+    const parsed = parseRequiredOptions('media review compare', args.slice(2), globals, ['baseline', 'candidate']);
+    if (!parsed.ok) return parsed;
+    const unsupported = Object.keys(parsed.options).find((option) => !['baseline', 'candidate', 'artifact-root'].includes(option));
+    if (unsupported) return mediaOptionError('media review compare', globals, unsupported, true);
+    if (parsed.options.baseline === parsed.options.candidate) {
+      return parseError('media review compare', globals.json, {
+        code: 'MEDIA_REVIEW_COMPARISON_DISTINCT_RESULTS_REQUIRED',
+        message: 'media review compare requires two different saved operation ids.',
+        details: { options: ['baseline', 'candidate'] }
+      });
+    }
+    return parsed;
+  }
   if (action === 'cleanup') {
     const parsed = parseRequiredOptions('media review cleanup', args.slice(2), globals, ['operation-id', 'retention', 'confirm']);
     if (!parsed.ok) return parsed;
@@ -2657,7 +2671,7 @@ function parseMedia(args, globals) {
   return parseError('media review', globals.json, {
     code: action ? 'UNKNOWN_SUBCOMMAND' : 'MISSING_SUBCOMMAND',
     message: action ? `Unknown media review subcommand: ${action}` : 'media review requires a subcommand.',
-    details: { subcommands: ['readiness', 'plan', 'run', 'cleanup'] }
+    details: { subcommands: ['readiness', 'plan', 'run', 'compare', 'cleanup'] }
   });
 }
 

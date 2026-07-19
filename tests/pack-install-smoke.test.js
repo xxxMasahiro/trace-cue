@@ -104,6 +104,9 @@ async function main() {
     await assertFile(packageDir, 'src/media-review-timeline.js');
     await assertFile(packageDir, 'src/media-cross-modal-reviewer.js');
     await assertFile(packageDir, 'src/media-review-service.js');
+    await assertFile(packageDir, 'src/media-review-comparison-policy.js');
+    await assertFile(packageDir, 'src/media-review-public-result.js');
+    await assertFile(packageDir, 'src/media-review-comparison.js');
     await assertFile(packageDir, 'src/control-center-media-review.js');
     await assertFile(packageDir, 'src/control-center-media-review-store.js');
     await assertFile(packageDir, 'control-center/index.html');
@@ -204,6 +207,8 @@ async function main() {
     await assertFile(packageDir, 'schemas/media-timeline.schema.json');
     await assertFile(packageDir, 'schemas/media-review-operation.schema.json');
     await assertFile(packageDir, 'schemas/media-review-result.schema.json');
+    await assertFile(packageDir, 'schemas/media-review-comparison-policy.schema.json');
+    await assertFile(packageDir, 'schemas/media-review-comparison.schema.json');
     await assertFile(packageDir, 'schemas/media-cleanup-receipt.schema.json');
     await assertFile(packageDir, 'schemas/control-center-media-review.schema.json');
     await assertFile(packageDir, 'schemas/control-center-read-model.schema.json');
@@ -227,6 +232,7 @@ async function main() {
     await assertFile(packageDir, 'ops/OPERATION_POLICY.json');
     await assertFile(packageDir, 'ops/ARTIFACT_ROOT_POLICY.json');
     await assertFile(packageDir, 'ops/MEDIA_REVIEW_POLICY.json');
+    await assertFile(packageDir, 'ops/MEDIA_REVIEW_COMPARISON_POLICY.json');
     await assertFile(packageDir, 'ops/MEDIA_REVIEW_PROVIDER_ADAPTERS.json');
     await assert.rejects(access(path.join(packageDir, 'docs/product/IMPLEMENTATION_PLAN.md')));
 
@@ -327,6 +333,8 @@ async function main() {
     const mediaTimelineSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-timeline'));
     const mediaReviewOperationSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-review-operation'));
     const mediaReviewResultSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-review-result'));
+    const mediaReviewComparisonPolicySchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-review-comparison-policy'));
+    const mediaReviewComparisonSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-review-comparison'));
     const mediaCleanupReceiptSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('media-cleanup-receipt'));
     const controlCenterMediaReviewSchemaPath = requireFromInstall.resolve(packageSchemaSpecifier('control-center-media-review'));
     assert.equal(path.normalize(apiPath), path.join(packageDir, 'src/api.js'));
@@ -406,6 +414,8 @@ async function main() {
     assert.equal(path.normalize(mediaTimelineSchemaPath), path.join(packageDir, 'schemas/media-timeline.schema.json'));
     assert.equal(path.normalize(mediaReviewOperationSchemaPath), path.join(packageDir, 'schemas/media-review-operation.schema.json'));
     assert.equal(path.normalize(mediaReviewResultSchemaPath), path.join(packageDir, 'schemas/media-review-result.schema.json'));
+    assert.equal(path.normalize(mediaReviewComparisonPolicySchemaPath), path.join(packageDir, 'schemas/media-review-comparison-policy.schema.json'));
+    assert.equal(path.normalize(mediaReviewComparisonSchemaPath), path.join(packageDir, 'schemas/media-review-comparison.schema.json'));
     assert.equal(path.normalize(mediaCleanupReceiptSchemaPath), path.join(packageDir, 'schemas/media-cleanup-receipt.schema.json'));
     assert.equal(path.normalize(controlCenterMediaReviewSchemaPath), path.join(packageDir, 'schemas/control-center-media-review.schema.json'));
 
@@ -525,7 +535,7 @@ async function main() {
     assert.equal(typeof api.isAgenticHumanReviewPackage, 'function');
     assert.equal(api.agenticHumanReviewBoundary().mcp_execution_exposed, false);
     assert.equal(typeof api.buildOperationRegistryReport, 'function');
-    assert.equal(api.OPERATION_REGISTRY_VERSION, '1.1.0');
+    assert.equal(api.OPERATION_REGISTRY_VERSION, '1.2.0');
     assert.equal(typeof api.operationRegistryBoundary, 'function');
     assert.equal(typeof api.buildOperationRoadmapReport, 'function');
     assert.equal(typeof api.operationRoadmapBoundary, 'function');
@@ -550,6 +560,9 @@ async function main() {
     assert.equal(typeof api.inspectMediaReviewReadiness, 'function');
     assert.equal(typeof api.planMediaReview, 'function');
     assert.equal(typeof api.executeMediaReview, 'function');
+    assert.equal(typeof api.runMediaReviewComparison, 'function');
+    assert.equal(typeof api.buildMediaReviewComparison, 'function');
+    assert.equal(typeof api.renderMediaReviewComparisonMarkdown, 'function');
     assert.equal(typeof api.cleanupMediaReview, 'function');
     assert.equal(typeof api.createControlCenterMediaReviewRuntime, 'function');
     assert.equal(typeof api.buildLocalizationResources, 'function');
@@ -607,6 +620,8 @@ async function main() {
     assert.equal(api.schemaNames().includes('media_timeline'), true);
     assert.equal(api.schemaNames().includes('media_review_operation'), true);
     assert.equal(api.schemaNames().includes('media_review_result'), true);
+    assert.equal(api.schemaNames().includes('media_review_comparison_policy'), true);
+    assert.equal(api.schemaNames().includes('media_review_comparison'), true);
     assert.equal(api.schemaNames().includes('media_cleanup_receipt'), true);
     assert.equal(api.schemaNames().includes('control_center_media_review'), true);
     assert.equal(api.schemaNames().includes('source_understanding_review'), true);

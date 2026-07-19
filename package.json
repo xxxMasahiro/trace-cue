@@ -60,6 +60,7 @@
     "ops/ARTIFACT_ROOT_POLICY.json",
     "ops/CONTROL_CENTER_AI_SETUP_CATALOG.json",
     "ops/MEDIA_REVIEW_POLICY.json",
+    "ops/MEDIA_REVIEW_COMPARISON_POLICY.json",
     "ops/MEDIA_REVIEW_PROVIDER_ADAPTERS.json",
     "skills/trace-cue-review/SKILL.md",
     "README.md",

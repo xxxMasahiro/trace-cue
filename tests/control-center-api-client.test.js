@@ -238,3 +238,97 @@ test('Control Center rejects malformed media projections before rendering them',
     globalThis.fetch = originalFetch;
   }
 });
+
+test('Control Center accepts bounded comparison reads and rejects a weakened comparison boundary', async () => {
+  const originalFetch = globalThis.fetch;
+  const baseline = '1'.repeat(32);
+  const candidate = '2'.repeat(32);
+  const options = {
+    schema_version: '1.0.0', type: 'media_review_comparison_options',
+    options: [
+      { operation_id: baseline, created_at: '2026-07-18T00:00:00.000Z', duration_us: 1_000_000, finding_counts: { deterministic: 1, advisory: 2 } },
+      { operation_id: candidate, created_at: '2026-07-19T00:00:00.000Z', duration_us: 1_100_000, finding_counts: { deterministic: 1, advisory: 1 } }
+    ],
+    boundary: {
+      public_results_only: true, absolute_paths_included: false, source_names_included: false,
+      raw_media_included: false, full_transcript_included: false, network_performed: false
+    }
+  };
+  try {
+    globalThis.fetch = async (url, request = {}) => {
+      assert.equal(request.method, 'GET');
+      const data = String(url).includes('comparison-options')
+        ? { media_review_comparison_options: options }
+        : { media_review_comparison: apiComparisonFixture(baseline, candidate) };
+      return new Response(JSON.stringify({ status: 'ok', data }), { status: 200, headers: { 'content-type': 'application/json' } });
+    };
+    let client = await import(`../control-center/src/apiClient.js?media-comparison=${Date.now()}`);
+    assert.equal((await client.listMediaReviewComparisonOptions()).options.length, 2);
+    const comparison = await client.compareMediaReviews(baseline, candidate);
+    assert.equal(comparison.boundary.media_reprocessed, false);
+    assert.equal(comparison.summary.combined_quality_score_included, false);
+
+    const weakenedBoundaries = [
+      ['privacy.raw_media_read', (value) => { value.privacy.raw_media_read = true; }],
+      ['privacy.private_payload_read', (value) => { value.privacy.private_payload_read = true; }],
+      ['privacy.external_send_performed', (value) => { value.privacy.external_send_performed = true; }],
+      ['boundary.browser_launched', (value) => { value.boundary.browser_launched = true; }],
+      ['boundary.gate_effect', (value) => { value.boundary.gate_effect = 'release'; }],
+      ['baseline.status', (value) => { value.baseline.status = 'insufficient'; }],
+      ['transcript.classification', (value) => { value.metric_diffs.push({ domain: 'transcript', classification: 'deterministic_measurement' }); }]
+    ];
+    for (const [label, weaken] of weakenedBoundaries) {
+      const unsafe = apiComparisonFixture(baseline, candidate);
+      weaken(unsafe);
+      globalThis.fetch = async () => new Response(JSON.stringify({ status: 'ok', data: { media_review_comparison: unsafe } }), {
+        status: 200, headers: { 'content-type': 'application/json' }
+      });
+      await assert.rejects(client.compareMediaReviews(baseline, candidate), (error) => error?.name === 'ResponseContractError', label);
+    }
+
+    const mismatched = apiComparisonFixture(candidate, baseline);
+    globalThis.fetch = async () => new Response(JSON.stringify({ status: 'ok', data: { media_review_comparison: mismatched } }), {
+      status: 200, headers: { 'content-type': 'application/json' }
+    });
+    await assert.rejects(client.compareMediaReviews(baseline, candidate), (error) => error?.name === 'ResponseContractError');
+
+    for (const invalidOptions of [
+      { ...options, options: Array.from({ length: 101 }, (_, index) => ({ ...options.options[0], operation_id: index.toString(16).padStart(32, '0') })) },
+      { ...options, options: [options.options[0], structuredClone(options.options[0])] },
+      { ...options, options: [{ ...options.options[0], finding_counts: { deterministic: -1, advisory: 0 } }] }
+    ]) {
+      globalThis.fetch = async () => new Response(JSON.stringify({ status: 'ok', data: { media_review_comparison_options: invalidOptions } }), {
+        status: 200, headers: { 'content-type': 'application/json' }
+      });
+      await assert.rejects(client.listMediaReviewComparisonOptions(), (error) => error?.name === 'ResponseContractError');
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+function apiComparisonFixture(baseline, candidate) {
+  return {
+    schema_version: '1.0.0', type: 'media_review_comparison', status: 'comparable',
+    baseline: { operation_id: baseline, status: 'completed' }, candidate: { operation_id: candidate, status: 'completed_with_limitations' },
+    compatibility: { technical: { status: 'comparable' }, transcript: { status: 'comparable' }, advisory: { status: 'comparable' } },
+    metric_diffs: [], deterministic_finding_changes: [], advisory_finding_changes: [],
+    summary: {
+      deterministic: { status: 'unchanged', inconclusive: 0 }, advisory: { status: 'unchanged', inconclusive: 0 },
+      deterministic_metric_assessments: { improved: 0, regressed: 0, unchanged: 0, changed: 0, inconclusive: 0, unavailable: 0 },
+      provider_metric_assessments: { improved: 0, regressed: 0, unchanged: 0, changed: 0, inconclusive: 0, unavailable: 0 },
+      advisory_metric_assessments: { improved: 0, regressed: 0, unchanged: 0, changed: 0, inconclusive: 0, unavailable: 0 },
+      combined_quality_score_included: false
+    },
+    limitations: ['comparison_reads_bounded_public_results_only'],
+    privacy: {
+      public_results_only: true, raw_media_read: false, raw_audio_read: false, raw_frames_read: false,
+      full_transcript_read: false, private_payload_read: false, absolute_paths_included: false, external_send_performed: false
+    },
+    boundary: {
+      read_only: true, media_reprocessed: false, provider_called: false, technical_analyzer_called: false,
+      browser_launched: false, network_performed: false, artifact_written: false, mcp_execution_exposed: false,
+      deterministic_and_advisory_separated: true, combined_quality_score_included: false, gate_effect: 'none'
+    }
+  };
+}

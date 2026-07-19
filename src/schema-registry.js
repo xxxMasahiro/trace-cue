@@ -15,6 +15,7 @@ const controlCenterAgenticReviewSchema = JSON.parse(readFileSync(
 ));
 const mediaSchemas = Object.freeze(Object.fromEntries([
   ['media_review_policy', 'media-review-policy'],
+  ['media_review_comparison_policy', 'media-review-comparison-policy'],
   ['media_source_decision', 'media-source-decision'],
   ['media_transcript_provider_profile', 'media-transcript-provider-profile'],
   ['transcript_provider', 'transcript-provider'],
@@ -22,6 +23,7 @@ const mediaSchemas = Object.freeze(Object.fromEntries([
   ['media_timeline', 'media-timeline'],
   ['media_review_operation', 'media-review-operation'],
   ['media_review_result', 'media-review-result'],
+  ['media_review_comparison', 'media-review-comparison'],
   ['media_cleanup_receipt', 'media-cleanup-receipt'],
   ['control_center_media_review', 'control-center-media-review']
 ].map(([name, file]) => [name, Object.freeze(JSON.parse(readFileSync(

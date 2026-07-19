@@ -2311,3 +2311,50 @@ provider-repository write. Rollback removes only the v2 prepared-audio adapter,
 preparation module, additive schema/projection fields, UI status wording, tests,
 and synchronized documentation; v1 and unrelated product behavior need no
 migration.
+
+## Phase 202-208: Saved Media Review Comparison
+
+1. Phase 202: audit merged media results, public storage, CLI/API, Control
+   Center, MCP profiles, operation registry, and safety authorities. Define a
+   strictly additive public-result-only boundary and preserve unrelated work.
+2. Phase 203: add the versioned comparison policy and output schema, full input
+   validation, stable opaque-id result reading, and independent technical,
+   transcript, and advisory basis identities.
+3. Phase 204: add bounded domain-classified metric extraction, raw deltas,
+   duration-normalized count deltas, separate deterministic/provider/advisory
+   directional summaries, and conservative incompatible or unavailable states
+   without a combined score.
+4. Phase 205: add deterministic one-to-one finding matching, exact-id and
+   bounded timeline methods, ambiguity refusal, completeness-aware inconclusive
+   states, exact time-tuple binding, total producer-limit completeness, and
+   separate deterministic/advisory summaries.
+5. Phase 206: add the byte-bounded path-free JSON and Markdown report projection,
+   enforce no media/provider/analyzer/network/write behavior, and keep absence
+   language non-conclusive.
+6. Phase 207: add the read-only CLI/API/operation registration and passive
+   Control Center endpoints; implement the responsive explanation-free Before,
+   After, Swap, Compare, condition, normalized-primary delta, retry/loading,
+   stale-response refusal, and source-navigation experience.
+7. Phase 208: synchronize product/workflow/security/verification/design/package
+   authorities; pass focused, aggregate, browser, package, document, security,
+   release, Product Gate, and independent reviews; then commit, PR CI, merge,
+   exact-main CI, and clean local/remote synchronization.
+
+Phase 208 browser stabilization must preserve Settings and its AI-choice draft
+when both an AI-selection mutation response and the first quiet reconciliation
+read are lost. The client must require a latest-choice read before another
+selection write, latch that block across repeated read failure and an initial
+selection with no saved predecessor, scope page preservation to those selection
+reads, keep private-session expiry reopen-required, and cover the failures
+deterministically without extending production deadlines. A newer matching
+reconciliation projection must be bound to the current selection-request
+generation and accepted as success across the parent/Settings render boundary;
+stale or different projections remain conflicts.
+
+Reuse the existing strict media result, artifact-root, schema registry,
+operation registry, Control Center media runtime, safe-store, API authorization,
+translation, responsive design, test owners, and release gates. Do not introduce
+a dependency, result migration, comparison persistence, automatic pairing,
+provider call, media decode, MCP tool, new CI job, or provider/parent change.
+Rollback removes only the additive policy, schemas, comparison modules,
+registrations, passive endpoints, UI section, tests, and synchronized docs.

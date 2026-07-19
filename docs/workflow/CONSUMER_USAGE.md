@@ -77,6 +77,7 @@ node "$TRACE_CUE_CLI" media source inspect --url 'https://example.test/video' --
 node "$TRACE_CUE_CLI" media review readiness --json
 node "$TRACE_CUE_CLI" media review plan --input ./authorized-video.mp4 --rights-confirm use-owned-or-authorized-media --json
 node "$TRACE_CUE_CLI" media review run --input ./authorized-video.mp4 --rights-confirm use-owned-or-authorized-media --plan-hash <sha256-from-plan> --execute --confirm execute-media-review --json
+node "$TRACE_CUE_CLI" media review compare --baseline <saved-operation-id> --candidate <saved-operation-id> --json
 ```
 
 URL inspection is a pure capability decision: it performs no DNS, HTTP,
@@ -96,6 +97,15 @@ and path-free manifest per operation. The configured provider receives those
 artifacts rather than the source video, so expensive ASR audio preparation is
 not repeated by the provider. The same CLI commands and browser-dashboard steps
 apply.
+
+`media review compare` reads two completed public results by opaque operation id.
+It does not reopen the source videos, run the transcript provider or technical
+analyzer, contact a URL, or save a new comparison artifact. The result separates
+technical measurements, timed-transcript comparability, and advisory changes;
+settings or tool drift and incomplete evidence are reported as limited or
+incompatible rather than guessed. Omit `--json` for a bounded Markdown report.
+The Control Center exposes the same contract as a Before/After card and hides
+operation ids, source names, paths, provider details, and raw/private payloads.
 
 The v1 source-media adapter remains available for older trusted providers. The
 v2 adapter pins exact argv, schema, and private result layout to its adapter

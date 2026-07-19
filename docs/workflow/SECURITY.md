@@ -739,3 +739,60 @@ cross-operation ASR reuse. Real-adapter reuse remains disabled while external
 runtime dependencies and model weights are not fully bound. Existing v1 source-
 media behavior, MCP execution-disabled profiles, no cloud/fallback/setup rules,
 and private cleanup contracts remain unchanged.
+
+## Phase 202-208 Saved Media Review Comparison Security
+
+Comparison is a public-result-only read capability. CLI callers supply two
+opaque 32-hex operation ids and an existing relative artifact-root choice; they
+cannot supply a result path, URL, executable, argv, provider, analyzer, policy,
+schema, or output path. Control Center compares only completed public results
+already owned by its media runtime through passive authenticated GET requests.
+
+The stored-result reader resolves the real workspace and artifact directories,
+requires confinement, opens the expected result with `O_NOFOLLOW`, and validates
+one owner-controlled regular single-link descriptor before and after reading.
+It reads exactly the measured size and probes one extra byte so concurrent growth,
+shrinkage, short read, or replacement fails closed. Device, inode, size, link
+count, ctime, mtime, byte limits, strict UTF-8, JSON, operation-id binding,
+complete result schema, node/depth/text/cycle bounds, binary exclusion, forbidden
+private/raw keys, and embedded absolute/UNC/file/path or userinfo/query/fragment
+URL locator exclusion all fail closed. `file:` variants and protocol-relative
+URL/UNC candidates are rejected. Safe special-scheme URL candidates are parsed
+after normalization and cannot consume a second scheme, private path, drive
+path, or protocol-relative locator hidden behind punctuation. It creates no
+directory and writes no receipt or report.
+
+Domain basis identities bind the relevant result, analysis, transcript
+projection, timeline, and content-evidence completion states. They deliberately
+exclude only run-specific transcript
+artifact/receipt/computation ids while retaining provider contract/version,
+toolchain, preparation settings, language, analysis policy/settings, analyzer
+method, timebase, semantic method, and reviewer thresholds. The historical
+configuration identity is not trusted because it also includes source-media
+identity. Duplicate finding ids, ambiguous timeline ties, truncated/partial
+public evidence, and policy/tool/schema/method drift cannot become definitive
+quality claims.
+
+Output limits cap metrics, changes, limitations, and total UTF-8 bytes. When
+needed, deterministic truncation removes finding-change entries, marks the
+limitation, and recomputes status/summaries before schema validation. The projection
+contains only bounded public evidence, hashes, counts, timecodes, methods,
+confidence, and recommendations. It contains no raw media/audio/frame/binary,
+complete transcript, private payload, source path/name, process output, URL
+secret, executable detail, combined score, or implicit persisted comparison.
+
+Provider execution, technical analysis, media preparation, browser launch,
+network, external send, cleanup, write, and MCP exposure are false in policy,
+schema, runtime, operation registry, API validation, tests, and UI. Existing MCP
+profiles and execution gates are unchanged. Same-UID malicious mount-namespace
+replacement outside the held file descriptor remains outside this additive
+read surface and receives no new authority.
+
+The comparison policy is lazy-loaded by the media runtime. A missing or invalid
+comparison policy disables that passive comparison request without weakening or
+blocking the ordinary media-review lifecycle. API clients bind returned pair ids
+to the requested pair and independently enforce option counts, uniqueness,
+summary/classification consistency, and every no-read/write/transfer boundary.
+Public comparison input references and API responses accept only completed or
+completed-with-limitations status. Metric domain/classification binding keeps
+transcript-provider measurements outside deterministic and advisory summaries.
