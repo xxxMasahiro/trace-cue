@@ -63,8 +63,8 @@ const DEFAULT_HISTORY_MAINTENANCE_LOCK_TIMEOUT_MS = 100;
 const MAX_HISTORY_MAINTENANCE_LOCK_TIMEOUT_MS = 1000;
 const HISTORY_MAINTENANCE_RETRY_LIMIT = 4;
 const HISTORY_MAINTENANCE_RETRY_DELAY_MS = 25;
-const LIST_READ_RETRY_LIMIT = 4;
-const LIST_READ_RETRY_DELAY_MS = 10;
+const TRANSIENT_OPERATION_READ_RETRY_LIMIT = 4;
+const TRANSIENT_OPERATION_READ_RETRY_DELAY_MS = 10;
 const DEFAULT_OPERATION_LOCK_TIMEOUT_MS = 10_000;
 const MAX_OPERATION_LOCK_TIMEOUT_MS = 120_000;
 const HISTORY_ELIGIBLE_STATES = new Set(['completed', 'failed', 'cancelled', 'needs_attention']);
@@ -309,7 +309,7 @@ async function markConnectionSelectionChanged(operation, context) {
 export async function runControlCenterAgenticReviewStatus(input = {}, context = {}) {
   const id = normalizeOperationId(input.operation_id ?? input.operationId ?? input.id);
   if (!id.ok) return actionError(id.code, id.message, id.details);
-  const loaded = await loadOperationResult(id.value, context);
+  const loaded = await loadPassiveOperationResult(id.value, context);
   if (!loaded.ok) return loaded.result;
   return actionOk({ operation: projectOperation(loaded.operation) });
 }
@@ -495,7 +495,7 @@ export async function runControlCenterAgenticReviewList(input = {}, context = {}
   const operations = [];
   for (const entry of entries) {
     if (!OPERATION_ID_PATTERN.test(entry)) continue;
-    const loaded = await loadListedOperationResult(entry, context);
+    const loaded = await loadPassiveOperationResult(entry, context);
     if (!loaded.ok) {
       return actionError('CONTROL_CENTER_AGENTIC_REVIEW_LIST_FAILED', 'The local review list could not be read completely.', {});
     }
@@ -511,13 +511,14 @@ export async function runControlCenterAgenticReviewList(input = {}, context = {}
   });
 }
 
-async function loadListedOperationResult(id, context) {
+async function loadPassiveOperationResult(id, context) {
   let loaded;
-  for (let attempt = 0; attempt < LIST_READ_RETRY_LIMIT; attempt += 1) {
-    loaded = await loadOperationResult(id, context, { suppressTransientRead: true });
+  for (let attempt = 0; attempt < TRANSIENT_OPERATION_READ_RETRY_LIMIT; attempt += 1) {
+    const finalAttempt = attempt + 1 === TRANSIENT_OPERATION_READ_RETRY_LIMIT;
+    loaded = await loadOperationResult(id, context, { suppressTransientRead: !finalAttempt });
     if (loaded.ok || !loaded.suppressed) return loaded;
-    if (attempt + 1 < LIST_READ_RETRY_LIMIT) {
-      await new Promise((resolve) => setTimeout(resolve, LIST_READ_RETRY_DELAY_MS));
+    if (!finalAttempt) {
+      await new Promise((resolve) => setTimeout(resolve, TRANSIENT_OPERATION_READ_RETRY_DELAY_MS));
     }
   }
   return loaded;

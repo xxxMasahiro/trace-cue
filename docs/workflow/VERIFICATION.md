@@ -1265,3 +1265,40 @@ test-only focus/worker coordination, confirmed-selection render arbitration,
 and startup recovery fixture coordination fixes respectively. None is reused as
 release proof, and no provider, media, authorization, production deadline, MCP,
 or release-gate boundary was broadened.
+
+Post-integration hardening adds deterministic fault injection for passive
+Agentic Human Review operation reads. One `SAFE_STORE_FILE_CHANGED` and one
+transient `ENOENT` must recover on a fully reopened read; four classified
+failures must exhaust and fail closed; an invalid-JSON error must fail on the
+first attempt. The same helper remains covered through list and status surfaces.
+Browser coverage observes the response-lost AI refresh POST before accepting its
+reconciled UI, removes the first-repeat dashboard interception after its single
+owned failure, and requires the next repeat to emit one POST with status 202,
+navigate to a different child id, reach confirmation, and expose exactly one
+public child with the expected parent, `deeper` mode, and `xhigh` effort. Failure
+diagnostics are bounded and body-free.
+
+The response-lost start fixtures for New Review and saved-review workspace must
+reach the completed findings UI without a manual refresh while each public
+operation records exactly one dispatch attempt and one provider call. Each flow
+sends one start POST; reconciliation may use
+only four same-id passive status GETs within five seconds, accepts only the
+closed start-state vocabulary, stops on declared error, invalid id/state,
+navigation, or exhaustion, and never repeats start/provider execution. The
+ordinary accepted response is projected without an immediate stale read.
+
+Browser coverage returns from each reconciled workspace to Home without a manual
+refresh and refuses a stale Ready badge before reopening the same progressed
+review. The New Review fixture aborts all four bounded status reads, requires a
+same-review Check status action instead of another Prepare review submit, then
+opens that exact saved operation without another start POST. Interaction
+coverage also binds workspace start to a new status generation. The projection
+Dashboard read remains non-authoritative and non-blocking.
+
+Main run `29676273820` and follow-up PR run `29676798563` are diagnostic-only.
+The first exposed missing client-loss synchronization in the AI refresh fixture;
+the second confirmed that correction and exposed the passive status-read gap.
+Neither run nor its failed Final gate is acceptable as release proof. The runtime
+hardening does not change production request deadlines, automatic dispatch,
+exact-once mutation semantics, provider execution, MCP exposure, or release-gate
+meaning.

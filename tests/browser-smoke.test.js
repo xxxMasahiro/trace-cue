@@ -66,6 +66,49 @@ async function releaseGateForObservedPage(page, release) {
   release();
 }
 
+async function readSafeAgenticReviewSnapshot(page) {
+  return page.evaluate(async () => {
+    const currentId = new URLSearchParams(window.location.search).get('item');
+    let operations = [];
+    try {
+      const response = await fetch('/api/agentic-review/list', {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(3_000)
+      });
+      const body = await response.json();
+      operations = (body.data?.control_center_agentic_review?.operations ?? []).slice(0, 20).map((item) => ({
+        id: item.id,
+        state: item.state,
+        stage: item.stage,
+        parent_id: item.parent_review?.id ?? null,
+        repeat_mode: item.parent_review?.repeat_mode ?? null,
+        review_effort: item.review_effort ?? null
+      }));
+    } catch {}
+    return {
+      current_id: currentId,
+      route: new URLSearchParams(window.location.search).get('page'),
+      heading_count: document.querySelectorAll('h1, h2').length,
+      notice_count: document.querySelectorAll('.inline-notice').length,
+      operations
+    };
+  });
+}
+
+async function assertProgressedDashboardProjectionAndReopen(page, workspace) {
+  await workspace.getByRole('button', { name: 'Back', exact: true }).click();
+  const home = page.locator('[data-testid="tc-cc-home"]');
+  await home.waitFor();
+  await page.waitForFunction(() => {
+    const badges = [...document.querySelectorAll('[data-testid="tc-cc-home"] .review-list .status-badge')];
+    return badges.length > 0 && badges.every((badge) => badge.textContent?.trim() !== 'Ready');
+  }, null, { timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS });
+  assert.equal(await home.getByText('Ready', { exact: true }).count(), 0);
+  await home.getByRole('button', { name: 'Continue', exact: true }).click();
+  await workspace.waitFor();
+  await workspace.getByRole('heading', { name: 'All improvements have a decision' }).waitFor();
+}
+
 function isExpectedRouteCleanupError(error) {
   return /Route is already handled|Target page, context or browser has been closed/u.test(String(error?.message));
 }
@@ -338,7 +381,8 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     page.on('requestfailed', (request) => recordRepeatEvent('requestfailed', request, {
       failure: request.failure()?.errorText ?? 'unknown'
     }));
-    await page.route('**/api/dashboard', async (route) => {
+    const repeatReconciliationDashboardPattern = '**/api/dashboard';
+    const repeatReconciliationDashboardHandler = async (route) => {
       if (!failNextRepeatReconciliationDashboard) {
         await route.continue();
         return;
@@ -346,7 +390,7 @@ test('review center completes prepare, consent, review, decision, repeat, and se
       failNextRepeatReconciliationDashboard = false;
       failedRepeatReconciliationDashboardReads += 1;
       await route.abort('failed');
-    });
+    };
     await page.goto(started.url, { waitUntil: 'networkidle' });
     await page.locator('[data-testid="tc-cc-home"]').waitFor();
     await page.getByRole('button', { name: /New review/ }).click();
@@ -452,11 +496,69 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     const dialogBox = await dialog.boundingBox();
     const workspaceBox = await page.locator('.workspace').boundingBox();
     assert.ok(Math.abs((dialogBox.x + (dialogBox.width / 2)) - (workspaceBox.x + (workspaceBox.width / 2))) <= 2);
+    let initialStartRequests = 0;
+    let initialStartReviewId = null;
+    const initialStartPattern = '**/api/agentic-review/start';
+    const initialStartStatusPattern = '**/api/agentic-review/status?*';
+    let initialStartStatusFailures = 0;
+    const initialStartHandler = async (route) => {
+      initialStartRequests += 1;
+      if (initialStartRequests > 1) {
+        await route.continue();
+        return;
+      }
+      const request = route.request().postDataJSON();
+      initialStartReviewId = request.id;
+      assert.equal(typeof initialStartReviewId, 'string');
+      assert.notEqual(initialStartReviewId, '');
+      const response = await route.fetch();
+      assert.equal(response.ok(), true);
+      await route.abort('failed');
+    };
+    await page.route(initialStartPattern, initialStartHandler);
+    const initialStartStatusHandler = async (route) => {
+      assert.equal(new URL(route.request().url()).searchParams.get('id'), initialStartReviewId);
+      if (initialStartStatusFailures >= 4) {
+        await route.continue();
+        return;
+      }
+      initialStartStatusFailures += 1;
+      await route.abort('failed');
+    };
+    await page.route(initialStartStatusPattern, initialStartStatusHandler);
     await dialog.getByRole('button', { name: 'Start review', exact: true }).click();
 
     const workspace = page.locator('[data-testid="tc-cc-review-workspace"]');
+    const uncertainStartAction = page.locator('[data-testid="tc-cc-new-review"] .form-actions').getByRole('button', {
+      name: 'Check status',
+      exact: true
+    });
+    await uncertainStartAction.waitFor({ timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS });
+    assert.equal(initialStartStatusFailures, 4);
+    assert.equal(initialStartRequests, 1);
+    assert.equal(await page.getByRole('button', { name: 'Prepare review', exact: true }).count(), 0);
+    let uncertainPrepareRequests = 0;
+    const uncertainPreparePattern = '**/api/agentic-review/prepare';
+    const uncertainPrepareHandler = async (route) => {
+      uncertainPrepareRequests += 1;
+      await route.continue();
+    };
+    await page.route(uncertainPreparePattern, uncertainPrepareHandler);
+    await page.locator('[data-testid="tc-cc-new-review"] form').evaluate((form) => form.requestSubmit());
+    await page.evaluate(() => new Promise((resolve) => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+    }));
+    assert.equal(uncertainPrepareRequests, 0);
+    await page.unroute(uncertainPreparePattern, uncertainPrepareHandler);
+    await page.unroute(initialStartStatusPattern, initialStartStatusHandler);
+    await uncertainStartAction.click();
     await workspace.waitFor();
-    await page.getByRole('heading', { name: 'The booking action is easy to miss' }).waitFor({ timeout: 10_000 });
+    assert.equal(new URL(page.url()).searchParams.get('item'), initialStartReviewId);
+    assert.equal(initialStartRequests, 1);
+    await page.getByRole('heading', { name: 'The booking action is easy to miss' }).waitFor({
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
+    await page.unroute(initialStartPattern, initialStartHandler);
     assert.equal(await page.getByRole('button', { name: /Fix this/ }).getAttribute('class'), '');
     await page.getByRole('button', { name: /Fix this/ }).click();
     await page.getByRole('heading', { name: 'The price explanation appears too late' }).waitFor();
@@ -470,7 +572,11 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     });
     assert.equal(completedOperation.decisions.length, 2);
     assert.equal(completedOperation.stage, 'complete');
+    assert.equal(completedOperation.dispatch.attempt, 1);
+    assert.equal(completedOperation.dispatch.provider_call_performed, true);
+    await assertProgressedDashboardProjectionAndReopen(page, workspace);
 
+    await page.route(repeatReconciliationDashboardPattern, repeatReconciliationDashboardHandler);
     await page.route('**/api/agentic-review/repeat', async (route) => {
       const response = await route.fetch();
       assert.equal(response.ok(), true);
@@ -491,35 +597,7 @@ test('review center completes prepare, consent, review, decision, repeat, and se
         timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
       });
     } catch (caught) {
-      const safeSnapshot = await page.evaluate(async () => {
-        const currentId = new URLSearchParams(window.location.search).get('item');
-        let operations = [];
-        try {
-          const response = await fetch('/api/agentic-review/list', {
-            cache: 'no-store',
-            signal: AbortSignal.timeout(3_000)
-          });
-          const body = await response.json();
-          operations = (body.data?.control_center_agentic_review?.operations ?? []).map((item) => ({
-            id: item.id,
-            state: item.state,
-            stage: item.stage,
-            parent_id: item.parent_review?.id ?? null,
-            repeat_mode: item.parent_review?.repeat_mode ?? null
-          }));
-        } catch {}
-        return {
-          current_id: currentId,
-          route: new URLSearchParams(window.location.search).get('page'),
-          headings: [...document.querySelectorAll('h1, h2')]
-            .map((element) => element.textContent?.replace(/\s+/gu, ' ').trim())
-            .filter(Boolean),
-          notices: [...document.querySelectorAll('.inline-notice')]
-            .map((element) => element.textContent?.replace(/\s+/gu, ' ').trim())
-            .filter(Boolean),
-          operations
-        };
-      });
+      const safeSnapshot = await readSafeAgenticReviewSnapshot(page);
       throw new Error(`Repeat reconciliation did not reach confirmation: ${JSON.stringify({ repeatEvents, safeSnapshot })}`, {
         cause: caught
       });
@@ -530,6 +608,7 @@ test('review center completes prepare, consent, review, decision, repeat, and se
       `A successful repeat recovered from its read model must not be sent again: ${JSON.stringify(repeatEvents)}`
     );
     assert.equal(failedRepeatReconciliationDashboardReads, 1);
+    await page.unroute(repeatReconciliationDashboardPattern, repeatReconciliationDashboardHandler);
     const repeatedOperation = await page.evaluate(async () => {
       const id = new URLSearchParams(window.location.search).get('item');
       return (await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json()).data.control_center_agentic_review.operation;
@@ -545,24 +624,39 @@ test('review center completes prepare, consent, review, decision, repeat, and se
     await page.getByRole('button', { name: 'Review and start', exact: true }).click();
     const repeatedDialog = page.getByRole('dialog', { name: 'Start this review?' });
     await repeatedDialog.waitFor();
-    await page.route('**/api/agentic-review/start', async (route) => {
+    let repeatedStartRequests = 0;
+    const repeatedStartPattern = '**/api/agentic-review/start';
+    const repeatedStartHandler = async (route) => {
+      repeatedStartRequests += 1;
+      if (repeatedStartRequests > 1) {
+        await route.continue();
+        return;
+      }
       const response = await route.fetch();
       assert.equal(response.ok(), true);
       await route.abort('failed');
-    }, { times: 1 });
+    };
+    await page.route(repeatedStartPattern, repeatedStartHandler);
     await repeatedDialog.getByRole('button', { name: 'Start review', exact: true }).click();
     await repeatedDialog.waitFor({ state: 'hidden' });
-    await page.waitForTimeout(4_000);
+    await workspace.locator('.finding-detail h2').waitFor({ timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS });
     const repeatedStartSnapshot = await page.evaluate(async () => {
       const id = new URLSearchParams(window.location.search).get('item');
       const body = await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json();
+      const operation = body.data?.control_center_agentic_review?.operation;
       return {
-        operation: body.data?.control_center_agentic_review?.operation,
-        visibleText: document.querySelector('[data-testid="tc-cc-review-workspace"]')?.innerText
+        id: operation?.id,
+        state: operation?.state,
+        stage: operation?.stage,
+        dispatch_attempt: operation?.dispatch?.attempt,
+        provider_call_performed: operation?.dispatch?.provider_call_performed
       };
     });
-    assert.equal(repeatedStartSnapshot.operation?.state, 'completed', JSON.stringify(repeatedStartSnapshot));
-    await workspace.locator('.finding-detail h2').waitFor({ timeout: 5_000 });
+    assert.equal(repeatedStartSnapshot.state, 'completed', JSON.stringify(repeatedStartSnapshot));
+    assert.equal(repeatedStartRequests, 1);
+    assert.equal(repeatedStartSnapshot.dispatch_attempt, 1);
+    assert.equal(repeatedStartSnapshot.provider_call_performed, true);
+    await page.unroute(repeatedStartPattern, repeatedStartHandler);
     assert.equal(await page.getByRole('heading', { name: 'The review is ready to start', exact: true }).count(), 0);
     assert.equal(await page.getByText('The latest status could not be read.', { exact: true }).count(), 0);
     const repeatedFindingCount = await workspace.locator('.finding-list button').count();
@@ -572,10 +666,48 @@ test('review center completes prepare, consent, review, decision, repeat, and se
       await workspace.getByRole('button', { name: /Fix this/ }).click();
     }
     await page.getByRole('heading', { name: 'All improvements have a decision' }).waitFor();
-    await page.getByRole('button', { name: 'Review in more detail' }).click();
-    await page.getByRole('heading', { name: 'The review is ready to start' }).waitFor({
-      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    await assertProgressedDashboardProjectionAndReopen(page, workspace);
+    const secondRepeatParentId = new URL(page.url()).searchParams.get('item');
+    const secondRepeatEventStart = repeatEvents.length;
+    const secondRepeatResponse = page.waitForResponse((response) => (
+      new URL(response.url()).pathname === '/api/agentic-review/repeat'
+        && response.request().method() === 'POST'
+    ), { timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS });
+    try {
+      await page.getByRole('button', { name: 'Review in more detail' }).click();
+      const acceptedResponse = await secondRepeatResponse;
+      assert.equal(acceptedResponse.status(), 202, JSON.stringify(repeatEvents.slice(secondRepeatEventStart)));
+      await page.waitForFunction((parentId) => {
+        const itemId = new URLSearchParams(window.location.search).get('item');
+        return Boolean(itemId) && itemId !== parentId;
+      }, secondRepeatParentId, { timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS });
+      await page.getByRole('heading', { name: 'The review is ready to start' }).waitFor({
+        timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+      });
+    } catch (caught) {
+      const safeSnapshot = await readSafeAgenticReviewSnapshot(page);
+      throw new Error(`Second repeat did not reach confirmation: ${JSON.stringify({
+        repeatEvents: repeatEvents.slice(secondRepeatEventStart),
+        safeSnapshot
+      })}`, { cause: caught });
+    }
+    assert.equal(
+      repeatEvents.slice(secondRepeatEventStart).filter((event) => event.kind === 'request').length,
+      1,
+      `The second repeat must be sent once: ${JSON.stringify(repeatEvents.slice(secondRepeatEventStart))}`
+    );
+    const secondRepeatedOperation = await page.evaluate(async () => {
+      const id = new URLSearchParams(window.location.search).get('item');
+      return (await (await fetch(`/api/agentic-review/status?id=${encodeURIComponent(id)}`)).json()).data.control_center_agentic_review.operation;
     });
+    assert.equal(secondRepeatedOperation.parent_review.id, secondRepeatParentId);
+    assert.equal(secondRepeatedOperation.parent_review.repeat_mode, 'deeper');
+    assert.equal(secondRepeatedOperation.review_effort, 'xhigh');
+    const secondRepeatedChildren = await page.evaluate(async (parentId) => (
+      await (await fetch('/api/agentic-review/list')).json()
+    ).data.control_center_agentic_review.operations.filter((item) => item.parent_review?.id === parentId), secondRepeatParentId);
+    assert.equal(secondRepeatedChildren.length, 1);
+    assert.equal(secondRepeatedChildren[0].id, secondRepeatedOperation.id);
     await page.getByRole('button', { name: 'Review and start', exact: true }).click();
     await repeatedDialog.waitFor();
     const cancelledResponseGate = new Promise((resolve) => { releaseCancelledResponse = resolve; });
@@ -1704,6 +1836,11 @@ test('review center preserves an AI choice draft when another settings page wins
     const refreshRevision = savedDashboard.ai_connections.revision;
     let observeLostRefresh;
     const lostRefreshObserved = new Promise((resolve) => { observeLostRefresh = resolve; });
+    const lostRefreshRequestFailed = first.waitForEvent('requestfailed', {
+      predicate: (request) => new URL(request.url()).pathname === '/api/settings/ai-connections/refresh'
+        && request.method() === 'POST',
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
     await first.route('**/api/settings/ai-connections/refresh', async (route) => {
       const response = await route.fetch();
       assert.equal(response.ok(), true);
@@ -1711,8 +1848,10 @@ test('review center preserves an AI choice draft when another settings page wins
       await route.abort('failed');
     }, { times: 1 });
     await first.getByRole('button', { name: 'Update availability', exact: true }).click();
-    await lostRefreshObserved;
-    await first.waitForFunction(() => document.querySelector('.ai-connection-setting')?.getAttribute('aria-busy') === 'false');
+    await Promise.all([lostRefreshObserved, lostRefreshRequestFailed]);
+    await first.locator('.ai-connection-setting[aria-busy="false"]').waitFor({
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
     assert.equal(await first.locator('.ai-connection-setting > .inline-notice.warning').count(), 0);
     savedDashboard = await first.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
     assert.ok(savedDashboard.ai_connections.revision > refreshRevision);
@@ -2250,7 +2389,9 @@ test('review center keeps one intake and redirects to truthful status after resp
       await route.abort('failed');
     }, { times: 1 });
     await dialog.getByRole('button', { name: 'Start review', exact: true }).click();
-    await page.locator('[data-testid="tc-cc-review-workspace"]').waitFor({ timeout: 10_000 });
+    await page.locator('[data-testid="tc-cc-review-workspace"]').waitFor({
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
     assert.equal(new URL(page.url()).searchParams.get('item'), acceptedOperationId);
     assert.equal(await page.locator('[data-testid="tc-cc-new-review"]').count(), 0);
 

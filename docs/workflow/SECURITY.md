@@ -796,3 +796,35 @@ summary/classification consistency, and every no-read/write/transfer boundary.
 Public comparison input references and API responses accept only completed or
 completed-with-limitations status. Metric domain/classification binding keeps
 transcript-provider measurements outside deterministic and advisory summaries.
+
+Post-integration Control Center hardening adds no execution authority. Passive
+Agentic Human Review status and list reads share a four-attempt classified retry
+for `SAFE_STORE_FILE_CHANGED` and transient `ENOENT` only, with a 10 ms bounded
+delay and complete safe-store validation on every reopened read. Invalid JSON,
+record identity drift, unsafe links or paths, permission failure, and all other
+errors are never retried. Exhaustion still returns a body-free public error.
+Prepare, repeat, decision, start, cancel, provider calls, evidence transfer, and
+all other mutations are excluded, so the change cannot duplicate a review,
+weaken exact-once admission, extend credentials, or bypass confirmation. Browser
+diagnostics remain bounded to opaque operation ids, state/stage, parent/mode/
+effort metadata, and UI element counts; they contain no target headings, warning
+copy, URLs, credentials, provider payloads, raw evidence, or private paths.
+
+A transport-uncertain Agentic Human Review start permits only same-id passive
+status reconciliation: at most four GETs, 250 ms spacing, and one absolute
+five-second deadline bound to the current route action. Exact id and the closed
+start-state allowlist are revalidated on each accepted response. A declared
+error, invalid id/state, navigation abort, or exhaustion fails closed. The
+confirmation token is discarded; start, repeat, provider execution, and external
+transfer are never retried. A valid normal start response is projected directly
+instead of being regressed by an immediate stale status read. New Review and the
+saved-review workspace share this exact reconciler and cannot fall back to an
+unverified navigation-only response-loss path.
+
+After success, a separate non-blocking quiet Dashboard GET may update Home and
+Running only; it cannot authorize state, extend the five-second same-id deadline,
+or trigger a mutation/provider call, and a read failure preserves the current
+page. Earlier workspace status generations are invalidated before progressed
+state is applied. On New Review exhaustion, the exact prepared id remains only
+in component memory and the UI exposes Check status for that saved review while
+blocking another implicit submission.

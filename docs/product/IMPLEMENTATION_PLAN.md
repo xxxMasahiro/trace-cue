@@ -2351,6 +2351,30 @@ reconciliation projection must be bound to the current selection-request
 generation and accepted as success across the parent/Settings render boundary;
 stale or different projections remain conflicts.
 
+Phase 208 post-integration stabilization follows a bounded corrective loop:
+
+1. Reproduce the passive-status gap with deterministic safe-store fault
+   injection before changing runtime code.
+2. Generalize the existing list-only classified transient-read helper and reuse
+   it for status without broadening its four-attempt, 10 ms, full-revalidation,
+   fail-closed contract.
+3. Keep mutations and provider work single-attempt, scope intentional browser
+   routes to the scenario that owns them, and bind later repeat verification to
+   one accepted POST, a new child route, confirmation, exact parent/mode/effort,
+   and exactly-one child state.
+4. Reconcile an uncertain start response only through four same-id passive
+   status reads within an absolute five-second deadline. Bind the loop to the
+   current route action, accept only the closed start-state vocabulary, use a
+   valid accepted response directly on the ordinary path, and never repeat the
+   start mutation or provider dispatch. Reuse the same helper from New Review
+   and the saved-review workspace instead of duplicating reconciliation logic.
+   Invalidate prior workspace status generations, update the Dashboard only as
+   a non-blocking projection after successful reconciliation, and retain a
+   same-review Check status action when New Review reconciliation exhausts.
+5. Rerun focused unit/browser coverage, complete no-browser tests, Product Gate,
+   independent review, fresh PR CI, merge, and exact-main CI. Failed distributed
+   runs remain diagnostic-only and cannot be reused as proof.
+
 Reuse the existing strict media result, artifact-root, schema registry,
 operation registry, Control Center media runtime, safe-store, API authorization,
 translation, responsive design, test owners, and release gates. Do not introduce

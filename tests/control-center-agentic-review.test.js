@@ -1640,7 +1640,7 @@ test('Control Center review listing sorts the bounded store before applying the 
   assert.equal(refreshed.operations[0].id, 'control-center-agentic-review-list-000');
 });
 
-test('Control Center list retries only classified transient operation reads', async () => {
+test('Control Center passive reads retry only classified transient operation changes', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-control-center-list-retry-'));
   const id = 'control-center-agentic-review-list-retry';
   const store = createSafeLocalStore({
@@ -1693,12 +1693,65 @@ test('Control Center list retries only classified transient operation reads', as
   const exhausted = injectedContext('SAFE_STORE_FILE_CHANGED', 4);
   const exhaustedResult = await runControlCenterAgenticReviewList({}, exhausted.context);
   assert.equal(exhaustedResult.status, 'error');
+  assert.equal(exhaustedResult.errors[0].code, 'CONTROL_CENTER_AGENTIC_REVIEW_LIST_FAILED');
   assert.equal(exhausted.attempts(), 4);
 
   const unclassified = injectedContext('SAFE_STORE_JSON_INVALID', 4);
   const unclassifiedResult = await runControlCenterAgenticReviewList({}, unclassified.context);
   assert.equal(unclassifiedResult.status, 'error');
   assert.equal(unclassified.attempts(), 1);
+
+  const recoveredStatus = injectedContext('SAFE_STORE_FILE_CHANGED', 1);
+  const recoveredStatusResult = await runControlCenterAgenticReviewStatus({ id }, recoveredStatus.context);
+  assert.equal(recoveredStatusResult.status, 'ok');
+  assert.equal(recoveredStatus.attempts(), 2);
+
+  const recoveredMissingStatus = injectedContext('ENOENT', 1);
+  const recoveredMissingStatusResult = await runControlCenterAgenticReviewStatus({ id }, recoveredMissingStatus.context);
+  assert.equal(recoveredMissingStatusResult.status, 'ok');
+  assert.equal(recoveredMissingStatus.attempts(), 2);
+
+  const exhaustedStatus = injectedContext('SAFE_STORE_FILE_CHANGED', 4);
+  const exhaustedStatusResult = await runControlCenterAgenticReviewStatus({ id }, exhaustedStatus.context);
+  assert.equal(exhaustedStatusResult.status, 'error');
+  assert.equal(exhaustedStatusResult.errors[0].code, 'CONTROL_CENTER_AGENTIC_REVIEW_READ_FAILED');
+  assert.equal(exhaustedStatus.attempts(), 4);
+
+  const exhaustedMissingStatus = injectedContext('ENOENT', 4);
+  const exhaustedMissingStatusResult = await runControlCenterAgenticReviewStatus({ id }, exhaustedMissingStatus.context);
+  assert.equal(exhaustedMissingStatusResult.status, 'error');
+  assert.equal(exhaustedMissingStatusResult.errors[0].code, 'CONTROL_CENTER_AGENTIC_REVIEW_NOT_FOUND');
+  assert.equal(exhaustedMissingStatus.attempts(), 4);
+
+  const unclassifiedStatus = injectedContext('SAFE_STORE_JSON_INVALID', 4);
+  const unclassifiedStatusResult = await runControlCenterAgenticReviewStatus({ id }, unclassifiedStatus.context);
+  assert.equal(unclassifiedStatusResult.status, 'error');
+  assert.equal(unclassifiedStatusResult.errors[0].code, 'CONTROL_CENTER_AGENTIC_REVIEW_READ_FAILED');
+  assert.equal(unclassifiedStatus.attempts(), 1);
+
+  let revalidationAttempts = 0;
+  const revalidationResult = await runControlCenterAgenticReviewStatus({ id }, {
+    cwd,
+    createControlCenterAgenticReviewStore: () => ({
+      ...store,
+      async readJson(relativePath, options) {
+        if (relativePath === `${id}/operation.json`) {
+          revalidationAttempts += 1;
+          if (revalidationAttempts === 1) {
+            const error = new Error('Injected safe-store replacement.');
+            error.code = 'SAFE_STORE_FILE_CHANGED';
+            throw error;
+          }
+          const record = await store.readJson(relativePath, options);
+          return { ...record, id: `${id}-replacement` };
+        }
+        return store.readJson(relativePath, options);
+      }
+    })
+  });
+  assert.equal(revalidationResult.status, 'error');
+  assert.equal(revalidationResult.errors[0].code, 'CONTROL_CENTER_AGENTIC_REVIEW_READ_FAILED');
+  assert.equal(revalidationAttempts, 2);
 });
 
 test('Control Center review history retires the oldest completed operations at its configured bound', async () => {

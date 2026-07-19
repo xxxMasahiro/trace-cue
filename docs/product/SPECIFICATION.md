@@ -1882,3 +1882,50 @@ focus while only a short status is announced. Desktop, 390px mobile, keyboard,
 touch target, privacy, and overflow behavior are browser-owned contracts. A
 result and operation are cleared and operation-id guarded on saved-result
 navigation so a prior review cannot remain visible under the new route.
+
+Phase 208 post-integration Control Center stabilization reuses one passive
+operation-read helper for Agentic Human Review status and list projections. The
+helper performs at most four complete reads separated by 10 ms and retries only
+`SAFE_STORE_FILE_CHANGED` or a transient `ENOENT` observed while an owned record
+is being atomically published or moved. The final attempt returns the ordinary
+surface-specific envelope: status keeps its not-found/read-failed result, while
+list preserves its existing list-failed result. Invalid JSON, record type or
+operation-id mismatch, unsafe filesystem state, and every other error return on
+the first attempt. Every retry reopens the file and repeats safe-store path,
+descriptor, size, JSON parsing, record-type, and operation-id validation; no
+bytes or validation result from the failed attempt are reused.
+
+This passive recovery applies only to status/list reads. It does not retry
+prepare, repeat, decision, start, cancel, provider execution, external transfer,
+or any other mutation. The browser repeat fixture scopes an intentionally failed
+dashboard read to the one reconciliation scenario, then removes that route. A
+later repeat is accepted only after one POST returns 202, the route changes to a
+different opaque child id, the child reaches confirmation, and its parent,
+`deeper`, `xhigh`, and exactly-one relationships are verified from public reads.
+
+If the browser loses the response to one confirmed start mutation, it performs
+no second mutation. While the originating route action remains current, it may
+issue at most four GET status reads for the exact same opaque review id, spaced
+by 250 ms and bounded by one absolute five-second deadline. Only
+`confirmation_required`, `dispatching`, `validating`, `completed`, `failed`,
+`needs_attention`, `dispatch_unknown`, and `cancelled` are accepted.
+`confirmation_required` causes another bounded read; every other accepted state
+is projected immediately into the ordinary polling or terminal UI. A declared
+error envelope, id/state mismatch, navigation abort, or exhaustion fails closed
+with the existing explicit status warning. The accepted start response is used
+directly on the ordinary success path so a stale status read cannot regress it.
+The status timeout override can only shorten, never extend, the existing request
+deadline. Confirmation tokens are discarded and neither start nor provider work
+is automatically retried. The New Review confirmation and saved-review workspace
+confirmation surfaces reuse this same helper and state vocabulary.
+
+After same-id status reconciliation succeeds, either surface starts one
+non-authoritative, non-blocking quiet Dashboard projection refresh with current-
+request generation guards and preserve-page-on-read-failure behavior. That read
+does not extend the five-second status authority deadline and cannot change the
+reconciliation decision; it only prevents Home and Running from retaining the
+pre-start Ready projection. New Review reconciliation exhaustion keeps the exact
+prepared review id in component memory, replaces the normal submit action with
+an explicit Check status path to that saved workspace, and does not permit a new
+implicit prepare/start. A workspace start invalidates every earlier same-route
+status generation before accepted or reconciled operation state is applied.

@@ -51,6 +51,39 @@ test('Control Center classifies an outer pairing deadline as reopen-required', a
   }
 });
 
+test('Control Center status reconciliation can shorten but never extend its request deadline', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  let requestSignal = null;
+  const observedTimeouts = [];
+  try {
+    globalThis.fetch = async (_url, options = {}) => {
+      requestSignal = options.signal;
+      return new Promise(() => {});
+    };
+    globalThis.setTimeout = (callback, delay) => {
+      observedTimeouts.push(delay);
+      queueMicrotask(callback);
+      return observedTimeouts.length;
+    };
+    globalThis.clearTimeout = () => {};
+
+    const client = await import(`../control-center/src/apiClient.js?status-deadline=${Date.now()}`);
+    await assert.rejects(
+      client.fetchAgenticReviewStatus('review-fixture', { responseTimeoutMs: Number.MAX_SAFE_INTEGER }),
+      (error) => error?.name === 'TimeoutError' && error?.envelope === undefined
+    );
+    assert.equal(observedTimeouts.length >= 1, true);
+    assert.equal(observedTimeouts.every((delay) => delay <= client.CONTROL_CENTER_RESPONSE_TIMEOUTS.defaultRequestMs), true);
+    assert.equal(requestSignal?.aborted, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});
+
 test('Control Center API setup bounds an unreadable local response and clears transport authority', async () => {
   const originalFetch = globalThis.fetch;
   const originalSetTimeout = globalThis.setTimeout;

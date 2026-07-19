@@ -1049,3 +1049,23 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   must remain unchanged when comparison is unused. No new dependency, provider
   write, parent write, external transfer, MCP exposure, or remote acquisition is
   permitted.
+- A passive Control Center status or list read of an Agentic Human Review
+  operation must tolerate only the classified transient replacement states that
+  can occur while the owned safe store atomically publishes the same operation.
+  Each bounded retry must reopen and fully revalidate the record. Exhaustion,
+  malformed JSON, invalid record type or operation identity, unsafe paths, and
+  every unclassified error must fail closed immediately or at the fixed retry bound. Mutation calls, external
+  dispatch, and provider work must never be retried by this read-only recovery.
+- Navigation to a newly admitted repeat review must not become permanently
+  unreadable solely because its first passive status read overlaps background
+  preparation. Existing confirmation, exact-once repeat, AI binding, disclosure,
+  and no-automatic-send gates remain authoritative.
+- If an accepted review-start response is lost, Control Center may reconcile
+  only the same opaque review id through at most four passive status reads within
+  five seconds. It must accept only the closed Agentic Human Review start-state
+  vocabulary, stop on a declared error, invalid id/state, route change, or
+  exhaustion, and must never resend start or repeat provider execution. A
+  successful reconciliation must refresh the parent list projection without
+  making it part of the authority decision. If reconciliation exhausts, New
+  Review must retain an explicit same-review Check status path and block another
+  automatic or ambiguous submission.

@@ -965,3 +965,43 @@ receipt, digest, source-release, and capacity assertion. Production recovery and
 fail-closed reads are unchanged. That run is diagnostic-only; a fresh replacement
 run was required and is the successful PR run recorded above. All four rejected
 runs remain diagnostic evidence only and are not reused as Phase 208 proof.
+
+Post-integration distributed verification exposed two independent browser-test
+conditions. Main run `29676273820` showed that the AI refresh response-loss
+fixture observed server commit before the browser had observed the failed POST;
+the fixture now requires both signals and retains the production fail-closed busy
+state. Follow-up PR run `29676798563` proved that case passes, then exposed a
+new-repeat screen whose first status read could overlap atomic background
+preparation. Fault injection reproduced the product gap: list reads already
+retried classified safe-store replacement, while status returned an error after
+one `SAFE_STORE_FILE_CHANGED`. Status and list now share the same four-attempt,
+10 ms, full-revalidation helper for classified transient replacement/absence
+only. Unclassified errors and exhaustion remain body-free failures, and no
+mutation or provider execution is retried. The combined browser fixture removes
+its one-use dashboard interception after reconciliation and binds the next repeat
+to one 202 response, a new child route, confirmation, exact parent/deeper/xhigh
+metadata, and one child. Both failed runs are diagnostic-only and are not release
+proof.
+
+The same full browser run also showed that a lost start response could reconcile
+too early to the still-valid `confirmation_required` state and then stop passive
+polling even though the single accepted dispatch later completed. Control Center
+now uses the valid accepted operation directly on the normal path and, only for
+transport uncertainty, performs at most four same-id status GETs within an
+absolute five-second deadline. The closed state allowlist, route-action abort,
+declared-error/id/state refusal, bounded timeout, one POST assertion, and one
+provider-dispatch assertion preserve fail-closed exactly-once behavior. Failure
+diagnostics contain only bounded opaque ids, allowlisted state metadata, and UI
+element counts; target headings, URLs, bodies, paths, and credentials are absent.
+New Review and saved-review workspace confirmation share the same reconciler;
+neither can navigate from transport uncertainty without a verified progressed or
+terminal state.
+
+Successful lost-start reconciliation also schedules a quiet, non-blocking parent
+Dashboard projection read so Home/Running does not remain Ready; this projection
+does not participate in the same-id authority decision or extend its deadline.
+The workspace invalidates older status generations before applying accepted or
+reconciled state. If New Review exhausts its bounded reads, it retains the exact
+saved review and replaces another submit with an explicit Check status action;
+browser coverage exhausts all four reads and opens that same operation without a
+second start POST.
