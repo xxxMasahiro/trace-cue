@@ -23,6 +23,7 @@ import { createControlCenterTestAssetRoot } from './helpers/control-center-test-
 const WORKER_COORDINATION_TIMEOUT_MS = 15_000;
 const WORKER_TERMINATION_GRACE_MS = 1000;
 const WORKER_KILL_GRACE_MS = 1000;
+const STARTUP_RECOVERY_COORDINATION_TIMEOUT_MS = 1000;
 
 test('bounded descriptor reads reject a file changed after inspection', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'trace-cue-bounded-read-'));
@@ -1108,10 +1109,13 @@ test('intake result publication stays private until startup recovery commits its
   assert.equal(beforeRelease.errors[0].code, 'CONTROL_CENTER_INTAKE_QUOTA_EXCEEDED');
 
   const assetRoot = await createControlCenterTestAssetRoot(cwd);
-  const started = await startControlCenterServer({ port: 0, assetRoot, 'artifact-root': artifactRoot }, { cwd });
+  const started = await startControlCenterServer({ port: 0, assetRoot, 'artifact-root': artifactRoot }, {
+    cwd,
+    intakeRecoveryMaintenanceLockTimeoutMs: STARTUP_RECOVERY_COORDINATION_TIMEOUT_MS
+  });
   await new Promise((resolve) => started.server.close(resolve));
   const recovered = await getControlCenterIntakeResult({ id }, { cwd, artifactRoot });
-  assert.equal(recovered.status, 'ok');
+  assert.equal(recovered.status, 'ok', recovered.errors?.[0]?.code ?? 'unknown recovery error');
   await assert.rejects(access(path.join(cwd, artifactRoot, 'control-center-intake', receipt.file_relative)));
   const committedReceipt = await store.readJson(`receipts/${id}.json`);
   assert.equal(committedReceipt.state, 'completed');

@@ -953,4 +953,11 @@ projection. The active branch now binds that confirmation to the current
 request generation so it remains successful, while a stale or different
 projection still preserves the draft and fails closed. These failed runs and
 the original run `29673582545` are diagnostic evidence only and are not accepted
-as Phase 208 proof; a fresh replacement run is required.
+as Phase 208 proof. Replacement run `29675497375` passed Browser smoke and every
+owner except Node 22; its startup-publication fixture exposed a separate
+pre-existing assumption that the production 100 ms best-effort recovery window
+was also a deterministic test deadline. The fixture now uses the existing
+one-second policy maximum through test context only and retains every recovery,
+receipt, digest, source-release, and capacity assertion. Production recovery and
+fail-closed reads are unchanged. That run is diagnostic-only; a fresh replacement
+run is required.

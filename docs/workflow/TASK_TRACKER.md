@@ -759,6 +759,9 @@ or unrelated feature tradeoff.
   deterministically in browser coverage. Bind a newer exact-match reconciliation
   to the current request generation so the parent dashboard update cannot
   overwrite confirmed success with a draft conflict.
+- [x] Keep the startup intake-publication recovery integration fixture bounded
+  at the existing one-second policy maximum under loaded CI filesystems without
+  changing the production 100 ms best-effort default or fail-closed reads.
 - [ ] Phase 208: complete all aggregate gates and independent reviews, commit,
   push, pull-request CI, merge, exact-main CI, clean local/remote synchronization,
   and final completion evidence.

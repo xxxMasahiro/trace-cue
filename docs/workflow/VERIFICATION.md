@@ -1241,3 +1241,10 @@ structure, docs, security, design-system, CI-contract, release, and Product Gate
 owners; three independent post-implementation reviews; exact PR and main CI;
 clean local/remote equality; and preserved read-only parent/FrameCue authority.
 No new dependency or CI job is introduced.
+
+The startup intake-publication integration fixture uses a context-only one-second
+recovery lock ceiling, which is the existing product policy maximum, so loaded
+Node 22 filesystems do not turn the production 100 ms best-effort default into a
+test success deadline. It still requires startup recovery, source release,
+completed receipt binding, digest equality, and capacity release; production
+timeouts and fail-closed unpublished-result reads remain unchanged.
