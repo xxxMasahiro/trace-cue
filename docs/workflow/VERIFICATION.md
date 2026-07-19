@@ -1234,7 +1234,7 @@ language, at least 44px button and select targets, no source name/secret/path/
 internal-id exposure, and no horizontal overflow. Production build remains a
 separate owner.
 
-Phase 208 closure requires JSON/syntax/diff checks; focused media, prepared-
+Phase 208 closure includes JSON/syntax/diff checks; focused media, prepared-
 audio, Control Center runtime/API and browser tests; complete `npm test`; schema,
 package dry-run/installed-package, rename, development, document, verification,
 structure, docs, security, design-system, CI-contract, release, and Product Gate
@@ -1248,3 +1248,20 @@ Node 22 filesystems do not turn the production 100 ms best-effort default into a
 test success deadline. It still requires startup recovery, source release,
 completed receipt binding, digest equality, and capacity release; production
 timeouts and fail-closed unpublished-result reads remain unchanged.
+
+### Saved Media Review Comparison Remote Integration Evidence
+
+Implementation commits `088fdb8`, `c7c0fac`, `a414d80`, `6a3323b`, and
+`cc703cb` were integrated through PR #34. Replacement PR CI run `29675840484`
+passed Node 20, Node 22, Repository contracts, Package producer, Package
+consumer Node 20, Package consumer Node 22, Browser smoke, and the proof-only
+Final gate. PR #34 merged as exact main revision `8308443`; push CI run
+`29675942166` passed the same eight-job graph, including final proof for that
+revision.
+
+Superseded runs `29673582545`, `29674510922`, `29674805693`, and `29675497375`
+remain diagnostic-only evidence for the Settings response-loss arbitration,
+test-only focus/worker coordination, confirmed-selection render arbitration,
+and startup recovery fixture coordination fixes respectively. None is reused as
+release proof, and no provider, media, authorization, production deadline, MCP,
+or release-gate boundary was broadened.

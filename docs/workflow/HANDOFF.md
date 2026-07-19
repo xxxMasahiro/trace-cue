@@ -934,8 +934,11 @@ exactly one passive comparison read. Final local evidence also passes the real
 FrameCue/FFmpeg/FFprobe prepared-audio acceptance, all 496 no-browser tests, all
 26 browser tests, release/package checks, every product contract check, and
 Product Gate. Three independent post-implementation reviews approve the
-contract, Security/Privacy boundary, and Control Center UI/UX. Phase 208 Git,
-pull-request CI, exact-main CI, and clean synchronization remain the active work.
+contract, Security/Privacy boundary, and Control Center UI/UX. Remote integration
+is complete: commits `088fdb8`, `c7c0fac`, `a414d80`, `6a3323b`, and `cc703cb`
+passed all seven distributed owners and the proof-only Final gate in PR #34 CI
+run `29675840484`; PR #34 merged as exact main revision `8308443`, and push CI
+run `29675942166` passed the same eight-job graph for that revision.
 The first PR CI attempt exposed a pre-existing multi-page AI-selection race:
 when both the mutation response and its quiet reconciliation read were lost, a
 transient load error replaced Settings and hid the retained draft. The active
@@ -960,4 +963,5 @@ was also a deterministic test deadline. The fixture now uses the existing
 one-second policy maximum through test context only and retains every recovery,
 receipt, digest, source-release, and capacity assertion. Production recovery and
 fail-closed reads are unchanged. That run is diagnostic-only; a fresh replacement
-run is required.
+run was required and is the successful PR run recorded above. All four rejected
+runs remain diagnostic evidence only and are not reused as Phase 208 proof.
