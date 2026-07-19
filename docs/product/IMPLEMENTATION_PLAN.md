@@ -2346,7 +2346,10 @@ read are lost. The client must require a latest-choice read before another
 selection write, latch that block across repeated read failure and an initial
 selection with no saved predecessor, scope page preservation to those selection
 reads, keep private-session expiry reopen-required, and cover the failures
-deterministically without extending production deadlines.
+deterministically without extending production deadlines. A newer matching
+reconciliation projection must be bound to the current selection-request
+generation and accepted as success across the parent/Settings render boundary;
+stale or different projections remain conflicts.
 
 Reuse the existing strict media result, artifact-root, schema registry,
 operation registry, Control Center media runtime, safe-store, API authorization,

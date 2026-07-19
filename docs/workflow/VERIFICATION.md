@@ -1038,7 +1038,10 @@ competing committed selection to remain authoritative, and an initial selection
 without a saved predecessor to receive the same protection. It also requires
 unrelated quiet refresh failures to retain their existing behavior and the
 diagnostic path to report only route and bounded test-id metadata without
-waiting for a missing screen or copying page content.
+waiting for a missing screen or copying page content. The response-lost but
+server-committed path must accept only a newer exact-match projection for the
+current request generation, keep the selected effort visible, show success, and
+show no conflict notice after the parent dashboard projection is applied.
 
 Session-runtime review projection tests require
 `provider_credential_source=control_center_session`, false provider

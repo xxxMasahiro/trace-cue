@@ -542,6 +542,11 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   failures must keep that write block, and only an expired private session may
   replace the page with the reopen-required state. The same block applies when
   no prior AI selection exists.
+- A transport-uncertain selection may be confirmed only by a newer storage
+  revision whose exact selection matches the current submitted generation. That
+  confirmation must remain successful when the parent dashboard projection is
+  applied; a stale, missing, or different projection must retain the draft and
+  fail closed as a conflict.
 - Local settings must not disable external-send confirmation or enable provider,
   credential, browser, shell, MCP, translation, destructive, or release-gate
   authority. Malformed, oversized, non-regular, symlinked, or workspace-escaping

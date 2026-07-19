@@ -943,5 +943,14 @@ branch now preserves that screen, treats the unknown revision as requiring the
 latest choices before another write, keeps the block across another failed read
 and an initial selection, scopes preservation to selection reconciliation,
 keeps unrelated refresh and private-session expiry behavior unchanged, and
-injects the failures deterministically in the browser suite. The failed run is
-diagnostic evidence only and is not accepted as Phase 208 proof.
+injects the failures deterministically in the browser suite. Diagnostic run
+`29674510922` then identified two test-only scheduling assumptions; commit
+`a414d80` aligns the missed history wait with the existing bounded worker
+coordination policy and verifies focus on one live DOM element. Run
+`29674805693` subsequently exposed a real parent/Settings render race after a
+response-lost selection had already been confirmed by a newer matching
+projection. The active branch now binds that confirmation to the current
+request generation so it remains successful, while a stale or different
+projection still preserves the draft and fails closed. These failed runs and
+the original run `29673582545` are diagnostic evidence only and are not accepted
+as Phase 208 proof; a fresh replacement run is required.

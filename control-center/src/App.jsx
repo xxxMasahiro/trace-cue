@@ -1401,6 +1401,28 @@ function sameAiSelection(left, right) {
     && left.effort_option_id === right.effort_option_id;
 }
 
+function sameOptionalAiSelection(left, right) {
+  return (!left && !right) || sameAiSelection(left, right);
+}
+
+function aiSelectionSubmissionProjectionState(submission, projection) {
+  if (!submission || !projection
+    || !Number.isSafeInteger(submission.previousRevision)
+    || !Number.isSafeInteger(submission.capabilityRevision)
+    || typeof submission.capabilityToken !== 'string'
+    || !Number.isSafeInteger(projection.storage_revision)
+    || projection.revision !== submission.capabilityRevision
+    || projection.capability_token !== submission.capabilityToken) return 'conflict';
+  if (projection.storage_revision === submission.previousRevision) {
+    return sameOptionalAiSelection(projection.selection, submission.previousSelection)
+      ? 'pending'
+      : 'conflict';
+  }
+  if (projection.storage_revision > submission.previousRevision
+    && sameAiSelection(projection.selection, submission.selection)) return 'confirmed';
+  return 'conflict';
+}
+
 function aiProjectionVersion(value) {
   return `${value?.capability_token ?? ''}:${value?.settings_revision ?? value?.storage_revision ?? 0}`;
 }
@@ -2372,6 +2394,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
   const [state, setState] = useState('idle');
   const [settingsErrorMessage, setSettingsErrorMessage] = useState(null);
   const aiRequestGeneration = useRef(0);
+  const pendingAiSelectionRef = useRef(null);
   const aiSetupButtonRef = useRef(null);
   const saveButtonRef = useRef(null);
   const aiDraftDirty = Boolean(aiDraft) && !sameAiSelection(aiDraft, aiConnections.selection);
@@ -2391,6 +2414,18 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
   useEffect(() => {
     const next = dashboard?.ai_connections ?? initialAiConnections;
     const versionChanged = aiVersionRef.current !== aiProjectionVersion(next);
+    const pendingSubmission = pendingAiSelectionRef.current;
+    if (pendingSubmission?.generation === aiRequestGeneration.current) {
+      if (pendingSubmission.phase === 'reconciling') return;
+      if (aiSelectionSubmissionProjectionState(pendingSubmission, next) === 'conflict') {
+        pendingAiSelectionRef.current = null;
+        aiRequestGeneration.current += 1;
+        setAiActionState('conflict');
+        setAiErrorMessage(t('settings.aiChangedWhileEditing', 'AI availability changed while you were choosing. Load the latest choices before applying.'));
+      }
+      return;
+    }
+    if (pendingSubmission) pendingAiSelectionRef.current = null;
     if (!aiDraftDirtyRef.current) {
       setAiConnections(next);
       setAiDraft(readAiSelection(next));
@@ -2409,6 +2444,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
   }
   async function refreshAvailability() {
     const generation = ++aiRequestGeneration.current;
+    pendingAiSelectionRef.current = null;
     const previousRevision = aiConnections.storage_revision ?? 0;
     const previousCapabilityRevision = aiConnections.revision ?? 0;
     const previousCapabilityToken = aiConnections.capability_token ?? null;
@@ -2456,6 +2492,17 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
       || !describeAiSelection(aiConnections, selection)) return;
     const generation = ++aiRequestGeneration.current;
     const previousRevision = aiConnections.storage_revision ?? 0;
+    const submission = {
+      phase: 'submitting',
+      generation,
+      previousRevision,
+      previousSelection: readAiSelection(aiConnections),
+      capabilityRevision: aiConnections.revision,
+      capabilityToken: aiConnections.capability_token,
+      selection: { ...selection }
+    };
+    pendingAiSelectionRef.current = submission;
+    setAiDraft({ ...selection });
     setAiActionState('saving');
     setAiErrorMessage(null);
     try {
@@ -2467,6 +2514,14 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
         confirm: 'save-ai-selection'
       });
       if (generation !== aiRequestGeneration.current) return;
+      if (aiSelectionSubmissionProjectionState(submission, next) !== 'confirmed') {
+        pendingAiSelectionRef.current = null;
+        aiRequestGeneration.current += 1;
+        setAiActionState('conflict');
+        setAiErrorMessage(t('settings.aiChangedWhileEditing', 'AI availability changed while you were choosing. Load the latest choices before applying.'));
+        return;
+      }
+      pendingAiSelectionRef.current = null;
       setAiConnections(next);
       setAiDraft(readAiSelection(next));
       aiVersionRef.current = aiProjectionVersion(next);
@@ -2475,15 +2530,15 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
     } catch (caught) {
       if (generation !== aiRequestGeneration.current) return;
       if (!caught?.envelope) {
+        pendingAiSelectionRef.current = { ...submission, phase: 'reconciling' };
         const latestDashboard = await reload({
           quiet: true,
           preserveCurrentPageOnError: true
         }).catch(() => null);
         if (generation !== aiRequestGeneration.current) return;
         const latest = latestDashboard?.ai_connections;
-        if (Number.isSafeInteger(latest?.storage_revision)
-          && latest.storage_revision > previousRevision
-          && sameAiSelection(latest.selection, selection)) {
+        if (aiSelectionSubmissionProjectionState(submission, latest) === 'confirmed') {
+          pendingAiSelectionRef.current = null;
           setAiConnections(latest);
           setAiDraft(readAiSelection(latest));
           aiVersionRef.current = aiProjectionVersion(latest);
@@ -2491,6 +2546,10 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
           return;
         }
       }
+      if (pendingAiSelectionRef.current?.generation === generation) {
+        pendingAiSelectionRef.current = null;
+      }
+      aiRequestGeneration.current += 1;
       setAiActionState(!caught?.envelope
         || apiErrorCode(caught) === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT'
         ? 'conflict'
@@ -2500,6 +2559,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
   }
   async function loadLatestAiSettings() {
     const generation = ++aiRequestGeneration.current;
+    pendingAiSelectionRef.current = null;
     setAiActionState('loading');
     try {
       const nextDashboard = await reload({

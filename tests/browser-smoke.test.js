@@ -1626,6 +1626,8 @@ test('review center preserves an AI choice draft when another settings page wins
     }, { times: 1 });
     await first.getByRole('button', { name: 'Use this AI', exact: true }).click();
     await first.getByText('AI choice updated.', { exact: true }).waitFor();
+    assert.equal(await first.locator('.inline-notice.warning').filter({ hasText: 'AI settings could not be updated' }).count(), 0);
+    assert.equal(await first.getByLabel('AI processing level').locator('option:checked').innerText(), 'High');
     savedDashboard = await first.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
     assert.equal(savedDashboard.ai_connections.selection.effort_name, 'High');
 

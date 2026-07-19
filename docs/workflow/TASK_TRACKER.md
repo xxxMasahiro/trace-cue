@@ -756,7 +756,9 @@ or unrelated feature tradeoff.
   the latest choices before another write, retain that block after another read
   failure and for an initial selection, keep unrelated quiet refresh behavior
   unchanged, retain reopen-required session expiry, and inject the failures
-  deterministically in browser coverage.
+  deterministically in browser coverage. Bind a newer exact-match reconciliation
+  to the current request generation so the parent dashboard update cannot
+  overwrite confirmed success with a draft conflict.
 - [ ] Phase 208: complete all aggregate gates and independent reviews, commit,
   push, pull-request CI, merge, exact-main CI, clean local/remote synchronization,
   and final completion evidence.
