@@ -48,6 +48,19 @@ const FAILED_STATES = new Set(['failed', 'error', 'blocked', 'timed_out']);
 const PREPARED_STATES = new Set(['prepared', 'evidence_ready']);
 const ATTENTION_STATES = new Set(['needs_attention', 'evidence_missing']);
 const REPEAT_RECONCILIATION_READ_ATTEMPTS = 2;
+const START_RESPONSE_LOSS_READ_ATTEMPTS = 4;
+const START_RESPONSE_LOSS_READ_DELAY_MS = 250;
+const START_RESPONSE_LOSS_DEADLINE_MS = 5_000;
+const START_RESPONSE_LOSS_STATES = new Set([
+  'cancelled',
+  'confirmation_required',
+  'completed',
+  'dispatching',
+  'dispatch_unknown',
+  'failed',
+  'validating',
+  'needs_attention'
+]);
 const DEFAULT_REVIEW = {
   source_kind: 'website',
   url: '',
@@ -239,6 +252,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
   const [pendingMediaSourceId, setPendingMediaSourceId] = useState(null);
   const [prepared, setPrepared] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
+  const [uncertainStartReviewId, setUncertainStartReviewId] = useState(null);
   const [needsAiRefresh, setNeedsAiRefresh] = useState(false);
   const [aiDraft, setAiDraft] = useState(() => readAiSelection(dashboard?.ai_connections));
   const [aiEditorOpen, setAiEditorOpen] = useState(false);
@@ -300,6 +314,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
   }
   async function prepare(event) {
     event.preventDefault();
+    if (uncertainStartReviewId) return;
     if (localResult) return;
     const action = beginPageAction(actionGenerationRef, actionAbortRef);
     setBusy(true);
@@ -466,12 +481,14 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
   const videoNotReady = videoLocal && mediaReadiness?.status !== 'ready';
   async function start() {
     const action = beginPageAction(actionGenerationRef, actionAbortRef);
+    const requestedReviewId = prepared.review_id;
     setBusy(true);
     setError(null);
+    setUncertainStartReviewId(null);
     try {
       const consent = readConsent(confirmation);
       const result = await startAgenticReview({
-        review_id: prepared.review_id,
+        review_id: requestedReviewId,
         consent_token: consent.token,
         consent_revision: consent.revision,
         nonce: consent.token,
@@ -479,11 +496,17 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
         execute_confirmed: true
       }, { signal: action.signal });
       if (!isCurrentPageAction(actionGenerationRef, action)) return;
-      const reviewId = readReviewId(result) ?? prepared.review_id;
+      const acceptedOperation = result?.operation ?? result;
+      const acceptedState = readState(acceptedOperation);
+      if (readReviewId(acceptedOperation) !== requestedReviewId
+        || !START_RESPONSE_LOSS_STATES.has(acceptedState)
+        || acceptedState === 'confirmation_required') {
+        throw new Error('The accepted review state could not be verified.');
+      }
       setConfirmation(null);
       await reload({ quiet: true });
       if (!isCurrentPageAction(actionGenerationRef, action)) return;
-      navigate({ page: 'confirm', view: 'work', itemId: reviewId });
+      navigate({ page: 'confirm', view: 'work', itemId: requestedReviewId });
     } catch (caught) {
       if (!isCurrentPageAction(actionGenerationRef, action)) return;
       setConfirmation(null);
@@ -495,7 +518,15 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
         setAiDraft(readAiSelection(nextDashboard?.ai_connections));
         setError(t('review.ai.changedBeforeSend', 'The AI choice changed before anything was sent. Update availability, then prepare this review again.'));
       } else if (!caught?.envelope) {
-        navigate({ page: 'confirm', view: 'work', itemId: prepared.review_id });
+        const reconciled = await reconcileUncertainAgenticReviewStart(requestedReviewId, { signal: action.signal });
+        if (!isCurrentPageAction(actionGenerationRef, action)) return;
+        if (reconciled) {
+          void reload({ quiet: true, preserveCurrentPageOnError: true });
+          navigate({ page: 'confirm', view: 'work', itemId: requestedReviewId });
+        } else {
+          setUncertainStartReviewId(requestedReviewId);
+          setError(t('status.updateFailedText', 'The information already shown is still available. Try refreshing.'));
+        }
       } else {
         setError(uiErrorMessage(caught, t));
       }
@@ -517,6 +548,7 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
       if (!isCurrentPageAction(actionGenerationRef, action)) return;
       setConfirmation(null);
       setPrepared(null);
+      setUncertainStartReviewId(null);
       await reload({ quiet: true });
     } catch {
       if (!isCurrentPageAction(actionGenerationRef, action)) return;
@@ -527,6 +559,12 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
     } finally {
       if (isCurrentPageAction(actionGenerationRef, action)) setBusy(false);
     }
+  }
+
+  function openUncertainStartReview() {
+    if (!uncertainStartReviewId) return;
+    void reload({ quiet: true, preserveCurrentPageOnError: true });
+    navigate({ page: 'confirm', view: 'work', itemId: uncertainStartReviewId });
   }
 
   return (
@@ -675,10 +713,12 @@ function NewReviewPage({ dashboard, navigate, reload, t }) {
           </div>
         </fieldset> : null}
         {localResult ? <IntakeResult result={localResult} onOpen={() => navigate({ page: 'confirm', view: 'work', itemId: localResult.id })} t={t} /> : null}
-        {error ? <InlineNotice tone="danger" title={t('review.prepareFailed', 'The review could not be prepared')} text={error} action={needsAiRefresh ? <button className="link-action" type="button" onClick={() => navigate({ page: 'settings', view: 'settings' })}>{t('review.ai.openSettings', 'Open AI settings')}</button> : null} /> : null}
+        {error ? <InlineNotice tone="danger" title={uncertainStartReviewId ? t('status.updateFailed', 'The latest status could not be read') : t('review.prepareFailed', 'The review could not be prepared')} text={error} action={uncertainStartReviewId ? <button className="link-action" type="button" onClick={openUncertainStartReview}>{t('dispatchUnknown.action', 'Check status')}</button> : needsAiRefresh ? <button className="link-action" type="button" onClick={() => navigate({ page: 'settings', view: 'settings' })}>{t('review.ai.openSettings', 'Open AI settings')}</button> : null} /> : null}
         <div className="form-actions">
           <button className="secondary-action" type="button" onClick={() => navigate({ page: 'confirm', view: 'list' })}>{t('common.back', 'Back')}</button>
-          {localResult
+          {uncertainStartReviewId
+            ? <button className="primary-action" type="button" onClick={openUncertainStartReview}>{t('dispatchUnknown.action', 'Check status')}<DirectionalSymbol symbol="→" /></button>
+            : localResult
             ? <button className="primary-action" type="button" onClick={() => { clearFileSelection(); setLocalResult(null); setError(null); }}>{t('intake.result.prepareAnother', 'Prepare another')}</button>
             : <button ref={startButtonRef} className="primary-action" type="submit" disabled={busy || sourceMissing || videoNotReady || (videoLocal && !form.rights_declared) || (needsAiChoice && !form.continue_without_ai)}>{busy ? t('review.action.starting', 'Preparing...') : form.source_kind === 'video' ? (videoLocal ? t('media.action.start', 'Start video review') : t('media.action.inspect', 'Check URL capabilities')) : sourceActionLabel(form.source_kind, t)}<DirectionalSymbol symbol="→" /></button>}
         </div>
@@ -2181,25 +2221,34 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
   }
   async function resumeStart() {
     const requestedReviewId = reviewId;
+    const action = beginPageAction(actionGenerationRef, actionAbortRef);
+    statusRequestGeneration.current += 1;
     actionPendingRef.current = true;
     setSaving(true);
     setStatusError(false);
     try {
       const consent = readConsent(confirmation);
-      await startAgenticReview({
+      const accepted = await startAgenticReview({
         review_id: requestedReviewId,
         consent_token: consent.token,
         consent_revision: consent.revision,
         nonce: consent.token,
         revision: consent.revision,
         execute_confirmed: true
-      });
-      if (reviewIdRef.current !== requestedReviewId) return;
+      }, { signal: action.signal });
+      if (!isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action)) return;
+      const acceptedOperation = accepted?.operation ?? accepted;
+      const acceptedState = readState(acceptedOperation);
+      if (readReviewId(acceptedOperation) !== requestedReviewId
+        || !START_RESPONSE_LOSS_STATES.has(acceptedState)
+        || acceptedState === 'confirmation_required') {
+        throw new Error('The accepted review state could not be verified.');
+      }
+      setOperation(acceptedOperation);
       setConfirmation(null);
-      await refresh({ quiet: true });
       await reload({ quiet: true });
     } catch (caught) {
-      if (reviewIdRef.current !== requestedReviewId) return;
+      if (!isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action)) return;
       setConfirmation(null);
       if (apiErrorCode(caught) === 'CONTROL_CENTER_AGENTIC_REVIEW_DESTINATION_CHANGED') {
         setNeedsAiRefresh(true);
@@ -2207,18 +2256,26 @@ function ReviewWorkspace({ reviewId, dashboard, navigate, reload, t }) {
         await reload({ quiet: true });
         setStatusError(false);
       } else if (!caught?.envelope) {
-        const statusReconciled = await refresh({ quiet: true });
-        await reload({ quiet: true });
-        if (reviewIdRef.current === requestedReviewId) setStatusError(!statusReconciled);
+        const statusReconciled = await reconcileLostStartResponse(requestedReviewId, action);
+        if (!isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action)) return;
+        setStatusError(!statusReconciled);
+        if (statusReconciled) void reload({ quiet: true, preserveCurrentPageOnError: true });
       } else {
         setStatusError(true);
       }
     } finally {
-      if (reviewIdRef.current === requestedReviewId) {
+      if (isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action)) {
         actionPendingRef.current = false;
         setSaving(false);
       }
     }
+  }
+  async function reconcileLostStartResponse(requestedReviewId, action) {
+    const next = await reconcileUncertainAgenticReviewStart(requestedReviewId, { signal: action.signal });
+    if (!isCurrentReviewAction(actionGenerationRef, reviewIdRef, requestedReviewId, action) || !next) return false;
+    setOperation(next);
+    setStatusError(false);
+    return true;
   }
   async function resumePreparation() {
     const requestedReviewId = reviewId;
@@ -3287,6 +3344,34 @@ async function waitUntilPrepared(reviewId, { signal } = {}) {
     await abortableDelay(500, signal);
   }
   throw new Error('Review preparation timed out');
+}
+
+async function reconcileUncertainAgenticReviewStart(reviewId, { signal } = {}) {
+  const deadlineAt = Date.now() + START_RESPONSE_LOSS_DEADLINE_MS;
+  for (let attempt = 0; attempt < START_RESPONSE_LOSS_READ_ATTEMPTS; attempt += 1) {
+    if (signal?.aborted) return null;
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) return null;
+    try {
+      const operation = await fetchAgenticReviewStatus(reviewId, {
+        signal,
+        responseTimeoutMs: remainingMs
+      });
+      const state = readState(operation);
+      if (readReviewId(operation) !== reviewId || !START_RESPONSE_LOSS_STATES.has(state)) return null;
+      if (state !== 'confirmation_required') return operation;
+    } catch (error) {
+      if (error?.envelope || signal?.aborted) return null;
+    }
+    if (attempt + 1 < START_RESPONSE_LOSS_READ_ATTEMPTS) {
+      try {
+        await abortableDelay(Math.min(START_RESPONSE_LOSS_READ_DELAY_MS, Math.max(0, deadlineAt - Date.now())), signal);
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
 }
 
 function beginPageAction(generationRef, abortRef) {

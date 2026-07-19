@@ -768,6 +768,21 @@ or unrelated feature tradeoff.
   `29675840484`; PR #34 merged as `8308443`, and exact-main push CI run
   `29675942166` passed the same eight-job graph. Local and remote main were
   synchronized cleanly before completion-record closure.
+- [x] Harden post-integration Control Center repeat navigation by reusing one
+  bounded classified transient safe-store read contract for passive operation
+  status and list projections, preserving immediate fail-closed handling for
+  unclassified errors and excluding every mutation/provider retry. Scope the
+  reconciliation dashboard route to its owning fixture and verify the later
+  repeat through one 202 response, a new child route, confirmation, exact
+  parent/deeper/xhigh binding, and exactly-one child state.
+- [x] Reconcile a transport-uncertain review start with at most four same-id
+  passive status reads inside five seconds, an exact state allowlist, current-
+  route cancellation, and fail-closed error/id/state handling. Prove one start
+  POST and one provider dispatch from both New Review and saved-review workspace
+  confirmation; never resend either operation. Keep Home/Running projection
+  current through a non-authoritative background read, reject late same-route
+  status regression, and preserve an explicit same-review Check status action
+  after bounded New Review exhaustion.
 
 No phase changes the existing media result schema, prepared-audio execution,
 private operation lifecycle, browser/session/evidence/AHR behavior, generic

@@ -56,12 +56,16 @@ export async function startAgenticReview(payload, { signal } = {}) {
   }, CONTROL_CENTER_RESPONSE_TIMEOUTS.localActionMs, { signal })));
 }
 
-export async function fetchAgenticReviewStatus(reviewId, { signal } = {}) {
+export async function fetchAgenticReviewStatus(reviewId, { signal, responseTimeoutMs } = {}) {
   const query = new URLSearchParams({ id: reviewId });
+  const boundedResponseTimeoutMs = Number.isSafeInteger(responseTimeoutMs) && responseTimeoutMs > 0
+    ? Math.min(responseTimeoutMs, CONTROL_CENTER_RESPONSE_TIMEOUTS.defaultRequestMs)
+    : null;
   const data = reviewData(await requestJson(`/api/agentic-review/status?${query}`, {
     method: 'GET',
     cache: 'no-store',
-    signal
+    signal,
+    ...(boundedResponseTimeoutMs ? { responseTimeoutMs: boundedResponseTimeoutMs } : {})
   }));
   return data.operation ?? data;
 }
