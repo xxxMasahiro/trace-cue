@@ -1030,6 +1030,16 @@ action. Fixtures that hold a local response past its product deadline must
 recheck page ownership after the request is observed and immediately before
 observing that deadline.
 
+The AI-selection conflict fixture also fails the first passive dashboard
+reconciliation read after an uncertain mutation. It requires the Settings page
+and unsaved choice to remain visible, the latest-choice action to replace an
+unsafe blind retry, a second failed latest-choice read to retain that block, the
+competing committed selection to remain authoritative, and an initial selection
+without a saved predecessor to receive the same protection. It also requires
+unrelated quiet refresh failures to retain their existing behavior and the
+diagnostic path to report only route and bounded test-id metadata without
+waiting for a missing screen or copying page content.
+
 Session-runtime review projection tests require
 `provider_credential_source=control_center_session`, false provider
 environment-only flags, and a true internal-adapter environment-only flag. The

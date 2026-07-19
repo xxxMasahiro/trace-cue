@@ -73,7 +73,7 @@ export default function App() {
   const t = useMemo(() => createTranslator(locale).t, [locale]);
   const style = useMemo(() => designSystemStyle(), []);
 
-  async function loadDashboard({ quiet = false } = {}) {
+  async function loadDashboard({ quiet = false, preserveCurrentPageOnError = false } = {}) {
     const generation = ++dashboardRequestGeneration.current;
     if (!quiet) setLoading(true);
     setLoadError(null);
@@ -96,7 +96,11 @@ export default function App() {
       setLocale(readLocale(next));
       return next;
     } catch (caught) {
-      if (generation === dashboardRequestGeneration.current) setLoadError(controlCenterLoadError(caught));
+      const classifiedError = controlCenterLoadError(caught);
+      if (generation === dashboardRequestGeneration.current
+        && (!preserveCurrentPageOnError || classifiedError === 'session')) {
+        setLoadError(classifiedError);
+      }
       return null;
     } finally {
       if (!quiet && generation === dashboardRequestGeneration.current) setLoading(false);
@@ -2446,7 +2450,10 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
     }
   }
   async function applyAiSelection(selection = aiDraft) {
-    if (!selection || !describeAiSelection(aiConnections, selection)) return;
+    if (aiActionState === 'conflict'
+      || aiActionState === 'loading'
+      || !selection
+      || !describeAiSelection(aiConnections, selection)) return;
     const generation = ++aiRequestGeneration.current;
     const previousRevision = aiConnections.storage_revision ?? 0;
     setAiActionState('saving');
@@ -2468,7 +2475,10 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
     } catch (caught) {
       if (generation !== aiRequestGeneration.current) return;
       if (!caught?.envelope) {
-        const latestDashboard = await reload({ quiet: true }).catch(() => null);
+        const latestDashboard = await reload({
+          quiet: true,
+          preserveCurrentPageOnError: true
+        }).catch(() => null);
         if (generation !== aiRequestGeneration.current) return;
         const latest = latestDashboard?.ai_connections;
         if (Number.isSafeInteger(latest?.storage_revision)
@@ -2481,7 +2491,10 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
           return;
         }
       }
-      setAiActionState(apiErrorCode(caught) === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT' ? 'conflict' : 'error');
+      setAiActionState(!caught?.envelope
+        || apiErrorCode(caught) === 'CONTROL_CENTER_AI_CONNECTION_REVISION_CONFLICT'
+        ? 'conflict'
+        : 'error');
       setAiErrorMessage(uiErrorMessage(caught, t));
     }
   }
@@ -2489,7 +2502,10 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
     const generation = ++aiRequestGeneration.current;
     setAiActionState('loading');
     try {
-      const nextDashboard = await reload({ quiet: true });
+      const nextDashboard = await reload({
+        quiet: true,
+        preserveCurrentPageOnError: true
+      });
       if (generation !== aiRequestGeneration.current) return;
       const next = nextDashboard?.ai_connections;
       if (!next) throw new Error('AI settings unavailable');
@@ -2500,7 +2516,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
       setAiActionState('idle');
     } catch (caught) {
       if (generation !== aiRequestGeneration.current) return;
-      setAiActionState('error');
+      setAiActionState('conflict');
       setAiErrorMessage(uiErrorMessage(caught, t));
     }
   }
@@ -2580,7 +2596,7 @@ function SettingsPage({ dashboard, locale, setLocale, reload, t }) {
                 <button className="secondary-action compact" type="button" onClick={refreshAvailability} disabled={aiBusy || aiDraftDirty}>{aiActionState === 'refreshing' ? t('settings.aiRefreshing', 'Updating...') : t('settings.aiRefresh', 'Update availability')}</button>
               </div>
               {showAiEditor ? <AiConnectionEditor aiConnections={aiConnections} value={aiDraft} onChange={changeAiDraft} t={t} disabled={aiBusy} /> : null}
-              {showAiEditor && !selectedAi && firstAvailableAiSelection(aiConnections) ? <button className="primary-action compact" type="button" disabled={aiBusy} onClick={() => applyAiSelection(firstAvailableAiSelection(aiConnections))}>{aiActionState === 'saving' ? t('settings.aiSaving', 'Applying...') : t('settings.aiApply', 'Use this AI')}</button> : null}
+              {showAiEditor && !selectedAi && firstAvailableAiSelection(aiConnections) ? <button className="primary-action compact" type="button" disabled={aiBusy || aiActionState === 'conflict'} onClick={() => applyAiSelection(firstAvailableAiSelection(aiConnections))}>{aiActionState === 'saving' ? t('settings.aiSaving', 'Applying...') : t('settings.aiApply', 'Use this AI')}</button> : null}
               {aiDraftDirty ? <button className="primary-action compact" type="button" disabled={aiBusy || aiActionState === 'conflict' || !describeAiSelection(aiConnections, aiDraft)} onClick={() => applyAiSelection()}>{aiActionState === 'saving' ? t('settings.aiSaving', 'Applying...') : t('settings.aiApply', 'Use this AI')}</button> : null}
               {aiActionState === 'saved' ? <p className="ai-action-status" role="status">{t('settings.aiSaved', 'AI choice updated.')}</p> : null}
               {aiErrorMessage ? <InlineNotice tone="warning" title={t('settings.aiUpdateFailed', 'AI settings could not be updated')} text={aiErrorMessage} action={aiActionState === 'conflict' || aiActionState === 'loading' ? <button className="link-action" type="button" onClick={loadLatestAiSettings} disabled={aiBusy}>{t('settings.aiLoadLatest', 'Load latest choices')}</button> : <button className="link-action" type="button" onClick={refreshAvailability} disabled={aiBusy || aiDraftDirty}>{t('common.retry', 'Try again')}</button>} /> : null}

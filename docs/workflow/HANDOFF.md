@@ -936,3 +936,12 @@ FrameCue/FFmpeg/FFprobe prepared-audio acceptance, all 496 no-browser tests, all
 Product Gate. Three independent post-implementation reviews approve the
 contract, Security/Privacy boundary, and Control Center UI/UX. Phase 208 Git,
 pull-request CI, exact-main CI, and clean synchronization remain the active work.
+The first PR CI attempt exposed a pre-existing multi-page AI-selection race:
+when both the mutation response and its quiet reconciliation read were lost, a
+transient load error replaced Settings and hid the retained draft. The active
+branch now preserves that screen, treats the unknown revision as requiring the
+latest choices before another write, keeps the block across another failed read
+and an initial selection, scopes preservation to selection reconciliation,
+keeps unrelated refresh and private-session expiry behavior unchanged, and
+injects the failures deterministically in the browser suite. The failed run is
+diagnostic evidence only and is not accepted as Phase 208 proof.

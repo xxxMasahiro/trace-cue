@@ -2340,6 +2340,14 @@ migration.
    release, Product Gate, and independent reviews; then commit, PR CI, merge,
    exact-main CI, and clean local/remote synchronization.
 
+Phase 208 browser stabilization must preserve Settings and its AI-choice draft
+when both an AI-selection mutation response and the first quiet reconciliation
+read are lost. The client must require a latest-choice read before another
+selection write, latch that block across repeated read failure and an initial
+selection with no saved predecessor, scope page preservation to those selection
+reads, keep private-session expiry reopen-required, and cover the failures
+deterministically without extending production deadlines.
+
 Reuse the existing strict media result, artifact-root, schema registry,
 operation registry, Control Center media runtime, safe-store, API authorization,
 translation, responsive design, test owners, and release gates. Do not introduce

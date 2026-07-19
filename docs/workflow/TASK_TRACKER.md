@@ -751,6 +751,12 @@ or unrelated feature tradeoff.
   Control Center endpoints, and an explanation-free responsive Before/After UI
   with current-result default, Swap, one Compare action, plain labels, condition
   guidance, source navigation, and 44px touch targets.
+- [x] Preserve the Settings screen and AI-choice draft when both the selection
+  response and its first quiet reconciliation read are lost; require loading
+  the latest choices before another write, retain that block after another read
+  failure and for an initial selection, keep unrelated quiet refresh behavior
+  unchanged, retain reopen-required session expiry, and inject the failures
+  deterministically in browser coverage.
 - [ ] Phase 208: complete all aggregate gates and independent reviews, commit,
   push, pull-request CI, merge, exact-main CI, clean local/remote synchronization,
   and final completion evidence.

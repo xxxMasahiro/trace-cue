@@ -1557,7 +1557,20 @@ test('review center preserves an AI choice draft when another settings page wins
   t.after(() => testWorkspace.cleanup());
   const { cwd } = testWorkspace;
   await cp(path.join(repoRoot, 'dist', 'control-center'), path.join(cwd, 'dist', 'control-center'), { recursive: true });
-  const started = await startControlCenterServer({ port: 0 }, controlCenterReviewContext(cwd));
+  const reviewContext = controlCenterReviewContext(cwd);
+  const discoverAiConnections = reviewContext.discoverControlCenterAiConnections;
+  let useAlternateAiCatalog = false;
+  reviewContext.discoverControlCenterAiConnections = async () => {
+    const discovered = await discoverAiConnections();
+    return useAlternateAiCatalog ? {
+      ...discovered,
+      connections: discovered.connections.map((connection) => ({
+        ...connection,
+        id: `${connection.id}-alternate`
+      }))
+    } : discovered;
+  };
+  const started = await startControlCenterServer({ port: 0 }, reviewContext);
   testWorkspace.trackServer(started.server);
   let browser = null;
   let releaseLostSelection;
@@ -1644,6 +1657,9 @@ test('review center preserves an AI choice draft when another settings page wins
     await second.getByRole('button', { name: 'Use this AI', exact: true }).click();
     await second.getByText('AI choice updated.', { exact: true }).waitFor();
     await activateObservedPage(first);
+    await first.route('**/api/dashboard', async (route) => {
+      await route.abort('failed');
+    }, { times: 2 });
     releaseLostSelection();
     await lostSelectionRequestFailed;
 
@@ -1651,15 +1667,33 @@ test('review center preserves an AI choice draft when another settings page wins
     try {
       await lostSelectionWarning.waitFor({ timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS });
     } catch (caught) {
-      const safeSettingsText = (await first.locator('[data-testid="tc-cc-settings"]').innerText()).replace(/\s+/gu, ' ').trim();
-      throw new Error(`The stale AI choice did not reconcile visibly: ${safeSettingsText}`, { cause: caught });
+      const safeUiState = await first.evaluate(() => ({
+        route: `${window.location.pathname}${window.location.search}`,
+        test_ids: [...document.querySelectorAll('[data-testid]')]
+          .map((element) => element.getAttribute('data-testid'))
+          .filter(Boolean)
+          .slice(0, 20)
+      }));
+      throw new Error(`The stale AI choice did not reconcile visibly: ${JSON.stringify(safeUiState)}`, { cause: caught });
     }
     assert.equal(await first.getByText('AI choice updated.', { exact: true }).count(), 0);
     assert.equal(await first.getByLabel('AI processing level').locator('option:checked').innerText(), 'Low');
-    savedDashboard = await first.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
+    savedDashboard = await second.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
     assert.equal(savedDashboard.ai_connections.selection.effort_name, 'Medium');
 
-    await lostSelectionWarning.getByRole('button', { name: 'Load latest choices', exact: true }).click();
+    const loadLatestChoices = lostSelectionWarning.getByRole('button', { name: 'Load latest choices', exact: true });
+    const lostLatestRead = first.waitForEvent('requestfailed', {
+      predicate: (request) => new URL(request.url()).pathname === '/api/dashboard'
+        && request.method() === 'GET',
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
+    await loadLatestChoices.click();
+    await lostLatestRead;
+    await first.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => (
+      button.textContent?.trim() === 'Load latest choices' && !button.disabled
+    )));
+    assert.equal(await first.getByRole('button', { name: 'Use this AI', exact: true }).isDisabled(), true);
+    await loadLatestChoices.click();
     await lostSelectionWarning.waitFor({ state: 'detached' });
     assert.match(await first.getByLabel('AI processing level').locator('option:checked').innerText(), /^Medium/u);
 
@@ -1678,6 +1712,31 @@ test('review center preserves an AI choice draft when another settings page wins
     assert.equal(await first.locator('.ai-connection-setting > .inline-notice.warning').count(), 0);
     savedDashboard = await first.evaluate(async () => (await (await fetch('/api/dashboard')).json()).data.control_center);
     assert.ok(savedDashboard.ai_connections.revision > refreshRevision);
+
+    useAlternateAiCatalog = true;
+    await first.getByRole('button', { name: 'Update availability', exact: true }).click();
+    const firstChoiceButton = first.getByRole('button', { name: 'Use this AI', exact: true });
+    await firstChoiceButton.waitFor();
+    const lostInitialSelection = first.waitForEvent('requestfailed', {
+      predicate: (request) => new URL(request.url()).pathname === '/api/settings/ai-connections/selection'
+        && request.method() === 'POST',
+      timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS
+    });
+    await first.route('**/api/settings/ai-connections/selection', async (route) => {
+      await route.abort('failed');
+    }, { times: 1 });
+    await first.route('**/api/dashboard', async (route) => {
+      await route.abort('failed');
+    }, { times: 1 });
+    await firstChoiceButton.click();
+    await lostInitialSelection;
+    const initialChoiceWarning = first.locator('.inline-notice.warning').filter({ hasText: 'AI settings could not be updated' });
+    await initialChoiceWarning.waitFor({ timeout: CONTROL_CENTER_RESPONSE_OBSERVATION_TIMEOUT_MS });
+    assert.equal(await firstChoiceButton.isDisabled(), true);
+    assert.equal(await initialChoiceWarning.getByRole('button', { name: 'Load latest choices', exact: true }).count(), 1);
+    await initialChoiceWarning.getByRole('button', { name: 'Load latest choices', exact: true }).click();
+    await initialChoiceWarning.waitFor({ state: 'detached' });
+    assert.equal(await firstChoiceButton.isEnabled(), true);
 
     await first.setViewportSize({ width: 390, height: 844 });
     assert.equal(await first.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);

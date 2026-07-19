@@ -536,6 +536,12 @@ TraceCue should make visual evidence, browser debugging, and UI review reusable 
   apply action and capability-store revision. A selection conflict must retain
   the user's draft, offer the latest choices, and never imply that the general
   settings save also changed the AI connection.
+- If an AI selection response is transport-uncertain and its quiet reconciliation
+  read also fails, the Settings page and draft must remain visible, the user must
+  be offered the latest choices before another write, repeated latest-choice read
+  failures must keep that write block, and only an expired private session may
+  replace the page with the reopen-required state. The same block applies when
+  no prior AI selection exists.
 - Local settings must not disable external-send confirmation or enable provider,
   credential, browser, shell, MCP, translation, destructive, or release-gate
   authority. Malformed, oversized, non-regular, symlinked, or workspace-escaping
